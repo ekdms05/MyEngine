@@ -11,7 +11,10 @@ add_library(mye_core STATIC
     include/mye/core/Time.h
     include/mye/core/Module.h
     include/mye/core/Window.h
+    include/mye/core/Input.h
+    include/mye/core/Memory.h
     include/mye/core/platform/Win32Window.h
+    include/mye/core/platform/Win32Input.h
     include/mye/core/App.h
 
     src/Math.cpp
@@ -22,8 +25,11 @@ add_library(mye_core STATIC
     src/Events.cpp
     src/Time.cpp
     src/Module.cpp
+    src/Input.cpp
+    src/Memory.cpp
     src/App.cpp
     src/platform/Win32Window.cpp
+    src/platform/Win32Input.cpp
 )
 
 target_include_directories(mye_core PUBLIC

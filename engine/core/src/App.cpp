@@ -7,8 +7,10 @@
 #include "mye/core/App.h"
 #include "mye/core/Assert.h"
 #include "mye/core/Events.h"
+#include "mye/core/Input.h"
 #include "mye/core/Log.h"
 #include "mye/core/Time.h"
+#include "mye/core/platform/Win32Input.h"
 #include "mye/core/platform/Win32Window.h"
 
 #include <Windows.h>
@@ -254,6 +256,22 @@ int GuardedMain(const LaunchArgs& args) {
         ctx.RegisterServiceRaw(kMainWindowServiceId, static_cast<IWindow*>(window.get()));
     }
 
+    // ---- 입력: InputState 폴링 서비스 + win32 Raw Input 백엔드 (docs/01 §저수준 입력) ----
+    // InputState는 헤드리스에서도 서비스로 노출(창 없이도 폴링 API가 유효). Raw Input 백엔드는
+    // 창이 있을 때만 배선하며, 매 프레임 NewFrame()→PumpMessages 순으로 프레임 경계를 갱신한다.
+    InputState inputState;
+    ctx.RegisterServiceRaw(InputState::kServiceId, &inputState);
+    std::unique_ptr<win32::Win32InputBackend> inputBackend;
+    if (window) {
+        auto backend = win32::Win32InputBackend::Create(*window, bus, &inputState);
+        if (!backend) {
+            MYE_LOG_WARN("Input", "Raw Input 백엔드 초기화 실패(폴링만 비활성): {}",
+                         backend.GetError().message);
+        } else {
+            inputBackend = std::move(backend).Value();
+        }
+    }
+
     int exitCode = 0;
     if (auto initResult = modules.InitializeAll(ctx); !initResult) {
         MYE_LOG_FATAL("Core", "module init failed: {}", initResult.GetError().message);
@@ -273,7 +291,11 @@ int GuardedMain(const LaunchArgs& args) {
             accumulator += frameDelta * time.GetTimeScale();
             time.AdvanceFrame(frameDelta);
 
-            if (window) window->PumpMessages();          // win32 메시지 → 이벤트 버스
+            // 입력 프레임 경계: 이 프레임 이벤트를 받기 직전에 1회.
+            // 이전 프레임 상태 롤오버(WasPressed/WasReleased 엣지) + 마우스 델타/휠 리셋 후,
+            // PumpMessages가 이번 프레임 입력을 m_current·델타에 누적한다(Update가 그대로 읽음).
+            inputState.NewFrame();
+            if (window) window->PumpMessages();          // win32 메시지 → 이벤트 버스 + InputState 갱신
             bus.Flush(EventChannel::PreUpdate);
             modules.Tick(UpdatePhase::PreUpdate, time.CurrentStep());
 
@@ -302,6 +324,10 @@ int GuardedMain(const LaunchArgs& args) {
         exitCode = app->GetExitCode();
         modules.ShutdownAll(ctx);   // 초기화의 정확한 역순
     }
+
+    // 입력 백엔드를 창보다 먼저 파괴(메시지 훅 해제 + Raw Input 등록 해제). InputState 서비스도 해제.
+    inputBackend.reset();
+    ctx.UnregisterServiceRaw(InputState::kServiceId);
 
     if (window) {
         ctx.UnregisterServiceRaw(kMainWindowServiceId);

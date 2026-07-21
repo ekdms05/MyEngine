@@ -254,6 +254,8 @@ public:
     void BeginFrame() override;
     void EndFrame() override;
     void* GetImGuiTextureID(TextureHandle t) override;
+    void* GetNativeDevice() override;
+    void* GetNativeContext() override;
     const DeviceCaps& GetCaps() const override;
 
     // 디버그 유틸(M0 자동 검증): 텍스처를 스테이징 텍스처로 복사해 32bpp BMP로 저장.

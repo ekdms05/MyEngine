@@ -91,6 +91,11 @@ public:
     // ImGui/에디터 노출용 (SRV 포인터 — ImTextureID로 캐스팅 사용. ImGui 백엔드는 M0 범위 외)
     virtual void* GetImGuiTextureID(TextureHandle t) = 0;
 
+    // 네이티브 백엔드 객체 접근 — ImGui/디버그 백엔드 전용. 그 외 코드는 사용 금지.
+    // DX11 백엔드: GetNativeDevice()=ID3D11Device*, GetNativeContext()=ID3D11DeviceContext* (immediate).
+    virtual void* GetNativeDevice() = 0;
+    virtual void* GetNativeContext() = 0;
+
     virtual const DeviceCaps& GetCaps() const = 0;
 };
 

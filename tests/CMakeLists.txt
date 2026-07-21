@@ -6,9 +6,12 @@ add_executable(mye_tests
     src/CoreTests.cpp
     src/JsonTests.cpp
     src/DiagConfigTests.cpp
+    src/MemoryTests.cpp
+    src/InputTests.cpp
+    src/AssetTests.cpp
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset)
 target_include_directories(mye_tests PRIVATE src)
 
 add_test(NAME mye_tests COMMAND mye_tests)

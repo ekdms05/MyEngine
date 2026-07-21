@@ -26,7 +26,15 @@ endif()
 
 enable_testing()
 
+# 서드파티 인터페이스 타깃(stb 등) — 라이브러리보다 먼저 등록해 소비 가능하게.
+add_subdirectory(third_party)
+
 add_subdirectory(engine/core)
 add_subdirectory(engine/rhi)
+add_subdirectory(engine/asset)
+add_subdirectory(engine/render)
+add_subdirectory(engine/imgui)
 add_subdirectory(samples/hello_triangle)
+add_subdirectory(samples/asset_smoke)
+add_subdirectory(samples/sprite_demo)
 add_subdirectory(tests)

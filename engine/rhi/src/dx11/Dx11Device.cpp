@@ -1192,6 +1192,10 @@ void* Dx11Device::GetImGuiTextureID(TextureHandle t) {
     return tex ? static_cast<void*>(tex->srv.Get()) : nullptr;
 }
 
+// 네이티브 백엔드 객체 접근 — ImGui/디버그 백엔드 전용 (Rhi.h 주석 참조).
+void* Dx11Device::GetNativeDevice()  { return static_cast<void*>(m_device.Get()); }
+void* Dx11Device::GetNativeContext() { return static_cast<void*>(m_context.Get()); }
+
 const DeviceCaps& Dx11Device::GetCaps() const { return m_caps; }
 
 // ---------------------------------------------------------------------------

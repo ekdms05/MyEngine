@@ -191,9 +191,30 @@ void SpriteBatch::EnsureCapacity(uint32_t spriteCount) {
     m_vbCapacitySprites = cap;
 }
 
+rhi::BindGroupHandle SpriteBatch::GetOrCreateMaterialBindGroup(rhi::TextureHandle tex) {
+    // 키: index(상위 32비트) | gen(하위 32비트). 슬롯 재사용 시 gen이 달라져 stale 캐시를 피한다.
+    const uint64_t key = (static_cast<uint64_t>(tex.index) << 32) | static_cast<uint64_t>(tex.gen);
+    if (auto it = m_materialCache.find(key); it != m_materialCache.end()) return it->second;
+
+    rhi::BindGroupEntry mat[2];
+    mat[0].binding = 0; mat[0].type = rhi::BindingType::SampledTexture; mat[0].texture = tex;
+    mat[1].binding = 0; mat[1].type = rhi::BindingType::Sampler;        mat[1].sampler = m_sampler;
+    rhi::BindGroupDesc bgd{};
+    bgd.layout = m_materialLayout;
+    bgd.entries = {mat, 2};
+    bgd.debugName = "sprite.matBG";
+    rhi::BindGroupHandle bg = m_device->CreateBindGroup(bgd);
+    m_materialCache.emplace(key, bg);
+    return bg;
+}
+
 void SpriteBatch::Shutdown() {
     if (!m_device) return;
     auto& d = *m_device;
+    for (auto& [key, bg] : m_materialCache) {
+        if (bg.IsValid()) d.Destroy(bg);
+    }
+    m_materialCache.clear();
     if (m_pipeline.IsValid())       d.Destroy(m_pipeline);
     if (m_frameBindGroup.IsValid()) d.Destroy(m_frameBindGroup);
     if (m_materialLayout.IsValid()) d.Destroy(m_materialLayout);
@@ -280,7 +301,8 @@ void SpriteBatch::End(rhi::ICommandContext& ctx) {
     }
     ctx.Unmap(m_vertexBuffer);
 
-    // 3) 상수 버퍼(viewProj) 갱신
+    // 3) 상수 버퍼(viewProj) 갱신 — 전체 WRITE_DISCARD. End 프레임당 1회 전제(헤더 계약 참조):
+    //    한 프레임에 End 다중 호출 시 이 DISCARD가 앞선 드로우의 viewProj를 덮어쓸 수 있다.
     if (void* cb = ctx.MapDynamic(m_constantBuffer, sizeof(Mat4))) {
         std::memcpy(cb, &m_viewProj, sizeof(Mat4));
         ctx.Unmap(m_constantBuffer);
@@ -291,25 +313,17 @@ void SpriteBatch::End(rhi::ICommandContext& ctx) {
     ctx.SetBindGroup(rhi::kBindGroupSlotPerFrame, m_frameBindGroup);
     ctx.SetVertexBuffer(0, m_vertexBuffer, 0);
 
-    // 5) 텍스처가 바뀌는 지점마다 드로우콜 분할(정렬 유지). 텍스처별 머티리얼 바인드 그룹은
-    //    임시 생성(M1 단순화 — 텍스처 수가 적다고 가정). 프레임 지연 파괴 큐로 정리.
+    // 5) 텍스처가 바뀌는 지점마다 드로우콜 분할(정렬 유지). 머티리얼 바인드 그룹은 텍스처별로
+    //    캐시(프레임 간 재사용)해 매 런마다 생성·파괴하지 않는다 — Y-교차 제출로 런이 쪼개져도
+    //    BindGroup 생성량은 텍스처 종류 수로 제한된다.
     uint32_t runStart = 0;
     rhi::TextureHandle runTex = m_pending[0].texture;
 
     auto flushRun = [&](uint32_t start, uint32_t end, rhi::TextureHandle tex) {
         if (end <= start) return;
-        // 머티리얼 바인드 그룹(t0=텍스처, s0=샘플러)
-        rhi::BindGroupEntry mat[2];
-        mat[0].binding = 0; mat[0].type = rhi::BindingType::SampledTexture; mat[0].texture = tex;
-        mat[1].binding = 0; mat[1].type = rhi::BindingType::Sampler;        mat[1].sampler = m_sampler;
-        rhi::BindGroupDesc bgd{};
-        bgd.layout = m_materialLayout;
-        bgd.entries = {mat, 2};
-        bgd.debugName = "sprite.matBG";
-        rhi::BindGroupHandle bg = m_device->CreateBindGroup(bgd);
+        rhi::BindGroupHandle bg = GetOrCreateMaterialBindGroup(tex);
         ctx.SetBindGroup(rhi::kBindGroupSlotPerMaterial, bg);
         ctx.Draw((end - start) * kVertsPerSprite, start * kVertsPerSprite);
-        m_device->Destroy(bg);   // 지연 파괴 큐 — 이번 프레임 GPU 사용 후 안전 해제
         ++m_stats.drawCalls;
     };
 

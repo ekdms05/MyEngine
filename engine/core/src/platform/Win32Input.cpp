@@ -181,6 +181,11 @@ Win32InputBackend::~Win32InputBackend() {
 bool Win32InputBackend::OnMessage(void* hwnd, uint32_t msg, uint64_t wparam, int64_t lparam) {
     static thread_local wchar_t s_pendingHighSurrogate = 0;
 
+    // 입력 선점 주의: ImGui WndProc 훅은 WM_KEYDOWN/CHAR/마우스 레거시 메시지만 소비하며
+    // WM_INPUT(Raw Input)은 소비하지 않는다. 따라서 UI 캡처 중 게임 입력 선점은 여기서 훅으로
+    // 막히지 않는다. 선점은 InputState 내부의 억제 플래그(SetKeyboard/MouseSuppressed)가
+    // 담당한다 — OnKey/OnMouse* 호출이 억제 시 no-op이 되므로 아래 갱신은 그대로 두어도 안전.
+    // (DebugUi가 프레임마다 WantCaptureKeyboard/Mouse를 InputState에 주입한다.)
     switch (msg) {
     case WM_INPUT: {
         UINT size = 0;

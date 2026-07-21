@@ -9,6 +9,7 @@
 #include "mye/core/Events.h"
 #include "mye/core/Input.h"
 #include "mye/core/Log.h"
+#include "mye/core/Memory.h"
 #include "mye/core/Time.h"
 #include "mye/core/platform/Win32Input.h"
 #include "mye/core/platform/Win32Window.h"
@@ -213,11 +214,15 @@ int GuardedMain(const LaunchArgs& args) {
     ConfigSystem   config;
     TimeSystem     time;
     ModuleRegistry modules;
+    // 프레임 임시 할당자(더블 버퍼 선형). 매 렌더 프레임 시작 시 SwapAndReset으로 리셋한다.
+    // 버퍼당 4MiB(더블 버퍼 → 8MiB) — M1 렌더 커맨드·임시 문자열용 여유 용량.
+    FrameAllocator frameAllocator(4u * 1024u * 1024u);
 
     ctx.RegisterServiceRaw(EventBus::kServiceId, &bus);
     ctx.RegisterServiceRaw(ConfigSystem::kServiceId, &config);
     ctx.RegisterServiceRaw(TimeSystem::kServiceId, &time);
     ctx.RegisterServiceRaw(ModuleRegistry::kServiceId, &modules);
+    ctx.RegisterServiceRaw(FrameAllocator::kServiceId, &frameAllocator);
 
     // ---- 설정 로드: Engine → Project 순 병합. 파일 없음은 성공(빈 스코프) ----
     config.RegisterSection("time", ConfigScope::Project);
@@ -291,6 +296,10 @@ int GuardedMain(const LaunchArgs& args) {
             accumulator += frameDelta * time.GetTimeScale();
             time.AdvanceFrame(frameDelta);
 
+            // 프레임 임시 할당자 경계: 활성 버퍼를 스왑하고 리셋(이전 프레임 임시 데이터 폐기).
+            // 더블 버퍼이므로 직전 프레임(N-1) 데이터는 이 프레임 동안 여전히 유효하다.
+            frameAllocator.SwapAndReset();
+
             // 입력 프레임 경계: 이 프레임 이벤트를 받기 직전에 1회.
             // 이전 프레임 상태 롤오버(WasPressed/WasReleased 엣지) + 마우스 델타/휠 리셋 후,
             // PumpMessages가 이번 프레임 입력을 m_current·델타에 누적한다(Update가 그대로 읽음).
@@ -328,6 +337,7 @@ int GuardedMain(const LaunchArgs& args) {
     // 입력 백엔드를 창보다 먼저 파괴(메시지 훅 해제 + Raw Input 등록 해제). InputState 서비스도 해제.
     inputBackend.reset();
     ctx.UnregisterServiceRaw(InputState::kServiceId);
+    ctx.UnregisterServiceRaw(FrameAllocator::kServiceId);
 
     if (window) {
         ctx.UnregisterServiceRaw(kMainWindowServiceId);

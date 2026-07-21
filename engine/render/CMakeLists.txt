@@ -3,10 +3,12 @@
 add_library(mye_render STATIC
     include/mye/render/Camera2D.h
     include/mye/render/SpriteBatch.h
+    include/mye/render/SpriteRenderer.h
     include/mye/render/PixelPerfectTarget.h
 
     src/Camera2D.cpp
     src/SpriteBatch.cpp
+    src/SpriteRenderer.cpp
     src/PixelPerfectTarget.cpp
 )
 

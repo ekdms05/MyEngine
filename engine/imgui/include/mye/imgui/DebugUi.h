@@ -13,6 +13,14 @@
 // 자세한 사용 순서는 이 헤더 하단 주석 참조.
 //
 // 예외 불사용(Expected)·dynamic_cast 금지·정적 링크 규약을 따른다.
+//
+// 수명·단일성 계약 (전역 ImGui 컨텍스트 소유):
+//   - 프로세스당 DebugUi 인스턴스는 정확히 1개여야 한다. HookImpl/GetIO/WndProcHandler는
+//     전역 단일 ImGui 컨텍스트에 의존하므로, 인스턴스가 둘 이상이면 훅이 잘못된 컨텍스트를
+//     참조할 수 있다.
+//   - 반드시 소유 Win32Window보다 먼저 Shutdown()되어야 한다(메시지 훅이 window를 참조).
+//     엔진 종료 순서(모듈 ShutdownAll → window.reset)와 데모 OnShutdown(DebugUi.Shutdown 먼저)이
+//     이 계약을 지킨다.
 #pragma once
 
 #include "mye/core/Base.h"
@@ -20,6 +28,7 @@
 namespace mye {
 
 class IWindow;
+class InputState;
 namespace win32 { class Win32Window; }
 namespace rhi { class IDevice; }
 
@@ -52,6 +61,13 @@ public:
 
     bool IsInitialized() const { return m_initialized; }
 
+    // 입력 선점 배선 — ImGui가 키보드/마우스를 캡처할 때 게임 InputState 갱신을 억제한다.
+    // Raw Input(WM_INPUT) 경로는 ImGui WndProc 훅을 거치지 않으므로, 훅만으로는 선점이
+    // 무효화된다(WM_KEYDOWN은 막혀도 동일 키의 WM_INPUT은 흘러 InputState가 갱신됨).
+    // DebugUi가 프레임 종료 시 io.WantCaptureKeyboard/Mouse를 InputState에 주입해 다음
+    // 프레임 PumpMessages(WM_INPUT)가 게이팅되게 한다. nullptr면 선점 배선 없음.
+    void AttachInput(InputState* input) { m_input = input; }
+
 private:
     struct HookImpl;   // IWindowMessageHook 구현 은닉 (헤더에 <Windows.h>/imgui 미노출)
 
@@ -59,6 +75,7 @@ private:
     win32::Win32Window*  m_window = nullptr;
     void*                m_hwnd = nullptr;      // HWND
     HookImpl*            m_hook = nullptr;      // 소유 (unique_ptr는 불완전 타입 제약으로 raw + 수동 delete)
+    InputState*          m_input = nullptr;     // 선점 배선 대상(비소유). 프로세스당 단일 인스턴스 전제.
 };
 
 } // namespace imgui

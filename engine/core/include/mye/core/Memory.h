@@ -34,6 +34,8 @@ public:
 //  - 용량 초과 시 nullptr 반환(예외 불사용) + 로그.
 class FrameAllocator final : public IAllocator {
 public:
+    MYE_SERVICE(FrameAllocator);   // EngineContext 서비스로 노출(프레임 임시 할당 소비자용)
+
     explicit FrameAllocator(size_t capacityPerBuffer);
     ~FrameAllocator() override;
     FrameAllocator(const FrameAllocator&) = delete;

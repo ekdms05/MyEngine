@@ -6,9 +6,14 @@
 //  - 슬롯 테이블: index+generation 간접. refCount 0이면 즉시 언로드(지연 GC는 M1-B).
 //  - vpath→슬롯 캐시로 중복 로드 공유(같은 경로 재요청 시 refcount만 증가).
 //
-// GPU 리소스 파괴 경계: 임포터의 Destroy(void*)는 device를 모르므로 GPU 핸들을 못 푼다.
-// AssetManager가 device를 소유하므로, 언로드 시 Texture 타입에 한해 GPU 텍스처/샘플러를
-// device.Destroy로 반납한 뒤 임포터 Destroy를 호출한다(M1 슬림: 타입별 특례).
+// GPU 리소스 파괴 경계: 언로드 시 임포터의 DestroyWithDevice(obj, device)로 위임한다.
+// 임포터가 Import에서 device로 만든 GPU 핸들을 스스로 device로 반납하므로, AssetManager는
+// 타입(Texture 등)을 하드코딩하지 않는다. GPU 리소스가 없는 임포터는 기본 구현이 Destroy만 부른다.
+//
+// 스레드 안전: 슬롯 테이블(slots/freeSlots/pathToSlot/slotImporter) 조작은 단일스레드 전용이다.
+// AssetSlot::refCount/generation은 atomic이나, AllocSlot/DestroySlot/pathToSlot 갱신은 비원자적
+// 복합 연산이므로 멀티스레드 로드·릴리스가 동시에 일어나면 자료구조가 경합한다(M1은 단일스레드).
+// 멀티스레드 로딩(M1-B/M3)에서는 이 연산들을 뮤텍스로 보호하거나 명령 큐로 직렬화할 것.
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/Texture.h"
 
@@ -109,17 +114,13 @@ struct AssetManager::Impl {
         freeSlots.push_back(idx);
     }
 
-    // 타입별 GPU 리소스 반납 + 임포터 Destroy.
+    // GPU 리소스 반납 + CPU 객체 파괴를 임포터에 위임한다(타입 하드코딩 특례 제거).
+    // 임포터가 DestroyWithDevice(obj, device)에서 자신이 만든 GPU 핸들을 device로 반납한 뒤
+    // CPU 객체를 해제한다. slotImporter가 null이면(임포터 없이 만들어진 Failed 슬롯 등) 스킵.
     void DestroyAssetObject(uint32_t idx) {
         AssetSlot& s = slots[idx];
-        // Texture 타입이면 GPU 핸들을 device로 반납(임포터는 device를 모른다).
-        if (s.type == Texture::kAssetTypeId && device) {
-            auto* tex = static_cast<Texture*>(s.object);
-            if (tex->gpuTexture.IsValid()) device->Destroy(tex->gpuTexture);
-            if (tex->sampler.IsValid()) device->Destroy(tex->sampler);
-        }
         if (IAssetImporter* imp = slotImporter[idx]) {
-            imp->Destroy(s.object);
+            imp->DestroyWithDevice(s.object, device);
         }
     }
 };

@@ -7,12 +7,18 @@
 //
 // 셰이더: VS = 카메라 뷰프로젝션 변환. PS = 텍스처 샘플 × premultiplied 틴트
 //         + 히트플래시 화이트 블렌드(lerp(rgb, white, flash), 알파 보존).
+//
+// 정렬 키: sortY(발밑 Y) 오름차순의 안정 정렬만 수행한다. 텍스처는 2차 정렬 키가 아니므로,
+//   서로 다른 텍스처의 스프라이트가 Y로 교차 제출되면 동일 텍스처가 여러 드로우 런으로 쪼개진다
+//   (드로우콜 수 증가). 머티리얼 BindGroup은 텍스처별 캐시(프레임 간 재사용)로 생성량을 텍스처
+//   종류 수로 제한하므로, 런이 쪼개져도 BindGroup 생성·파괴가 폭주하지 않는다.
 #pragma once
 
 #include "mye/core/Math.h"
 #include "mye/rhi/RhiTypes.h"
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace mye::rhi { class IDevice; class ICommandContext; }
@@ -47,6 +53,11 @@ struct SpriteBatchStats {
 //
 // 사용: Init → (프레임) Begin(vp) → Submit(...)×N → End(ctx) [→ 통계 조회] → (종료) Shutdown.
 // End는 반드시 활성 RenderPass(내부 RT 바인딩) 안에서 호출한다.
+//
+// 프레임 계약(중요): End는 프레임당 1회를 전제한다. 정점 버퍼·상수 버퍼는 매 End에서 전체
+//   WRITE_DISCARD 매핑으로 갱신되므로, 한 프레임에 End를 여러 번 호출(멀티 카메라/멀티 패스)하면
+//   같은 상수 버퍼가 최신 viewProj로 덮여 앞선 드로우가 잘못된 viewProj로 그려질 수 있다.
+//   멀티 패스 확장 시엔 부분 링(NO_OVERWRITE+오프셋) 또는 End 호출별 별도 CB 슬롯이 필요하다(M1-B).
 class SpriteBatch {
 public:
     SpriteBatch() = default;
@@ -79,6 +90,11 @@ private:
     };
 
     void EnsureCapacity(uint32_t spriteCount);
+
+    // 텍스처 → 머티리얼 BindGroup 캐시. 프레임 간 재사용해 매 드로우 런마다 생성·파괴하지 않는다.
+    // 키는 TextureHandle(index+gen)를 64비트로 인코딩. Shutdown에서 전부 Destroy.
+    rhi::BindGroupHandle GetOrCreateMaterialBindGroup(rhi::TextureHandle tex);
+    std::unordered_map<uint64_t, rhi::BindGroupHandle> m_materialCache;
 
     rhi::IDevice*             m_device = nullptr;
     rhi::BufferHandle         m_vertexBuffer{};     // 동적 링(WriteDiscardRing)

@@ -38,6 +38,7 @@
 
 #include "mye/render/Camera2D.h"
 #include "mye/render/SpriteBatch.h"
+#include "mye/render/SpriteRenderer.h"
 #include "mye/render/PixelPerfectTarget.h"
 
 #include "mye/imgui/DebugUi.h"
@@ -182,6 +183,9 @@ public:
         if (!uiRes) {
             MYE_LOG_ERROR("SpriteDemo", "DebugUi init failed: {}", uiRes.GetError().message);
             // 오버레이 없이도 데모는 진행(픽셀 검증은 씬 렌더로 가능).
+        } else {
+            // 입력 선점 배선: ImGui 캡처 시 게임 입력(WASD 등) 억제 — Raw Input 경로 포함.
+            m_debugUi.AttachInput(m_input);
         }
 
         // 리사이즈 → 스왑체인만 재구성(내부 RT는 고정 960x540, Blit이 정수배 재산출).
@@ -204,6 +208,9 @@ public:
         // 고정 스텝: 60Hz에서 속도 적분(결정성 이동).
         ctx.Modules().AddTick(this, mye::UpdatePhase::FixedUpdate,
                               [this](const mye::TimeStep& step) { FixedUpdate(step); }, 0);
+        // Update(프레임당 1회): 엣지성 입력(ESC 종료) 소비.
+        ctx.Modules().AddTick(this, mye::UpdatePhase::Update,
+                              [this](const mye::TimeStep& step) { Update(step); }, 0);
         // 렌더: alpha 보간 후 그림.
         ctx.Modules().AddTick(this, mye::UpdatePhase::PreRender,
                               [this](const mye::TimeStep& step) { Render(step); }, 0);
@@ -276,8 +283,12 @@ private:
             dir = dir / len;
             m_curPos += dir * (kMoveSpeed * dt);
         }
+    }
 
-        // ESC 종료(폴링). InputState는 물리 스캔코드.
+    // 엣지성 입력(WasPressed/WasReleased)은 프레임당 정확히 1회 관측이 보장되는 Update 페이즈에서
+    // 소비한다. FixedUpdate는 한 렌더 프레임에 0/1/2회 이상 실행될 수 있어(고정스텝 누산기) 엣지가
+    // 유실·중복될 수 있으므로 ESC 종료 판정을 여기로 둔다. 지속 입력(IsDown 이동)은 FixedUpdate 유지.
+    void Update(const mye::TimeStep& /*step*/) {
         if (m_input && m_input->WasPressed(mye::KeyCode::Escape)) {
             MYE_LOG_INFO("SpriteDemo", "ESC pressed — requesting exit");
             m_control->app->RequestExit(0);
@@ -325,18 +336,12 @@ private:
 
         SubmitBackgroundTiles();
 
-        // hero: 발밑 피벗(0.5,1). 크기 = 텍스처픽셀/PPU unit.
+        // hero: 발밑 피벗(0.5,1). 크기·UV 정규화는 통합 헬퍼(SpriteRenderer)가 수행 —
+        // 텍스처픽셀/PPU·UV 정규화 규약을 데모가 재구현하지 않는다.
         asset::Texture* tex = m_hero.Get();
         if (tex) {
-            render::SpriteDraw s{};
-            s.texture = tex->gpuTexture;
-            s.position = renderPos;
-            s.size = {static_cast<float>(tex->width) / render::kPixelsPerUnit,
-                      static_cast<float>(tex->height) / render::kPixelsPerUnit};
-            s.uv = {0.0f, 0.0f, 1.0f, 1.0f};
-            s.pivot = {0.5f, 1.0f};
-            s.sortY = renderPos.y;
-            m_batch.Submit(s);
+            render::SpriteDraw s = render::MakeSprite(tex, renderPos, {0.5f, 1.0f});
+            if (s.texture.IsValid()) m_batch.Submit(s);
         }
 
         m_batch.End(cmd);
@@ -357,6 +362,8 @@ private:
         // Blit이 자체 RenderPass를 EndRenderPass로 닫아 백버퍼 RTV가 언바인드된다.
         // ImGui RenderDrawData는 현재 바인딩된 RTV에 그리므로, 백버퍼를 LoadOp::Load로 다시
         // 열어(블릿 결과 보존) 전체 창 뷰포트를 설정한 뒤 EndFrame()으로 오버레이를 얹는다.
+        // 불변식: BeginFrame(ImGui::NewFrame)~EndFrame(ImGui::Render) 사이에 조기 return/예외가
+        // 없어야 ImGui 프레임 짝이 유지된다. 아래 로직은 위젯 호출·렌더패스 설정뿐이라 안전하다.
         if (m_debugUi.IsInitialized()) {
             m_debugUi.BeginFrame();
             ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);

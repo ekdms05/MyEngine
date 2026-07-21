@@ -1,6 +1,7 @@
 // mye/imgui/DebugUi.cpp — Dear ImGui(docking) win32 + DX11 백엔드 배선 (mye_imgui)
 #include "mye/imgui/DebugUi.h"
 
+#include "mye/core/Input.h"
 #include "mye/core/Window.h"
 #include "mye/core/platform/Win32Window.h"
 #include "mye/rhi/Rhi.h"
@@ -112,6 +113,15 @@ void DebugUi::EndFrame() {
     if (!m_initialized) return;
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
+    // 입력 선점 주입: WantCapture는 이 프레임 위젯 처리 후(=Render 시점) 확정된다.
+    // 여기서 InputState에 억제 플래그를 넣으면 다음 프레임 PumpMessages(WM_INPUT)가
+    // 게이팅되어 Raw Input 상태 갱신이 막힌다(UI 타이핑 중 캐릭터 이동 방지).
+    if (m_input) {
+        const ImGuiIO& io = ImGui::GetIO();
+        m_input->SetKeyboardSuppressed(io.WantCaptureKeyboard);
+        m_input->SetMouseSuppressed(io.WantCaptureMouse);
+    }
 }
 
 void DebugUi::Shutdown() {
@@ -120,6 +130,11 @@ void DebugUi::Shutdown() {
         delete m_hook;
         m_hook = nullptr;
         return;
+    }
+    // 억제 플래그를 해제해 InputState가 억제 상태로 남지 않게 한다.
+    if (m_input) {
+        m_input->SetKeyboardSuppressed(false);
+        m_input->SetMouseSuppressed(false);
     }
     if (m_window && m_hook)
         m_window->RemoveMessageHook(m_hook);

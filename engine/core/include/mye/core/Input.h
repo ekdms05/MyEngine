@@ -54,6 +54,11 @@ public:
     MYE_SERVICE(InputState);
 
     // ---- 폴링 API ----
+    // 엣지 질의 계약: WasPressed/WasReleased는 NewFrame()~다음 NewFrame() 사이(=한 렌더 프레임)에
+    // 발생한 상태 전이를 관측한다. 따라서 프레임당 정확히 1회 실행되는 페이즈(PreUpdate/Update/
+    // PostUpdate)에서 소비해야 한다. FixedUpdate는 한 프레임에 0회(대기)·1회·2회 이상 실행될 수
+    // 있어(고정스텝 누산기) 같은 엣지를 중복 관측하거나(다중 실행) 유실할 수 있다(0회 실행 시 다음
+    // NewFrame이 previous로 덮음). 지속 입력(IsDown)은 어느 페이즈에서든 안전하다.
     bool IsDown(KeyCode key) const;         // 현재 눌림
     bool WasPressed(KeyCode key) const;     // 이번 프레임에 down 엣지
     bool WasReleased(KeyCode key) const;    // 이번 프레임에 up 엣지
@@ -75,6 +80,16 @@ public:
     void OnMouseMove(Vec2i position, Vec2 rawDelta);
     void OnWheel(float deltaY);
 
+    // ---- 입력 선점(UI 캡처) ----
+    // ImGui 등 오버레이 UI가 키보드/마우스를 캡처 중일 때 게임 입력 상태 갱신을 억제한다.
+    // mye_core는 imgui에 의존하지 않으므로, 캡처 소유자(DebugUi)가 프레임마다 이 플래그를
+    // 주입한다. Raw Input 백엔드(WM_INPUT)와 레거시 메시지 양쪽이 이 플래그를 게이팅에 쓴다.
+    // 억제가 걸리면 해당 장치의 눌림 상태를 released로 강제해 stuck 키를 방지한다.
+    void SetKeyboardSuppressed(bool suppressed);
+    void SetMouseSuppressed(bool suppressed);
+    bool IsKeyboardSuppressed() const { return m_keyboardSuppressed; }
+    bool IsMouseSuppressed() const { return m_mouseSuppressed; }
+
 private:
     struct Snapshot {
         bool  keys[static_cast<size_t>(KeyCode::Count)] = {};
@@ -85,6 +100,8 @@ private:
     Vec2i    m_mousePos{};
     Vec2     m_mouseDelta{};
     float    m_wheelDelta = 0.0f;
+    bool     m_keyboardSuppressed = false;   // UI 캡처 중 게임 키보드 입력 억제
+    bool     m_mouseSuppressed = false;      // UI 캡처 중 게임 마우스 입력 억제
 };
 
 } // namespace mye

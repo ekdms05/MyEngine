@@ -176,4 +176,13 @@ void TextureImporter::Destroy(void* assetObject) {
     delete static_cast<Texture*>(assetObject);
 }
 
+void TextureImporter::DestroyWithDevice(void* assetObject, rhi::IDevice* device) {
+    // GPU 핸들 반납(임포터가 Import에서 device로 생성했으므로 여기서 책임 반납).
+    if (auto* tex = static_cast<Texture*>(assetObject); tex && device) {
+        if (tex->gpuTexture.IsValid()) device->Destroy(tex->gpuTexture);
+        if (tex->sampler.IsValid()) device->Destroy(tex->sampler);
+    }
+    delete static_cast<Texture*>(assetObject);
+}
+
 } // namespace mye::asset

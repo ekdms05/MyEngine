@@ -258,6 +258,11 @@ void PixelPerfectTarget::Blit(rhi::ICommandContext& ctx, rhi::TextureHandle back
     ctx.BeginRenderPass(pass);
 
     // 서브픽셀 잔차(내부 RT 픽셀, +Y 아래) → UV 오프셋. UV는 +V 아래이므로 부호 그대로.
+    // 트레이드오프(의도됨): gUvScale=1 고정이라 UV 범위가 [offset, 1+offset)로 이동해, 서브픽셀
+    //   오프셋이 걸린 한쪽 최외곽 1픽셀 행/열이 포인트+Clamp로 복제될 수 있다(스탠드얼론 RT라
+    //   이웃 텍스처 번짐은 없음). 완전 정합이 필요하면 내부 RT를 1px overscan 확장 후 안쪽 영역만
+    //   샘플하도록 gUvScale/gUvOffset을 조정할 것(M1-B). 창<내부해상도 시 ComputeLayout은 scale=1
+    //   중앙 크롭이며, 오버레이의 'Integer scale'(=layout.scale)과 표시가 일치한다.
     BlitConstants cb{};
     cb.uvScaleX = 1.0f; cb.uvScaleY = 1.0f;
     cb.uvOffsetX = subpixelOffset.x / static_cast<float>(m_desc.internalWidth);

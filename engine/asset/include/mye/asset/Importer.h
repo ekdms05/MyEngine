@@ -38,7 +38,16 @@ public:
     // 소스 바이트 → 런타임 에셋 객체. 성공 시 out에 new된 객체 포인터(소유권 이전).
     // TextureImporter는 여기서 PNG 디코드 + rhi 텍스처 생성까지 수행한다.
     virtual Expected<void*, Error> Import(ImportContext& ctx) = 0;
-    virtual void Destroy(void* assetObject) = 0;         // Import가 만든 객체 해제
+    virtual void Destroy(void* assetObject) = 0;         // Import가 만든 객체(CPU) 해제
+
+    // GPU 리소스까지 포함한 완전 파괴. 임포터가 Import에서 device로 GPU 핸들을 만들었다면
+    // 여기서 device로 반납한 뒤 CPU 객체를 해제한다(타입별 파괴 책임을 임포터가 소유 —
+    // AssetManager의 타입 하드코딩 특례를 제거). 기본 구현은 GPU 리소스가 없는 임포터용으로
+    // Destroy만 호출한다. device는 nullptr일 수 있다(헤드리스/테스트).
+    // TODO(M3): refl::TypeId/IAssetLoader 승격 시 이 훅으로 GPU 반납을 일반화 완료.
+    virtual void DestroyWithDevice(void* assetObject, rhi::IDevice* /*device*/) {
+        Destroy(assetObject);
+    }
 };
 
 // PNG 임포터(third_party/stb 소비). 픽셀아트 규약(02)에 맞춰
@@ -52,6 +61,8 @@ public:
 
     Expected<void*, Error> Import(ImportContext& ctx) override;
     void Destroy(void* assetObject) override;
+    // GPU 텍스처/샘플러를 device로 반납한 뒤 CPU Texture 객체를 해제.
+    void DestroyWithDevice(void* assetObject, rhi::IDevice* device) override;
 
     // 순수 PNG→CPU 픽셀 디코드(GPU 없이 단위 테스트 가능). stb_image 사용.
     // premultiply 설정 시 알파 프리멀티플까지 적용한 RGBA8을 돌려준다.

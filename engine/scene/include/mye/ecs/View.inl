@@ -28,8 +28,14 @@ template <typename Fn>
 void View<Cs...>::Each(Fn&& fn) {
     if (!m_smallest) return;
     // 기준 풀의 dense 엔티티를 순회하며 나머지 풀 멤버십 확인.
+    // 순회 시작 시점의 크기를 스냅샷해 루프 상한을 고정한다: 순회 중 시스템이 CommandBuffer
+    // (또는 즉시 경로)로 기준 풀에 엔티티를 추가해도 이번 순회에서 새 엔티티가 즉시 방문되지 않도록
+    // 한다(지연 반영 계약 방어 — 결정성·재현성). dense 벡터가 재할당돼도 인덱스 접근은 매 반복
+    // size()를 재평가하지 않고 스냅샷 상한까지만 돈다.
     const auto& entities = m_smallest->DenseEntities();
-    for (size_t i = 0; i < entities.size(); ++i) {
+    const size_t count = entities.size();
+    for (size_t i = 0; i < count; ++i) {
+        if (i >= entities.size()) break;   // 방어: 순회 중 축소(비계약 즉시 제거) 시 오버리드 차단
         const uint32_t idx = entities[i];
         bool all = true;
         (void)std::initializer_list<int>{

@@ -47,6 +47,10 @@ Entity CommandBuffer::CreateDeferred() {
     // 즉시 유효 핸들을 반환하려면 World가 index/generation을 예약해야 한다.
     // M2-A 기준 구현: World::Create를 즉시 호출해 핸들을 확보한다(같은 프레임 참조 연결 가능).
     // 저장소상 엔티티는 이미 존재하되 컴포넌트 add는 Flush 순서로 적용된다.
+    //
+    // '지연 반영' 계약 보증: 순회 도중 이 경로로 엔티티가 생성돼 순회 기준 풀이 성장해도, View::Each가
+    // 순회 시작 시 entities.size()를 스냅샷해 루프 상한을 고정하므로(View.inl) 새 엔티티는 그 프레임에
+    // 즉시 방문되지 않는다 → 결정성·재현성 유지. (Emplace 자체를 Flush로 미루는 진짜 예약은 M3 몫.)
     Entity e = m_impl->world->Create();
     Command c; c.kind = CmdKind::Create; c.entity = e;
     m_impl->commands.push_back(std::move(c));

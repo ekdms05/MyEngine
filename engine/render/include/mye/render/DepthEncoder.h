@@ -83,12 +83,32 @@ struct DepthViewParams {
 float EncodeDepth(uint16_t sortLayer, float sortKeyY, int16_t orderInLayer,
                   const DepthViewParams& view);
 
-// orderInLayer 1스텝당 깊이 미세 바이어스. 밴드폭 대비 충분히 작게(오브젝트 간 정렬 불침범).
+// orderInLayer 1스텝당 깊이 미세 바이어스(order 클수록 앞=작은 depth). 밴드 내 타이브레이커.
 inline constexpr float kOrderEpsilon = 1.0e-5f;
 
-// AnchorBiased 3D 메시: 지오메트리 깊이에 더할 앵커 기준 바이어스 스케일 ε.
-// depth = anchorDepth + (viewZ − anchorViewZ) × kAnchorBiasEpsilon.
-// 밴드 폭 대비 작게 잡아 인접 오브젝트 정렬을 침범하지 않게 한다(docs/02 §삽입 3D).
-inline constexpr float kAnchorBiasEpsilon = 0.02f;
+// order 바이어스 총량 상한(밴드폭 대비 비율). |order*kOrderEpsilon|을 band.width*이 값으로 하드
+// 클램프해, 큰 |order|(캐릭터/타일 밀기 등)라도 밴드폭의 이 비율을 넘지 못하게 한다 → order는
+// sortKeyY 순서를 밴드 밖으로 뒤집거나 인접 밴드를 침범할 수 없다(불변식). 0.5 = 밴드 반폭까지.
+inline constexpr float kOrderMaxBandFraction = 0.5f;
+
+// 렌더러블 orderInLayer 관례 상수(매직넘버 제거). 밴드폭 대비 정량:
+//   캐릭터(+300) → +0.003 depth(밴드폭 0.08125의 ~3.7%)만큼 앞으로 당김.
+//   타일/다리 상판(-300) → 같은 폭만큼 뒤로 밀어, 같은 밴드에서 캐릭터가 자연히 앞에 온다.
+// 둘의 상대차(0.006)는 '자기 밴드 바닥·상판'을 이기기엔 충분하되, 같은 밴드의 3D 앵커
+// 오브젝트(석상, order 0)와는 depth 정렬(sortKeyY)이 우선하도록 절제된 값이다(behind_statue
+// 마진 확보). kOrderEpsilon×|order| ≤ band.width×kOrderMaxBandFraction 클램프가 상한을 보증.
+inline constexpr int16_t kOrderCharacter = 300;   // 캐릭터: 자기 밴드 지면/상판보다 앞
+inline constexpr int16_t kOrderTileGround = -300; // 지면/다리 타일: 같은 밴드에서 뒤로 밀기
+
+// 밴드 경계 가드(반개구간 [base, base+width) 구현). 인접 밴드가 공유 경계 depth로 수렴해
+// z-fight 하지 않도록 각 밴드 상한을 이만큼 안쪽으로 당긴다(kOrderEpsilon과 동급의 극소값).
+inline constexpr float kBandGuard = 1.0e-5f;
+
+// AnchorBiased 3D 메시: 메시 뷰공간 Z를 [min,max]로 정규화한 n∈[0,1]을 앵커 깊이 주변
+// 극소폭에만 매핑한다. depth = anchorDepth + (0.5 − n) × biasEps, biasEps = 밴드폭 ×
+// kAnchorBiasBandFraction. '월드 unit당'이 아니라 '메시 정규화 z당' 정의라 메시 Z-두께와
+// 무관하게 편차가 ±biasEps/2로 고정 → 두꺼운 메시에서도 인접 밴드/오브젝트 정렬 불침범
+// (docs/02 §삽입 3D). 밴드폭의 10%면 편차 ±5% — 앵커 이웃(캐릭터 order 바이어스 등) 마진 내.
+inline constexpr float kAnchorBiasBandFraction = 0.10f;
 
 } // namespace mye::render

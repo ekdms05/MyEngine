@@ -131,28 +131,37 @@ MYE_TEST(TilemapSlopeInterpolation) {
     tmap::TilemapWorld map;
     tmap::TileLayer& ground = map.GetOrCreateLayer(0);
 
-    // 셀 (0,0): 완경사 북(+Y로 상승), base 레벨 0 → 남단 0, 북단 +1레벨(0.5 unit).
+    // Y 규약 정본(docs/02): worldY = -cellY. 셀 cy는 월드 Y 반개구간 [-cy, -cy+1)을 덮는다.
+    // 셀 (0,0)은 월드 Y [0,1)을 덮음(CellToWorldY(0)=0). GentleN = 북(+Y)으로 상승 →
+    // 셀 하단(worldY=0)=0, 상단(worldY→1)=+1레벨(0.5 unit).
     tmap::TileColumn slope; slope.tile = 1; slope.baseHeightLevel = 0;
     slope.slope = tmap::SlopeType::GentleN;
     ground.SetTile(Vec2i{0, 0}, slope);
 
-    // 남단(y=0.0): 높이 0. 중앙(y=0.5): 0.25. 북단(y≈1.0): 0.5.
+    // 셀→월드 규약 자체 검증.
+    MYE_EXPECT(ApproxEqual(tmap::CellToWorldY(0), 0.0f));
+    MYE_EXPECT(ApproxEqual(tmap::CellToWorldY(1), -1.0f));
+    MYE_EXPECT(tmap::WorldYToCellY(0.5f) == 0);
+    MYE_EXPECT(tmap::WorldYToCellY(-0.5f) == 1);
+
+    // 하단(worldY=0.0): 높이 0. 중앙(worldY=0.5): 0.25. 상단(worldY≈0.99): 0.495.
     MYE_EXPECT(ApproxEqual(map.SampleHeight(Vec2{0.5f, 0.0f}, 0), 0.0f, 1e-3f));
     MYE_EXPECT(ApproxEqual(map.SampleHeight(Vec2{0.5f, 0.5f}, 0), 0.25f, 1e-3f));
     MYE_EXPECT(ApproxEqual(map.SampleHeight(Vec2{0.5f, 0.99f}, 0), 0.495f, 1e-2f));
 
-    // 급경사(Steep)는 셀당 +2레벨(1.0 unit) 상승.
+    // 급경사(Steep)는 셀당 +2레벨(1.0 unit) 상승. 셀 (1,0)은 월드 Y [0,1), X [1,2)를 덮음.
     tmap::TileColumn steep; steep.tile = 1; steep.baseHeightLevel = 0;
     steep.slope = tmap::SlopeType::SteepE;   // +X로 상승
     ground.SetTile(Vec2i{1, 0}, steep);
-    // 셀 (1,0) 내부: worldX 1.0(서단)=0, 1.5(중앙)=0.5, 2.0(동단)=1.0.
+    // 셀 (1,0) 내부: worldX 1.0(서단)=0, 1.5(중앙)=0.5, 2.0(동단)=1.0. worldY 0.5 ∈ [0,1) → 셀 0.
     MYE_EXPECT(ApproxEqual(map.SampleHeight(Vec2{1.0f, 0.5f}, 0), 0.0f, 1e-3f));
     MYE_EXPECT(ApproxEqual(map.SampleHeight(Vec2{1.5f, 0.5f}, 0), 0.5f, 1e-3f));
 
-    // 평지 컬럼은 base 높이 그대로.
+    // 평지 컬럼은 base 높이 그대로. 셀 (5,5)는 월드 Y [-5,-4)를 덮음 → worldY -4.5로 질의.
     tmap::TileColumn flat; flat.tile = 1; flat.baseHeightLevel = 2;   // 1.0 unit
     ground.SetTile(Vec2i{5, 5}, flat);
-    MYE_EXPECT(ApproxEqual(map.SampleHeight(Vec2{5.5f, 5.5f}, 2), 1.0f, 1e-3f));
+    MYE_EXPECT(tmap::WorldYToCellY(-4.5f) == 5);
+    MYE_EXPECT(ApproxEqual(map.SampleHeight(Vec2{5.5f, -4.5f}, 2), 1.0f, 1e-3f));
 }
 
 // ---------------------------------------------------------------------------

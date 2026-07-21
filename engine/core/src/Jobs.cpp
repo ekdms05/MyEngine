@@ -80,8 +80,13 @@ struct JobSystem::Impl {
         return id;
     }
 
-    // remaining을 1 감소. 0에 도달하면 done 마킹 + waiters 방출.
+    // remaining을 1 감소. 0에 도달하면 done 마킹 + waiters 방출 + 카운터 회수(맵에서 erase).
     // 방출된 continuation을 잠금 밖에서 큐잉하기 위해 리스트로 수집해 반환한다.
+    //
+    // 회수 정책(무한 누수 방지): remaining==0 도달 시 waiters를 방출한 뒤 즉시 counters에서 erase한다.
+    // 완료된 카운터 id는 이후 어디서 재조회돼도 '맵 미스 = done'으로 해석되므로(CounterDone/
+    // IsComplete/Wait 모두 미스를 done 취급) 핸들 수명이 완료 시점을 넘겨도 안전하다. nextCounterId는
+    // 단조 증가라 재사용 충돌 없음. → 맵 크기는 '진행 중(미완) 카운터 수'로 상한이 잡힌다.
     void SignalCounter(uint64_t id) {
         std::vector<std::pair<JobItem, QueueKind>> released;
         {
@@ -93,6 +98,7 @@ struct JobSystem::Impl {
             if (left > 0) return;
             c->done = true;
             released.swap(c->waiters);
+            counters.erase(it);   // 완료 카운터 회수(waiters는 위에서 swap으로 이미 분리됨).
         }
         // 잠금 밖에서 continuation을 각 큐로 푸시.
         for (auto& [item, queue] : released) {
@@ -101,10 +107,11 @@ struct JobSystem::Impl {
         }
     }
 
+    // 완료(또는 회수된) 카운터는 done. 미완 카운터만 맵에 남아 있고 done=false.
     bool CounterDone(uint64_t id) {
         std::lock_guard<std::mutex> lk(counterMutex);
         auto it = counters.find(id);
-        return it == counters.end() || it->second->done;
+        return it == counters.end() || it->second->done;   // 미스 = 이미 완료·회수됨
     }
 
     // dependency 완료 시 실행할 continuation 등록. 이미 완료됐으면 즉시 큐잉하도록 true 반환.
@@ -207,8 +214,24 @@ JobSystem::JobSystem(uint32_t workerCount, uint32_t ioThreadCount)
 }
 
 JobSystem::~JobSystem() {
-    m_impl->running.store(false);
+    // 셧다운 시그널 — 로스트 웨이크업 방지가 핵심이다.
+    //   워커/IO 루프는 `wait(lk, pred)`로 큐 뮤텍스를 잡고 predicate(!queue.empty()||!running)를
+    //   검사한다. running을 뮤텍스 '밖에서' 뒤집으면, 워커가 predicate를 false로 본 직후·CV 대기
+    //   등록 전의 창에 notify_all이 끼어들어 알림이 유실될 수 있다(condition_variable의 원자적
+    //   release-and-wait는 '같은 뮤텍스'로 동기화된 predicate 변경에만 유실을 막아 준다). 그러면
+    //   워커가 영원히 잠들고 아래 join()이 무한 대기 → 프로세스 종료 행(간헐 ~7%).
+    //   → running 저장을 각 큐 뮤텍스 안에서 수행해 predicate 변경과 wait를 직렬화한다.
+    {
+        std::lock_guard<std::mutex> lk(m_impl->computeMutex);
+        m_impl->running.store(false);
+    }
     m_impl->computeCv.notify_all();
+    {
+        std::lock_guard<std::mutex> lk(m_impl->ioMutex);
+        // running은 이미 false지만, ioMutex 하에서 store를 한 번 더 해 IO 워커의 predicate
+        // 검사와도 직렬화한다(같은 뮤텍스로 happens-before 성립 → IO 쪽 웨이크업 유실 방지).
+        m_impl->running.store(false);
+    }
     m_impl->ioCv.notify_all();
     for (auto& t : m_impl->computeWorkers) if (t.joinable()) t.join();
     for (auto& t : m_impl->ioThreads) if (t.joinable()) t.join();

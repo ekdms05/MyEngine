@@ -138,10 +138,13 @@ std::optional<TileColumn> TilemapWorld::ColumnAtLevel(Vec2i cell, int level) con
 
 float TilemapWorld::SampleHeight(Vec2 worldXY, int8_t level) const {
     // 셀 좌표: 1 unit = 1 타일(PPU 48). worldXY는 world unit(타일 단위).
+    // Y 규약 정본(docs/02): worldY = -cellY. 셀 Y는 CellToWorldY/WorldYToCellY로만 환산한다
+    // (렌더러 BuildTileChunkQuads·RenderExtract 청크 sortKeyY와 동일 규약 — 부호 반전 통일).
     const int cx = static_cast<int>(std::floor(worldXY.x));
-    const int cy = static_cast<int>(std::floor(worldXY.y));
-    const float fx = worldXY.x - static_cast<float>(cx);   // 0..1 셀 내 위치
-    const float fy = worldXY.y - static_cast<float>(cy);
+    const int cy = WorldYToCellY(worldXY.y);
+    const float fx = worldXY.x - static_cast<float>(cx);   // 0..1 셀 내 위치(+X 동쪽)
+    // 셀 내 +Y(북쪽) 방향 진행률: 셀 하단 월드 Y = CellToWorldY(cy) = -cy.
+    const float fy = worldXY.y - CellToWorldY(cy);          // 0..1, worldY 증가(북) = fy 증가
 
     const std::optional<TileColumn> col = ColumnAtLevel(Vec2i{cx, cy}, level);
     if (!col) {

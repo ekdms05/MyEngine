@@ -111,7 +111,8 @@ private:
         float x, y, z;       // 월드 XY + 인코딩된 NDC 깊이(z는 VS에서 그대로 clip.z로 사용)
         float u, v;
         float r, g, b, a;
-        float flash, flashPad;
+        float flash;      // 히트 플래시(0..1). VS는 TEXCOORD1 scalar(R32Float)로 읽음.
+        float flashPad;   // 정렬 패딩(16B 배수 유지). 셰이더 입력 아님(레이아웃 미참조).
     };
     struct MeshInstanceCB;   // 정의는 .cpp
     struct FrameCB;

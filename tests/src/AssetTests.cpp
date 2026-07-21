@@ -597,6 +597,41 @@ MYE_TEST(AssetManagerLoadAsyncSyncFallbackWithoutServices) {
     std::filesystem::remove_all(dir, ec);
 }
 
+// 셧다운 회귀(핵심): 대량 LoadAsync in-flight 상태에서 AssetManager+JobSystem을 즉시 파괴.
+// AssetManager 소멸자는 inFlight가 0이 될 때까지 PumpMainThreadTasks로 배수하고, 이어서
+// JobSystem 소멸자가 워커/IO 스레드를 조인한다. 예전 JobSystem 로스트-웨이크업 버그라면
+// 이 조인이 간헐 무한 대기했다(종료 행). 대량 반복으로 그 창을 다수 시행해 회귀를 잡는다.
+MYE_TEST(AssetManagerLoadAsyncMassShutdownNoHang) {
+    auto dir = MakeTempDir();
+    for (int i = 0; i < 8; ++i)
+        WritePatternPng(dir, ("tex" + std::to_string(i) + ".png").c_str());
+
+    constexpr int kCycles = 40;
+    for (int cycle = 0; cycle < kCycles; ++cycle) {
+        VirtualFileSystem vfs;
+        vfs.Mount("assets", std::make_unique<LooseFileSystem>(dir.string()), 0);
+
+        JobSystem jobs;
+        EventBus  bus;
+        AssetManager mgr(vfs, /*device=*/nullptr);   // 헤드리스
+        mgr.RegisterAsyncLoader(std::make_unique<TextureAsyncLoader>());
+        mgr.SetAsyncServices(&jobs, &bus);
+
+        // 다수 비동기 로드를 던지되 완료를 기다리지 않는다 — 다양한 파이프라인 단계
+        // (IO 대기·Parse 중·Finalize 큐잉 대기)에 걸친 in-flight 잡을 남긴 채 파괴한다.
+        for (int i = 0; i < 8; ++i)
+            (void)mgr.LoadAsync<Texture>("assets://tex" + std::to_string(i) + ".png");
+
+        // 명시 대기/펌프 없이 스코프 탈출:
+        //   ~AssetManager: inFlight 배수(펌프) → 모든 Finalize 커밋 → inFlight 0.
+        //   ~JobSystem  : running=false → 워커/IO 조인. 행 없이 완료해야 한다.
+    }
+    MYE_EXPECT(true);   // kCycles회 대량-비동기-후-즉시파괴가 행 없이 끝나면 성공.
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
 MYE_TEST(AssetManagerLoadAsyncBlockingPriority) {
     auto dir = MakeTempDir();
     WritePatternPng(dir, "hero.png");

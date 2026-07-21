@@ -108,7 +108,9 @@ private:
     const ITileCollision*    m_tiles = nullptr;   // 비소유
     // 직전 스텝의 트리거 겹침 집합(Enter/Exit diff용). 값 = (trigger, other, triggerId).
     struct TriggerPair { Entity trigger, other; uint32_t triggerId; };
-    std::vector<TriggerPair> m_prevTriggers;       // key 오름차순 정렬 유지
+    // 트리거 쌍 전순서(사전식 (trigger.Packed(), other.Packed())). 정렬·diff 병합 기준(충돌 없음).
+    static bool TriggerPairLess(const TriggerPair& a, const TriggerPair& b);
+    std::vector<TriggerPair> m_prevTriggers;       // 사전식 오름차순 정렬 유지
 };
 
 } // namespace mye::phys

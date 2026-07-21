@@ -199,15 +199,9 @@ void ApplyReparent(ecs::World& world, Entity child, Entity parent, bool keepWorl
     if (LocalTransform* lt = world.TryGet<LocalTransform>(child)) lt->dirty = true;
 }
 
-// CommandBuffer::SetParent(Flush 시)가 scene 계층 없이 reparent를 잇도록, 이 TU 로드 시점에
-// ApplyReparent를 ecs CommandBuffer의 reparent 후크로 설치한다(정적 라이브러리 링크 보장).
-namespace {
-struct ReparentHookInstaller {
-    ReparentHookInstaller() {
-        ecs::CommandBuffer::SetReparentHook(&ApplyReparent);
-    }
-};
-const ReparentHookInstaller g_reparentHookInstaller;
-} // namespace
+// reparent 후크(CommandBuffer::SetParent Flush → ApplyReparent) 설치는 SceneModule::OnInitialize에서
+// 명시 배선한다(정적 초기화 순서·정적 라이브러리 stripping에 의존하지 않는 단일 지점). 여기 있던
+// 정적 인스톨러(g_reparentHookInstaller)는 이중 설치·정적 초기화 순서 미정의 위험으로 제거됨.
+// SceneModule을 쓰지 않는 경로(테스트 등)는 필요 시 직접 SetReparentHook(&ApplyReparent) 호출.
 
 } // namespace mye::scene

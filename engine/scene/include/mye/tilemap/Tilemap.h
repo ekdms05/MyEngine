@@ -11,6 +11,7 @@
 
 #include "mye/core/Math.h"
 
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -45,6 +46,20 @@ constexpr float HeightLevelToPixels(int heightLevel) {
 inline int WorldYToHeightLevel(float worldY) {
     const float lv = worldY / kWorldUnitsPerHeightLevel;
     return static_cast<int>(lv < 0.0f ? lv - 0.5f : lv + 0.5f);
+}
+
+// ---------------------------------------------------------------------------
+// 셀 Y ↔ 월드 Y 단일 규약 (docs/02 §타일→월드: y = -row·tileH/PPU, row는 아래로 증가)
+// ---------------------------------------------------------------------------
+// 정본: 셀 Y(row)는 화면 아래로 증가하고, 월드는 +Y 업이므로 worldY = -cellY 다. 렌더러
+// (BuildTileChunkQuads), SampleHeight, RenderExtract 청크 sortKeyY가 모두 이 함수를 경유한다.
+// 셀 하나는 월드 Y 구간 [CellToWorldY(cy), CellToWorldY(cy)+1] = [-cy, -cy+1]을 덮는다.
+constexpr float CellToWorldY(int cellY) { return -static_cast<float>(cellY); }
+
+// 월드 Y → 셀 Y(정수). 셀 cy는 월드 Y 반개구간 [-cy, -cy+1)을 덮으므로 역변환은 ceil(-worldY).
+// (worldY=0.5 → cell 0[0,1), worldY=-0.5 → cell 1[-1,0), worldY=1.5 → cell -1[1,2)).
+inline int WorldYToCellY(float worldY) {
+    return static_cast<int>(std::ceil(-worldY));
 }
 
 // 셀 좌표 → 청크 좌표(음수 안전 floor 나눗셈).

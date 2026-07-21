@@ -48,9 +48,18 @@ bool PhysicsWorld2D::CanInteract(const ColliderInst& a, const ColliderInst& b) {
 }
 
 uint64_t PhysicsWorld2D::TriggerPairKey(Entity trigger, Entity other) {
-    // trigger·other 순서 보존(트리거가 어느 쪽인지 의미 있음).
+    // (해시 버킷 용도 전용) trigger·other 순서 보존. 정렬·diff 전순서는 XOR 충돌을 피하려
+    // 사전식 (trigger.Packed(), other.Packed()) 비교(TriggerPairLess)를 쓴다 — 아래 Step 참조.
     return (static_cast<uint64_t>(trigger.index) << 32) ^ static_cast<uint64_t>(other.index)
            ^ (static_cast<uint64_t>(trigger.generation) << 16);
+}
+
+// 트리거 쌍 전순서(사전식). XOR 키와 달리 서로 다른 쌍이 절대 같은 순서로 뭉치지 않아
+// 정렬·Enter/Exit diff 병합 스캔이 안정적이다(키 충돌로 Enter/Exit가 뒤바뀌거나 유실되지 않음).
+bool PhysicsWorld2D::TriggerPairLess(const TriggerPair& a, const TriggerPair& b) {
+    const uint64_t at = a.trigger.Packed(), bt = b.trigger.Packed();
+    if (at != bt) return at < bt;
+    return a.other.Packed() < b.other.Packed();
 }
 
 void PhysicsWorld2D::GatherColliders(ecs::World& world, std::vector<ColliderInst>& out) const {
@@ -102,16 +111,31 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
         auto* kb = world.TryGet<KinematicBody2D>(body.entity);
         if (!kb) continue;
 
-        Vec2 desired = kb->velocity * dt;
+        const Vec2 desired = kb->velocity * dt;
         Vec2 pos = body.pos;
-        Vec2 remaining = desired;
         bool hitWall = false;
+
+        // 터널링 방지: 한 스텝 변위가 body half-extent를 넘으면 스윕 근사로 서브스텝 분할한다
+        // (이산 겹침 테스트만 하므로 고속 이동 시 얇은 콜라이더/타일을 관통할 수 있음). 각 서브스텝은
+        // 아래 move-and-slide를 그대로 수행한다. 저속(1 서브스텝)에서는 기존과 동일 동작.
+        const Vec2 bodyHalf = (body.shape.kind == ShapeKind::Circle)
+                                  ? Vec2{body.shape.Radius(), body.shape.Radius()}
+                                  : body.shape.half;
+        const float minHalf = std::max(1e-3f, std::min(bodyHalf.x, bodyHalf.y));
+        const float dispLen = desired.Length();
+        int substeps = 1 + static_cast<int>(dispLen / minHalf);
+        if (substeps < 1) substeps = 1;
+        if (substeps > 16) substeps = 16;   // 상한(폭주 방지)
+        const Vec2 subDesired = desired / static_cast<float>(substeps);
+
+      for (int ss = 0; ss < substeps; ++ss) {
+        Vec2 remaining = subDesired;
 
         for (int iter = 0; iter < kb->maxSlideIters; ++iter) {
             if (Abs(remaining.x) < 1e-7f && Abs(remaining.y) < 1e-7f) break;
             Vec2 tryPos = pos + remaining;
 
-            // 이 후보 위치에서 솔리드와의 최대 침투를 찾아 밀어냄.
+            // 이 후보 위치에서 솔리드와의 침투를 찾아 밀어냄. MTV 누적으로 접촉 법선을 잡는다.
             Vec2 correction{0, 0};
             bool collided = false;
 
@@ -124,6 +148,7 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
                 auto mtv = ResolveMTV(o.shape, o.pos, body.shape, tryPos);
                 if (mtv) {
                     tryPos += *mtv;                   // body를 o에서 분리
+                    correction += *mtv;               // 분리 벡터 누적(법선 추정)
                     collided = true;
                     hitWall = true;
                 }
@@ -133,6 +158,7 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
             if (m_tiles) {
                 if (auto mtv = m_tiles->ResolveSolid(body.shape, tryPos, body.floorLevel)) {
                     tryPos += *mtv;
+                    correction += *mtv;
                     collided = true;
                     hitWall = true;
                 }
@@ -140,9 +166,21 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
 
             pos = tryPos;
             if (!collided) break;
-            // 슬라이드: 남은 이동에서 이미 소비된 성분 제거(간이 — 다음 반복이 잔여 해결).
-            remaining = Vec2{0, 0};
+
+            // move-and-slide: 남은 이동에서 '법선 성분'만 제거하고 접선 성분은 유지해 다음 반복이
+            // 벽을 따라 미끄러지게 한다(remaining -= dot(remaining, n)*n). 법선 n은 누적 분리 벡터
+            // 방향. 이렇게 해야 정면 벽에 막히되 접선 이동은 살아남는다(move-and-stop 회피).
+            const float clen = correction.Length();
+            if (clen > 1e-7f) {
+                const Vec2 n = correction / clen;            // 접촉 법선(정규화)
+                const float vn = remaining.x * n.x + remaining.y * n.y;
+                if (vn < 0.0f) remaining = remaining - n * vn;  // 벽으로 파고드는 성분만 제거
+                else remaining = Vec2{0, 0};                    // 이미 분리 방향이면 종료
+            } else {
+                remaining = Vec2{0, 0};
+            }
         }
+      } // 서브스텝 루프
 
         kb->lastMove = pos - body.pos;
         kb->hitWall = hitWall;
@@ -181,11 +219,8 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
         current.push_back(TriggerPair{trig.entity, oth.entity, trig.triggerId});
     });
 
-    // 정렬(diff·결정성).
-    auto cmp = [](const TriggerPair& a, const TriggerPair& b) {
-        return TriggerPairKey(a.trigger, a.other) < TriggerPairKey(b.trigger, b.other);
-    };
-    std::sort(current.begin(), current.end(), cmp);
+    // 정렬(diff·결정성). 충돌 없는 사전식 전순서 사용.
+    std::sort(current.begin(), current.end(), TriggerPairLess);
     current.erase(std::unique(current.begin(), current.end(),
                   [](const TriggerPair& a, const TriggerPair& b) {
                       return a.trigger == b.trigger && a.other == b.other;
@@ -195,13 +230,13 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
     if (worldBus) {
         size_t p = 0, c = 0;
         while (p < m_prevTriggers.size() && c < current.size()) {
-            const uint64_t kp = TriggerPairKey(m_prevTriggers[p].trigger, m_prevTriggers[p].other);
-            const uint64_t kc = TriggerPairKey(current[c].trigger, current[c].other);
-            if (kp == kc) { ++p; ++c; }              // 유지(Stay) — 이벤트 없음
-            else if (kc < kp) {                      // 새로 진입
+            const bool prevLess = TriggerPairLess(m_prevTriggers[p], current[c]);
+            const bool currLess = TriggerPairLess(current[c], m_prevTriggers[p]);
+            if (!prevLess && !currLess) { ++p; ++c; } // 동일(Stay) — 이벤트 없음
+            else if (currLess) {                      // 새로 진입(current가 앞)
                 worldBus->Publish(TriggerEnterEvent{current[c].trigger, current[c].other, current[c].triggerId});
                 ++c;
-            } else {                                 // 이탈
+            } else {                                  // 이탈(prev가 앞)
                 worldBus->Publish(TriggerExitEvent{m_prevTriggers[p].trigger, m_prevTriggers[p].other, m_prevTriggers[p].triggerId});
                 ++p;
             }

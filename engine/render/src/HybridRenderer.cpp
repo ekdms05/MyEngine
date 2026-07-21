@@ -41,7 +41,7 @@ struct VsIn {
     float3 pos   : POSITION;    // 월드 xy + 인코딩된 NDC 깊이(z)
     float2 uv    : TEXCOORD0;
     float4 color : COLOR0;      // straight 틴트
-    float  flash : TEXCOORD1;
+    float2 flash : TEXCOORD1;   // (flash, pad) — RG32Float 레이아웃과 서명 정합. .x만 사용.
 };
 struct VsOut {
     float4 pos   : SV_Position;
@@ -57,7 +57,7 @@ VsOut vs_main(VsIn i) {
     o.pos = float4(clip.xy, i.pos.z, 1.0);
     o.uv = i.uv;
     o.color = i.color;
-    o.flash = i.flash;
+    o.flash = i.flash.x;
     return o;
 }
 
@@ -78,8 +78,10 @@ float4 ps_main(VsOut i) : SV_Target {
 // VS: object→world→viewProj로 정상 3D 변환. depthMode에 따라 clip.z 재매핑:
 //   - Geometry:     그대로.
 //   - AnchorFlat:   앵커 flat depth(gAnchorDepth)로 전부 평탄화.
-//   - AnchorBiased: gAnchorDepth + (viewZ - gAnchorViewZ)*ε 로 앵커 기준 축소 깊이.
-//     viewZ는 뷰공간 z(정규화 전). ε(gBiasEps)가 밴드 침범을 막는다.
+//   - AnchorBiased: 메시의 뷰공간 Z 범위[gMeshViewZMin, gMeshViewZMax]로 정규화한 n∈[0,1]을
+//     앵커 깊이 주변 극소폭(gBiasEps = 밴드폭의 고정 비율)에만 매핑 → 메시 Z-두께와 무관.
+//     depth = gAnchorDepth + (0.5 - n)*gBiasEps. (n=0 뒷면=+bias 뒤, n=1 앞면=-bias 앞)
+//     두께가 커도 편차는 ±gBiasEps/2로 고정되어 인접 밴드/오브젝트를 침범하지 않는다.
 // clip.z 재매핑은 clip.w를 곱해 저장(래스터라이저 NDC.z = z/w 복원 위함).
 constexpr const char* kMeshHlsl = R"hlsl(
 cbuffer MeshConstants : register(b0) {
@@ -88,7 +90,7 @@ cbuffer MeshConstants : register(b0) {
     row_major float4x4 gViewProj;
     float3 gLightDirWorld;  float gAmbient;
     float3 gLightColor;     float gDepthMode;    // 0=AnchorFlat 1=AnchorBiased 2=Geometry
-    float  gAnchorDepth;    float gAnchorViewZ;  float gBiasEps;  float _pad;
+    float  gAnchorDepth;    float gMeshViewZMin; float gBiasEps;  float gMeshViewZMax;
     float4 gTint;
 };
 
@@ -112,7 +114,11 @@ VsOut vs_main(VsIn i) {
     if (gDepthMode < 0.5) {                            // AnchorFlat
         z = gAnchorDepth * clip.w;
     } else if (gDepthMode < 1.5) {                     // AnchorBiased
-        float ndc = gAnchorDepth + (viewZ - gAnchorViewZ) * gBiasEps;
+        // 메시 뷰Z 범위로 정규화 → 두께 독립. n∈[0,1] (0=최후면, 1=최전면).
+        float range = gMeshViewZMax - gMeshViewZMin;
+        float n = (range > 1e-6) ? saturate((viewZ - gMeshViewZMin) / range) : 0.5;
+        // 앵커 깊이 주변 ±gBiasEps/2 극소폭에만 매핑(n=1 앞면=앵커-eps/2 near, n=0 뒷면=앵커+eps/2 far).
+        float ndc = gAnchorDepth + (0.5 - n) * gBiasEps;
         z = saturate(ndc) * clip.w;
     }
     o.pos = float4(clip.xy, z, clip.w);
@@ -163,7 +169,7 @@ struct HybridRenderer::MeshInstanceCB {
     Mat4  viewProj;
     float lightDir[3];  float ambient;
     float lightColor[3]; float depthMode;
-    float anchorDepth;  float anchorViewZ;  float biasEps;  float pad0;
+    float anchorDepth;  float meshViewZMin;  float biasEps;  float meshViewZMax;
     float tint[4];
 };
 
@@ -240,6 +246,8 @@ void HybridRenderer::InitSpriteTilePipeline() {
         {"POSITION", 0, rhi::Format::RGB32Float,  offsetof(QuadVertex, x),     0},
         {"TEXCOORD", 0, rhi::Format::RG32Float,   offsetof(QuadVertex, u),     0},
         {"COLOR",    0, rhi::Format::RGBA32Float, offsetof(QuadVertex, r),     0},
+        // TEXCOORD1 = float2(flash, flashPad). VS도 float2로 받아(.x=flash 사용) 레이아웃-셰이더
+        // 서명을 정합시킨다(이전엔 VS가 scalar로 읽어 둘째 성분이 조용히 버려짐 — W4/검증 도구 혼란).
         {"TEXCOORD", 1, rhi::Format::RG32Float,   offsetof(QuadVertex, flash), 0},
     };
     const rhi::BindGroupLayoutHandle layouts[] = {m_frameLayout, {}, m_texLayout};
@@ -469,9 +477,22 @@ void HybridRenderer::DrawMeshes(const scene::RenderProxyList& items, const Hybri
         const uint16_t sortLayer = it.sortLayer;
         const float anchorDepth = EncodeDepth(sortLayer, it.sortKeyY, it.orderInLayer, view.depth);
 
-        // 앵커 지면Y의 뷰공간 z(월드 앵커점 = (transform 위치.xy 근사, sortKeyY)). 앵커 라인 기준.
-        const Vec3 anchorWorld{it.worldTransform.m[3][0], it.sortKeyY, it.worldTransform.m[3][2]};
-        const Vec3 anchorView = TransformPoint(anchorWorld, view.view);
+        // AnchorBiased용 메시 뷰공간 Z 범위(월드 바운드 8코너 → view). 두께와 무관하게 바이어스를
+        // [meshViewZMin, meshViewZMax]로 정규화하기 위한 정본(카메라 view는 순수 XY 이동이라 viewZ≡worldZ).
+        float meshViewZMin = 0.0f, meshViewZMax = 0.0f;
+        if (mesh->bounds.IsValid()) {
+            const asset::Aabb& bb = mesh->bounds;
+            bool first = true;
+            for (int corner = 0; corner < 8; ++corner) {
+                const Vec3 lp{(corner & 1) ? bb.max.x : bb.min.x,
+                              (corner & 2) ? bb.max.y : bb.min.y,
+                              (corner & 4) ? bb.max.z : bb.min.z};
+                const Vec3 wp = TransformPoint(lp, it.worldTransform);
+                const float vz = TransformPoint(wp, view.view).z;
+                if (first) { meshViewZMin = meshViewZMax = vz; first = false; }
+                else { meshViewZMin = std::min(meshViewZMin, vz); meshViewZMax = std::max(meshViewZMax, vz); }
+            }
+        }
 
         MeshInstanceCB c{};
         c.world = it.worldTransform;
@@ -482,8 +503,10 @@ void HybridRenderer::DrawMeshes(const scene::RenderProxyList& items, const Hybri
         c.lightColor[0] = m_lightColor.r; c.lightColor[1] = m_lightColor.g; c.lightColor[2] = m_lightColor.b;
         c.depthMode = static_cast<float>(it.depthMode);
         c.anchorDepth = anchorDepth;
-        c.anchorViewZ = anchorView.z;
-        c.biasEps = kAnchorBiasEpsilon;
+        c.meshViewZMin = meshViewZMin;
+        c.meshViewZMax = meshViewZMax;
+        // 바이어스 폭을 앵커 밴드 폭의 고정 비율로 산출(메시 정규화 z당 — 두께 독립).
+        c.biasEps = BandForSortLayer(sortLayer).width * kAnchorBiasBandFraction;
         c.tint[0] = it.tint.r; c.tint[1] = it.tint.g; c.tint[2] = it.tint.b; c.tint[3] = it.tint.a;
 
         if (void* cb = ctx.MapDynamic(m_meshCB, sizeof(MeshInstanceCB))) {
@@ -536,6 +559,11 @@ void HybridRenderer::CollectAndDrawSpritesTiles(const scene::RenderProxyList& it
 
     // 텍스처별 런으로 쌓기 위해 (텍스처핸들, 정점범위)를 기록. 간단화: item 순서대로 append하고
     // 텍스처가 바뀌는 지점마다 런 분할(스프라이트/타일은 이미 sortLayer로 그룹핑돼 들어옴).
+    //
+    // [규약/M2 전제] 스프라이트는 픽셀아트 하드 알파(포인트 샘플, 경계 안티에일리어싱 픽셀 없음)를
+    // 전제한다 → cutout(a<cutoff discard) + 뎁스 기록으로 불투명 코어가 depth로 정확히 해결되고,
+    // 런 내부 발행 순서에 무관하게 결과가 결정적이다. soft alpha(반투명 경계) 도입 시엔 스프라이트
+    // 런을 sortKeyY 내림차순(뒤→앞)으로 정렬하는 별도 back-to-front 패스가 필수다(M3 계약 예약).
     std::vector<QuadRun> runs;
     rhi::TextureHandle curTex{};
     uint32_t runFirstQuad = 0;
@@ -674,9 +702,10 @@ void HybridRenderer::BuildTileChunkQuads(const scene::RenderItem& it, const Hybr
 
         const int cellX = baseCellX + lx;
         const int cellY = baseCellY + ly;
-        // 셀 월드 좌표(타일 하단-좌 기준). Screen2D: +Y 위이므로 row 증가 = -Y.
+        // 셀 월드 좌표(타일 하단-좌 기준). Y 규약 정본: worldY = CellToWorldY(cellY) = -cellY
+        // (SampleHeight·RenderExtract 청크 sortKeyY와 동일 함수 경유 — 부호 통일).
         const float wx = static_cast<float>(cellX);
-        const float wyBase = -static_cast<float>(cellY);
+        const float wyBase = tilemap::CellToWorldY(cellY);
 
         // 높이 오프셋(월드 Y): baseHeightLevel × 0.5 unit.
         const float heightY = tilemap::HeightLevelToWorldY(col.baseHeightLevel);

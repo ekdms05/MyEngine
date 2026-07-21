@@ -207,6 +207,51 @@ MYE_TEST(JobsShutdownNoLeak) {
     MYE_EXPECT(true);
 }
 
+// ---------------------------------------------------------------------------
+// 셧다운 로스트-웨이크업 회귀(핵심): 워커가 CV에 잠든 '유휴' 상태에서 즉시 파괴한다.
+//
+// 배경(버그): 예전 소멸자는 running=false를 뮤텍스 '밖에서' 저장한 뒤 notify_all 했다.
+//   워커 wait(lk, pred)가 predicate(!queue.empty()||!running)를 false로 본 직후·CV 대기
+//   등록 전의 창에 notify가 끼면 알림이 유실되어 워커가 영원히 잠들고 join()이 무한 대기했다
+//   (간헐 ~7% 종료 행). 유휴 상태 파괴를 반복하면 이 창을 대량 시행해 회귀를 잡는다.
+//
+// 각 반복은 잡을 던지고 Wait로 조인해 워커를 '유휴(CV 대기)'로 되돌린 뒤 파괴한다.
+// 예전 버그라면 200회 유휴 파괴 중 이 테스트 자체가 join에서 행걸려 러너가 멈춘다.
+MYE_TEST(JobsShutdownIdleNoHang) {
+    constexpr int kCycles = 200;
+    std::atomic<int> total{0};
+    for (int cycle = 0; cycle < kCycles; ++cycle) {
+        JobSystem jobs;
+        // 소량 잡 → Wait로 완료시켜 워커/IO 스레드를 '유휴(CV 대기)'로 되돌린다.
+        JobHandle hc = jobs.Schedule([&] { total.fetch_add(1, std::memory_order_relaxed); });
+        JobHandle hio = jobs.Schedule([&] { total.fetch_add(1, std::memory_order_relaxed); },
+                                      QueueKind::IO);
+        jobs.Wait(hc);
+        jobs.Wait(hio);
+        // 이 시점 모든 워커/IO 스레드는 CV에 잠들어 있다. 스코프 탈출 → 소멸자 join.
+        // (예전 로스트-웨이크업 버그라면 여기서 간헐 행)
+    }
+    MYE_EXPECT(total.load() == kCycles * 2);   // 모든 잡이 정확히 실행됨(유실 없음)
+}
+
+// 셧다운 로스트-웨이크업 회귀(변형): 대량 in-flight 잡을 남긴 채 즉시 파괴를 반복.
+// 유휴 케이스와 상보적 — 큐에 잡이 남은 채(predicate true 쪽) 파괴하는 경로도 무행 보장.
+MYE_TEST(JobsShutdownBusyNoHang) {
+    constexpr int kCycles = 100;
+    for (int cycle = 0; cycle < kCycles; ++cycle) {
+        std::atomic<int> ran{0};
+        JobSystem jobs;
+        for (int i = 0; i < 64; ++i)
+            jobs.Schedule([&] {
+                std::this_thread::yield();
+                ran.fetch_add(1, std::memory_order_relaxed);
+            });
+        // 명시 대기 없이 즉시 파괴 — 미실행 잡이 남을 수 있다. 소멸자가 running=false→join.
+        // 행 없이 반복 완료해야 한다.
+    }
+    MYE_EXPECT(true);   // kCycles회 파괴가 행 없이 끝나면 성공.
+}
+
 // 빈 ParallelFor / 무효 핸들 경계.
 MYE_TEST(JobsEmptyAndInvalid) {
     JobSystem jobs;

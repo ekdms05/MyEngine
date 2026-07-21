@@ -127,9 +127,12 @@ void ExtractRenderItems(ecs::World& world, RenderProxyList& out) {
                 it.worldTransform = wt ? wt->matrix : Mat4::Translation(origin);
                 it.sortLayer = tr.sort.sortLayer;      // 지면 밴드 등(02 밴드 표)
                 it.orderInLayer = tr.sort.orderInLayer;
-                // 청크의 논리 지면 Y = 청크 남단 셀의 월드 Y(02가 램프 깊이로 세분).
+                // 청크 대표 sortKeyY. Y 규약 정본(worldY = -cellY, tilemap::CellToWorldY)을 경유해
+                // 렌더러 wyBase와 부호를 통일한다. 단, 02(HybridRenderer::BuildTileChunkQuads)는
+                // 이 값을 소비하지 않고 셀별 sortKeyBottom/Top을 재계산하므로(램프 깊이) 이 필드는
+                // 프록시 프로파일링·컬링용 대표값이다. 청크 첫 행(coord.y*32) 북단 월드 Y를 쓴다.
                 it.sortKeyY = origin.y +
-                    static_cast<float>(chunk.Coord().y * tilemap::kChunkSize);
+                    tilemap::CellToWorldY(chunk.Coord().y * tilemap::kChunkSize);
                 it.floorLevel = 0;
             });
         });

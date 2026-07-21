@@ -55,14 +55,20 @@ float EncodeDepth(uint16_t sortLayer, float sortKeyY, int16_t orderInLayer,
     const float viewBottomY = view.viewTopY - range;
     const float t = Saturate01((sortKeyY - viewBottomY) / range);
 
-    // orderInLayer: 밴드 내부 극소 타이브레이커(큰 order = 아주 약간 앞으로 당김 → 나중에 그림 우선).
-    // 부호: order 클수록 앞(작은 depth). 밴드 폭을 침범하지 않도록 kOrderEpsilon만 적용.
-    float depth = band.base + t * band.width - static_cast<float>(orderInLayer) * kOrderEpsilon;
+    // orderInLayer: 밴드 내부 타이브레이커(큰 order = 앞으로 당김 → 나중에 그림 우선).
+    // 부호: order 클수록 앞(작은 depth). 바이어스 총량을 band.width×kOrderMaxBandFraction으로
+    // 하드 클램프해, 큰 |order|라도 sortKeyY 순서를 밴드 밖으로 뒤집거나 인접 밴드를 침범하지 못하게 한다.
+    const float orderCap = band.width * kOrderMaxBandFraction;
+    const float orderBias = std::clamp(static_cast<float>(orderInLayer) * kOrderEpsilon,
+                                       -orderCap, orderCap);
+    float depth = band.base + t * band.width - orderBias;
 
-    // 밴드 경계 클램프(인접 밴드 침범 방지).
+    // 밴드 경계 클램프(인접 밴드 침범 방지). 반개구간 규약: 상단 밴드가 경계값을 소유하지 않도록
+    // 상한을 kBandGuard만큼 안쪽으로 당겨, 인접 밴드가 정확히 같은 경계 depth로 수렴해 z-fight
+    // 하는 것을 원천 차단한다(예: World0 하단 0.85 ≡ Ground 상단 0.85 상등 방지).
     const float lo = band.base;
-    const float hi = band.base + band.width;
-    return std::clamp(depth, lo, hi);
+    const float hi = band.base + band.width - kBandGuard;
+    return std::clamp(depth, lo, hi < lo ? lo : hi);
 }
 
 } // namespace mye::render

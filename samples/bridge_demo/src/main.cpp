@@ -362,8 +362,10 @@ private:
         // ---- 경사로(좌측): 지면과 플러시한 완경사 램프(깊이 램프) ----
         // baseHeightLevel=0으로 지면과 같은 평면에 두어 배경 갭이 생기지 않게 하고, SlopeType으로
         // 램프 깊이를 부여한다(HybridRenderer가 셀 상/하단 sortKeyY를 각각 인코딩). 캐릭터의 시각
-        // 높이는 데모가 직접 산출한다(SlopeGroundY) — 타일맵 SampleHeight의 Y-셀 규약과 렌더러의
-        // Y-반전 규약이 다르므로 데모에서 일관 산출.
+        // 높이는 데모가 직접 산출한다(SlopeGroundY): 타일맵 SampleHeight는 이제 렌더러와 동일한
+        // Y 규약(worldY=-cellY, tilemap::CellToWorldY)을 공유하지만, 데모의 램프는 baseLevel=0
+        // 플러시 슬래브 위에 kSlopeMaxRise 시각 상승을 얹는 별도 파라미터(월드 Y 구간 [-2,2])라
+        // SampleHeight의 heightLevel 기반 경사와 산식이 달라 데모가 직접 SlopeGroundY로 산출한다.
         for (int cy = kSlopeCellYTop; cy <= kSlopeCellYBottom; ++cy) {
             SetSlopeCell(kSlopeCellX,     cy, tilemap::SlopeType::GentleN, 0);
             SetSlopeCell(kSlopeCellX + 1, cy, tilemap::SlopeType::GentleN, 0);
@@ -384,7 +386,7 @@ private:
             tr.runtime = m_tilemap.get();
             tr.map.guid = m_guidGround;                     // 타일셋 텍스처(지면)
             tr.sort.sortLayer = render::kSortLayerGround;   // 2
-            tr.sort.orderInLayer = 0;
+            tr.sort.orderInLayer = render::kOrderTileGround; // 같은 밴드 캐릭터보다 뒤로
             m_groundTilemapEntity = e;
         }
         // 다리 상판: World1 밴드(floor1)로 — B(World0) 앞, A(World1)와 동일 밴드.
@@ -409,7 +411,7 @@ private:
             tr.runtime = m_bridgeTilemap.get();
             tr.map.guid = m_guidBridge;                           // 타일셋 텍스처(다리 상판)
             tr.sort.sortLayer = render::FloorLevelToSortLayer(1);  // World1 = 101
-            tr.sort.orderInLayer = 0;
+            tr.sort.orderInLayer = render::kOrderTileGround;       // 같은 World1 캐릭터 A보다 뒤로
             m_bridgeTilemapEntity = e;
         }
 
@@ -418,8 +420,9 @@ private:
             ecs::Entity e = m_world->Create();
             auto& lt = m_world->Add<scene::LocalTransform>(e);
             lt.position = kStatuePos;
-            // 세로로 긴 기둥(석상). Z(화면 깊이 방향)는 얇게 — AnchorBiased ε 바이어스가 큐브
-            // Z-두께에 비례하므로, 두꺼우면 앞/뒤 캐릭터 정렬을 침범한다(얇은 슬래브로 안정화).
+            // 세로로 긴 기둥(석상). AnchorBiased 바이어스는 이제 메시 뷰Z 범위로 정규화되어
+            // Z-두께와 무관(편차 ±biasEps/2 고정)하므로 두께는 정렬에 영향 없다. 시각적 비례로
+            // Z=0.35 슬래브 유지(두껍게 해도 앞/뒤 캐릭터 정렬은 침범하지 않음 — 두께 독립 확인됨).
             lt.scale = {kStatueScale, kStatueScale * 1.8f, 0.35f};
             m_world->Add<scene::WorldTransform>(e);
             auto& mr = m_world->Add<scene::MeshRenderer>(e);
@@ -450,10 +453,12 @@ private:
         auto& sr = m_world->Add<scene::SpriteRenderer>(e);
         sr.sprite.guid = tex;
         sr.pivotPx = {12.0f, 32.0f};             // 발밑(하단 중앙, 24x32 스프라이트)
-        // 캐릭터는 자신이 밟고 선 "같은 밴드 바닥 타일"보다 항상 앞에 그려져야 한다. orderInLayer
-        // 타이브레이커를 적당히 주어(≈0.005 깊이) 밴드 내부에서 타일(order 0)보다 앞으로 당긴다.
-        // 값이 과하면 같은 밴드의 3D 석상(World0)까지 넘겨 앞/뒤 정렬을 깨므로 절제한다.
-        sr.sort.orderInLayer = 500;
+        // 캐릭터는 자신이 밟고 선 "같은 밴드 바닥 타일/다리 상판"보다 항상 앞에 그려져야 한다.
+        // 관례 상수 kOrderCharacter(+300)로 밴드 내부에서 앞으로 당긴다(타일은 kOrderTileGround
+        // -300으로 뒤로 밀림). 상대차 0.006이 지면/상판을 이기되, 같은 밴드 3D 석상(order 0)과는
+        // sortKeyY 정렬이 우선하도록 절제된 값이다(behind_statue 마진 확보). EncodeDepth의
+        // band.width×kOrderMaxBandFraction 클램프가 인접 밴드 불침범을 보증한다.
+        sr.sort.orderInLayer = render::kOrderCharacter;
         m_world->Add<scene::FloorLevel>(e).level = floor;
         return e;
     }
@@ -650,7 +655,7 @@ private:
         const uint16_t sl = render::FloorLevelToSortLayer(fl->level);
         const float sortKeyY = lt->position.y + tilemap::HeightLevelToWorldY(fl->level);
         const render::HybridViewInfo vi = render::HybridRenderer::MakeViewInfo(m_camera);
-        const float depth = render::EncodeDepth(sl, sortKeyY, 100, vi.depth);
+        const float depth = render::EncodeDepth(sl, sortKeyY, render::kOrderCharacter, vi.depth);
         ImGui::Text("%s floor=%d pos=(%.2f,%.2f) sortLayer=%u sortKeyY=%.3f depth=%.4f",
                     label, fl->level, lt->position.x, lt->position.y, sl, sortKeyY, depth);
     }

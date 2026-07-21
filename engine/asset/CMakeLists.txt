@@ -11,6 +11,14 @@ add_library(mye_asset STATIC
     include/mye/asset/MeshImporter.h
     include/mye/asset/AsyncLoad.h
     include/mye/asset/AssetManager.h
+    # ---- M3-A: 핫 리로드·콘텐츠 임포터·오디오 ----
+    include/mye/asset/FileWatcher.h
+    include/mye/asset/AssetDatabase.h
+    include/mye/asset/SpriteSheet.h
+    include/mye/asset/SpriteImporter.h
+    include/mye/asset/AtlasPacker.h
+    include/mye/asset/AudioClip.h
+    include/mye/asset/AudioImporter.h
 
     src/AssetGuid.cpp
     src/FileSystem.cpp
@@ -19,6 +27,12 @@ add_library(mye_asset STATIC
     src/TextureImporter.cpp
     src/MeshImporter.cpp
     src/AssetManager.cpp
+    # ---- M3-A ----
+    src/FileWatcher.cpp
+    src/AssetDatabase.cpp
+    src/SpriteImporter.cpp
+    src/AtlasPacker.cpp
+    src/AudioImporter.cpp
 )
 
 target_include_directories(mye_asset PUBLIC
@@ -26,6 +40,6 @@ target_include_directories(mye_asset PUBLIC
 )
 
 target_link_libraries(mye_asset
-    PUBLIC  mye_core mye_rhi
-    PRIVATE mye_thirdparty_stb mye_thirdparty_cgltf
+    PUBLIC  mye_core mye_rhi mye_reflect
+    PRIVATE mye_thirdparty_stb mye_thirdparty_cgltf mye_thirdparty_stb_vorbis
 )

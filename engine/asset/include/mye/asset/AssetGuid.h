@@ -6,6 +6,7 @@
 #pragma once
 
 #include "mye/core/Base.h"
+#include "mye/refl/TypeId.h"
 
 #include <compare>
 #include <cstdint>
@@ -31,13 +32,15 @@ struct AssetGuid {
     constexpr bool operator==(const AssetGuid&) const = default;
 };
 
-// 에셋 타입 식별자 — 정본은 04의 refl::TypeId(FNV-1a 64bit 이름 해시)이나,
-// M0~M2에는 리플렉션이 없으므로 여기서는 타입 이름 문자열의 FNV-1a 64 해시를 직접 쓴다.
+// 에셋 타입 식별자 — M3-A에서 정본 refl::TypeId(FNV-1a 64bit 이름 해시)로 승격.
+// refl::TypeId 와 mye::HashFnv1a64 는 동일 알고리즘이라 M2의 placeholder 해시 값과
+// 비트 호환이다(기존 kAssetTypeId 값 불변 — .meta·슬롯 타입 매칭이 깨지지 않는다).
 // 각 에셋 타입은 static constexpr AssetTypeId kAssetTypeId 를 심는다(MYE_ASSET_TYPE).
-using AssetTypeId = uint64_t;
+using AssetTypeId = refl::TypeId;
 
+// 타입 이름 문자열로 AssetTypeId 계산. refl::TypeIdFromName 과 동치(정본 경유).
 #define MYE_ASSET_TYPE(TypeName) \
-    static constexpr ::mye::asset::AssetTypeId kAssetTypeId = ::mye::HashFnv1a64(#TypeName)
+    static constexpr ::mye::asset::AssetTypeId kAssetTypeId = ::mye::refl::TypeIdFromName(#TypeName)
 
 // 직렬화되는 에셋 참조 필드(하드/소프트 의존성 선언에 사용). M1+에서 본격 활용.
 struct AssetRef {

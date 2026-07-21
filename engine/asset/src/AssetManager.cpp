@@ -17,6 +17,7 @@
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/Texture.h"
 #include "mye/asset/Mesh.h"
+#include "mye/asset/AudioClip.h"
 
 #include "mye/core/Events.h"
 #include "mye/core/Jobs.h"
@@ -361,6 +362,76 @@ void AssetManager::Update() {
     if (m_impl->jobs) m_impl->jobs->PumpMainThreadTasks();
 }
 
+// ---- 핫 리로드(M3-A): 소스 재임포트 → 슬롯 object in-place 스왑 --------------
+// 메인 스레드 전용(슬롯 테이블 write). 캐시에 없는 vpath 는 스왑 없이 false 반환(로드된 적 없음).
+// 임포트 실패 시 기존 object 를 그대로 두어 게임이 이전 데이터로 계속 동작하게 한다.
+AssetManager::ReimportResult AssetManager::ReimportPath(std::string_view vpath) {
+    ReimportResult result;
+    const std::string key(vpath);
+
+    auto it = m_impl->pathToSlot.find(key);
+    if (it == m_impl->pathToSlot.end()) {
+        // 아직 로드된 적 없는 소스 — 리로드 대상 아님(다음 로드 때 새로 임포트됨).
+        return result;
+    }
+    const uint32_t idx = it->second;
+    AssetSlot& slot = m_impl->slots[idx];
+    result.guid = slot.guid;
+    result.type = slot.type;
+
+    // 이 슬롯을 만든 임포터(동기 경로) 우선. async 로더로 만든 슬롯은 M3-A 스왑 미지원(로그).
+    IAssetImporter* importer = m_impl->slotImporter[idx];
+    if (!importer) {
+        // 확장자로 재조회(Failed 슬롯에서 처음 임포터가 없었던 경우 등).
+        importer = FindImporterForPath(vpath);
+    }
+    if (!importer) {
+        MYE_LOG_WARN("Asset", "ReimportPath: no importer for '{}' — skip swap", key);
+        return result;
+    }
+
+    auto blob = m_impl->vfs->ReadAll(vpath);
+    if (!blob) {
+        MYE_LOG_ERROR("Asset", "ReimportPath: read failed '{}': {}", key, blob.GetError().message);
+        return result;
+    }
+
+    ImportContext ctx;
+    ctx.sourcePath = vpath;
+    ctx.sourceBytes = std::move(blob.Value());
+    ctx.device = m_impl->device;
+    ctx.settings = nullptr;   // .meta settings 주입은 M3-B(임포트 설정 UI).
+
+    auto imported = importer->Import(ctx);
+    if (!imported) {
+        MYE_LOG_ERROR("Asset", "ReimportPath: import failed '{}': {} (keeping old data)", key,
+                      imported.GetError().message);
+        return result;
+    }
+
+    // in-place 스왑: 새 객체 커밋 후 기존 객체 파괴. generation 은 유지(핸들 유효).
+    // 기존 객체는 그것을 만든 경로(async 로더 or 동기 임포터)로 파괴한다(GPU 반납 포함, 릭 방지).
+    void* oldObject = slot.object;
+    IAssetImporter*    oldImporter = m_impl->slotImporter[idx];
+    IAsyncAssetLoader* oldAsyncLoader = m_impl->slotAsyncLoader[idx];
+    slot.object = imported.Value();
+    slot.state = AssetState::Loaded;
+    m_impl->slotImporter[idx] = importer;
+    m_impl->slotAsyncLoader[idx] = nullptr;   // 리로드는 동기 임포터 경로로 소유권 이전.
+
+    if (oldObject) {
+        if (oldAsyncLoader) {
+            oldAsyncLoader->Unload(oldObject, m_impl->device);
+        } else if (oldImporter) {
+            oldImporter->DestroyWithDevice(oldObject, m_impl->device);
+        }
+    }
+
+    result.swapped = true;
+    MYE_LOG_INFO("Asset", "ReimportPath: swapped '{}' (slot {})", key, idx);
+    return result;
+}
+
 template <typename T>
 AssetHandle<T> AssetManager::LoadAsync(std::string_view vpath, LoadPriority pri) {
     const std::string key(vpath);
@@ -478,5 +549,7 @@ template AssetHandle<Texture> AssetManager::LoadSync<Texture>(std::string_view);
 template AssetHandle<Texture> AssetManager::LoadAsync<Texture>(std::string_view, LoadPriority);
 template AssetHandle<Mesh> AssetManager::LoadSync<Mesh>(std::string_view);   // M2-C bridge_demo
 template AssetHandle<Mesh> AssetManager::LoadAsync<Mesh>(std::string_view, LoadPriority);
+template AssetHandle<AudioClip> AssetManager::LoadSync<AudioClip>(std::string_view);  // M3-A 오디오
+template AssetHandle<AudioClip> AssetManager::LoadAsync<AudioClip>(std::string_view, LoadPriority);
 
 } // namespace mye::asset

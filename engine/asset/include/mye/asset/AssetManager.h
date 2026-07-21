@@ -63,6 +63,15 @@ public:
     void RetainSlot(uint32_t index, uint32_t generation);
     void ReleaseSlot(uint32_t index, uint32_t generation);     // refcount 0 → 지연 GC 큐(M1)
 
+    // ---- 핫 리로드(M3-A): AssetDatabase 가 소스 변경 시 호출 ----
+    // 이미 로드된 vpath 를 재임포트하고, 성공 시 슬롯의 object 포인터만 in-place 스왑한다.
+    //   (핸들은 index+gen 참조라 소비자는 자동으로 새 데이터를 본다 — generation 은 유지.)
+    //   기존 객체는 슬롯을 만든 임포터의 DestroyWithDevice 로 파괴한다(GPU 반납 포함).
+    //   반환: 스왑 성공하면 그 슬롯의 {guid,type} 를 out 인자로 채우고 true. 캐시 미스·임포트
+    //   실패면 false(기존 데이터 유지 — 에러 시 엔티티만 멈추고 게임 지속 규약과 정렬).
+    struct ReimportResult { AssetGuid guid; AssetTypeId type = 0; bool swapped = false; };
+    ReimportResult ReimportPath(std::string_view vpath);
+
 private:
     // 확장자 → 임포터 조회. 없으면 nullptr.
     IAssetImporter* FindImporterForPath(std::string_view path) const;

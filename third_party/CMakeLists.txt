@@ -19,6 +19,22 @@ target_include_directories(mye_thirdparty_cgltf INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cgltf>
 )
 
+# ---- stb_vorbis (public domain, v1.22) — OGG Vorbis 디코드(04 AudioImporter) ----
+# 헤더 온리로 쓰기 어렵고(구현이 큼) 여러 TU에서 링크 충돌을 피하려 STATIC 라이브러리로 컴파일.
+# C 파일이라 별도 언어 활성화. 소비자는 target_link_libraries(<lib> PRIVATE mye_thirdparty_stb_vorbis).
+add_library(mye_thirdparty_stb_vorbis STATIC
+    stb_vorbis/stb_vorbis_impl.c
+)
+target_include_directories(mye_thirdparty_stb_vorbis PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/stb_vorbis>
+)
+# 벤더 코드의 경고는 우리 규약(/W4)에서 제외 — 서드파티는 경고 억제.
+if(MSVC)
+    target_compile_options(mye_thirdparty_stb_vorbis PRIVATE /W0)
+else()
+    target_compile_options(mye_thirdparty_stb_vorbis PRIVATE -w)
+endif()
+
 # ---- Dear ImGui (docking, v1.92.x) — 디버그 오버레이 UI ----
 # 헤더 인터페이스 타깃 + 소스 목록 변수(IMGUI_CORE_SOURCES/IMGUI_BACKEND_SOURCES)를 노출한다.
 add_subdirectory(imgui)

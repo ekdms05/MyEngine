@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "myengine": {
+      "command": "node",
+      "args": ["E:/MyEngine/tools/mcp/dist/index.js"],
+      "env": {
+        "MYE_ROOT": "E:/MyEngine",
+        "MYE_BUILD_DIR": "build/dev"
+      }
+    }
+  }
+}

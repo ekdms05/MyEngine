@@ -185,4 +185,69 @@ void TextureImporter::DestroyWithDevice(void* assetObject, rhi::IDevice* device)
     delete static_cast<Texture*>(assetObject);
 }
 
+// ---- 비동기 로더 ------------------------------------------------------------
+namespace {
+// Parse의 산출물(워커→메인 이송): 디코드된 CPU 이미지 + 업로드 설정.
+// ParsedAsset.cpuData가 이 타입을 가리킨다(TextureAsyncLoader만 해석).
+struct ParsedTexture {
+    DecodedImage          image;
+    TextureImportSettings settings;
+};
+} // namespace
+
+Expected<ParsedAsset, Error>
+TextureAsyncLoader::Parse(LoadContext& /*ctx*/, std::span<const std::byte> runtimeData) {
+    // 워커 스레드: 순수 CPU 디코드. GPU/디바이스 접근 금지.
+    // M2-A: 임포트 설정 주입(.meta)은 후속 — 픽셀아트 기본값 사용.
+    TextureImportSettings settings;
+    auto decoded = TextureImporter::DecodePng(runtimeData, settings.premultiplyAlpha);
+    if (!decoded) return decoded.GetError();
+
+    auto* pt = new ParsedTexture{std::move(decoded.Value()), settings};
+    ParsedAsset out;
+    out.cpuData = pt;
+    return out;
+}
+
+Expected<void*, Error>
+TextureAsyncLoader::Finalize(LoadContext& /*ctx*/, ParsedAsset& parsed, rhi::IDevice* device) {
+    // 메인 스레드: GPU 업로드. device가 nullptr이면 헤드리스 — CPU 스텁 Texture로 커밋.
+    auto* pt = static_cast<ParsedTexture*>(parsed.cpuData);
+    if (!pt) return Error{"TextureAsyncLoader::Finalize: null parsed data", 1};
+
+    if (!device) {
+        // 헤드리스(테스트): GPU 핸들 없이 CPU 메타데이터만 담은 Texture를 커밋한다.
+        // 픽셀 정확성은 Parse 단계(DecodedImage)에서 검증되며, Finalize는 파이프라인 배선만.
+        auto* obj = new Texture();
+        obj->width = pt->image.width;
+        obj->height = pt->image.height;
+        obj->format = pt->settings.srgb ? rhi::Format::RGBA8UnormSrgb : rhi::Format::RGBA8Unorm;
+        obj->settings = pt->settings;
+        delete pt;
+        parsed.cpuData = nullptr;
+        return static_cast<void*>(obj);
+    }
+
+    auto uploaded = TextureImporter::Upload(*device, pt->image, pt->settings);
+    delete pt;
+    parsed.cpuData = nullptr;
+    if (!uploaded) return uploaded.GetError();
+
+    auto* obj = new Texture(std::move(uploaded.Value()));
+    return static_cast<void*>(obj);
+}
+
+void TextureAsyncLoader::DiscardParsed(ParsedAsset& parsed) {
+    delete static_cast<ParsedTexture*>(parsed.cpuData);
+    parsed.cpuData = nullptr;
+}
+
+void TextureAsyncLoader::Unload(void* assetObject, rhi::IDevice* device) {
+    if (auto* tex = static_cast<Texture*>(assetObject); tex && device) {
+        if (tex->gpuTexture.IsValid()) device->Destroy(tex->gpuTexture);
+        if (tex->sampler.IsValid()) device->Destroy(tex->sampler);
+    }
+    delete static_cast<Texture*>(assetObject);
+}
+
 } // namespace mye::asset

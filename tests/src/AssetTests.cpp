@@ -9,15 +9,20 @@
 #include "mye/asset/AssetHandle.h"
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/AssetMeta.h"
+#include "mye/asset/AsyncLoad.h"
 #include "mye/asset/FileSystem.h"
 #include "mye/asset/Importer.h"
 #include "mye/asset/Texture.h"
+#include "mye/core/Events.h"
+#include "mye/core/Jobs.h"
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace mye;
@@ -443,6 +448,171 @@ MYE_TEST(AssetManagerReadFailFails) {
     // 파일 없음 → Failed.
     AssetHandle<Texture> h = mgr.LoadSync<Texture>("assets://ghost.png");
     MYE_EXPECT(h.State() == AssetState::Failed);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+// ===========================================================================
+// 비동기 로딩 (04 §비동기 로딩) — Parse(워커)/Finalize(메인) 분리, 헤드리스 디바이스
+// ===========================================================================
+namespace {
+
+// 알려진 4×4 패턴 PNG를 dir에 기록하고 vpath를 돌려준다.
+void WritePatternPng(const std::filesystem::path& dir, const char* name) {
+    auto png = EncodePng(4, 4, MakePattern4x4());
+    std::ofstream f(dir / name, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+}
+
+// jobs 배선된 AssetManager를 프레임 펌프하며 핸들이 Loaded/Failed에 도달할 때까지 진행.
+// maxFrames 초과 시 false(무한 루프 방지).
+bool PumpUntilResolved(AssetManager& mgr, AssetHandle<Texture>& h, int maxFrames = 2000) {
+    for (int i = 0; i < maxFrames; ++i) {
+        if (h.State() == AssetState::Loaded || h.State() == AssetState::Failed) return true;
+        mgr.Update();   // PumpMainThreadTasks → Finalize 커밋
+        // 워커/IO 스레드가 진행하도록 잠깐 양보(헤드리스 테스트의 프레임 흉내).
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return h.State() == AssetState::Loaded || h.State() == AssetState::Failed;
+}
+
+} // namespace
+
+MYE_TEST(AssetManagerLoadAsyncHeadlessBecomesLoaded) {
+    auto dir = MakeTempDir();
+    WritePatternPng(dir, "hero.png");
+
+    VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<LooseFileSystem>(dir.string()), 0);
+
+    JobSystem jobs;
+    EventBus  bus;
+    AssetManager mgr(vfs, /*device=*/nullptr);   // 헤드리스: GPU 없음
+    mgr.RegisterAsyncLoader(std::make_unique<TextureAsyncLoader>());
+    mgr.SetAsyncServices(&jobs, &bus);
+
+    // 완료 이벤트 구독.
+    bool gotEvent = false;
+    bool eventSuccess = false;
+    bus.Subscribe<AssetLoadedEvent>([&](const AssetLoadedEvent& e) {
+        gotEvent = true;
+        eventSuccess = e.success;
+        return false;
+    });
+
+    AssetHandle<Texture> h = mgr.LoadAsync<Texture>("assets://hero.png");
+    MYE_EXPECT(h.IsValid());
+    // 즉시 반환 상태는 Queued(동기 폴백이 아님 — jobs+loader 배선됨).
+    MYE_EXPECT(h.State() == AssetState::Queued || h.State() == AssetState::Loading ||
+               h.State() == AssetState::Loaded);
+
+    MYE_EXPECT(PumpUntilResolved(mgr, h));
+    MYE_EXPECT(h.State() == AssetState::Loaded);
+
+    // 헤드리스 Finalize는 CPU 메타(폭·높이)만 커밋. 픽셀 정확성은 DecodePng 테스트가 커버.
+    Texture* t = h.Get();
+    MYE_EXPECT(t != nullptr);
+    if (t) {
+        MYE_EXPECT(t->width == 4 && t->height == 4);
+    }
+
+    // AssetLoadedEvent는 PostUpdate 채널로 Enqueue됨 — Flush로 전달.
+    bus.Flush(mye::EventChannel::PostUpdate);
+    MYE_EXPECT(gotEvent);
+    MYE_EXPECT(eventSuccess);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+MYE_TEST(AssetManagerLoadAsyncMissingFileFails) {
+    auto dir = MakeTempDir();
+    VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<LooseFileSystem>(dir.string()), 0);
+
+    JobSystem jobs;
+    EventBus  bus;
+    AssetManager mgr(vfs, nullptr);
+    mgr.RegisterAsyncLoader(std::make_unique<TextureAsyncLoader>());
+    mgr.SetAsyncServices(&jobs, &bus);
+
+    bool gotEvent = false, eventSuccess = true;
+    bus.Subscribe<AssetLoadedEvent>([&](const AssetLoadedEvent& e) {
+        gotEvent = true; eventSuccess = e.success; return false;
+    });
+
+    AssetHandle<Texture> h = mgr.LoadAsync<Texture>("assets://ghost.png");
+    MYE_EXPECT(PumpUntilResolved(mgr, h));
+    MYE_EXPECT(h.State() == AssetState::Failed);
+    MYE_EXPECT(h.Get() == nullptr);
+
+    bus.Flush(mye::EventChannel::PostUpdate);
+    MYE_EXPECT(gotEvent);
+    MYE_EXPECT(!eventSuccess);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+MYE_TEST(AssetManagerLoadAsyncCacheShares) {
+    auto dir = MakeTempDir();
+    WritePatternPng(dir, "hero.png");
+
+    VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<LooseFileSystem>(dir.string()), 0);
+
+    JobSystem jobs;
+    EventBus  bus;
+    AssetManager mgr(vfs, nullptr);
+    mgr.RegisterAsyncLoader(std::make_unique<TextureAsyncLoader>());
+    mgr.SetAsyncServices(&jobs, &bus);
+
+    AssetHandle<Texture> a = mgr.LoadAsync<Texture>("assets://hero.png");
+    // 같은 경로 재요청 → 같은 슬롯 공유(로딩 중이라도).
+    AssetHandle<Texture> b = mgr.LoadAsync<Texture>("assets://hero.png");
+    MYE_EXPECT(a.Guid() == b.Guid());
+
+    MYE_EXPECT(PumpUntilResolved(mgr, a));
+    MYE_EXPECT(a.State() == AssetState::Loaded);
+    MYE_EXPECT(b.State() == AssetState::Loaded);   // 공유 슬롯이므로 함께 Loaded.
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+MYE_TEST(AssetManagerLoadAsyncSyncFallbackWithoutServices) {
+    // jobs/loader 미배선 → LoadAsync는 동기 폴백(LoadSync 경유). 임포터 없으면 Failed.
+    auto dir = MakeTempDir();
+    WritePatternPng(dir, "hero.png");
+    VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<LooseFileSystem>(dir.string()), 0);
+    AssetManager mgr(vfs, nullptr);
+    // 동기 임포터도 async 로더도 등록 안 함 → 폴백이 임포터 없음으로 Failed.
+    AssetHandle<Texture> h = mgr.LoadAsync<Texture>("assets://hero.png");
+    // 폴백은 동기이므로 펌프 없이 이미 해소됨.
+    MYE_EXPECT(h.State() == AssetState::Failed);
+
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+MYE_TEST(AssetManagerLoadAsyncBlockingPriority) {
+    auto dir = MakeTempDir();
+    WritePatternPng(dir, "hero.png");
+    VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<LooseFileSystem>(dir.string()), 0);
+
+    JobSystem jobs;
+    EventBus  bus;
+    AssetManager mgr(vfs, nullptr);
+    mgr.RegisterAsyncLoader(std::make_unique<TextureAsyncLoader>());
+    mgr.SetAsyncServices(&jobs, &bus);
+
+    // Blocking: 반환 시점에 이미 Loaded(펌프 불필요).
+    AssetHandle<Texture> h = mgr.LoadAsync<Texture>("assets://hero.png", LoadPriority::Blocking);
+    MYE_EXPECT(h.State() == AssetState::Loaded);
+    MYE_EXPECT(h.Get() != nullptr);
 
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);

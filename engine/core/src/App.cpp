@@ -8,6 +8,7 @@
 #include "mye/core/Assert.h"
 #include "mye/core/Events.h"
 #include "mye/core/Input.h"
+#include "mye/core/Jobs.h"
 #include "mye/core/Log.h"
 #include "mye/core/Memory.h"
 #include "mye/core/Time.h"
@@ -214,6 +215,10 @@ int GuardedMain(const LaunchArgs& args) {
     ConfigSystem   config;
     TimeSystem     time;
     ModuleRegistry modules;
+    // 잡 시스템: 컴퓨트 워커(hardware_concurrency-1) + IO 전용 스레드 1개. 04 비동기 로딩·
+    // 03 병렬 시스템 디스패치가 EngineContext.Jobs()로 소비한다. 메인 스레드 작업(GPU 업로드
+    // 등)은 매 프레임 PumpMainThreadTasks()로 소진(메인 루프 아래 참조).
+    JobSystem      jobs;
     // 프레임 임시 할당자(더블 버퍼 선형). 매 렌더 프레임 시작 시 SwapAndReset으로 리셋한다.
     // 버퍼당 4MiB(더블 버퍼 → 8MiB) — M1 렌더 커맨드·임시 문자열용 여유 용량.
     FrameAllocator frameAllocator(4u * 1024u * 1024u);
@@ -222,6 +227,7 @@ int GuardedMain(const LaunchArgs& args) {
     ctx.RegisterServiceRaw(ConfigSystem::kServiceId, &config);
     ctx.RegisterServiceRaw(TimeSystem::kServiceId, &time);
     ctx.RegisterServiceRaw(ModuleRegistry::kServiceId, &modules);
+    ctx.RegisterServiceRaw(JobSystem::kServiceId, &jobs);
     ctx.RegisterServiceRaw(FrameAllocator::kServiceId, &frameAllocator);
 
     // ---- 설정 로드: Engine → Project 순 병합. 파일 없음은 성공(빈 스코프) ----
@@ -305,6 +311,9 @@ int GuardedMain(const LaunchArgs& args) {
             // PumpMessages가 이번 프레임 입력을 m_current·델타에 누적한다(Update가 그대로 읽음).
             inputState.NewFrame();
             if (window) window->PumpMessages();          // win32 메시지 → 이벤트 버스 + InputState 갱신
+            // 메인 스레드 전용 작업 소진(워커가 RunOnMainThread로 마샬링한 GPU 업로드·
+            // 04 비동기 Finalize 등). 여기가 메인 스레드임을 JobSystem에 확정 기록.
+            jobs.PumpMainThreadTasks();
             bus.Flush(EventChannel::PreUpdate);
             modules.Tick(UpdatePhase::PreUpdate, time.CurrentStep());
 
@@ -338,6 +347,7 @@ int GuardedMain(const LaunchArgs& args) {
     inputBackend.reset();
     ctx.UnregisterServiceRaw(InputState::kServiceId);
     ctx.UnregisterServiceRaw(FrameAllocator::kServiceId);
+    ctx.UnregisterServiceRaw(JobSystem::kServiceId);
 
     if (window) {
         ctx.UnregisterServiceRaw(kMainWindowServiceId);

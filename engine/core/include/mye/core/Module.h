@@ -23,6 +23,7 @@ class ConfigSystem;
 class TimeSystem;
 class IWindow;
 class ModuleRegistry;
+class JobSystem;
 
 enum class UpdatePhase : uint8_t {
     PreUpdate, FixedUpdate, Update, PostUpdate, PreRender, PostRender, Count
@@ -54,6 +55,8 @@ public:
     TimeSystem&     Time()    { return *static_cast<TimeSystem*>(GetServiceRaw(HashFnv1a64("TimeSystem"))); }
     IWindow&        MainWindow() { return *static_cast<IWindow*>(GetServiceRaw(kMainWindowServiceId)); }
     ModuleRegistry& Modules() { return *static_cast<ModuleRegistry*>(GetServiceRaw(HashFnv1a64("ModuleRegistry"))); }
+    // M2-A: 잡 시스템 접근. 04 비동기 로딩·03 병렬 시스템 디스패치가 소비.
+    JobSystem&      Jobs()    { return *static_cast<JobSystem*>(GetServiceRaw(HashFnv1a64("JobSystem"))); }
 
     template <typename T>
     T* GetService() { return static_cast<T*>(GetServiceRaw(T::kServiceId)); }

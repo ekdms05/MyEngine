@@ -7,6 +7,7 @@
 
 #include "mye/asset/AssetGuid.h"
 #include "mye/asset/AssetHandle.h"
+#include "mye/asset/AsyncLoad.h"
 #include "mye/asset/FileSystem.h"
 #include "mye/asset/Importer.h"
 #include "mye/core/Base.h"
@@ -15,8 +16,12 @@
 #include <string_view>
 
 namespace mye::rhi { class IDevice; }
+namespace mye { class JobSystem; class EventBus; }
 
 namespace mye::asset {
+
+using mye::JobSystem;
+using mye::EventBus;
 
 class AssetManager {
 public:
@@ -34,6 +39,25 @@ public:
     // 동기 로드 — 부트스트랩·에디터·단위 테스트용. 실패 시 Failed 상태 핸들.
     template <typename T> AssetHandle<T> LoadSync(std::string_view vpath);
 
+    // ---- 비동기 로딩 (M2-A: 계약 + 스텁) ----------------------------------
+    // 비동기 로더 등록. 나중 등록이 내장을 오버라이드(로그 경고). (docs/04 §비동기)
+    void RegisterAsyncLoader(std::unique_ptr<IAsyncAssetLoader> loader);
+
+    // 잡 시스템·이벤트 버스 배선(비동기 로딩 필수). OnPostInitialize에서 SceneModule/
+    // AssetModule이 EngineContext.Jobs()/Events()로 주입. 미배선 시 LoadAsync는
+    // 동기 폴백(내부적으로 LoadSync 경유)으로 동작한다.
+    void SetAsyncServices(JobSystem* jobs, EventBus* bus);
+
+    // 핸들을 즉시 반환(State=Queued)하고 백그라운드로 로드한다:
+    //   (IO 큐) 블롭 읽기 → (워커) Parse → (메인, RunOnMainThread) Finalize →
+    //   슬롯 커밋(Loaded) → AssetLoadedEvent 발행. 하드 의존성까지 완료돼야 Loaded.
+    template <typename T>
+    AssetHandle<T> LoadAsync(std::string_view vpath, LoadPriority pri = LoadPriority::Normal);
+
+    // 메인 루프에서 매 프레임 호출 — Finalize 큐 처리 + 완료 이벤트 발행 + 지연 GC(M1+).
+    // (내부적으로 JobSystem::PumpMainThreadTasks도 트리거되도록 배선 가능.)
+    void Update();
+
     // ---- AssetHandle<T>가 호출하는 슬롯 refcount·조회(내부 계약) ----
     AssetSlot* GetSlot(uint32_t index, uint32_t generation);   // gen 불일치 시 nullptr
     void RetainSlot(uint32_t index, uint32_t generation);
@@ -44,6 +68,10 @@ private:
     IAssetImporter* FindImporterForPath(std::string_view path) const;
     // 슬롯 확보(신규 또는 재사용). 이미 로드된 vpath면 기존 슬롯 반환.
     uint32_t AcquireSlot(const AssetGuid& guid, AssetTypeId type);
+
+    // 비동기 로딩 내부 헬퍼(메인 스레드 전용). reqRaw는 AsyncRequest* (익명 타입 은닉).
+    void CommitAsync(void* reqRaw, void* objectOrNull, bool success);
+    void RunBlocking(void* reqRaw);
 
     struct Impl;
     std::unique_ptr<Impl> m_impl;

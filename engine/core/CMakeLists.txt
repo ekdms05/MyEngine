@@ -13,6 +13,7 @@ add_library(mye_core STATIC
     include/mye/core/Window.h
     include/mye/core/Input.h
     include/mye/core/Memory.h
+    include/mye/core/Jobs.h
     include/mye/core/platform/Win32Window.h
     include/mye/core/platform/Win32Input.h
     include/mye/core/App.h
@@ -27,6 +28,7 @@ add_library(mye_core STATIC
     src/Module.cpp
     src/Input.cpp
     src/Memory.cpp
+    src/Jobs.cpp
     src/App.cpp
     src/platform/Win32Window.cpp
     src/platform/Win32Input.cpp

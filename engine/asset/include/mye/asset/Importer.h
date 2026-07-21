@@ -6,6 +6,7 @@
 #pragma once
 
 #include "mye/asset/AssetGuid.h"
+#include "mye/asset/AsyncLoad.h"
 #include "mye/asset/FileSystem.h"
 #include "mye/asset/Texture.h"
 #include "mye/core/Base.h"
@@ -73,6 +74,23 @@ public:
     // (rhiTextureNote의 호출 순서를 이 함수가 구현한다.) 구현: src/TextureImporter.cpp
     static Expected<Texture, Error> Upload(rhi::IDevice& device, const DecodedImage& img,
                                            const TextureImportSettings& settings);
+};
+
+// 비동기 Texture 로더(04 §비동기 로딩) — Parse/Finalize 분리.
+//   Parse   : 워커 스레드. PNG 바이트 → DecodedImage(순수 CPU, GPU 접근 금지). ParsedAsset.cpuData
+//             는 new DecodedImage*(설정 포함). 하드 의존성 없음(텍스처는 리프 에셋).
+//   Finalize: 메인 스레드. DecodedImage → rhi Upload → new Texture*(소유권 이전).
+// 동기 경로(LoadSync/TextureImporter::Import)는 Parse/Finalize를 순차 호출로 유지한다.
+class TextureAsyncLoader final : public IAsyncAssetLoader {
+public:
+    AssetTypeId Type() const override { return Texture::kAssetTypeId; }
+
+    Expected<ParsedAsset, Error> Parse(LoadContext& ctx,
+                                       std::span<const std::byte> runtimeData) override;
+    Expected<void*, Error> Finalize(LoadContext& ctx, ParsedAsset& parsed,
+                                    rhi::IDevice* device) override;
+    void DiscardParsed(ParsedAsset& parsed) override;
+    void Unload(void* assetObject, rhi::IDevice* device) override;
 };
 
 } // namespace mye::asset

@@ -7,6 +7,7 @@ add_library(mye_asset STATIC
     include/mye/asset/AssetHandle.h
     include/mye/asset/Texture.h
     include/mye/asset/Importer.h
+    include/mye/asset/AsyncLoad.h
     include/mye/asset/AssetManager.h
 
     src/AssetGuid.cpp

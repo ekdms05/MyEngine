@@ -17,11 +17,16 @@
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/Texture.h"
 
+#include "mye/core/Events.h"
+#include "mye/core/Jobs.h"
 #include "mye/core/Log.h"
 #include "mye/rhi/Rhi.h"
 
+#include <atomic>
 #include <deque>
+#include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -49,6 +54,14 @@ struct AssetManager::Impl {
     VirtualFileSystem* vfs = nullptr;
     rhi::IDevice* device = nullptr;
 
+    // ---- 비동기 로딩 배선 (M2-A: 계약 + 스텁) ----
+    JobSystem* jobs = nullptr;
+    EventBus*  bus = nullptr;
+    // 진행 중 비동기 요청 수 — 소멸자가 0이 될 때까지 배수(dangling this 방지).
+    std::atomic<int32_t> inFlight{0};
+    // 타입 → 비동기 로더. M2-A는 등록만 하고 실제 파이프라인 구동은 후속 구현 에이전트 몫.
+    std::unordered_map<AssetTypeId, std::unique_ptr<IAsyncAssetLoader>> asyncLoaders;
+
     std::vector<std::unique_ptr<IAssetImporter>> importers;
     // 확장자(".png") → importers 인덱스.
     std::unordered_map<std::string, size_t> extToImporter;
@@ -61,6 +74,8 @@ struct AssetManager::Impl {
     std::unordered_map<std::string, uint32_t> pathToSlot;
     // 슬롯 인덱스 → 그 슬롯을 만든 임포터(언로드 시 Destroy 호출용). null이면 파괴 스킵.
     std::vector<IAssetImporter*> slotImporter;
+    // 슬롯 인덱스 → 비동기 로더(async 경로로 만들어진 슬롯의 Unload용). null이면 async 아님.
+    std::vector<IAsyncAssetLoader*> slotAsyncLoader;
 
     IAssetImporter* FindImporterForExt(const std::string& ext) {
         auto it = extToImporter.find(ext);
@@ -81,10 +96,12 @@ struct AssetManager::Impl {
             // generation은 재사용 시 이미 증가되어 있음(Free에서 bump).
             s.state = AssetState::Unloaded;
             s.pinned = false;
+            slotAsyncLoader[idx] = nullptr;
         } else {
             idx = static_cast<uint32_t>(slots.size());
             slots.emplace_back();
             slotImporter.emplace_back(nullptr);
+            slotAsyncLoader.emplace_back(nullptr);
             AssetSlot& s = slots[idx];
             s.guid = guid;
             s.type = type;
@@ -111,6 +128,7 @@ struct AssetManager::Impl {
         s.state = AssetState::Unloaded;
         s.generation.fetch_add(1);   // dangling 핸들 검출
         slotImporter[idx] = nullptr;
+        slotAsyncLoader[idx] = nullptr;
         freeSlots.push_back(idx);
     }
 
@@ -119,7 +137,9 @@ struct AssetManager::Impl {
     // CPU 객체를 해제한다. slotImporter가 null이면(임포터 없이 만들어진 Failed 슬롯 등) 스킵.
     void DestroyAssetObject(uint32_t idx) {
         AssetSlot& s = slots[idx];
-        if (IAssetImporter* imp = slotImporter[idx]) {
+        if (IAsyncAssetLoader* loader = slotAsyncLoader[idx]) {
+            loader->Unload(s.object, device);   // async 경로: 로더가 GPU 반납 책임
+        } else if (IAssetImporter* imp = slotImporter[idx]) {
             imp->DestroyWithDevice(s.object, device);
         }
     }
@@ -132,6 +152,18 @@ AssetManager::AssetManager(VirtualFileSystem& vfs, rhi::IDevice* device)
 }
 
 AssetManager::~AssetManager() {
+    // 진행 중 비동기 요청 배수 — 워커/IO 잡이 this(self)를 참조하므로, 그 잡들이 만들어낸
+    // 메인 스레드 Finalize 클로저까지 모두 실행돼 in-flight 카운트가 0이 될 때까지 대기한다.
+    // (JobSystem은 AssetManager보다 오래 살아야 한다 — 규약. jobs 워커는 아직 살아 있다.)
+    if (m_impl->jobs) {
+        while (m_impl->inFlight.load() > 0) {
+            m_impl->jobs->PumpMainThreadTasks();
+            std::this_thread::yield();
+        }
+        // 마지막으로 남은 메인 태스크(이벤트 등) 한 번 더 소진.
+        m_impl->jobs->PumpMainThreadTasks();
+    }
+
     // 남은 로드 객체 정리(테스트·셧다운에서 릭 방지).
     for (uint32_t i = 0; i < m_impl->slots.size(); ++i) {
         if (m_impl->slots[i].object) {
@@ -248,7 +280,200 @@ AssetHandle<T> AssetManager::LoadSync(std::string_view vpath) {
     return AssetHandle<T>(this, idx, slot.generation.load());
 }
 
-// 명시적 인스턴스화 — M1 소비 타입.
+// ---- 비동기 로딩 (M2-A 구현) --------------------------------------------------
+// 파이프라인: LoadAsync(메인) → 슬롯 즉시 확보(Queued) → IO 잡(VFS 블롭 읽기) →
+//   Compute 잡(loader->Parse, 순수 CPU) → RunOnMainThread(loader->Finalize + 슬롯 커밋 +
+//   AssetLoadedEvent). 슬롯 테이블 조작은 전부 메인 스레드(Finalize 클로저) — 워커/IO는
+//   블롭·로더 Parse(순수)만 만진다. 잡 시스템·EventBus 미배선이면 동기 폴백.
+//
+// 스레드 안전: 요청 문맥(AsyncRequest)은 shared_ptr로 잡 클로저들이 공유한다. 슬롯 커밋 전
+//   핸들이 릴리스돼 슬롯이 재사용될 수 있으므로, Finalize에서 generation을 재검증해 stale
+//   커밋을 막는다(재사용됐으면 만든 객체를 Unload로 폐기).
+
+void AssetManager::RegisterAsyncLoader(std::unique_ptr<IAsyncAssetLoader> loader) {
+    if (!loader) return;
+    const AssetTypeId type = loader->Type();
+    if (m_impl->asyncLoaders.count(type)) {
+        MYE_LOG_WARN("Asset", "RegisterAsyncLoader: overriding loader for type {}", type);
+    }
+    m_impl->asyncLoaders[type] = std::move(loader);
+}
+
+void AssetManager::SetAsyncServices(JobSystem* jobs, EventBus* bus) {
+    m_impl->jobs = jobs;
+    m_impl->bus = bus;
+}
+
+namespace {
+
+// 한 건의 비동기 로드 요청 문맥. 잡 클로저들이 shared_ptr로 공유.
+struct AsyncRequest {
+    std::string         vpath;
+    uint32_t            slot = 0;
+    uint32_t            generation = 0;   // 커밋 시 재검증(슬롯 재사용 검출)
+    AssetGuid           guid;
+    AssetTypeId         type = 0;
+    IAsyncAssetLoader*  loader = nullptr;
+    LoadContext         loadCtx;          // Parse가 하드/소프트 의존성을 기록
+    ParsedAsset         parsed;           // Parse 산출물(워커→메인 이송)
+};
+
+} // namespace
+
+// 슬롯 커밋(메인 스레드 전용) — Finalize 결과 또는 실패를 슬롯에 반영하고 이벤트 발행.
+// generation 불일치(핸들 릴리스로 슬롯 재사용됨)면 만든 객체를 폐기하고 커밋 스킵.
+void AssetManager::CommitAsync(void* reqRaw, void* objectOrNull, bool success) {
+    auto* req = static_cast<AsyncRequest*>(reqRaw);
+    AssetSlot* s = GetSlot(req->slot, req->generation);
+
+    if (!s) {
+        // 슬롯이 이미 재사용됨 — 이번 로드는 버려진다. 만든 객체가 있으면 반납.
+        if (objectOrNull && req->loader) req->loader->Unload(objectOrNull, m_impl->device);
+        MYE_LOG_INFO("Asset", "LoadAsync: '{}' committed to stale slot — discarded", req->vpath);
+        m_impl->inFlight.fetch_sub(1);
+        return;
+    }
+
+    if (success && objectOrNull) {
+        s->object = objectOrNull;
+        s->state = AssetState::Loaded;
+        m_impl->slotAsyncLoader[req->slot] = req->loader;
+        MYE_LOG_INFO("Asset", "LoadAsync: loaded '{}' (slot {})", req->vpath, req->slot);
+    } else {
+        s->state = AssetState::Failed;
+        if (objectOrNull && req->loader) req->loader->Unload(objectOrNull, m_impl->device);
+        MYE_LOG_ERROR("Asset", "LoadAsync: failed '{}'", req->vpath);
+    }
+
+    if (m_impl->bus) {
+        AssetLoadedEvent ev;
+        ev.guid = req->guid;
+        ev.type = req->type;
+        ev.success = (s->state == AssetState::Loaded);
+        m_impl->bus->Enqueue(ev);   // trivially copyable — 스레드 무관하나 여기선 메인.
+    }
+    m_impl->inFlight.fetch_sub(1);
+}
+
+void AssetManager::Update() {
+    // 메인 스레드 작업(Finalize 클로저 등) 소진. 지연 GC 예산화는 M1-B.
+    if (m_impl->jobs) m_impl->jobs->PumpMainThreadTasks();
+}
+
+template <typename T>
+AssetHandle<T> AssetManager::LoadAsync(std::string_view vpath, LoadPriority pri) {
+    const std::string key(vpath);
+
+    // 캐시 히트: 기존 슬롯(로딩 중 포함)의 핸들 공유.
+    if (auto it = m_impl->pathToSlot.find(key); it != m_impl->pathToSlot.end()) {
+        const uint32_t idx = it->second;
+        return AssetHandle<T>(this, idx, m_impl->slots[idx].generation.load());
+    }
+
+    // 배선(잡+버스)과 타입 로더가 모두 있어야 진짜 비동기. 아니면 동기 폴백.
+    auto loaderIt = m_impl->asyncLoaders.find(T::kAssetTypeId);
+    if (!m_impl->jobs || loaderIt == m_impl->asyncLoaders.end()) {
+        AssetHandle<T> handle = LoadSync<T>(vpath);
+        if (m_impl->bus) {
+            AssetLoadedEvent ev;
+            ev.guid = handle.Guid();
+            ev.type = T::kAssetTypeId;
+            ev.success = handle.IsLoaded();
+            m_impl->bus->Enqueue(ev);
+        }
+        return handle;
+    }
+
+    // 슬롯 즉시 확보(State=Queued) → 핸들 즉시 반환.
+    const AssetGuid guid = AssetGuid::Generate();
+    const uint32_t idx = AcquireSlot(guid, T::kAssetTypeId);
+    m_impl->pathToSlot.emplace(key, idx);
+    AssetSlot& slot = m_impl->slots[idx];
+    slot.state = AssetState::Queued;
+
+    auto req = std::make_shared<AsyncRequest>();
+    req->vpath = key;
+    req->slot = idx;
+    req->generation = slot.generation.load();
+    req->guid = guid;
+    req->type = T::kAssetTypeId;
+    req->loader = loaderIt->second.get();
+    req->loadCtx.guid = guid;
+
+    // in-flight 카운트 증가 — CommitAsync가 정확히 한 번 감소시킨다(모든 종료 경로).
+    m_impl->inFlight.fetch_add(1);
+
+    AssetHandle<T> handle(this, idx, req->generation);
+
+    // Blocking 우선순위: 지금 동기적으로 IO→Parse→Finalize 수행(부트스트랩 강제 로드).
+    if (pri == LoadPriority::Blocking) {
+        RunBlocking(req.get());
+        return handle;
+    }
+
+    // --- IO 잡: VFS 블롭 읽기(IO 큐 — 컴퓨트 워커를 굶기지 않음) ---
+    AssetManager* self = this;
+    m_impl->jobs->Schedule([self, req]() {
+        auto blob = self->m_impl->vfs->ReadAll(req->vpath);
+        if (!blob) {
+            self->m_impl->jobs->RunOnMainThread(
+                [self, req]() { self->CommitAsync(req.get(), nullptr, false); });
+            return;
+        }
+        // 블롭을 요청에 이송(Parse가 span으로 소비). shared_ptr로 수명 유지.
+        auto blobOwned = std::make_shared<Blob>(std::move(blob.Value()));
+
+        // --- 컴퓨트 잡: Parse(순수 CPU, GPU 금지) ---
+        self->m_impl->jobs->Schedule([self, req, blobOwned]() {
+            auto parsed = req->loader->Parse(req->loadCtx,
+                                             std::span<const std::byte>(*blobOwned));
+            if (!parsed) {
+                self->m_impl->jobs->RunOnMainThread(
+                    [self, req]() { self->CommitAsync(req.get(), nullptr, false); });
+                return;
+            }
+            req->parsed = parsed.Value();
+
+            // --- 메인 스레드: Finalize(GPU 업로드) + 슬롯 커밋 ---
+            self->m_impl->jobs->RunOnMainThread([self, req]() {
+                // Queued → Loading(메인 스레드에서만 슬롯 write). 슬롯 재사용 시 스킵.
+                if (AssetSlot* s = self->GetSlot(req->slot, req->generation))
+                    s->state = AssetState::Loading;
+                auto obj = req->loader->Finalize(req->loadCtx, req->parsed, self->m_impl->device);
+                if (!obj) {
+                    req->loader->DiscardParsed(req->parsed);
+                    self->CommitAsync(req.get(), nullptr, false);
+                    return;
+                }
+                self->CommitAsync(req.get(), obj.Value(), true);
+            });
+        }, QueueKind::Compute);
+    }, QueueKind::IO);
+
+    return handle;
+}
+
+// Blocking 경로: 현재 스레드(메인)에서 IO→Parse→Finalize를 순차 수행.
+void AssetManager::RunBlocking(void* reqRaw) {
+    auto* req = static_cast<AsyncRequest*>(reqRaw);
+    auto blob = m_impl->vfs->ReadAll(req->vpath);
+    if (!blob) { CommitAsync(req, nullptr, false); return; }
+
+    auto parsed = req->loader->Parse(req->loadCtx, std::span<const std::byte>(blob.Value()));
+    if (!parsed) { CommitAsync(req, nullptr, false); return; }
+    req->parsed = parsed.Value();
+
+    auto obj = req->loader->Finalize(req->loadCtx, req->parsed, m_impl->device);
+    if (!obj) {
+        req->loader->DiscardParsed(req->parsed);
+        CommitAsync(req, nullptr, false);
+        return;
+    }
+    CommitAsync(req, obj.Value(), true);
+}
+
+// 명시적 인스턴스화 — M1/M2 소비 타입.
 template AssetHandle<Texture> AssetManager::LoadSync<Texture>(std::string_view);
+template AssetHandle<Texture> AssetManager::LoadAsync<Texture>(std::string_view, LoadPriority);
 
 } // namespace mye::asset

@@ -11,6 +11,9 @@ add_executable(mye_tests
     src/AssetTests.cpp
     src/JobsTests.cpp
     src/SceneTests.cpp
+    src/TilemapTests.cpp
+    src/PhysTests.cpp
+    src/SceneSmokeTests.cpp
 )
 
 target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene)

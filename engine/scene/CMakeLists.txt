@@ -17,13 +17,18 @@ add_library(mye_scene STATIC
     include/mye/scene/SceneModule.h
     include/mye/scene/Scene.h
 
-    # ---- 렌더러블·정렬(추출 스텁) ----
+    # ---- 렌더러블·정렬 추출(M2-B) ----
     include/mye/scene/Renderable.h
     include/mye/scene/RenderExtract.h
 
-    # ---- 스텁(후속 워크플로우 M2-B/M2-C) ----
+    # ---- 타일맵(M2-B: 높이·경사·다리) ----
     include/mye/tilemap/Tilemap.h
+
+    # ---- 충돌·물리(경량 2D) — M2-B (03) ----
     include/mye/phys/Collision.h
+    include/mye/phys/SpatialHash.h
+    include/mye/phys/PhysicsWorld2D.h
+    include/mye/phys/PhysicsSystem.h
 
     # ---- 구현 ----
     src/ecs/ComponentPool.cpp
@@ -32,6 +37,12 @@ add_library(mye_scene STATIC
     src/scene/Transform.cpp
     src/scene/SystemScheduler.cpp
     src/scene/SceneModule.cpp
+    src/scene/RenderExtract.cpp
+    src/tilemap/Tilemap.cpp
+    src/phys/Collision.cpp
+    src/phys/SpatialHash.cpp
+    src/phys/PhysicsWorld2D.cpp
+    src/phys/PhysicsSystem.cpp
 )
 
 target_include_directories(mye_scene PUBLIC

@@ -21,6 +21,12 @@ add_library(mye_scene STATIC
     include/mye/scene/Renderable.h
     include/mye/scene/RenderExtract.h
 
+    # ---- 스프라이트 애니메이션·8방향·상태머신·이벤트(M3-B / 03) ----
+    include/mye/anim/AnimationTypes.h
+    include/mye/anim/ClipPlayback.h
+    include/mye/anim/SpriteAnimator.h
+    include/mye/anim/AnimationSystem.h
+
     # ---- 타일맵(M2-B: 높이·경사·다리) ----
     include/mye/tilemap/Tilemap.h
 
@@ -38,6 +44,7 @@ add_library(mye_scene STATIC
     src/scene/SystemScheduler.cpp
     src/scene/SceneModule.cpp
     src/scene/RenderExtract.cpp
+    src/anim/AnimationSystem.cpp
     src/tilemap/Tilemap.cpp
     src/phys/Collision.cpp
     src/phys/SpatialHash.cpp

@@ -35,6 +35,26 @@ else()
     target_compile_options(mye_thirdparty_stb_vorbis PRIVATE -w)
 endif()
 
+# ---- miniaudio (단일 헤더, public domain / MIT-0, v0.11.25) — 오디오 백엔드(06 M3-B) ----
+# 디바이스·리샘플러·믹싱 그래프를 제공한다. 헤더는 인터페이스로 노출하고, 구현(MINIAUDIO_
+# IMPLEMENTATION)은 miniaudio_impl.c 단일 TU 에서만 켠다(STATIC 라이브러리). 소비자(mye_audio)는
+# target_link_libraries(mye_audio PRIVATE mye_thirdparty_miniaudio) 로 헤더 경로 + 구현을 링크.
+add_library(mye_thirdparty_miniaudio STATIC
+    miniaudio/miniaudio_impl.c
+)
+target_include_directories(mye_thirdparty_miniaudio PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/miniaudio>
+)
+# 벤더 코드의 경고는 우리 규약(/W4)에서 제외.
+if(MSVC)
+    target_compile_options(mye_thirdparty_miniaudio PRIVATE /W0)
+else()
+    target_compile_options(mye_thirdparty_miniaudio PRIVATE -w)
+    # miniaudio 는 POSIX 에서 pthread·dl·m 을 요구.
+    find_package(Threads REQUIRED)
+    target_link_libraries(mye_thirdparty_miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
+endif()
+
 # ---- Dear ImGui (docking, v1.92.x) — 디버그 오버레이 UI ----
 # 헤더 인터페이스 타깃 + 소스 목록 변수(IMGUI_CORE_SOURCES/IMGUI_BACKEND_SOURCES)를 노출한다.
 add_subdirectory(imgui)

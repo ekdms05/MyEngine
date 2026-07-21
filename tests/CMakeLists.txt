@@ -9,6 +9,7 @@ add_executable(mye_tests
     src/MemoryTests.cpp
     src/InputTests.cpp
     src/AssetTests.cpp
+    src/MeshTests.cpp
     src/JobsTests.cpp
     src/SceneTests.cpp
     src/TilemapTests.cpp

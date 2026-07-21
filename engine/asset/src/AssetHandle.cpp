@@ -5,6 +5,7 @@
 #include "mye/asset/AssetHandle.h"
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/Texture.h"
+#include "mye/asset/Mesh.h"
 
 namespace mye::asset {
 
@@ -87,5 +88,6 @@ template <typename T> void AssetHandle<T>::Unpin() { /* TODO(M1) */ }
 
 // 명시적 인스턴스화 — M0 소비 타입(추가 시 여기 등록).
 template class AssetHandle<Texture>;
+template class AssetHandle<Mesh>;   // M2-C: bridge_demo가 LoadSync<Mesh> 소비
 
 } // namespace mye::asset

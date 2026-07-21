@@ -6,7 +6,9 @@ add_library(mye_asset STATIC
     include/mye/asset/AssetMeta.h
     include/mye/asset/AssetHandle.h
     include/mye/asset/Texture.h
+    include/mye/asset/Mesh.h
     include/mye/asset/Importer.h
+    include/mye/asset/MeshImporter.h
     include/mye/asset/AsyncLoad.h
     include/mye/asset/AssetManager.h
 
@@ -15,6 +17,7 @@ add_library(mye_asset STATIC
     src/AssetMeta.cpp
     src/AssetHandle.cpp
     src/TextureImporter.cpp
+    src/MeshImporter.cpp
     src/AssetManager.cpp
 )
 
@@ -24,5 +27,5 @@ target_include_directories(mye_asset PUBLIC
 
 target_link_libraries(mye_asset
     PUBLIC  mye_core mye_rhi
-    PRIVATE mye_thirdparty_stb
+    PRIVATE mye_thirdparty_stb mye_thirdparty_cgltf
 )

@@ -121,6 +121,9 @@ void ExtractRenderItems(ecs::World& world, RenderProxyList& out) {
                 it.tilemap = tr.runtime;
                 it.tileLayer = layer.Index();
                 it.chunkCoord = chunk.Coord();
+                // 타일셋 아틀라스 텍스처 GUID(02가 청크 쿼드를 이 텍스처로 그린다).
+                // M2-B: TilemapRenderer.map을 타일셋 텍스처 참조로 사용(단일 아틀라스).
+                it.texture = tr.map.guid;
                 it.worldTransform = wt ? wt->matrix : Mat4::Translation(origin);
                 it.sortLayer = tr.sort.sortLayer;      // 지면 밴드 등(02 밴드 표)
                 it.orderInLayer = tr.sort.orderInLayer;

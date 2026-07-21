@@ -16,6 +16,7 @@
 // 멀티스레드 로딩(M1-B/M3)에서는 이 연산들을 뮤텍스로 보호하거나 명령 큐로 직렬화할 것.
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/Texture.h"
+#include "mye/asset/Mesh.h"
 
 #include "mye/core/Events.h"
 #include "mye/core/Jobs.h"
@@ -475,5 +476,7 @@ void AssetManager::RunBlocking(void* reqRaw) {
 // 명시적 인스턴스화 — M1/M2 소비 타입.
 template AssetHandle<Texture> AssetManager::LoadSync<Texture>(std::string_view);
 template AssetHandle<Texture> AssetManager::LoadAsync<Texture>(std::string_view, LoadPriority);
+template AssetHandle<Mesh> AssetManager::LoadSync<Mesh>(std::string_view);   // M2-C bridge_demo
+template AssetHandle<Mesh> AssetManager::LoadAsync<Mesh>(std::string_view, LoadPriority);
 
 } // namespace mye::asset

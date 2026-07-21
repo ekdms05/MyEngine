@@ -12,6 +12,13 @@ target_include_directories(mye_thirdparty_stb INTERFACE
 # 픽셀아트 임포트는 sRGB→linear 자동 변환을 원치 않는다(포인트 샘플·수동 감마).
 # stb는 기본 8bit 경로만 쓰므로 특별한 컴파일 정의는 불필요.
 
+# ---- cgltf (단일 헤더, MIT, v1.15) — glTF 2.0 정적 메시 파서(04) ----
+# CGLTF_IMPLEMENTATION 정의는 소비자가 정확히 한 .cpp(MeshImporter.cpp)에서만 켠다.
+add_library(mye_thirdparty_cgltf INTERFACE)
+target_include_directories(mye_thirdparty_cgltf INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/cgltf>
+)
+
 # ---- Dear ImGui (docking, v1.92.x) — 디버그 오버레이 UI ----
 # 헤더 인터페이스 타깃 + 소스 목록 변수(IMGUI_CORE_SOURCES/IMGUI_BACKEND_SOURCES)를 노출한다.
 add_subdirectory(imgui)

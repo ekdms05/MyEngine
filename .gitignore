@@ -1,0 +1,24 @@
+# Build outputs
+build/
+out/
+bin/
+*.obj
+*.pdb
+*.ilk
+
+# IDE
+.vs/
+*.user
+*.suo
+.idea/
+.cache/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Editor state (per docs/07 — VCS ignore)
+.myeditor/
+
+# Misc
+*.log
+Thumbs.db

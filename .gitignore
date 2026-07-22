@@ -22,3 +22,6 @@ bin/
 # Misc
 *.log
 Thumbs.db
+
+# Test/verification dump artifacts (BMP frame captures)
+*.bmp

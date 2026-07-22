@@ -60,6 +60,14 @@ add_library(mye_editor STATIC
     src/AssetBrowserPanel.cpp
     src/ConsolePanel.cpp
     src/ViewportPanel.cpp
+
+    # ---- M5-B 콘텐츠 제작 도구: 타일맵 에디터 + 애니메이션 에디터 (docs/07) ----
+    include/mye/editor/TileEditing.h
+    include/mye/editor/AnimEditing.h
+    src/TilePaintCommand.cpp
+    src/TilemapEditorPanel.cpp
+    src/AnimClipEditCommand.cpp
+    src/AnimationEditorPanel.cpp
 )
 
 target_include_directories(mye_editor PUBLIC

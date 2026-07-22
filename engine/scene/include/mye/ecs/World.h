@@ -36,6 +36,17 @@ public:
     void   Destroy(Entity e);                  // 즉시(비순회). 순회 중엔 CommandBuffer 경유.
     bool   Valid(Entity e) const;              // == docs의 alive()
 
+    // 지정 핸들(index, generation)로 엔티티를 재생성한다 — 에디터 Undo가 파괴된 엔티티를
+    // 원래 핸들 그대로 복원하기 위한 경로(SceneSerializer/구조 커맨드가 소비, M4 리뷰 요청).
+    // 계약:
+    //   - 성공하면 정확히 {index, generation}인 Entity를 반환한다(핸들 보존).
+    //   - 대상 index가 살아있으면(이미 유효한 엔티티 점유) 실패 → Entity::Null() 반환.
+    //   - generation == 0(null 세대)이면 실패 → Entity::Null().
+    //   - 세대 테이블이 index보다 짧으면 그 사이 슬롯을 죽은(0) 세대로 채워 확장하고,
+    //     확장으로 생긴 빈 슬롯들은 freelist에 등록해 이후 Create가 재사용하게 한다.
+    //   - 대상 index가 현재 freelist에 있으면 제거한 뒤 그 index로 되살린다.
+    Entity CreateWithId(uint32_t index, uint32_t generation);
+
     // ---- 컴포넌트 타입 등록 (네이티브·플러그인·Lua 공용) ----
     // 네이티브 타입은 최초 Add에서 자동 등록되지만, 명시 등록도 가능(직렬화 순서 고정 등).
     ComponentTypeId RegisterComponent(const ComponentTypeDesc& desc);

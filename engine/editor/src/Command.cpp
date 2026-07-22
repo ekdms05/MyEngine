@@ -189,8 +189,10 @@ void DestroyEntityCommand::Undo(EditorContext& ctx) {
     if (!parsed) return;
     SceneSerializer ser;
     const ecs::Entity oldRoot = m_target;
-    auto roots = ser.ReadInto(*world, parsed.Value());
-    // 복원된 루트 핸들은 새 index/generation — m_target을 갱신해 재-Redo가 올바른 대상을 잡게 한다.
+    // preserveHandles=true: 파괴된 슬롯을 원래 핸들(index/generation)로 되살린다(World::CreateWithId).
+    //   → 파괴 전 EntityRef/선택이 그대로 유효(M4 리뷰 후속 실 해결). 루트/자손 모두 옛 핸들 유지.
+    auto roots = ser.ReadInto(*world, parsed.Value(), /*preserveHandles=*/true);
+    // 복원된 루트 핸들 — preserveHandles가 성공하면 oldRoot와 동일, 실패 폴백 시에만 새 핸들.
     if (roots && !roots.Value().empty()) {
         const ecs::Entity newRoot = roots.Value().front();
         m_target = newRoot;

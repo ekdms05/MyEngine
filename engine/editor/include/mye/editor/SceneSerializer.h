@@ -38,8 +38,14 @@ public:
 
     // ---- JSON → World ----
     // json을 world에 인스턴스화(기존 내용에 추가 로드). 생성된 루트 엔티티들을 반환.
+    //
+    // preserveHandles=true 이면 각 엔티티의 "__handle":[index,generation] 필드를 소비해
+    //   World::CreateWithId 로 원래 핸들 그대로 복원한다(DestroyEntityCommand undo 전용 —
+    //   파괴→Undo 후 옛 EntityRef/선택이 그대로 유효해야 하는 M4 리뷰 후속). 핸들이 없거나
+    //   재생성 실패(슬롯이 이미 살아있음 등) 시 해당 엔티티는 Create() 로 폴백한다.
+    //   씬 파일 로드(WriteWorld 결과)는 항상 preserveHandles=false(핸들 충돌 방지).
     Expected<std::vector<ecs::Entity>, Error>
-    ReadInto(ecs::World& world, const json::Value& in) const;
+    ReadInto(ecs::World& world, const json::Value& in, bool preserveHandles = false) const;
 
     // ---- 파일 I/O (저장/로드) ----
     // JSON 텍스트를 <path>에 저장(UTF-8). 04 파일시스템/VFS 규약 준수.

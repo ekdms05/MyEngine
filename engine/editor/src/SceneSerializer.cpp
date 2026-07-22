@@ -211,6 +211,15 @@ json::Value WriteEntity(const ecs::World& world, ecs::Entity e, LocalIdMap& ids,
     json::Value::Object obj;
     obj["id"] = json::Value(static_cast<std::int64_t>(ids.IdFor(e)));
 
+    // 실제 런타임 핸들(index/generation)을 부가 기록. 씬 파일 로드는 무시하지만,
+    //   DestroyEntityCommand undo(preserveHandles=true)가 원래 핸들 복원에 소비한다.
+    {
+        json::Value::Array handle;
+        handle.push_back(json::Value(static_cast<std::int64_t>(e.index)));
+        handle.push_back(json::Value(static_cast<std::int64_t>(e.generation)));
+        obj["__handle"] = json::Value(std::move(handle));
+    }
+
     if (const auto* parent = static_cast<const scene::Parent*>(
             world.TryGetDynamic(e, scene::Parent::kComponentTypeId))) {
         if (!parent->parent.IsNull())
@@ -299,7 +308,7 @@ SceneSerializer::WriteSubtree(const ecs::World& world, ecs::Entity root) const {
 
 // ---- JSON → World ----
 Expected<std::vector<ecs::Entity>, Error>
-SceneSerializer::ReadInto(ecs::World& world, const json::Value& in) const {
+SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserveHandles) const {
     if (!in.IsObject())
         return Error{"ReadInto: root is not an object", 1};
     const json::Value* entsV = in.Find("entities");
@@ -316,7 +325,19 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in) const {
         const json::Value* idv = ev.Find("id");
         const std::uint32_t localId = idv ? static_cast<std::uint32_t>(idv->AsInt()) : 0;
         if (localId == 0) continue;   // 유효 로컬 ID는 1부터
-        ecs::Entity e = world.Create();
+
+        // preserveHandles: "__handle":[index,generation] 로 원래 핸들 복원(CreateWithId).
+        //   실패(핸들 없음/슬롯이 살아있음/세대 0) 시 Create() 폴백 → 항상 유효 엔티티 확보.
+        ecs::Entity e = ecs::Entity::Null();
+        if (preserveHandles) {
+            const json::Value* hv = ev.Find("__handle");
+            if (hv && hv->IsArray() && hv->AsArray().size() == 2) {
+                const auto idx = static_cast<std::uint32_t>(hv->AsArray()[0].AsInt());
+                const auto gen = static_cast<std::uint32_t>(hv->AsArray()[1].AsInt());
+                e = world.CreateWithId(idx, gen);
+            }
+        }
+        if (e.IsNull()) e = world.Create();
         localToEntity.emplace(localId, e);
 
         PendingEntity pe;

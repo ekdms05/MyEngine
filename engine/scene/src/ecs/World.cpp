@@ -1,6 +1,7 @@
 // mye/ecs/World.cpp — ECS 저장소 구현 (docs/03 §1)
 #include "mye/ecs/World.h"
 
+#include <algorithm>
 #include <vector>
 
 namespace mye::ecs {
@@ -32,6 +33,34 @@ Entity World::Create() {
     const uint32_t idx = m_impl->AllocIndex();
     if (m_impl->generations[idx] == 0) m_impl->generations[idx] = 1;
     return Entity{idx, m_impl->generations[idx]};
+}
+
+Entity World::CreateWithId(uint32_t index, uint32_t generation) {
+    if (generation == 0) return Entity::Null();   // null 세대는 살아있는 핸들일 수 없다
+
+    auto& gens = m_impl->generations;
+    auto& freeList = m_impl->freeIndices;
+
+    // 슬롯 생사 규약: 이 World는 파괴 시에도 generation을 0으로 두지 않고 증가시키며(항상 유효
+    // 세대 유지), 대신 freelist 멤버십으로 "빈 슬롯"을 추적한다. 따라서 살아있음의 판정은
+    // "범위 안 && freelist에 없음"이다(gens[index] != 0 은 살아있음의 근거가 아니다).
+    if (index < gens.size()) {
+        auto freeIt = std::find(freeList.begin(), freeList.end(), index);
+        const bool inFreeList = (freeIt != freeList.end());
+        if (!inFreeList) return Entity::Null();   // 살아있는 슬롯 → 중복 재생성 금지
+        // 빈 슬롯 → freelist에서 제거하고 지정 세대로 되살린다(컴포넌트는 파괴 시 이미 제거됨).
+        freeList.erase(freeIt);
+        gens[index] = generation;
+        return Entity{index, generation};
+    }
+
+    // 세대 테이블 밖 index → 사이 슬롯을 죽은(0) 세대로 채워 확장하고 freelist에 등록.
+    // (확장으로 생긴 슬롯은 아직 한 번도 산 적 없으므로 freelist 멤버 = 빈 슬롯 규약과 정합.)
+    const uint32_t oldSize = static_cast<uint32_t>(gens.size());
+    gens.resize(static_cast<size_t>(index) + 1, 0);
+    for (uint32_t i = oldSize; i < index; ++i) freeList.push_back(i);
+    gens[index] = generation;
+    return Entity{index, generation};
 }
 
 void World::Destroy(Entity e) {

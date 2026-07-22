@@ -30,6 +30,9 @@ add_library(mye_scene STATIC
     # ---- 타일맵(M2-B: 높이·경사·다리) ----
     include/mye/tilemap/Tilemap.h
 
+    # ---- 길찾기(M5-B: 그리드 A*·높이·다리 인지·비동기) ----
+    include/mye/nav/Pathfinding.h
+
     # ---- 충돌·물리(경량 2D) — M2-B (03) ----
     include/mye/phys/Collision.h
     include/mye/phys/SpatialHash.h
@@ -46,6 +49,7 @@ add_library(mye_scene STATIC
     src/scene/RenderExtract.cpp
     src/anim/AnimationSystem.cpp
     src/tilemap/Tilemap.cpp
+    src/nav/Pathfinding.cpp
     src/phys/Collision.cpp
     src/phys/SpatialHash.cpp
     src/phys/PhysicsWorld2D.cpp

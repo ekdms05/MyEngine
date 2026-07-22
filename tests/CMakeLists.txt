@@ -14,6 +14,7 @@ add_executable(mye_tests
     src/JobsTests.cpp
     src/SceneTests.cpp
     src/TilemapTests.cpp
+    src/NavTests.cpp                  # M5-B: 길찾기(그리드 A*·다리·비동기) + CreateWithId
     src/PhysTests.cpp
     src/SceneSmokeTests.cpp
     src/ReflectTests.cpp
@@ -29,6 +30,7 @@ add_executable(mye_tests
     src/UiLayoutTests.cpp             # M5-A: 앵커·레이아웃·히트테스트·이벤트·직렬화·9slice·BMP 덤프
     src/TextTests.cpp                 # M5-A: 한글 텍스트 렌더링(FreeType 래스터·아틀라스·리치·레이아웃)
     src/UiIntegrationTests.cpp        # M5-A: 통합 스모크 — 한글 래스터+대화창+버튼콜백+줄바꿈 BMP 덤프
+    src/TileAnimEditorTests.cpp       # M5-B: 타일맵 스트로크 Undo·오토타일·높이/경사·애니 클립/이벤트·8방향
 )
 
 target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_reflect mye_audio mye_script mye_editor mye_ui)

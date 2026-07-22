@@ -312,3 +312,39 @@ MYE_TEST(WorkflowUndoAllEditKinds) {
     MYE_EXPECT(sprites == 0);
     MYE_EXPECT(!h.commands.CanUndo());   // 스택 소진.
 }
+
+// -----------------------------------------------------------------------------
+// (d) M4 리뷰 후속 실 해결 — DestroyEntityCommand.Undo 가 원래 핸들(index/generation)로
+//     복원돼, 파괴 전에 잡아둔 EntityRef 가 Undo 후에도 그대로 유효(dangling 아님).
+//     World::CreateWithId(nav 에이전트) 를 SceneSerializer preserveHandles 경로로 소비.
+// -----------------------------------------------------------------------------
+MYE_TEST(WorkflowDestroyUndoPreservesHandle) {
+    WFHarness h;
+    RegisterPool<ewtest::Xform>(h.world);
+
+    ecs::Entity victim = h.world.Create();
+    h.world.Add<ewtest::Xform>(victim).x = 77.0f;
+
+    // 파괴 전에 외부에서 핸들을 보관(선택·다른 시스템이 참조하는 상황을 모사).
+    const ecs::Entity heldRef = victim;
+    const std::uint32_t vIdx = victim.index;
+    const std::uint32_t vGen = victim.generation;
+
+    // 삭제 → 보관 핸들 무효화.
+    h.commands.Push(std::make_unique<DestroyEntityCommand>(victim));
+    MYE_EXPECT(!h.world.Valid(victim));
+    MYE_EXPECT(!h.world.Valid(heldRef));
+
+    // Undo → 원래 핸들로 복원.
+    h.commands.Undo();
+
+    // 핸들 동일성: 옛 index/generation 이 그대로 되살아나 heldRef 가 다시 유효.
+    MYE_EXPECT(h.world.Valid(heldRef));
+    MYE_EXPECT(heldRef.index == vIdx);
+    MYE_EXPECT(heldRef.generation == vGen);
+
+    // 타 컴포넌트 참조 살아있음: 보관 핸들로 컴포넌트 값 그대로 조회 가능.
+    const ewtest::Xform* xf = h.world.TryGet<ewtest::Xform>(heldRef);
+    MYE_EXPECT(xf != nullptr);
+    MYE_EXPECT(xf->x == 77.0f);
+}

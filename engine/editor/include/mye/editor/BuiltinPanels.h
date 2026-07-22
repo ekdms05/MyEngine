@@ -25,6 +25,11 @@ std::unique_ptr<IEditorPanelFactory> MakeInspectorPanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeAssetBrowserPanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeConsolePanelFactory();
 
+// ---- M5-B 콘텐츠 제작 도구 패널(타일맵·팔레트·애니메이션 에디터) ----
+std::unique_ptr<IEditorPanelFactory> MakeTilemapEditorPanelFactory();
+std::unique_ptr<IEditorPanelFactory> MakeTilePalettePanelFactory();
+std::unique_ptr<IEditorPanelFactory> MakeAnimationEditorPanelFactory();
+
 // 콘솔 로그 싱크를 프로세스 전역 Log 에 1회 장착(EditorApp 초기화가 호출).
 void InstallConsoleLogSink();
 

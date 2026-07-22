@@ -10,6 +10,8 @@
 
 #include "mye/core/Module.h"
 
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -35,9 +37,20 @@ public:
 
     EditorApp* App();
 
+    // 자동 검증 CLI 배선(main.cpp 가 부팅 인자를 파싱해 호출). onExit=프레임 한도 도달 시 종료 콜백.
+    void SetCliControl(bool frameLimit, std::uint64_t maxFrames, bool dumpEnabled,
+                       std::string dumpPath, std::function<void()> onExit);
+    // Paused 상태에서 F10 스텝 요청(다음 프레임에 Play World 1회 tick). EditorApp/단축키가 호출.
+    void RequestStepFrame();
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+
+    void Frame(const TimeStep& step);          // PreRender 오케스트레이션
+    void TickPlayWorld(const TimeStep& step);  // 플레이 tick 게이팅
+    void HandleDump();
+    void RequestExit();
 };
 
 } // namespace mye::editor

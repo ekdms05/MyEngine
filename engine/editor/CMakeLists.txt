@@ -50,8 +50,16 @@ add_library(mye_editor STATIC
     src/EditorApp.cpp
     src/EditorModule.cpp
 
-    # ---- 내장 패널 (docs/07 하이어라키) ----
+    # ---- 씬 뷰포트·기즈모 (docs/07 씬 뷰포트, M4-B) ----
+    include/mye/editor/Viewport.h
+
+    # ---- 내장 패널 (docs/07 하이어라키·인스펙터·에셋·콘솔·뷰포트) ----
+    include/mye/editor/BuiltinPanels.h
     src/HierarchyPanel.cpp
+    src/InspectorPanel.cpp
+    src/AssetBrowserPanel.cpp
+    src/ConsolePanel.cpp
+    src/ViewportPanel.cpp
 )
 
 target_include_directories(mye_editor PUBLIC

@@ -20,6 +20,8 @@
 #include <memory>
 #include <string>
 
+namespace mye::editor { class IEditorViewport; }
+
 namespace mye::editor {
 
 class EditorApp {
@@ -47,6 +49,11 @@ public:
     InspectorRenderer&       Inspector() { return *m_inspector; }
     EventBus*                Events() { return m_events; }
 
+    // 씬 뷰포트 렌더러(EditorModule이 디바이스 초기화 후 배선). ViewportPanel이 소비.
+    //   null이면 뷰포트 패널은 "렌더 미가용" 안내만 그린다(헤드리스/부팅 실패).
+    void             SetViewport(IEditorViewport* vp) { m_viewport = vp; }
+    IEditorViewport* Viewport() { return m_viewport; }
+
     // 현재 프레임 컨텍스트(패널·커맨드에 전달). 프레임 시작 시 재구성.
     EditorContext& Context() { return m_ctx; }
 
@@ -68,8 +75,12 @@ private:
     void SaveActive();
     void TogglePlay();
 
-    EngineContext* m_engine = nullptr;
-    EventBus*      m_events = nullptr;
+    // 미저장 새 씬의 기본 저장 경로(<projectRoot>/assets/scenes/untitled.scene). 미오픈 시 빈.
+    std::string DefaultScenePath() const;
+
+    EngineContext*   m_engine = nullptr;
+    EventBus*        m_events = nullptr;
+    IEditorViewport* m_viewport = nullptr;   // EditorModule 소유(비소유 포인터)
     std::string    m_layoutIniPath;   // ImGui IniFilename로 지정하는 프로젝트별 경로(수명 유지)
 
     std::unique_ptr<ProjectContext>          m_project;

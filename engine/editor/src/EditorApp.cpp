@@ -8,7 +8,12 @@
 // 내장 패널도 1급 플러그인 — PanelManager::RegisterFactory 동일 경로로 등록(07 §확장).
 #include "mye/editor/EditorApp.h"
 #include "mye/editor/CommandStack.h"
+#include "mye/editor/BuiltinPanels.h"
+#include "mye/editor/SceneSerializer.h"
+#include "mye/editor/Project.h"
 #include "mye/core/Module.h"
+#include "mye/core/Log.h"
+#include "mye/ecs/World.h"
 
 #include "imgui.h"
 
@@ -19,8 +24,8 @@
 
 namespace mye::editor {
 
-// HierarchyPanel.cpp 정의.
-std::unique_ptr<IEditorPanelFactory> MakeHierarchyPanelFactory();
+// ViewportPanel.cpp 정의(다른 에이전트 소유). 나머지 내장 패널 팩토리는 BuiltinPanels.h.
+std::unique_ptr<IEditorPanelFactory> MakeViewportPanelFactory();
 
 EditorApp::EditorApp() = default;
 EditorApp::~EditorApp() = default;
@@ -62,9 +67,22 @@ Expected<void, Error> EditorApp::Initialize(EngineContext& engine, std::string_v
 
 void EditorApp::RegisterBuiltinPanels() {
     // 내장 = 1급 플러그인: 확장 레지스트리 경로가 아니라 PanelManager에 직접 등록(동일 API).
+    //   등록 순서 = Window 메뉴 순서(하이어라키·뷰포트·인스펙터·에셋·콘솔).
     m_panels->RegisterFactory(MakeHierarchyPanelFactory());
-    // 기본 레이아웃: 하이어라키를 연다(인스펙터·뷰포트·콘솔 등은 M4-B 다른 에이전트 패널).
+    m_panels->RegisterFactory(MakeViewportPanelFactory());
+    m_panels->RegisterFactory(MakeInspectorPanelFactory());
+    m_panels->RegisterFactory(MakeAssetBrowserPanelFactory());
+    m_panels->RegisterFactory(MakeConsolePanelFactory());
+
+    // 콘솔 로그 싱크를 전역 Log 에 장착(패널 인스턴스와 독립적으로 로그 수집).
+    InstallConsoleLogSink();
+
+    // 기본 레이아웃: 전 패널을 연다(도킹 프리셋은 PanelManager 가 DockSlot 힌트로 배치).
     m_panels->Open("mye.hierarchy");
+    m_panels->Open("mye.viewport");
+    m_panels->Open("mye.inspector");
+    m_panels->Open("mye.assets");
+    m_panels->Open("mye.console");
 }
 
 void EditorApp::RestoreLayout() {
@@ -300,10 +318,54 @@ void EditorApp::NewScene() {
 void EditorApp::SaveActive() {
     Document* active = m_project ? m_project->Active() : nullptr;
     if (!active) return;
-    // 실제 씬 파일 기록은 SceneSerializer(다른 에이전트) 경유 — 배선은 M4-B 저장 커맨드에서.
-    //   여기서는 저장 지점만 표시해 dirty 플래그를 해제한다(탭 '*' 제거).
-    active->Commands().MarkSaved();
+
+    // 07 §3: 저장 대상은 편집 World. 플레이 중에는 Play World가 표시되므로 저장을 막는다
+    //   (편집 상태를 덮어쓰지 않도록 — Stop 후 저장).
+    if (m_playMode && m_playMode->IsPlaying()) {
+        MYE_LOG_WARN("Editor", "플레이 중에는 저장할 수 없습니다. ■ 정지 후 저장하세요.");
+        return;
+    }
+
+    ecs::World* world = m_ctx.activeWorld();
+    if (!world) {
+        MYE_LOG_WARN("Editor", "저장 실패: 활성 씬 World 없음");
+        return;
+    }
+
+    // 저장 경로: 문서 경로가 있으면 그대로, 없으면 프로젝트 기본 경로(대화상자 대신).
+    std::string path(active->Path());
+    if (path.empty()) {
+        path = DefaultScenePath();
+        if (path.empty()) {
+            MYE_LOG_WARN("Editor", "저장 실패: 저장 경로를 결정할 수 없음(프로젝트 미오픈)");
+            return;
+        }
+        active->SetPath(path);
+    }
+
+    // 상위 디렉터리 보장.
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+
+    SceneSerializer ser;
+    auto r = ser.SaveToFile(*world, path);
+    if (!r) {
+        MYE_LOG_ERROR("Editor", "씬 저장 실패({}): {}", path, r.GetError().message);
+        return;
+    }
+
+    active->Commands().MarkSaved();   // dirty 클리어(탭 '*' 제거).
     SaveLayout();
+    MYE_LOG_INFO("Editor", "씬 저장 완료: {}", path);
+}
+
+// 미저장 새 씬의 기본 저장 경로(<projectRoot>/assets/scenes/untitled.scene).
+std::string EditorApp::DefaultScenePath() const {
+    if (!m_project || !m_project->IsOpen()) return {};
+    std::string root(m_project->RootDir());
+    if (root.empty()) return {};
+    std::filesystem::path p = std::filesystem::path(root) / "assets" / "scenes" / "untitled.scene";
+    return p.string();
 }
 
 void EditorApp::TogglePlay() {

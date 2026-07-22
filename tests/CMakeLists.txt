@@ -31,9 +31,12 @@ add_executable(mye_tests
     src/TextTests.cpp                 # M5-A: 한글 텍스트 렌더링(FreeType 래스터·아틀라스·리치·레이아웃)
     src/UiIntegrationTests.cpp        # M5-A: 통합 스모크 — 한글 래스터+대화창+버튼콜백+줄바꿈 BMP 덤프
     src/TileAnimEditorTests.cpp       # M5-B: 타일맵 스트로크 Undo·오토타일·높이/경사·애니 클립/이벤트·8방향
+    src/RuntimeSaveLocaleTests.cpp    # M6-A: 세이브 왕복·settings·로컬라이제이션·씬 전환(헤드리스)
+    src/DialogueCutsceneTests.cpp     # M6-A: 대화 데이터/상태기계·say/choose·move_to 코루틴·로컬라이제이션
+    src/M6AIntegrationSmokeTests.cpp  # M6-A: 통합 스모크 — Lua 컷신(say/choose/move)→세이브 왕복→씬전환→대화창 BMP
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_reflect mye_audio mye_script mye_editor mye_ui)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).

@@ -122,6 +122,7 @@ public:
 
 private:
     ecs::Entity m_target;
+    ecs::Entity m_oldParent = ecs::Entity::Null();  // 파괴 전 루트의 부모(Undo가 재부모화 복원)
     std::string m_subtreeSnapshot;   // 04 직렬화 서브트리 blob(JSON). Undo가 소비.
     std::string m_label;
 };

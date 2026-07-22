@@ -50,12 +50,18 @@ struct CommandStack::Impl {
     // dirty 판정: 저장 지점 순번 vs 현재 순번. 병합은 논리 편집 1개 → position 불변.
     std::uint64_t position = 0;
     std::uint64_t savePoint = 0;
+    bool          saveReachable = true;   // 저장 지점이 Undo로 도달 가능한가(트림되면 false).
 
-    // 상한 초과 시 오래된 것부터 파기. 저장 지점 순번도 함께 당겨 dirty 판정을 보존.
+    // 상한 초과 시 오래된 것부터 파기. Undo로 되돌아갈 수 있는 최소 position은
+    //   (position - undoStack.size())까지다. 저장 지점이 트림 경계 아래로 밀려나면
+    //   더 이상 Undo로 clean 상태에 닿을 수 없으므로 saveReachable=false로 표시해
+    //   IsDirty가 clean에 갇히지 않도록(항상 dirty로) 만든다.
     void TrimToLimit() {
         while (undoStack.size() > limit) {
             undoStack.erase(undoStack.begin());
         }
+        const std::uint64_t minReachable = position - undoStack.size();
+        if (savePoint < minReachable) saveReachable = false;
     }
 };
 
@@ -150,8 +156,15 @@ std::string_view CommandStack::RedoLabel() const {
 }
 
 std::uint64_t CommandStack::Position() const { return m_impl->position; }
-void CommandStack::MarkSaved() { m_impl->savePoint = m_impl->position; }
-bool CommandStack::IsDirty() const { return m_impl->position != m_impl->savePoint; }
+void CommandStack::MarkSaved() {
+    m_impl->savePoint = m_impl->position;
+    m_impl->saveReachable = true;   // 방금 저장한 지점은 당연히 현재=도달 가능.
+}
+bool CommandStack::IsDirty() const {
+    // 저장 지점이 트림으로 유실됐으면 clean으로 돌아갈 방법이 없다 → 항상 dirty.
+    if (!m_impl->saveReachable) return true;
+    return m_impl->position != m_impl->savePoint;
+}
 
 void CommandStack::Clear() {
     m_impl->undoStack.clear();
@@ -160,6 +173,7 @@ void CommandStack::Clear() {
     m_impl->txnDepth = 0;
     m_impl->position = 0;
     m_impl->savePoint = 0;
+    m_impl->saveReachable = true;
 }
 
 } // namespace mye::editor

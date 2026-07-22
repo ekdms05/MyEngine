@@ -74,6 +74,10 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->RegisterFactory(MakeAssetBrowserPanelFactory());
     m_panels->RegisterFactory(MakeConsolePanelFactory());
 
+    // 확장 경로(플러그인·MCP·Lua)로 등록된 패널 팩토리를 PanelManager로 위임(07 §확장:
+    //   내장이 되는 건 플러그인도 된다). AddPanel이 보관한 팩토리를 여기서 흡수한다.
+    if (m_extensions) m_extensions->DrainPanelFactories(*m_panels);
+
     // 콘솔 로그 싱크를 전역 Log 에 장착(패널 인스턴스와 독립적으로 로그 수집).
     InstallConsoleLogSink();
 

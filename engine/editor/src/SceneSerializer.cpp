@@ -17,6 +17,7 @@
 //   직렬화하지 않는다(로드 후 시스템이 재구성).
 #include "mye/editor/SceneSerializer.h"
 
+#include "mye/core/Log.h"
 #include "mye/ecs/ComponentPool.h"
 #include "mye/ecs/ComponentType.h"
 #include "mye/ecs/World.h"
@@ -102,8 +103,12 @@ std::vector<ecs::Entity> EnumerateEntities(const ecs::World& world,
         for (std::uint32_t idx : pool->DenseEntities()) indices.push_back(idx);
     };
     for (const refl::TypeInfo* t : types) addPool(ComponentIdOf(*t));
-    // Parent 풀도 포함(계층 부모 index 확보).
+    // 계층 풀도 포함(직렬화 컴포넌트가 없는 순수 그룹/부모 노드도 반드시 열거해야
+    //   자식이 고아가 되지 않는다). Parent=부모 링크 확보, Children=직렬화 컴포넌트 없는
+    //   순수 그룹 노드(부모도 없음) 확보. 둘 다 파생/캐시라 직렬화 대상은 아니지만
+    //   엔티티 존재 자체는 이 풀들로 역산한다.
     addPool(scene::Parent::kComponentTypeId);
+    addPool(scene::Children::kComponentTypeId);
 
     std::sort(indices.begin(), indices.end());
     indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
@@ -328,7 +333,15 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in) const {
         if (pe.components && pe.components->IsObject()) {
             for (const auto& [name, compValue] : pe.components->AsObject()) {
                 const refl::TypeInfo* t = refl::TypeRegistry::Get().Find(std::string_view(name));
-                if (!t) continue;   // 미등록 타입 — 스킵(견고성)
+                if (!t) {
+                    // 스킵 = 조용한 데이터 손실. 리플렉션 이름 ↔ MYE_COMPONENT 이름 해시
+                    //   불일치(03/04 정본 규약 위반)일 수 있으므로 반드시 로그로 드러낸다.
+                    MYE_LOG_WARN("SceneSerializer",
+                                 "ReadInto: 미등록 컴포넌트 '{}' 스킵(데이터 손실) — "
+                                 "리플렉션 이름/등록 규약 확인",
+                                 name);
+                    continue;
+                }
                 void* raw = world.AddDynamic(pe.entity, ComponentIdOf(*t));
                 if (!raw) continue;
                 auto rd = ser::JsonArchive::ForRead(compValue);

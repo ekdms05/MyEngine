@@ -162,11 +162,19 @@ bool WidgetEnum(const refl::TypeInfo& type, void* ptr, const std::string& label)
     std::memcpy(&cur, ptr, type.Size() <= sizeof(cur) ? type.Size() : sizeof(cur));
 
     std::vector<std::string> names;
-    int curIdx = 0, i = 0;
+    int curIdx = -1, i = 0;
     for (const auto& c : e->Constants()) {
         names.emplace_back(c.name);
         if (c.value == cur) curIdx = i;
         ++i;
+    }
+    // 현재 값이 어떤 상수와도 일치하지 않으면(플래그 조합·미정의 값 등) 첫 상수로
+    //   덮어쓰지 않는다 — 원시 값을 보존하는 합성 항목을 만들어 그걸 선택 상태로 둔다.
+    //   이래야 사용자가 건드리지 않는 한 값이 조용히 바뀌지 않는다.
+    const int constCount = static_cast<int>(e->Constants().size());
+    if (curIdx < 0) {
+        names.emplace_back("(" + std::to_string(cur) + ")");
+        curIdx = constCount;   // 합성 항목 인덱스.
     }
     std::vector<const char*> cstrs;
     cstrs.reserve(names.size());
@@ -177,9 +185,12 @@ bool WidgetEnum(const refl::TypeInfo& type, void* ptr, const std::string& label)
     const std::string id = "##" + label;
     int sel = curIdx;
     bool ch = ImGui::Combo(id.c_str(), &sel, cstrs.data(), static_cast<int>(cstrs.size()));
-    if (ch && sel >= 0 && sel < static_cast<int>(e->Constants().size())) {
+    // 합성 항목(constCount)을 다시 고른 경우는 실제 변경이 아니므로 무시(원시 값 유지).
+    if (ch && sel >= 0 && sel < constCount) {
         std::int64_t v = e->Constants()[sel].value;
         std::memcpy(ptr, &v, type.Size() <= sizeof(v) ? type.Size() : sizeof(v));
+    } else if (sel >= constCount) {
+        ch = false;   // 합성 항목 선택 = 변경 없음.
     }
     return ch;
 }

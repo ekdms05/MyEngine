@@ -21,6 +21,7 @@ namespace mye::editor {
 
 struct PlayModeController::Impl {
     std::unique_ptr<ecs::World>   playWorld;      // Playing/Paused 동안만 유효.
+    std::unique_ptr<EventBus>     playEvents;     // Play World 전용 월드-로컬 버스(Stop 시 파기).
     std::unique_ptr<CommandStack> playCommands;   // 플레이 중 Undo(Stop 시 파기).
 };
 
@@ -72,8 +73,12 @@ void PlayModeController::Play() {
             auto r = ser.Restore(*m_impl->playWorld, snap.Value());
             (void)r;   // 실패 시 빈 Play World(엔진 로그는 상위 계층). 상태 전이는 계속.
         }
-        // Play World도 편집 World와 동일한 월드-로컬 이벤트 버스 배선을 잇는다(게임플레이 이벤트).
-        m_impl->playWorld->SetEventBus(m_editWorld->Events());
+        // Play World 전용 월드-로컬 이벤트 버스(Stop 시 파기). 편집 World 버스를 공유하면
+        //   플레이 중 publish가 편집-World 구독자로 새고, 스크립트/리스너 구독이 Stop 후
+        //   dangling된다. 게임플레이 이벤트는 Play World 안에서 자족적으로 흐르게 한다
+        //   (의도한 이벤트만 필요 시 상위에서 브리지).
+        m_impl->playEvents = std::make_unique<EventBus>();
+        m_impl->playWorld->SetEventBus(m_impl->playEvents.get());
     }
 
     // 플레이 전용 Undo 스택(Stop 시 파기). 문서 스택과 분리(07 §3).
@@ -111,7 +116,9 @@ void PlayModeController::Stop() {
     const PlayState prev = m_state;
 
     // 07 §3: Play World 파기 + 플레이 Undo 스택 파기 → 편집 World 재표시. 스냅샷 복원 아님.
+    //   파괴 순서: World 먼저(구독자 보유 가능) → 그 버스. 그다음 커맨드 스택.
     m_impl->playWorld.reset();
+    m_impl->playEvents.reset();
     if (m_impl->playCommands) m_impl->playCommands->Clear();
     m_impl->playCommands.reset();
 

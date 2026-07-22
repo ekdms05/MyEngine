@@ -18,6 +18,9 @@ struct EditorExtensionRegistry::Impl {
     std::unordered_map<refl::TypeId, std::unique_ptr<IPropertyDrawer>>  drawers;
     std::unordered_map<refl::TypeId, std::unique_ptr<IComponentEditor>> compEditors;
 
+    // 확장 경로로 등록된 패널 팩토리 임시 보관(EditorApp이 DrainPanelFactories로 옮김).
+    std::vector<std::unique_ptr<IEditorPanelFactory>> pendingPanels;
+
     // 후속(M4-B) 저장소 — 소비는 뷰포트/컨텍스트/설정 구현에서.
     std::vector<std::unique_ptr<IGizmoExtension>>  gizmos;
     std::vector<std::unique_ptr<IViewportOverlay>> overlays;
@@ -28,9 +31,16 @@ struct EditorExtensionRegistry::Impl {
 EditorExtensionRegistry::EditorExtensionRegistry() : m_impl(std::make_unique<Impl>()) {}
 EditorExtensionRegistry::~EditorExtensionRegistry() = default;
 
-void EditorExtensionRegistry::AddPanel(std::unique_ptr<IEditorPanelFactory> /*factory*/) {
-    // 골격: 패널은 PanelManager가 정본 소유. 확장 경로는 EditorApp이 PanelManager로 포워딩한다.
-    // TODO(M4-B): EditorApp::Extensions 진입 시 PanelManager::RegisterFactory로 위임.
+void EditorExtensionRegistry::AddPanel(std::unique_ptr<IEditorPanelFactory> factory) {
+    // 패널은 PanelManager가 정본 소유. 등록 시점엔 PanelManager가 아직 없을 수 있으므로
+    //   팩토리를 임시 보관하고, EditorApp이 DrainPanelFactories로 PanelManager에 위임한다.
+    if (factory) m_impl->pendingPanels.push_back(std::move(factory));
+}
+
+void EditorExtensionRegistry::DrainPanelFactories(PanelManager& panels) {
+    for (auto& f : m_impl->pendingPanels)
+        if (f) panels.RegisterFactory(std::move(f));
+    m_impl->pendingPanels.clear();
 }
 
 void EditorExtensionRegistry::AddMenuItem(const MenuPath& path, MenuItemDesc desc,

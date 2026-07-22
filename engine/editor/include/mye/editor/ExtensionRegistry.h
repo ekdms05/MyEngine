@@ -103,6 +103,11 @@ public:
     struct ToolbarEntry { ToolbarSection section; ToolbarButtonDesc desc; MenuCallback onClick; };
     std::span<const ToolbarEntry> ToolbarEntries() const;
 
+    // 확장 경로로 등록된 패널 팩토리를 PanelManager로 옮긴다(EditorApp이 초기화 시 호출).
+    //   AddPanel은 등록 시점에 PanelManager가 없을 수 있으므로 팩토리를 임시 보관하고,
+    //   여기서 RegisterFactory로 위임한다(플러그인이 패널을 등록할 수 있게 함).
+    void DrainPanelFactories(PanelManager& panels);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

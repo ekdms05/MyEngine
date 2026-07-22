@@ -9,6 +9,7 @@
 #include "mye/editor/Command.h"
 #include "mye/editor/EditorContext.h"
 #include "mye/editor/SceneSerializer.h"
+#include "mye/editor/Selection.h"
 
 #include "mye/core/Json.h"
 #include "mye/ecs/World.h"
@@ -74,7 +75,7 @@ PropertyEditCommand::PropertyEditCommand(ObjectRef target, refl::PropertyPath pa
       m_oldValue(std::move(oldValue)),
       m_newValue(std::move(newValue)),
       m_label(std::move(label)),
-      m_stamp(std::chrono::steady_clock::now()) {}
+      m_stamp{} {}   // 스탬프는 Execute/Push 시점에 찍는다(생성→push 지연이 병합 창을 갉지 않도록).
 
 namespace {
 // 값 blob을 target(엔티티 컴포넌트)의 path 리프에 기록. 성공 여부 반환.
@@ -97,7 +98,12 @@ bool ApplyBlob(EditorContext& ctx, const ObjectRef& target, const refl::Property
 }
 } // namespace
 
-void PropertyEditCommand::Execute(EditorContext& ctx) { (void)ApplyBlob(ctx, m_target, m_path, m_newValue); }
+void PropertyEditCommand::Execute(EditorContext& ctx) {
+    // 병합 창은 "적용 시각" 기준이어야 한다 — 생성자 시각이면 construct→push 지연만큼
+    //   창이 줄고 다음 편집이 조기에 병합 실패한다. push 경로에서 Execute가 불리므로 여기서 찍는다.
+    m_stamp = std::chrono::steady_clock::now();
+    (void)ApplyBlob(ctx, m_target, m_path, m_newValue);
+}
 void PropertyEditCommand::Undo(EditorContext& ctx) { (void)ApplyBlob(ctx, m_target, m_path, m_oldValue); }
 
 bool PropertyEditCommand::TryMerge(const IEditorCommand& next) {
@@ -160,6 +166,15 @@ void DestroySubtree(ecs::World& world, ecs::Entity root) {
 void DestroyEntityCommand::Execute(EditorContext& ctx) {
     ecs::World* world = WorldOf(ctx);
     if (!world || !world->Valid(m_target)) return;
+    // 파괴 전 루트의 부모를 기록한다. WriteSubtree는 서브트리를 자족적으로 만들기 위해 루트의
+    //   parent 필드를 지운다(프리팹/스냅샷 규약) — 그대로 Undo하면 루트가 최상위로 되살아나
+    //   재부모화가 유실된다. 여기서 부모를 보관해 Undo 후 재적용한다.
+    if (const auto* p = static_cast<const scene::Parent*>(
+            world->TryGetDynamic(m_target, scene::Parent::kComponentTypeId)))
+        m_oldParent = p->parent;
+    else
+        m_oldParent = ecs::Entity::Null();
+
     // Undo 복원용 서브트리 스냅샷(07 §4). SceneSerializer가 로컬 ID·참조 재결선을 책임진다.
     SceneSerializer ser;
     auto snap = ser.WriteSubtree(*world, m_target);
@@ -173,9 +188,24 @@ void DestroyEntityCommand::Undo(EditorContext& ctx) {
     auto parsed = json::Parse(m_subtreeSnapshot);
     if (!parsed) return;
     SceneSerializer ser;
+    const ecs::Entity oldRoot = m_target;
     auto roots = ser.ReadInto(*world, parsed.Value());
     // 복원된 루트 핸들은 새 index/generation — m_target을 갱신해 재-Redo가 올바른 대상을 잡게 한다.
-    if (roots && !roots.Value().empty()) m_target = roots.Value().front();
+    if (roots && !roots.Value().empty()) {
+        const ecs::Entity newRoot = roots.Value().front();
+        m_target = newRoot;
+        // 루트의 원래 부모 재적용(WriteSubtree가 끊었던 서브트리 밖 부모 링크 복원).
+        if (!m_oldParent.IsNull() && world->Valid(m_oldParent))
+            scene::ApplyReparent(*world, newRoot, m_oldParent, /*keepWorld*/ false);
+        // 파괴로 dangling된 선택 상태를 새 루트 핸들로 재결선(선택이 파괴된 루트를 가리켰던 경우).
+        //   자손·EntityRef 필드까지 완전 재결선하려면 엔진의 핸들-보존 재생성 API가 필요하나(M5),
+        //   가장 흔한 dangling 케이스인 "삭제된 엔티티가 선택돼 있던 경우"는 여기서 복구한다.
+        if (ctx.selection) {
+            const SelectableRef oldRef = SelectableRef::OfEntity(oldRoot);
+            if (ctx.selection->IsSelected(oldRef))
+                ctx.selection->Select(SelectableRef::OfEntity(newRoot), SelectMode::Replace);
+        }
+    }
 }
 
 // ---- ReparentCommand ----

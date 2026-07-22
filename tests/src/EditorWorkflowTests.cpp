@@ -348,3 +348,39 @@ MYE_TEST(WorkflowDestroyUndoPreservesHandle) {
     MYE_EXPECT(xf != nullptr);
     MYE_EXPECT(xf->x == 77.0f);
 }
+
+// (e) 서브트리 자손이 선택된 상태에서 루트 파괴 → Undo. 선택이 루트가 아니라 임의 자손을
+//     가리켜도 복원된 자손 핸들로 재결선돼야 한다(핸들 보존 성공 시 옛==새라 항등 재선택).
+MYE_TEST(WorkflowDestroyUndoRelinksDescendantSelection) {
+    WFHarness h;
+
+    // 부모 + 자식(구조 커맨드로 트랜스폼·계층 구성).
+    auto createParent = std::make_unique<CreateEntityCommand>();
+    CreateEntityCommand* cpPtr = createParent.get();
+    h.commands.Push(std::move(createParent));
+    ecs::Entity parent = cpPtr->Created();
+
+    auto createChild = std::make_unique<CreateEntityCommand>(parent);
+    CreateEntityCommand* ccPtr = createChild.get();
+    h.commands.Push(std::move(createChild));
+    ecs::Entity child = ccPtr->Created();
+    MYE_EXPECT(!parent.IsNull() && !child.IsNull());
+    {
+        scene::Parent* pc = h.world.TryGet<scene::Parent>(child);
+        MYE_EXPECT(pc && pc->parent == parent);
+    }
+
+    // 자손(child)을 선택.
+    h.selection.Select(SelectableRef::OfEntity(child), SelectMode::Replace);
+    MYE_EXPECT(h.selection.IsSelected(SelectableRef::OfEntity(child)));
+
+    // 루트(parent) 파괴 → child 도 함께 파괴, 선택 dangling.
+    h.commands.Push(std::make_unique<DestroyEntityCommand>(parent));
+    MYE_EXPECT(!h.world.Valid(parent));
+    MYE_EXPECT(!h.world.Valid(child));
+
+    // Undo → 서브트리 복원. 선택이 복원된 자손 핸들을 가리켜야 한다.
+    h.commands.Undo();
+    MYE_EXPECT(h.world.Valid(child));
+    MYE_EXPECT(h.selection.IsSelected(SelectableRef::OfEntity(child)));
+}

@@ -308,7 +308,8 @@ SceneSerializer::WriteSubtree(const ecs::World& world, ecs::Entity root) const {
 
 // ---- JSON → World ----
 Expected<std::vector<ecs::Entity>, Error>
-SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserveHandles) const {
+SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserveHandles,
+                          std::unordered_map<std::uint32_t, ecs::Entity>* outLocalToEntity) const {
     if (!in.IsObject())
         return Error{"ReadInto: root is not an object", 1};
     const json::Value* entsV = in.Find("entities");
@@ -384,6 +385,7 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
         }
     }
 
+    if (outLocalToEntity) *outLocalToEntity = localToEntity;
     return roots;
 }
 

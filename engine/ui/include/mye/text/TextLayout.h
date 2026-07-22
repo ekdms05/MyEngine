@@ -34,6 +34,12 @@ public:
     virtual ~IFontProvider() = default;
     // FontId → IFont*(FontFace.h). 미등록·폴백 실패 시 nullptr.
     virtual class IFont* ResolveFont(FontId id) const = 0;
+    // codepoint 를 실제로 그릴 수 있는 폰트를 폴백 체인 포함으로 찾는다(한글 등 base 폰트에
+    //   없는 글리프는 등록된 폴백으로 해석). base 에 있으면 base, 없으면 폴백, 모두 실패 시 base.
+    //   기본 구현은 폴백 없이 primary 만 해석(폴백을 아는 구현이 오버라이드).
+    virtual class IFont* ResolveForCodepoint(FontId primary, char32_t /*cp*/) const {
+        return ResolveFont(primary);
+    }
 };
 
 class TextLayout {

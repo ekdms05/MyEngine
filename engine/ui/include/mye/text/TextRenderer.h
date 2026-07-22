@@ -47,8 +47,8 @@ public:
 
     IFont* ResolveFont(FontId id) const override;
 
-    // codepoint 를 실제로 그릴 수 있는 폰트를 폴백 체인 포함으로 찾는다(GlyphAtlas 가 호출).
-    IFont* ResolveForCodepoint(FontId primary, char32_t cp) const;
+    // codepoint 를 실제로 그릴 수 있는 폰트를 폴백 체인 포함으로 찾는다(GlyphAtlas·TextLayout 호출).
+    IFont* ResolveForCodepoint(FontId primary, char32_t cp) const override;
 
 private:
     struct Registered {
@@ -65,17 +65,25 @@ class TextRenderer {
 public:
     TextRenderer() = default;
 
+    // 시저 클립 사각형(스크린 픽셀). 이 안에 걸치는 부분만 제출(글리프 쿼드를 CPU 클리핑,
+    //   UV 비례 재계산). 완전히 밖이면 스킵. 기본값(전체 화면 커버)은 클립 없음과 동치.
+    struct ClipRect {
+        float x = -1e30f, y = -1e30f, w = 2e30f, h = 2e30f;
+    };
+
     // layout 의 글리프들을 SpriteBatch 로 제출. origin = 레이아웃 로컬 원점의 스크린 좌표(픽셀).
     //   sortY: UI 레이어 정렬 키(같은 UI 요소는 동일값 권장). atlas 로 그림자/아웃라인 uv 재조회.
     //   글리프의 world 좌표는 origin + pos (정수 스냅). SpriteBatch 는 unit 좌표계이므로
     //   pixelsPerUnit=1 스크린 카메라(UiRenderer 가 셋업)를 전제로 픽셀=unit 로 제출한다.
+    //   clip: 스크린 시저(스크롤 리스트·대사창 클리핑). 기본은 무제한.
     void Submit(render::SpriteBatch& batch, const TextLayout& layout, Vec2i origin,
-                float sortY = 0.0f);
+                float sortY = 0.0f, const ClipRect& clip = {});
 
     // 단발 편의: 레이아웃을 즉석 생성해 바로 제출(캐시 불필요한 짧은 텍스트).
     void DrawText(rhi::ICommandContext& ctx, render::SpriteBatch& batch, GlyphAtlas& atlas,
                   const IFontProvider& fonts, std::string_view richText,
-                  const TextStyle& style, Vec2i origin, const LayoutParams& params = {});
+                  const TextStyle& style, Vec2i origin, const LayoutParams& params = {},
+                  const ClipRect& clip = {});
 
 private:
     TextLayout m_scratch;   // DrawText 즉석 레이아웃

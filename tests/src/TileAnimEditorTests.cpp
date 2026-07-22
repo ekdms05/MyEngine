@@ -14,6 +14,8 @@
 
 #include "mye/tilemap/Tilemap.h"
 
+#include <string_view>
+
 using namespace mye;
 namespace ed = mye::editor;
 namespace tmap = mye::tilemap;
@@ -215,6 +217,40 @@ MYE_TEST(AnimClipFrameEditRoundtrip) {
     asset::AnimationClipData removed = ed::anim_edit::WithFrameRemoved(clip, 1);
     MYE_EXPECT(removed.frameIndices.size() == 2);
     MYE_EXPECT(removed.frameIndices[1] == 2u);
+}
+
+// WithFrameMoved 가 이벤트 frameIndex(=프레임 슬롯 인덱스)를 이동에 맞춰 재매핑하는지.
+//   재매핑을 빠뜨리면 이벤트가 엉뚱한 프레임에서 발화한다(ClipPlayback m.frameIndex==slot).
+MYE_TEST(AnimClipFrameMoveReindexesEvents) {
+    asset::AnimationClipData clip;
+    // 프레임 5개(슬롯 0..4).
+    for (uint32_t i = 0; i < 5; ++i) clip = ed::anim_edit::WithFrameAppended(clip, i, 0.1f);
+    // 이벤트: 슬롯 0(start), 슬롯 3(hit).
+    asset::AnimEventMarker e0; e0.frameIndex = 0; e0.name = "start";
+    asset::AnimEventMarker e3; e3.frameIndex = 3; e3.name = "hit";
+    clip = ed::anim_edit::WithEventAdded(clip, e0);
+    clip = ed::anim_edit::WithEventAdded(clip, e3);
+
+    auto findEvent = [](const asset::AnimationClipData& c, std::string_view name) -> uint32_t {
+        for (const auto& ev : c.events) if (ev.name == name) return ev.frameIndex;
+        return 0xFFFFFFFFu;
+    };
+
+    // 앞으로 이동: 슬롯 0 -> 4. 슬롯 0 프레임(그리고 그 이벤트 start)이 끝으로 간다.
+    //   사이 슬롯(1..4)은 한 칸씩 당겨지므로 hit(3) -> 2.
+    {
+        asset::AnimationClipData m = ed::anim_edit::WithFrameMoved(clip, 0, 4);
+        MYE_EXPECT(m.frameIndices[4] == 0u);        // 이동 확인
+        MYE_EXPECT(findEvent(m, "start") == 4u);    // start 는 옮긴 프레임을 따라감
+        MYE_EXPECT(findEvent(m, "hit") == 2u);      // 사이 이벤트 한 칸 당김
+    }
+    // 뒤로 이동: 슬롯 3 -> 1. 슬롯 3 프레임(이벤트 hit)이 슬롯 1로. 사이(1,2)는 한 칸 밀림.
+    {
+        asset::AnimationClipData m = ed::anim_edit::WithFrameMoved(clip, 3, 1);
+        MYE_EXPECT(m.frameIndices[1] == 3u);
+        MYE_EXPECT(findEvent(m, "hit") == 1u);      // hit 은 옮긴 프레임을 따라감
+        MYE_EXPECT(findEvent(m, "start") == 0u);    // 슬롯 0 은 이동 범위 밖 → 불변
+    }
 }
 
 MYE_TEST(AnimClipEditCommandUndo) {

@@ -47,8 +47,29 @@ UiCanvas* UiSystem::FindCanvas(std::string_view name) {
 }
 
 void UiSystem::RemoveCanvas(std::string_view name) {
+    // 제거되는 캔버스의 루트 서브트리를 가리키던 상호작용 포인터를 먼저 해제(use-after-free 방지).
+    for (auto& c : m_canvases)
+        if (c->name() == name) ClearInteractionState(c->root());
     m_canvases.erase(std::remove_if(m_canvases.begin(), m_canvases.end(),
                      [&](const auto& c) { return c->name() == name; }), m_canvases.end());
+}
+
+namespace {
+// w 가 root 서브트리(root 자신 포함)에 속하는지.
+bool IsInSubtree(const Widget* w, const Widget* root) {
+    for (const Widget* p = w; p; p = p->parent())
+        if (p == root) return true;
+    return false;
+}
+} // namespace
+
+// root 서브트리가 파괴될 때, 그 안을 가리키던 상호작용 포인터를 모두 해제(다음 프레임
+//   RouteEvent 의 use-after-free 방지). hovered/focused/pressed/dragging 전부 대상.
+void UiSystem::ClearInteractionState(const Widget* root) {
+    if (!root) return;
+    if (IsInSubtree(m_hovered, root)) m_hovered = nullptr;
+    if (IsInSubtree(m_focused, root)) m_focused = nullptr;
+    if (IsInSubtree(m_pressed, root)) { m_pressed = nullptr; m_dragging = false; }
 }
 
 Expected<UiDocumentHandle, Error> UiSystem::Open(const UiDocument& doc, UiCanvas& canvas) {
@@ -68,12 +89,11 @@ void UiSystem::Close(UiDocumentHandle h) {
     Widget* root = nullptr;
     for (const auto& p : m_openDocs) if (p.first == h.v) { root = p.second; break; }
     if (root) {
+        // 서브트리 안을 가리키던 상호작용 포인터를 setRoot(nullptr) 전에 해제(자식 히트 대응).
+        ClearInteractionState(root);
         for (auto& c : m_canvases) {
             if (c->root() == root) { c->setRoot(nullptr); break; }
         }
-        if (m_hovered == root) m_hovered = nullptr;
-        if (m_focused == root) m_focused = nullptr;
-        if (m_pressed == root) { m_pressed = nullptr; m_dragging = false; }
     }
     m_openDocs.erase(std::remove_if(m_openDocs.begin(), m_openDocs.end(),
                      [&](const auto& p) { return p.first == h.v; }), m_openDocs.end());

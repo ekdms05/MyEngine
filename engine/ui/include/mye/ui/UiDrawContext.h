@@ -11,6 +11,7 @@
 #include "mye/core/Math.h"
 #include "mye/ui/UiTypes.h"
 #include "mye/text/TextTypes.h"
+#include "mye/text/TextRenderer.h"
 
 #include <cstdint>
 #include <string_view>
@@ -68,6 +69,7 @@ public:
 
 private:
     void ApplyScissor(const UiRect& r);   // 배처 flush → SetScissor(정수 클램프)
+    text::TextRenderer::ClipRect TextClip() const;   // CurrentClip → 텍스트 시저(글리프 CPU 클립)
 
     render::SpriteBatch&        m_batch;
     rhi::ICommandContext&       m_ctx;

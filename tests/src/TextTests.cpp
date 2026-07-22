@@ -378,6 +378,73 @@ MYE_TEST(TextLayoutSetWithAtlas) {
     atlas.Shutdown();
 }
 
+// 폴백 체인: 라틴 전용 폰트 primary + 한글 폰트 fallback. ResolveForCodepoint 가 코드포인트별로
+//   올바른 폰트를 고른다(한글은 fallback, 라틴은 primary). M5-A 한글 목표의 핵심 경로.
+MYE_TEST(TextFontFallbackResolvesPerCodepoint) {
+    // primary: ASCII 만(한글 없음). fallback: 한글.
+    std::vector<uint32_t> latinOnly;
+    for (uint32_t c = 0x20; c <= 0x7E; ++c) latinOnly.push_back(c);
+    auto latinTtf = testfont::MakeTtf(latinOnly);
+    auto hangulTtf = testfont::MakeTtf(std::vector<uint32_t>{U'안', U'녕'});
+
+    text::FontRegistry reg;
+    text::FontId latin = reg.RegisterTtf(AsBytes(latinTtf)).Value();
+    text::FontId hangul = reg.RegisterTtf(AsBytes(hangulTtf)).Value();
+    text::FontId fbs[] = {hangul};
+    reg.SetFallbackChain(latin, fbs);
+
+    // 라틴 글리프는 primary 로 해석.
+    text::IFont* fa = reg.ResolveForCodepoint(latin, U'A');
+    MYE_EXPECT(fa != nullptr && fa->id() == latin);
+    // 한글 글리프는 primary 에 없으므로 fallback(한글 폰트)으로 해석.
+    text::IFont* fk = reg.ResolveForCodepoint(latin, U'안');
+    MYE_EXPECT(fk != nullptr && fk->id() == hangul);
+}
+
+// 혼합 라틴+한글 레이아웃(Set 경로): 라틴 전용 primary 폰트로도 한글이 fallback 폰트로 래스터돼
+//   빈칸이 아닌 실제 아틀라스 텍스처를 가진다(폴백 미적용 시 한글이 blank advance 로 사라지는 버그).
+MYE_TEST(TextLayoutMixedLatinHangulFallback) {
+    auto devRes = rhi::CreateDevice(rhi::Backend::DX11, {});
+    if (!devRes.HasValue()) {
+        std::printf("    [skip] no DX11 device\n");
+        return;
+    }
+    auto device = std::move(devRes).Value();
+
+    std::vector<uint32_t> latinOnly;
+    for (uint32_t c = 0x20; c <= 0x7E; ++c) latinOnly.push_back(c);
+    auto latinTtf = testfont::MakeTtf(latinOnly);
+    auto hangulTtf = testfont::MakeTtf(std::vector<uint32_t>{U'안', U'녕'});
+
+    text::FontRegistry reg;
+    text::FontId latin = reg.RegisterTtf(AsBytes(latinTtf)).Value();
+    text::FontId hangul = reg.RegisterTtf(AsBytes(hangulTtf)).Value();
+    text::FontId fbs[] = {hangul};
+    reg.SetFallbackChain(latin, fbs);
+
+    text::GlyphAtlas atlas;
+    atlas.Init(*device);
+    atlas.BeginFrame(1);
+    rhi::ICommandContext& ctx = device->GetImmediateContext();
+
+    text::TextStyle base;
+    base.font = latin;   // 라틴 전용 폰트를 base 로 지정 — 한글은 fallback 으로만 그릴 수 있음
+    base.size = 24;
+    text::LayoutParams params;
+    params.wrap = text::WrapMode::None;
+
+    text::TextLayout layout;
+    layout.Set(ctx, atlas, reg, "A안B녕", base, params);
+    // 4글리프 모두 배치되고, 한글 2개도 fallback 폰트로 래스터돼 텍스처를 가진다.
+    MYE_EXPECT(layout.glyphs().size() == 4);
+    uint32_t withTex = 0;
+    for (const auto& pg : layout.glyphs())
+        if (pg.atlasTexture.IsValid() && pg.uv.w > 0.0f && pg.size.x > 0) ++withTex;
+    MYE_EXPECT(withTex == 4);   // 폴백 미적용이면 한글 2개가 빠져 2가 됨
+
+    atlas.Shutdown();
+}
+
 // 리치텍스트 + 레이아웃 통합: 링크 히트렉트가 생성되는지(measure 경로).
 MYE_TEST(TextLayoutLinkRegions) {
     auto ttf = testfont::MakeTestFont(kHangul);

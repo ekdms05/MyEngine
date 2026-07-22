@@ -126,13 +126,20 @@ void UiDrawContext::DrawText(const UiRect& rect, std::string_view richText,
                              const text::TextStyle& style, const text::LayoutParams& params) {
     m_text.DrawText(m_ctx, m_batch, m_atlas, m_fonts, richText, style,
                     Vec2i{static_cast<int32_t>(std::round(rect.x)),
-                          static_cast<int32_t>(std::round(rect.y))}, params);
+                          static_cast<int32_t>(std::round(rect.y))}, params, TextClip());
 }
 
 void UiDrawContext::DrawTextLayout(const text::TextLayout& layout, Vec2 origin) {
     m_text.Submit(m_batch, layout,
                   Vec2i{static_cast<int32_t>(std::round(origin.x)),
-                        static_cast<int32_t>(std::round(origin.y))});
+                        static_cast<int32_t>(std::round(origin.y))},
+                  0.0f, TextClip());
+}
+
+// 현재 시저 클립을 TextRenderer::ClipRect 로 변환(스택 비면 전체 화면).
+text::TextRenderer::ClipRect UiDrawContext::TextClip() const {
+    const UiRect c = CurrentClip();
+    return text::TextRenderer::ClipRect{c.x, c.y, c.w, c.h};
 }
 
 void UiDrawContext::PushScissor(const UiRect& rect) {

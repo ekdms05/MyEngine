@@ -332,6 +332,32 @@ MYE_TEST(WorldCreateWithIdRestore) {
     MYE_EXPECT(w.Valid(a));
 }
 
+// 파괴 → 슬롯 재사용 → 재파괴 → 옛 핸들 복원 시도. 재사용으로 세대가 전진했으므로 옛 세대로의
+//   되감기는 거부되고(단조성 보존) 서로 다른 논리 엔티티가 한 핸들에서 충돌하지 않아야 한다.
+MYE_TEST(WorldCreateWithIdMonotonicAfterReuse) {
+    World w;
+    Entity b = w.Create();
+    const uint32_t bIdx = b.index;
+    const uint32_t bGen = b.generation;
+
+    w.Destroy(b);                      // 슬롯 freelist 로, 세대 +1
+    Entity reused = w.Create();        // 같은 슬롯 재사용(세대 유지) — 다른 논리 엔티티
+    MYE_EXPECT(reused.index == bIdx);
+    MYE_EXPECT(reused.generation != bGen);
+    w.Destroy(reused);                 // 다시 파괴, 세대 또 +1
+
+    // 옛 핸들(bGen) 복원 시도 → 되감기 거부. 반환 핸들은 옛 핸들과 달라야 한다(폴백).
+    Entity restored = w.CreateWithId(bIdx, bGen);
+    MYE_EXPECT(restored.generation != bGen);       // 되감지 않음(단조성)
+    MYE_EXPECT(!w.Valid(b));                        // 옛 핸들은 여전히 무효(충돌 없음)
+    MYE_EXPECT(w.Valid(restored));
+
+    // 이후 Create 가 옛 핸들 b 와 같은 (index,gen) 을 재발급하지 않는다(충돌 방지).
+    w.Destroy(restored);
+    Entity next = w.Create();
+    MYE_EXPECT(!(next == b));
+}
+
 // ---------------------------------------------------------------------------
 // CreateWithId 중복 방지 — 살아있는 핸들 재생성 실패.
 // ---------------------------------------------------------------------------

@@ -96,6 +96,9 @@ private:
     // 이벤트 라우팅: target 까지 터널 → target → 루트까지 버블.
     bool RouteEvent(Widget* target, UiEvent& e);
 
+    // root 서브트리(root 포함)를 가리키던 hovered/focused/pressed 포인터를 해제(파괴 시 dangling 방지).
+    void ClearInteractionState(const Widget* root);
+
     WidgetFactory                          m_factory;
     std::vector<std::unique_ptr<UiCanvas>> m_canvases;   // sortOrder 정렬 유지
     std::shared_ptr<UiSkin>                m_skin;

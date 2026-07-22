@@ -12,12 +12,15 @@
 #include "mye/editor/Selection.h"
 
 #include "mye/core/Json.h"
+#include "mye/core/Log.h"
 #include "mye/ecs/World.h"
 #include "mye/refl/TypeInfo.h"
 #include "mye/scene/Transform.h"
 #include "mye/ser/JsonArchive.h"
 #include "mye/ser/Serialize.h"
 
+#include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace mye::editor {
@@ -191,7 +194,10 @@ void DestroyEntityCommand::Undo(EditorContext& ctx) {
     const ecs::Entity oldRoot = m_target;
     // preserveHandles=true: 파괴된 슬롯을 원래 핸들(index/generation)로 되살린다(World::CreateWithId).
     //   → 파괴 전 EntityRef/선택이 그대로 유효(M4 리뷰 후속 실 해결). 루트/자손 모두 옛 핸들 유지.
-    auto roots = ser.ReadInto(*world, parsed.Value(), /*preserveHandles=*/true);
+    //   폴백(슬롯 세대 전진 등으로 핸들 보존 실패) 시 새 핸들이 발급되므로, 스냅샷의 옛 핸들 →
+    //   새 핸들 매핑을 만들어 선택(루트뿐 아니라 임의 자손)을 재결선한다.
+    std::unordered_map<std::uint32_t, ecs::Entity> localToEntity;
+    auto roots = ser.ReadInto(*world, parsed.Value(), /*preserveHandles=*/true, &localToEntity);
     // 복원된 루트 핸들 — preserveHandles가 성공하면 oldRoot와 동일, 실패 폴백 시에만 새 핸들.
     if (roots && !roots.Value().empty()) {
         const ecs::Entity newRoot = roots.Value().front();
@@ -199,13 +205,44 @@ void DestroyEntityCommand::Undo(EditorContext& ctx) {
         // 루트의 원래 부모 재적용(WriteSubtree가 끊었던 서브트리 밖 부모 링크 복원).
         if (!m_oldParent.IsNull() && world->Valid(m_oldParent))
             scene::ApplyReparent(*world, newRoot, m_oldParent, /*keepWorld*/ false);
-        // 파괴로 dangling된 선택 상태를 새 루트 핸들로 재결선(선택이 파괴된 루트를 가리켰던 경우).
-        //   자손·EntityRef 필드까지 완전 재결선하려면 엔진의 핸들-보존 재생성 API가 필요하나(M5),
-        //   가장 흔한 dangling 케이스인 "삭제된 엔티티가 선택돼 있던 경우"는 여기서 복구한다.
+
+        // 스냅샷의 각 엔티티 {id(로컬), __handle:[idx,gen]} 를 훑어 옛 핸들 → 새 핸들 매핑을 만든다.
+        //   (localToEntity: 로컬 ID → 새 Entity, __handle: 로컬 ID → 옛 Entity.)
+        //   핸들 보존 성공이면 옛==새(항등)이고, 폴백이면 달라진다. 폴백을 감지해 경고 로그.
+        bool anyFallback = false;
+        std::unordered_map<ecs::Entity, ecs::Entity> oldToNew;   // 옛 핸들 → 새 핸들
+        if (const json::Value* entsV = parsed.Value().Find("entities"); entsV && entsV->IsArray()) {
+            for (const json::Value& ev : entsV->AsArray()) {
+                if (!ev.IsObject()) continue;
+                const json::Value* idv = ev.Find("id");
+                const json::Value* hv = ev.Find("__handle");
+                if (!idv || !hv || !hv->IsArray() || hv->AsArray().size() != 2) continue;
+                const auto localId = static_cast<std::uint32_t>(idv->AsInt());
+                auto it = localToEntity.find(localId);
+                if (it == localToEntity.end()) continue;
+                const ecs::Entity oldE{static_cast<std::uint32_t>(hv->AsArray()[0].AsInt()),
+                                       static_cast<std::uint32_t>(hv->AsArray()[1].AsInt())};
+                const ecs::Entity newE = it->second;
+                oldToNew.emplace(oldE, newE);
+                if (!(oldE == newE)) anyFallback = true;
+            }
+        }
+        if (anyFallback) {
+            MYE_LOG_WARN("Editor",
+                         "DestroyEntityCommand.Undo: 핸들 보존 폴백 — 일부 엔티티가 새 핸들로 복원됨. "
+                         "서브트리 밖에서 이 엔티티들을 참조하던 EntityRef 는 dangling 될 수 있음.");
+        }
+
+        // 선택 재결선: 파괴로 dangling된 선택이 서브트리의 옛 핸들(루트든 임의 자손이든)을 가리켰다면
+        //   대응하는 새 핸들로 옮긴다. 핸들 보존이 성공하면 옛==새라 무해(항등 재선택).
         if (ctx.selection) {
-            const SelectableRef oldRef = SelectableRef::OfEntity(oldRoot);
-            if (ctx.selection->IsSelected(oldRef))
-                ctx.selection->Select(SelectableRef::OfEntity(newRoot), SelectMode::Replace);
+            for (const auto& [oldE, newE] : oldToNew) {
+                const SelectableRef oldRef = SelectableRef::OfEntity(oldE);
+                if (ctx.selection->IsSelected(oldRef)) {
+                    ctx.selection->Select(SelectableRef::OfEntity(newE), SelectMode::Replace);
+                    break;   // Replace 는 단일 선택으로 대체하므로 한 번이면 충분.
+                }
+            }
         }
     }
 }

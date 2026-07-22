@@ -25,11 +25,11 @@ void WriteCell(tm::TilemapWorld& map, uint8_t layer, Vec2i cell,
     const Vec2i lc = tm::CellToLocal(cell);
     chunk.ClearCell(lc.x, lc.y);
     // 첫 컬럼은 base, 나머지는 overflow(AddColumn이 base 비면 승격하므로 순서대로 Add로 충분).
-    for (const tm::TileColumn& c : cols) {
-        tm::TileColumn col = c;
-        col.layer = layer;
-        chunk.AddColumn(lc.x, lc.y, col);
-    }
+    //   col.layer 를 강제로 덮어쓰지 않고 스냅샷 값을 그대로 재적용한다(before==Undo 결과 무손실
+    //   왕복 보장). layer 지정 책임은 컬럼 생성 시점(tile_ops)에 둔다.
+    (void)layer;
+    for (const tm::TileColumn& c : cols)
+        chunk.AddColumn(lc.x, lc.y, c);
 }
 
 TilePaintCommand::TilePaintCommand(tm::TilemapWorld* map,

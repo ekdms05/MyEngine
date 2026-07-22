@@ -87,6 +87,7 @@ struct ShapeItem {
     rhi::TextureHandle atlasTexture{};
     Color    color = Color::White();
     uint16_t pixelSize = 0;
+    FontId   fontId{};   // 이 글리프를 실제로 그리는 폰트(폴백 해석 결과 — 아틀라스 키 일치용)
     // 문자열 풀 참조(링크/아이콘).
     uint32_t poolOffset = 0, poolLength = 0;
     bool     breakable = false;   // 이 문자 앞에서 줄바꿈 가능(CJK 또는 공백 뒤)
@@ -180,8 +181,11 @@ static void LayoutCore(std::vector<PositionedGlyph>& outGlyphs,
                 continue;
             }
 
-            // 폰트 선택(폴백 체인은 FontRegistry 내부에서 처리 — 여기서는 provider 해석 사용).
-            IFont* font = baseFont;
+            // 폰트 선택: 코드포인트별 폴백 해석(base.font 에 없는 한글 등은 등록 폴백 폰트로).
+            //   선택 결과 폰트 id 를 아이템에 저장해 아틀라스 조회 키가 셰이핑과 일치하게 한다.
+            IFont* font = fonts.ResolveForCodepoint(base.font, cp);
+            if (!font) font = baseFont;
+            it.fontId = font ? font->id() : base.font;
             if (font) {
                 RasterBitmap probe{};
                 // measure/셰이핑 단계에서는 metrics·advance 만 필요 → rasterize 로 advance 취득.
@@ -211,7 +215,9 @@ static void LayoutCore(std::vector<PositionedGlyph>& outGlyphs,
             if (it.kind != ShapeItem::Kind::Glyph) continue;
             if (it.codepoint == U'\n' || it.isSpace || it.size.x == 0 || it.size.y == 0)
                 continue;
-            IFont* font = fonts.ResolveFont(base.font);
+            // 셰이핑에서 확정한 폰트(폴백 포함)로 조회 — base.font 로 재해석하면 폴백 글리프가
+            //   base 폰트 아틀라스 키로 어긋나 빈칸으로 렌더된다(한글 in 라틴 폰트 버그).
+            IFont* font = fonts.ResolveFont(it.fontId);
             if (!font) continue;
             GlyphKey key{font->id(), it.codepoint, base.size, GlyphStyle::Normal};
             const Glyph* g = atlas->GetOrRasterize(*ctx, *font, key);

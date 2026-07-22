@@ -61,6 +61,22 @@ asset::AnimationClipData WithFrameMoved(const asset::AnimationClipData& c, size_
     };
     rot(out.frameIndices);
     rot(out.frameDurations);
+    // 이벤트의 frameIndex 는 "클립 프레임 슬롯" 인덱스이므로 프레임 이동과 함께 재매핑해야
+    //   이벤트가 원래 프레임을 계속 가리킨다(WithFrameRemoved 와 대칭). ClipPlayback 은
+    //   m.frameIndex==slot 으로 발화하므로, 재매핑을 빠뜨리면 발자국/타격 이벤트가 엉뚱한
+    //   프레임에서 터진다.
+    //   from<to(앞으로 이동): from 슬롯 -> to, 사이(from<ev<=to)는 한 칸 당김.
+    //   to<from(뒤로 이동): from 슬롯 -> to, 사이(to<=ev<from)는 한 칸 밀림.
+    for (asset::AnimEventMarker& ev : out.events) {
+        const size_t e = ev.frameIndex;
+        if (e == from) {
+            ev.frameIndex = static_cast<uint32_t>(to);
+        } else if (from < to) {
+            if (e > from && e <= to) ev.frameIndex = static_cast<uint32_t>(e - 1);
+        } else {   // to < from
+            if (e >= to && e < from) ev.frameIndex = static_cast<uint32_t>(e + 1);
+        }
+    }
     return out;
 }
 

@@ -56,6 +56,16 @@ struct NodeKey {
     }
     bool operator==(const NodeKey& o) const { return v == o.v; }
 };
+
+// 노드가 NodeKey 압축 범위(cell 각 24bit 부호, level 16bit 부호) 안인지. 밖이면 서로 다른
+//   노드가 한 키로 충돌해 A*가 조용히 틀린 결과를 낼 수 있으므로 탐색 시작에서 명시적으로 거른다.
+bool NodeInKeyRange(const NavNode& n) {
+    constexpr int32_t kCellMin = -(1 << 23), kCellMax = (1 << 23) - 1;
+    constexpr int32_t kLevelMin = -(1 << 15), kLevelMax = (1 << 15) - 1;
+    return n.cellX >= kCellMin && n.cellX <= kCellMax &&
+           n.cellY >= kCellMin && n.cellY <= kCellMax &&
+           n.level >= kLevelMin && n.level <= kLevelMax;
+}
 struct NodeKeyHash {
     size_t operator()(const NodeKey& k) const noexcept { return static_cast<size_t>(k.v); }
 };
@@ -126,6 +136,16 @@ PathResult FindPath(const INavSource& source, NavNode start, NavNode goal,
                     const NavQueryParams& params, CostModifier cost) {
     PathResult result;
 
+    // NodeKey 압축 범위 밖이면 키 충돌 위험 → 조용한 오답 대신 명시적 실패로 거른다.
+    if (!NodeInKeyRange(start)) {
+        result.status = PathStatus::InvalidStart;
+        return result;
+    }
+    if (!NodeInKeyRange(goal)) {
+        result.status = PathStatus::InvalidGoal;
+        return result;
+    }
+
     if (!source.IsWalkable(start.cellX, start.cellY, start.level)) {
         result.status = PathStatus::InvalidStart;
         return result;
@@ -181,13 +201,20 @@ PathResult FindPath(const INavSource& source, NavNode start, NavNode goal,
             if (!ResolveNeighbor(source, cur.node, dx, dy, params.maxLevelStep, nb)) return;
 
             if (isDiagonal && params.preventCornerCut) {
-                // 대각 이동은 양쪽 직교 셀이 (어느 층에서든) 통행 가능해야 허용.
+                // 대각 이동은 양쪽 직교 셀이 통행 가능해야 허용하되, 그 층이 from 또는 nb 의 층과
+                //   maxLevelStep 이내여야 한다. 다리·경사에서 두 직교 변이 서로 다른(연결 안 된)
+                //   층에서만 통행 가능하면 물리적으로 이어지지 않은 모서리를 자르게 되므로 배제.
                 NavNode side1, side2;
                 const bool ok1 = ResolveNeighbor(source, cur.node, dx, 0,
                                                  params.maxLevelStep, side1);
                 const bool ok2 = ResolveNeighbor(source, cur.node, 0, dy,
                                                  params.maxLevelStep, side2);
                 if (!ok1 || !ok2) return;
+                auto levelConnected = [&](const NavNode& side) {
+                    return std::abs(side.level - cur.node.level) <= params.maxLevelStep ||
+                           std::abs(side.level - nb.level)       <= params.maxLevelStep;
+                };
+                if (!levelConnected(side1) || !levelConnected(side2)) return;
             }
 
             float mult = source.MoveCost(nb.cellX, nb.cellY, nb.level);
@@ -354,8 +381,14 @@ void NavSystem::DispatchCompleted() {
             }
         }
     }
-    // 콜백은 락 밖(메인 스레드)에서 호출.
+    // 콜백은 락 밖(메인 스레드)에서 호출. 콜백은 1회성 소비이므로 호출 후 맵에서 제거한다
+    //   (제거하지 않으면 콜백 등록 요청이 dispatched=true 상태로 영구 잔존 → 매 프레임 경로를
+    //   재요청하는 에이전트에서 m_requests 가 단조 증가하는 사실상 누수).
     for (auto& req : ready) req->callback(req->id, req->result);
+    if (!ready.empty()) {
+        std::lock_guard<std::mutex> lk(m_mutex);
+        for (auto& req : ready) m_requests.erase(req->id);
+    }
 }
 
 bool NavSystem::IsComplete(NavRequestId id) const {

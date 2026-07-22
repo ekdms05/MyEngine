@@ -49,9 +49,22 @@ Entity World::CreateWithId(uint32_t index, uint32_t generation) {
         const bool inFreeList = (freeIt != freeList.end());
         if (!inFreeList) return Entity::Null();   // 살아있는 슬롯 → 중복 재생성 금지
         // 빈 슬롯 → freelist에서 제거하고 지정 세대로 되살린다(컴포넌트는 파괴 시 이미 제거됨).
+        //
+        // 세대 단조성 보존(핸들 충돌 방지): 옛 핸들(requested)로 되감는 것은 "그 핸들이 살아있던
+        //   이후 이 슬롯이 한 번도 다른 엔티티로 재사용되지 않았을 때"만 안전하다. Destroy는 세대를
+        //   +1 하지만 Create()의 슬롯 재사용은 세대를 올리지 않으므로:
+        //     - 파괴→즉시복원:      current == requested + 1  → 안전(슬롯 무점유). 되감기 허용.
+        //     - 파괴→재사용→재파괴: current >= requested + 2  → 슬롯이 재사용됨. 되감으면 이후
+        //         Create가 같은 (index,gen)을 재발급해 서로 다른 논리 엔티티가 한 핸들에서 충돌.
+        //   따라서 current > requested + 1 이면 되감지 않고 현재 세대를 유지(옛 핸들 복원은 실패 —
+        //   반환 핸들≠요청). 호출부(preserveHandles)는 이 폴백을 인지해 참조·선택을 재결선한다.
+        //   requested > current(미래 세대 지정)도 그대로 허용하지 않고 방어적으로 current 유지.
         freeList.erase(freeIt);
-        gens[index] = generation;
-        return Entity{index, generation};
+        const bool safeRewind = (generation + 1u == gens[index]) ||   // 즉시 복원(무점유)
+                                (generation == gens[index]);          // 동일 세대(멱등)
+        const uint32_t revived = safeRewind ? generation : gens[index];
+        gens[index] = revived;
+        return Entity{index, revived};
     }
 
     // 세대 테이블 밖 index → 사이 슬롯을 죽은(0) 세대로 채워 확장하고 freelist에 등록.

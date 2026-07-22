@@ -66,6 +66,12 @@ asset::AnimationClipData WithEventRemoved(const asset::AnimationClipData& c, siz
 // ---------------------------------------------------------------------------
 // clips: 후보 클립 목록(이름이 "<base>_<suffix>"). base와 8방향 접미사로 각 슬롯을 채운다.
 //   suffix 규약은 anim::Dir8Suffix(down/down_left/...) 사용. 반환 clips[i]는 clips 원소를 가리킨다.
+//
+// [수명 계약 — 중요] 반환된 DirectionalAnimSet 은 clips 벡터의 원소를 비소유 raw 포인터로
+//   가리킨다. 따라서 (1) clips 는 반환된 세트보다 오래 살아 있어야 하고, (2) 세트를 다 쓸
+//   때까지 clips 를 재할당(push_back 등으로 capacity 변경)해서는 안 된다 — 재할당 시 모든
+//   포인터가 dangling 된다. 8방향 배선 UI 를 붙일 때는 clips 를 먼저 확정(고정)한 뒤 이 함수를
+//   호출하거나, 인덱스 기반 참조로 대체할 것.
 anim::DirectionalAnimSet BuildDirectionalSet(const std::string& baseName,
                                              const std::vector<asset::AnimationClipData>& clips,
                                              bool mirrorRight = false);

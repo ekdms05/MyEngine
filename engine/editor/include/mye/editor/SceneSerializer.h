@@ -14,8 +14,10 @@
 #include "mye/core/Json.h"
 #include "mye/ecs/Entity.h"
 
+#include <cstdint>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace mye::ecs { class World; }
@@ -44,8 +46,12 @@ public:
     //   파괴→Undo 후 옛 EntityRef/선택이 그대로 유효해야 하는 M4 리뷰 후속). 핸들이 없거나
     //   재생성 실패(슬롯이 이미 살아있음 등) 시 해당 엔티티는 Create() 로 폴백한다.
     //   씬 파일 로드(WriteWorld 결과)는 항상 preserveHandles=false(핸들 충돌 방지).
+    //
+    //   outLocalToEntity(선택): 로컬 ID → 새 Entity 매핑을 채워 반환한다. DestroyEntityCommand
+    //     undo가 서브트리 자손·선택 재결선(preserveHandles 폴백 감지 포함)에 사용한다.
     Expected<std::vector<ecs::Entity>, Error>
-    ReadInto(ecs::World& world, const json::Value& in, bool preserveHandles = false) const;
+    ReadInto(ecs::World& world, const json::Value& in, bool preserveHandles = false,
+             std::unordered_map<std::uint32_t, ecs::Entity>* outLocalToEntity = nullptr) const;
 
     // ---- 파일 I/O (저장/로드) ----
     // JSON 텍스트를 <path>에 저장(UTF-8). 04 파일시스템/VFS 규약 준수.

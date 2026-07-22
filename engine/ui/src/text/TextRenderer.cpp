@@ -4,6 +4,8 @@
 
 #include "mye/render/SpriteBatch.h"
 
+#include <algorithm>
+
 namespace mye::text {
 
 // ---------------------------------------------------------------------------
@@ -51,13 +53,38 @@ IFont* FontRegistry::ResolveForCodepoint(FontId primary, char32_t cp) const {
 namespace {
 
 // 본체 글리프 하나를 SpriteBatch 로 제출(정수 픽셀 스냅). pivot=좌상단(UI 픽셀 좌표).
+//   clip: 스크린 시저. 글리프 쿼드가 clip 에 걸치면 잘라 제출(UV 비례 재계산), 완전히 밖이면 스킵.
 void SubmitGlyphQuad(render::SpriteBatch& batch, const PositionedGlyph& g,
-                     Vec2i origin, Vec2i offset, Color tint, float sortY) {
+                     Vec2i origin, Vec2i offset, Color tint, float sortY,
+                     const TextRenderer::ClipRect& clip) {
+    float px = static_cast<float>(origin.x + g.pos.x + offset.x);
+    float py = static_cast<float>(origin.y + g.pos.y + offset.y);
+    float pw = static_cast<float>(g.size.x);
+    float ph = static_cast<float>(g.size.y);
+    Rect  uv = g.uv;
+
+    // 시저 교집합(CPU 클립). 잘린 만큼 UV 를 비례 이동/축소.
+    const float cx0 = std::max(px, clip.x);
+    const float cy0 = std::max(py, clip.y);
+    const float cx1 = std::min(px + pw, clip.x + clip.w);
+    const float cy1 = std::min(py + ph, clip.y + clip.h);
+    if (cx1 <= cx0 || cy1 <= cy0) return;   // 완전히 밖
+    if (cx0 > px || cy0 > py || cx1 < px + pw || cy1 < py + ph) {
+        if (pw > 0.0f && ph > 0.0f) {
+            const float uL = (cx0 - px) / pw;
+            const float uT = (cy0 - py) / ph;
+            const float uR = (cx1 - px) / pw;
+            const float uB = (cy1 - py) / ph;
+            uv = Rect{uv.x + uv.w * uL, uv.y + uv.h * uT,
+                      uv.w * (uR - uL), uv.h * (uB - uT)};
+        }
+        px = cx0; py = cy0; pw = cx1 - cx0; ph = cy1 - cy0;
+    }
+
     render::SpriteDraw d{};
-    d.position = Vec2{static_cast<float>(origin.x + g.pos.x + offset.x),
-                      static_cast<float>(origin.y + g.pos.y + offset.y)};
-    d.size    = Vec2{static_cast<float>(g.size.x), static_cast<float>(g.size.y)};
-    d.uv      = g.uv;
+    d.position = Vec2{px, py};
+    d.size    = Vec2{pw, ph};
+    d.uv      = uv;
     d.texture = g.atlasTexture;
     d.tint    = tint;
     d.sortY   = sortY;
@@ -68,19 +95,19 @@ void SubmitGlyphQuad(render::SpriteBatch& batch, const PositionedGlyph& g,
 } // namespace
 
 void TextRenderer::Submit(render::SpriteBatch& batch, const TextLayout& layout,
-                          Vec2i origin, float sortY) {
+                          Vec2i origin, float sortY, const ClipRect& clip) {
     // 본체 패스. 그림자/아웃라인은 스타일 정보를 요구하므로 DrawText(스타일 보유) 경로가
     //   전담한다(3패스). 캐시된 레이아웃만 가진 Submit 은 본체만 픽셀 스냅으로 제출한다.
     for (const PositionedGlyph& g : layout.glyphs()) {
         if (!g.atlasTexture.IsValid() || g.size.x == 0 || g.size.y == 0) continue;
-        SubmitGlyphQuad(batch, g, origin, Vec2i{0, 0}, g.color, sortY);
+        SubmitGlyphQuad(batch, g, origin, Vec2i{0, 0}, g.color, sortY, clip);
     }
 }
 
 void TextRenderer::DrawText(rhi::ICommandContext& ctx, render::SpriteBatch& batch,
                             GlyphAtlas& atlas, const IFontProvider& fonts,
                             std::string_view richText, const TextStyle& style,
-                            Vec2i origin, const LayoutParams& params) {
+                            Vec2i origin, const LayoutParams& params, const ClipRect& clip) {
     m_scratch.Set(ctx, atlas, fonts, richText, style, params);
 
     // 3패스: 그림자 → (아웃라인은 별도 글리프 변형 필요 — 후속) → 본체.
@@ -89,10 +116,10 @@ void TextRenderer::DrawText(rhi::ICommandContext& ctx, render::SpriteBatch& batc
         const ShadowDesc& sh = *style.shadow;
         for (const PositionedGlyph& g : m_scratch.glyphs()) {
             if (!g.atlasTexture.IsValid() || g.size.x == 0 || g.size.y == 0) continue;
-            SubmitGlyphQuad(batch, g, origin, sh.offset, sh.color, 0.0f);
+            SubmitGlyphQuad(batch, g, origin, sh.offset, sh.color, 0.0f, clip);
         }
     }
-    Submit(batch, m_scratch, origin);
+    Submit(batch, m_scratch, origin, 0.0f, clip);
 }
 
 } // namespace mye::text

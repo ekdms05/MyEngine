@@ -97,6 +97,55 @@ target_compile_definitions(mye_thirdparty_sol2 INTERFACE
     SOL_EXCEPTIONS_SAFE_PROPAGATION=1
 )
 
+# ---- FreeType 2.13.3 (FTL/GPLv2, freetype.org) — 폰트 래스터라이즈(06 M5-A 텍스트) ----
+# 온디맨드 글리프 아틀라스용 TTF/OTF 래스터라이저. 한글 11,172자 동적 캐싱의 근간.
+#   벤더링 범위(트리밍): TrueType·CFF·Type1·CID·Type42 드라이버 + sfnt·psaux·psnames·
+#   pshinter·autofit + smooth/raster 렌더러 + ftstroke(아웃라인). 제외: pfr·winfnt·pcf·bdf
+#   ·svg·sdf 렌더러·cache·dlg·harfbuzz·zlib(시스템)·libpng·brotli. 외부 의존 0 — 순수 정적.
+#   모듈 등록 목록은 include/freetype/config/ftmodule.h 를 벤더 기본에서 트리밍한 버전 사용.
+# 소비자(mye_ui/mye_text)는 target_link_libraries(<lib> PRIVATE mye_thirdparty_freetype).
+#   FT2_BUILD_LIBRARY 는 라이브러리 컴파일 전용 정의(소비자는 정의하지 않음, PRIVATE).
+add_library(mye_thirdparty_freetype STATIC
+    # --- base ---
+    freetype/src/base/ftsystem.c   # 기본 메모리·스트림 (ANSI stdio)
+    freetype/src/base/ftinit.c     # FT_Init_FreeType — ftmodule.h 순회 등록
+    freetype/src/base/ftbase.c     # 코어 (ftobjs·ftstream·ftcalc·ftgloadr·ftoutln 등 집합)
+    freetype/src/base/ftbbox.c     # 아웃라인 바운딩 박스
+    freetype/src/base/ftbitmap.c   # 비트맵 변환·임베딩(FT_Bitmap 유틸)
+    freetype/src/base/ftglyph.c    # FT_Glyph 관리(글리프 오브젝트 복제·변환)
+    freetype/src/base/ftstroke.c   # FT_Stroker — 아웃라인 스트로크(텍스트 아웃라인/그림자)
+    freetype/src/base/ftmm.c       # Multi-Master/Named-Instance API (truetype/cff 가 참조 — FT_Set_Named_Instance)
+    freetype/src/base/ftdebug.c    # FT_Trace_Enable/Disable·에러 문자열 (smooth/디버그 빌드 참조)
+    # --- sfnt/truetype/cff ---
+    freetype/src/sfnt/sfnt.c
+    freetype/src/truetype/truetype.c
+    freetype/src/cff/cff.c
+    # --- Type1 / CID / Type42 (OTF·레거시 폰트 커버) ---
+    freetype/src/type1/type1.c
+    freetype/src/cid/type1cid.c
+    freetype/src/type42/type42.c
+    # --- helpers ---
+    freetype/src/psaux/psaux.c
+    freetype/src/psnames/psnames.c
+    freetype/src/pshinter/pshinter.c
+    freetype/src/autofit/autofit.c
+    # --- renderers ---
+    freetype/src/raster/raster.c   # 모노(FT_RENDER_MODE_MONO — 도트 폰트 MONO 힌팅)
+    freetype/src/smooth/smooth.c   # 안티에일리어스(FT_RENDER_MODE_NORMAL — R8 그레이)
+    # --- gzip (self-contained zlib copy — woff/gz 폰트, 시스템 zlib 미의존) ---
+    freetype/src/gzip/ftgzip.c
+)
+target_include_directories(mye_thirdparty_freetype PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/freetype/include>
+)
+target_compile_definitions(mye_thirdparty_freetype PRIVATE FT2_BUILD_LIBRARY)
+# 벤더 C 코드의 경고는 우리 규약(/W4)에서 제외.
+if(MSVC)
+    target_compile_options(mye_thirdparty_freetype PRIVATE /W0)
+else()
+    target_compile_options(mye_thirdparty_freetype PRIVATE -w)
+endif()
+
 # ---- Dear ImGui (docking, v1.92.x) — 디버그 오버레이 UI ----
 # 헤더 인터페이스 타깃 + 소스 목록 변수(IMGUI_CORE_SOURCES/IMGUI_BACKEND_SOURCES)를 노출한다.
 add_subdirectory(imgui)

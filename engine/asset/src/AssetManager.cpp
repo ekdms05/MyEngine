@@ -18,6 +18,7 @@
 #include "mye/asset/Texture.h"
 #include "mye/asset/Mesh.h"
 #include "mye/asset/AudioClip.h"
+#include "mye/script/ScriptTypes.h"   // M3-C: ScriptAsset(.lua) LoadSync 인스턴스화(헤더 온리)
 
 #include "mye/core/Events.h"
 #include "mye/core/Jobs.h"
@@ -551,5 +552,9 @@ template AssetHandle<Mesh> AssetManager::LoadSync<Mesh>(std::string_view);   // 
 template AssetHandle<Mesh> AssetManager::LoadAsync<Mesh>(std::string_view, LoadPriority);
 template AssetHandle<AudioClip> AssetManager::LoadSync<AudioClip>(std::string_view);  // M3-A 오디오
 template AssetHandle<AudioClip> AssetManager::LoadAsync<AudioClip>(std::string_view, LoadPriority);
+template AssetHandle<::mye::script::ScriptAsset>
+    AssetManager::LoadSync<::mye::script::ScriptAsset>(std::string_view);   // M3-C .lua
+template AssetHandle<::mye::script::ScriptAsset>
+    AssetManager::LoadAsync<::mye::script::ScriptAsset>(std::string_view, LoadPriority);
 
 } // namespace mye::asset

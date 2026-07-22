@@ -8,6 +8,10 @@
 #include "mye/asset/Mesh.h"
 #include "mye/asset/AudioClip.h"
 
+// M3-C: ScriptAsset 은 mye_script 소유. 여기선 전방 선언만으로 AssetHandle<ScriptAsset>
+//   멤버(void* refcount 위임·캐스트)를 인스턴스화한다(mye_script 헤더/링크 의존 회피).
+namespace mye::script { struct ScriptAsset; }
+
 namespace mye::asset {
 
 template <typename T>
@@ -91,5 +95,8 @@ template <typename T> void AssetHandle<T>::Unpin() { /* TODO(M1) */ }
 template class AssetHandle<Texture>;
 template class AssetHandle<Mesh>;   // M2-C: bridge_demo가 LoadSync<Mesh> 소비
 template class AssetHandle<AudioClip>;   // M3-A: 오디오 임포터/핫리로드 테스트 소비
+// M3-C: ScriptAsset(.lua) — mye_script 소유 타입. AssetHandle 멤버는 void* 캐스트만 하므로
+//   전방 선언으로 충분(mye_script 링크 의존 없음 — 헤더 커플링 회피).
+template class AssetHandle<::mye::script::ScriptAsset>;
 
 } // namespace mye::asset

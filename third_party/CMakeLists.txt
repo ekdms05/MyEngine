@@ -55,6 +55,48 @@ else()
     target_link_libraries(mye_thirdparty_miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
 endif()
 
+# ---- Lua 5.4.7 (MIT, lua.org) — 게임 로직 스크립팅 런타임(05 M3-C) ----
+# 표준 Lua 5.4 채택(오픈이슈 #1 확정, LuaJIT 미채택). C 소스를 STATIC 라이브러리로 컴파일.
+#   docs/05는 장기적으로 lua54.dll(공유) + 플러그인 힙 공유를 명시하나, M3-C는 DLL 로더가
+#   없고(플러그인은 M4) 정적 링크 검증 단계이므로 STATIC으로 빌드한다(확정 규약: 정적 링크).
+#   LUA_USE_* 플랫폼 매크로는 기본값(luaconf.h) — Windows에서는 표준 C만 사용.
+#   lua.c(인터프리터 main)·luac.c(컴파일러 main)는 제외 — 라이브러리로만 임베드.
+add_library(mye_thirdparty_lua STATIC
+    lua/lapi.c    lua/lauxlib.c lua/lbaselib.c lua/lcode.c   lua/lcorolib.c
+    lua/lctype.c  lua/ldblib.c  lua/ldebug.c   lua/ldo.c     lua/ldump.c
+    lua/lfunc.c   lua/lgc.c     lua/linit.c    lua/liolib.c  lua/llex.c
+    lua/lmathlib.c lua/lmem.c   lua/loadlib.c  lua/lobject.c lua/lopcodes.c
+    lua/loslib.c  lua/lparser.c lua/lstate.c   lua/lstring.c lua/lstrlib.c
+    lua/ltable.c  lua/ltablib.c lua/ltm.c      lua/lundump.c lua/lutf8lib.c
+    lua/lvm.c     lua/lzio.c
+)
+target_include_directories(mye_thirdparty_lua PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/lua>
+)
+# C 컴파일. 벤더 코드 경고는 우리 규약(/W4)에서 제외.
+if(MSVC)
+    target_compile_options(mye_thirdparty_lua PRIVATE /W0)
+    # sol2/C++ 경계에서 예외를 던지므로 C++ 예외를 Lua 경계로 넘기지 않도록
+    # LUA_USE_LONGJMP(기본) 대신 C++ 예외 전파를 켠다(스택 언와인딩으로 소멸자 실행).
+    target_compile_definitions(mye_thirdparty_lua PUBLIC LUA_USE_LONGJMP)
+else()
+    target_compile_options(mye_thirdparty_lua PRIVATE -w)
+endif()
+
+# ---- sol2 v3.2.3 (MIT, github release) — Lua C++ 바인딩(단일 헤더) ----
+# 헤더 온리 인터페이스 타깃. 소비자(mye_script)가 lua 타깃과 함께 링크한다.
+#   sol2/Lua 경계는 예외 사용 가능(확정 규약, /EHsc 켜져있음).
+add_library(mye_thirdparty_sol2 INTERFACE)
+target_include_directories(mye_thirdparty_sol2 INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sol2>
+)
+target_link_libraries(mye_thirdparty_sol2 INTERFACE mye_thirdparty_lua)
+# sol2 안전 옵션: 모든 스택 접근·함수 호출을 검사(디버그 안전). 예외 전파 허용.
+target_compile_definitions(mye_thirdparty_sol2 INTERFACE
+    SOL_ALL_SAFETIES_ON=1
+    SOL_EXCEPTIONS_SAFE_PROPAGATION=1
+)
+
 # ---- Dear ImGui (docking, v1.92.x) — 디버그 오버레이 UI ----
 # 헤더 인터페이스 타깃 + 소스 목록 변수(IMGUI_CORE_SOURCES/IMGUI_BACKEND_SOURCES)를 노출한다.
 add_subdirectory(imgui)

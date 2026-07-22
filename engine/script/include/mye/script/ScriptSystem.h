@@ -89,6 +89,11 @@ private:
     bool InvokeGuarded(ecs::Entity e, ScriptComponent& sc, std::string_view callbackName,
                        const sol::protected_function& fn);
 
+    // 추적 중인 스크립트 엔티티 중 파괴된(더 이상 live ScriptComponent 없음) 것을 감지해
+    //   on_destroy 를 호출하고 소유 코루틴을 취소한다(docs/05: 파괴 시 자동 취소). 프레임 경계에서
+    //   호출(순회 밖).
+    void ReconcileDestroyed();
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

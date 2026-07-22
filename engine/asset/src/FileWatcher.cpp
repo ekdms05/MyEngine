@@ -12,6 +12,7 @@
 #include "mye/core/Log.h"
 
 #include <atomic>
+#include <cstddef>
 #include <string>
 #include <thread>
 #include <vector>
@@ -104,10 +105,20 @@ void Win32DirectoryWatcher::Impl::ThreadMain() {
             continue;
         }
 
-        // 레코드 순회.
+        // 레코드 순회. transferred(실제 기록 바이트)로 상한을 둔다 — 각 레코드의 헤더·이름이
+        //   범위 안에 들어오는지 검증해 OOB 접근을 막는다(FileNameLength·NextEntryOffset 이
+        //   버퍼를 벗어나는 병리·손상 케이스 방어).
+        const size_t limit = static_cast<size_t>(transferred) <= buffer.size()
+                                 ? static_cast<size_t>(transferred) : buffer.size();
+        // FILE_NOTIFY_INFORMATION 은 FileName 을 제외한 고정 헤더 크기.
+        const size_t kHeaderBytes = offsetof(FILE_NOTIFY_INFORMATION, FileName);
         size_t offset = 0;
         for (;;) {
+            // 헤더가 범위 안에 있는지 먼저 검증.
+            if (offset + kHeaderBytes > limit) break;
             auto* info = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(buffer.data() + offset);
+            // 이름 바이트가 범위 안에 있는지 검증(FileNameLength 는 바이트 단위).
+            if (offset + kHeaderBytes + info->FileNameLength > limit) break;
             const size_t nameChars = info->FileNameLength / sizeof(wchar_t);
             std::string rel = NormalizeSlashes(Utf16ToUtf8(info->FileName, nameChars));
             std::string full = rootUtf8;
@@ -143,7 +154,7 @@ void Win32DirectoryWatcher::Impl::ThreadMain() {
 
             if (info->NextEntryOffset == 0) break;
             offset += info->NextEntryOffset;
-            if (offset >= buffer.size()) break;
+            if (offset >= limit) break;
         }
     }
 }

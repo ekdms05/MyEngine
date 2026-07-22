@@ -24,8 +24,13 @@ void MusicPlayer::Play(const asset::AudioClip& clip, float fadeSec, float volume
 
     // 이전 트랙(있으면) 페이드아웃 후 정지.
     if (m_active.IsValid() && m_mixer->IsVoiceActive(m_active)) {
-        // 직전 페이드아웃 중이던 트랙이 남아있으면 즉시 정지(2 보이스만 유지).
-        if (m_previous.IsValid()) m_mixer->Stop(m_previous);
+        // 직전 페이드아웃 중이던 트랙이 아직 남아있으면(3번째 연속 트랙) 즉시 Stop 하면 파형이
+        //   급단절되어 팝(클릭)이 난다. 짧은 페이드아웃으로 정지해 가청 팝을 방지한다.
+        if (m_previous.IsValid() && m_mixer->IsVoiceActive(m_previous)) {
+            const uint64_t quickFade =
+                static_cast<uint64_t>(0.02 * sr);   // ~20ms 마이크로 페이드
+            m_mixer->FadeOutAndStop(m_previous, quickFade);
+        }
         m_previous = m_active;
         m_mixer->FadeOutAndStop(m_previous, fadeFrames);
     }
@@ -129,35 +134,44 @@ void AudioEngine::PruneInactive() {
 
 VoiceHandle AudioEngine::PostCue(const AudioCue& cue, std::optional<Vec2> worldPos) {
     if (!m_mixer || !cue.IsValid()) return {};
-    std::lock_guard<std::mutex> lock(m_mixerMutex);
 
-    PruneInactive();
-
-    // 폴리포니 제한.
-    if (cue.maxVoices != 0 && CountCueVoices(&cue) >= cue.maxVoices) {
-        return {};   // 초과 → 거절(스틸 정책은 후속)
-    }
-
-    // 클립 선택.
+    // 1) 락 하에 짧게: prune + 폴리포니 검사 + 클립 선택 + 재생 파라미터 산출.
+    //    디코딩(MakeClipSource)은 락 밖에서 — 오디오 콜백(PullAudio)이 믹서 락에서 오래
+    //    막히지 않도록 한다(스트리밍 OGG 초기화 등은 비쌈).
     const asset::AudioClip* clip = nullptr;
-    const uint32_t count = static_cast<uint32_t>(cue.clips.size());
-    if (cue.selection == CueSelect::Sequential) {
-        clip = cue.clips[cue.sequentialCursor % count];
-        cue.sequentialCursor = (cue.sequentialCursor + 1) % count;
-    } else {
-        clip = cue.clips[NextRandom() % count];
-    }
-    if (!clip) return {};
+    PlayParams pp;
+    {
+        std::lock_guard<std::mutex> lock(m_mixerMutex);
 
+        PruneInactive();
+
+        // 폴리포니 제한.
+        if (cue.maxVoices != 0 && CountCueVoices(&cue) >= cue.maxVoices) {
+            return {};   // 초과 → 거절(스틸 정책은 후속)
+        }
+
+        // 클립 선택(sequentialCursor 전진·난수 소비 — 락 하에서 결정적으로).
+        const uint32_t count = static_cast<uint32_t>(cue.clips.size());
+        if (cue.selection == CueSelect::Sequential) {
+            clip = cue.clips[cue.sequentialCursor % count];
+            cue.sequentialCursor = (cue.sequentialCursor + 1) % count;
+        } else {
+            clip = cue.clips[NextRandom() % count];
+        }
+        if (!clip) return {};
+
+        pp.bus = cue.bus;
+        pp.loop = cue.loop;
+        pp.volume = RandRange(cue.volumeMin, cue.volumeMax);
+        pp.pitch  = RandRange(cue.pitchMin, cue.pitchMax);
+    }
+
+    // 2) 락 밖 디코딩.
     auto source = MakeClipSource(*clip);
     if (!source) return {};
 
-    PlayParams pp;
-    pp.bus = cue.bus;
-    pp.loop = cue.loop;
-    pp.volume = RandRange(cue.volumeMin, cue.volumeMax);
-    pp.pitch  = RandRange(cue.pitchMin, cue.pitchMax);
-
+    // 3) 락 하에 짧게: 보이스 생성·등록.
+    std::lock_guard<std::mutex> lock(m_mixerMutex);
     VoiceHandle h;
     if (worldPos) {
         SpatialParams sp;

@@ -37,7 +37,11 @@ struct ScriptRuntime::Impl {
     std::size_t                                   registeredBorrowed = 0;
     std::size_t                                   registeredOwned = 0;
     std::unique_ptr<CoroutineScheduler>           coroutines;
-    int                                           gcBudgetKB = 4;   // step_gc 데이터 크기(스파이크 방지)
+    // step_gc(n): 이번 프레임에 "n KB 할당된 것처럼" 인크리멘털 GC 를 전진(Lua 5.4 LUA_GCSTEP).
+    //   4KB 는 게임 VM 부하 대비 너무 작아 GC 가 할당을 따라가지 못한다(메모리 성장). 프레임당
+    //   의미 있는 진행을 하도록 64KB 로 조정(스파이크 없이 꾸준히 수거). 이름은 실제 의미(스텝
+    //   데이터 크기)를 반영.
+    int                                           gcStepSizeKB = 64;
 };
 
 namespace {
@@ -224,7 +228,7 @@ void ScriptRuntime::UpdateCoroutines(float dt) {
 
 void ScriptRuntime::CollectGarbageStep() {
     // 프레임당 인크리멘털 GC step(스파이크 방지, docs/05 성능 가이드).
-    m_impl->lua.step_gc(m_impl->gcBudgetKB);
+    m_impl->lua.step_gc(m_impl->gcStepSizeKB);
 }
 
 sol::state& ScriptRuntime::State() { return m_impl->lua; }

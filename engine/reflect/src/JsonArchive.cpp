@@ -209,7 +209,7 @@ void JsonArchive::Value(bool& v) {
     if (m_impl->reading) {
         const json::Value* n = m_impl->NextReadNode();
         if (n && n->IsBool()) v = n->AsBool();
-        else if (!n) m_impl->readOk = m_impl->readOk;   // 미존재 = 기본값 유지(정상)
+        // 미존재/타입 불일치 = 기본값 유지(관대 모드). 엄격 모드(readOk=false)는 후속.
     } else {
         auto node = std::make_unique<WNode>();
         node->t = WNode::T::Bool; node->b = v;

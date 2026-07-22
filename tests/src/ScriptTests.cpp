@@ -373,6 +373,117 @@ MYE_TEST(ScriptCoroutineWaitEvent) {
 }
 
 // ===========================================================================
+// 코루틴 Start 첫 재개 에러 — 즉시 실패해도 CoResumeError 로 surface 되어야 함(유실 금지)
+// ===========================================================================
+MYE_TEST(ScriptCoroutineStartErrorSurfaced) {
+    ScriptRuntime rt;
+    EventBus bus;
+    rt.Initialize(DefaultPolicy(), &bus, nullptr);
+
+    int errorEvents = 0;
+    bus.Subscribe<ScriptErrorEvent>([&](const ScriptErrorEvent&) { ++errorEvents; return false; });
+
+    // 코루틴 본체가 첫 재개에서 곧바로 에러(nil 인덱싱).
+    auto r = rt.DoString(R"LUA(
+        mye.co.start(function()
+            local x = nil
+            return x.field
+        end)
+    )LUA", "co_err.lua");
+    MYE_EXPECT(bool(r));
+
+    // 첫 Tick 에서 등록된 실패 태스크가 CoResumeError → ScriptErrorEvent 로 발행.
+    rt.UpdateCoroutines(0.016f);
+    MYE_EXPECT(errorEvents == 1);
+    MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);   // 종료 처리(제거)
+}
+
+// ===========================================================================
+// 코루틴 NotifyEvent payload 큐 — 한 tick 사이 같은 이벤트 2회 도착 시 payload 유실 없음
+// ===========================================================================
+MYE_TEST(ScriptCoroutineEventPayloadQueue) {
+    ScriptRuntime rt;
+    EventBus bus;
+    rt.Initialize(DefaultPolicy(), &bus, nullptr);
+
+    (void)rt.DoString("_pq = { seen = {} }", "test_setup");
+    // 매번 wait_event("ping") 하고 받은 payload 를 기록하는 루프 코루틴.
+    auto r = rt.DoString(R"LUA(
+        mye.co.start(function()
+            for i = 1, 3 do
+                local p = mye.co.wait_event("ping")
+                _pq.seen[#_pq.seen + 1] = p
+            end
+        end)
+    )LUA", "pq.lua");
+    MYE_EXPECT(bool(r));
+
+    sol::state& lua = rt.State();
+
+    // 같은 tick 사이 두 번 통지 — payload 10, 20 이 큐에 쌓여야 한다(덮어쓰지 않음).
+    rt.Coroutines().NotifyEvent("ping", sol::make_object(lua, 10));
+    rt.Coroutines().NotifyEvent("ping", sol::make_object(lua, 20));
+    rt.UpdateCoroutines(0.016f);   // 첫 재개: 10 소비 후 다시 wait_event → 남은 20 재무장
+    rt.UpdateCoroutines(0.016f);   // 두 번째 재개: 20 소비
+
+    MYE_EXPECT(int(lua["_pq"]["seen"][1]) == 10);
+    MYE_EXPECT(int(lua["_pq"]["seen"][2]) == 20);   // 두 번째 payload 유실 없음
+
+    // 세 번째는 아직 도착 안 함 → 계속 대기.
+    MYE_EXPECT(rt.Coroutines().ActiveCount() == 1);
+    rt.Coroutines().NotifyEvent("ping", sol::make_object(lua, 30));
+    rt.UpdateCoroutines(0.016f);
+    MYE_EXPECT(int(lua["_pq"]["seen"][3]) == 30);
+    MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);
+}
+
+// ===========================================================================
+// 엔티티 파괴 — on_destroy 호출 + 소유 코루틴 취소(엔티티보다 오래 살지 않음)
+// ===========================================================================
+MYE_TEST(ScriptOnDestroyAndCoroutineCancel) {
+    ScriptRuntime rt;
+    EventBus bus;
+    rt.Initialize(DefaultPolicy(), &bus, nullptr);
+
+    ecs::World world;
+    world.SetEventBus(&bus);
+    ScriptSystem ss(rt, world, &bus, nullptr);
+    ss.RegisterComponent();
+
+    (void)rt.DoString("_od = { destroyed = 0 }", "test_setup");
+
+    ecs::Entity e = world.Create();
+    world.Add<ScriptComponent>(e);
+    // on_start 에서 무한 대기 코루틴 시작(엔티티 소유). on_destroy 는 카운터 증가.
+    const char* src = R"LUA(
+        local C = {}
+        function C:on_start()
+            mye.co.start_for(self.entity, function()
+                while true do mye.co.wait_event("never") end
+            end)
+        end
+        function C:on_destroy() _od.destroyed = _od.destroyed + 1 end
+        return C
+    )LUA";
+    MYE_EXPECT(InstallScript(rt, world, e, src, "od.lua"));
+
+    ss.Update(0.016f);   // on_start → 코루틴 시작·추적 등록
+    MYE_EXPECT(rt.Coroutines().ActiveCount() == 1);
+
+    // 엔티티 파괴 후 다음 Update 에서 감지 → on_destroy + 코루틴 취소.
+    world.Destroy(e);
+    ss.Update(0.016f);
+
+    sol::state& lua = rt.State();
+    MYE_EXPECT(int(lua["_od"]["destroyed"]) == 1);      // on_destroy 1회
+    MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);     // 소유 코루틴 취소됨
+
+    // 재호출 없음(추적에서 제거됨).
+    ss.Update(0.016f);
+    MYE_EXPECT(int(lua["_od"]["destroyed"]) == 1);
+}
+
+// ===========================================================================
 // 핫 리로드 — self.state 생존 + on_hot_reload 호출 + on_init 재호출 안 함
 // ===========================================================================
 MYE_TEST(ScriptHotReloadPreservesState) {

@@ -28,6 +28,7 @@
 #include <sol/sol.hpp>
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace mye::script {
@@ -40,6 +41,15 @@ struct ScriptSystem::Impl {
 
     // 월드 버스 구독 보관(RAII 해제).
     std::vector<ScopedSubscription> subs;
+
+    // 살아있는(인스턴스화된) 스크립트 엔티티 추적 — 파괴 감지용. World 에 파괴 훅이 없으므로
+    //   매 프레임 현재 live 집합과 대조해 사라진 엔티티에 on_destroy + 코루틴 취소를 수행한다.
+    //   instance/on_destroy 비트를 보관해 컴포넌트가 이미 제거된 뒤에도 on_destroy 를 부를 수 있다.
+    struct TrackedInstance {
+        sol::table instance;
+        bool       hasOnDestroy = false;
+    };
+    std::unordered_map<ecs::Entity, TrackedInstance> tracked;
 
     Impl(ScriptRuntime& rt, ecs::World& w, EventBus* bus, asset::AssetManager* a)
         : runtime(rt), world(w), worldBus(bus), assets(a) {}
@@ -190,6 +200,9 @@ void ScriptSystem::EnsureInstances() {
         sc->started = false;
         sc->hasError = false;
 
+        // 파괴 감지용 추적 등록(instance/on_destroy 보관 — 컴포넌트 제거 후에도 on_destroy 가능).
+        m_impl->tracked[e] = { sc->instance, sc->HasCallback(CallbackBit::OnDestroy) };
+
         if (sc->HasCallback(CallbackBit::OnInit) && sc->IsLive()) {
             sol::object fnObj = sc->instance[callbacks::kOnInit];
             if (IsFn(fnObj)) {
@@ -201,6 +214,9 @@ void ScriptSystem::EnsureInstances() {
 }
 
 void ScriptSystem::Update(float dt) {
+    // 파괴된 스크립트 엔티티 정리(on_destroy + 코루틴 취소) — 프레임 경계에서 먼저.
+    ReconcileDestroyed();
+
     // on_start(1회) + on_update(dt).
     std::vector<ecs::Entity> live;
     m_impl->world.Query<ScriptComponent>().Each([&](ecs::Entity e, ScriptComponent& sc) {
@@ -210,6 +226,10 @@ void ScriptSystem::Update(float dt) {
     for (ecs::Entity e : live) {
         ScriptComponent* sc = m_impl->world.TryGet<ScriptComponent>(e);
         if (!sc || !sc->IsLive()) continue;
+
+        // 파괴 감지용 추적 등록/갱신(EnsureInstances 를 안 거친 직접 설치 경로도 포함).
+        //   instance/on_destroy 비트를 최신으로 유지.
+        m_impl->tracked[e] = { sc->instance, sc->HasCallback(CallbackBit::OnDestroy) };
 
         if (!sc->started) {
             sc->started = true;
@@ -353,6 +373,9 @@ void ScriptSystem::HotReload(asset::AssetGuid scriptGuid) {
         sc->callbacks = ScanCallbacks(sc->classTable);
         sc->hasError = false;   // 리로드 성공 시 정지 해제(docs/05).
 
+        // 추적 갱신(instance 재생성·on_destroy 유무 변경 반영).
+        m_impl->tracked[e] = { sc->instance, sc->HasCallback(CallbackBit::OnDestroy) };
+
         // on_hot_reload 호출(on_init 재호출 안 함, docs/05).
         if (sc->HasCallback(CallbackBit::OnHotReload) && sc->IsLive()) {
             sol::object fnObj = sc->instance[callbacks::kOnHotReload];
@@ -376,6 +399,47 @@ void ScriptSystem::CallOnEntity(ecs::Entity e, std::string_view callback,
     if (!r.valid()) {
         sol::error err = r;
         ReportError(m_impl->worldBus, e, *sc, callback, err);
+    }
+}
+
+void ScriptSystem::ReconcileDestroyed() {
+    if (m_impl->tracked.empty()) return;
+
+    // 현재 존재하는(유효 + ScriptComponent 보유) 스크립트 엔티티 집합.
+    std::unordered_map<ecs::Entity, bool> present;
+    present.reserve(m_impl->tracked.size());
+    m_impl->world.Query<ScriptComponent>().Each([&](ecs::Entity e, ScriptComponent&) {
+        present[e] = true;
+    });
+
+    std::vector<ecs::Entity> destroyed;
+    for (auto& [e, ti] : m_impl->tracked) {
+        // Query 로 잡힌 엔티티는 유효(Valid)하다. present 에 없으면 파괴된 것.
+        if (present.find(e) == present.end()) destroyed.push_back(e);
+    }
+
+    for (ecs::Entity e : destroyed) {
+        auto it = m_impl->tracked.find(e);
+        if (it == m_impl->tracked.end()) continue;
+        Impl::TrackedInstance ti = it->second;
+        m_impl->tracked.erase(it);
+
+        // on_destroy 호출(정의돼 있고 인스턴스가 유효하면). 컴포넌트는 이미 없을 수 있으므로
+        //   보관해 둔 instance 로 protected 호출(에러는 로그만 — 컴포넌트 격리 대상이 없음).
+        if (ti.hasOnDestroy && ti.instance.valid()) {
+            sol::object fnObj = ti.instance[callbacks::kOnDestroy];
+            if (IsFn(fnObj)) {
+                sol::protected_function fn = fnObj.as<sol::protected_function>();
+                sol::protected_function_result r = fn(ti.instance);
+                if (!r.valid()) {
+                    sol::error err = r;
+                    MYE_LOG_ERROR("Script", "on_destroy failed: {}", err.what());
+                }
+            }
+        }
+
+        // 소유 코루틴 취소(파괴된 엔티티의 코루틴이 살아남지 않게).
+        m_impl->runtime.Coroutines().CancelForEntity(e);
     }
 }
 

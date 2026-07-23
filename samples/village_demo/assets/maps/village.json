@@ -1,0 +1,147 @@
+{
+  "$schema": "village_map/v1",
+  "name": "village",
+  "comment": "Tales-Weaver-style village vertical-slice map. Consumed by the integration agent to build a tilemap::TilemapWorld + ECS entities. COORDINATE CONVENTION (docs/00, bridge_demo): world unit == 1 cell == PPU48 px, +Y up. HybridRenderer maps cell (cx,cy) -> world (x=cx, yBottom=-cy). So to place something at world Y=W, set cellY=-W. Rows below are listed in SCREEN order (top row = smallest world-... i.e. most negative cellY / largest world Y). All tile roles map to the PNGs from make_tiles.ps1.",
+
+  "tileSize": 48,
+  "ppu": 48,
+
+  "tilesets": {
+    "grass":  { "texture": "assets://tile_grass.png",  "role": "ground",  "walkable": true  },
+    "path":   { "texture": "assets://tile_path.png",   "role": "ground",  "walkable": true  },
+    "water":  { "texture": "assets://tile_water.png",  "role": "water",   "walkable": false },
+    "bridge": { "texture": "assets://tile_bridge.png", "role": "bridge",  "walkable": true, "oneWayTop": true, "layer": 1 },
+    "slope":  { "texture": "assets://tile_slope.png",  "role": "slope",   "walkable": true  },
+    "plaza":  { "texture": "assets://tile_plaza.png",  "role": "ground",  "walkable": true  }
+  },
+
+  "cellBounds": { "minCellX": -14, "maxCellX": 14, "minCellY": -8, "maxCellY": 8 },
+
+  "layers": [
+    {
+      "name": "ground",
+      "sortLayer": "ground",
+      "comment": "Base ground layer (layer 0). Every cell in bounds gets a ground tile so there are no background gaps. 'fill' is the default role; 'cells' rectangles override it. Water cells are impassable; the creek runs vertically (constant cellX band) so the bridge crosses it E-W.",
+      "fill": "grass",
+      "rects": [
+        { "role": "path",  "minCellX": -1, "maxCellX": 1,  "minCellY": -8, "maxCellY": 8, "note": "main N-S dirt road down the village center" },
+        { "role": "path",  "minCellX": -10, "maxCellX": 10, "minCellY": -1, "maxCellY": 1, "note": "E-W cross road" },
+        { "role": "water", "minCellX": 5,  "maxCellX": 6,  "minCellY": -8, "maxCellY": 8, "note": "the creek: a vertical stream (worldX 5..6) crossed by the bridge" },
+        { "role": "plaza", "minCellX": -9, "maxCellX": -6, "minCellY": -6, "maxCellY": -3, "note": "stone plaza (worldY 3..6) holding the fountain + statue" }
+      ],
+      "slopes": [
+        {
+          "role": "slope",
+          "comment": "Gentle hill on the west edge. baseHeightLevel=0 (flush with ground so no gap); SlopeType::GentleN gives the depth ramp. Visual rise handled like bridge_demo SlopeGroundY: rises from world Y=-2 (bottom) to world Y=+2 (top), maxRise=2 units.",
+          "slopeType": "GentleN",
+          "minCellX": -13, "maxCellX": -11,
+          "minCellYTop": -2, "maxCellYBottom": 2,
+          "maxRiseUnits": 2.0
+        }
+      ]
+    },
+    {
+      "name": "bridge",
+      "sortLayer": "floor1",
+      "comment": "Bridge deck lives on its own TilemapWorld/layer so it extracts to the World1 band (floor1) like bridge_demo. It spans the creek E-W (worldX 4..7) at the cross-road (worldY 0). Cells carry ColumnFlags OneWayBridge|Bridge.",
+      "bridgeCells": [
+        { "cellX": 4, "cellY": 0 },
+        { "cellX": 5, "cellY": 0 },
+        { "cellX": 6, "cellY": 0 },
+        { "cellX": 7, "cellY": 0 }
+      ]
+    }
+  ],
+
+  "props": [
+    {
+      "id": "statue",
+      "mesh": "assets://mesh/statue.glb",
+      "albedo": "assets://white.png",
+      "tint": [0.72, 0.74, 0.80, 1.0],
+      "worldPos": [-7.0, 5.0, 0.0],
+      "scale": [1.0, 1.0, 0.5],
+      "floor": 0,
+      "depthMode": "AnchorBiased",
+      "comment": "3D village monument on the plaza (worldX -7, worldY 5). AnchorBiased so characters sort in front/behind by foot Y."
+    },
+    {
+      "id": "fountain",
+      "mesh": "assets://mesh/fountain.glb",
+      "albedo": "assets://white.png",
+      "tint": [0.70, 0.78, 0.90, 1.0],
+      "worldPos": [-8.0, 3.5, 0.0],
+      "scale": [1.0, 1.0, 0.6],
+      "floor": 0,
+      "depthMode": "AnchorBiased",
+      "comment": "3D fountain lower on the plaza (worldX -8, worldY 3.5)."
+    }
+  ],
+
+  "spawns": {
+    "player": {
+      "sheet": "assets://player_sheet.png",
+      "cellSize": [24, 32],
+      "cols": 4, "rows": 8,
+      "pivotPx": [12, 32],
+      "worldPos": [0.0, -3.0, 0.0],
+      "floor": 0,
+      "script": "assets://scripts/player.lua",
+      "footstepCue": "cue_footstep",
+      "comment": "Player starts on the road south of the crossroads (worldY -3). WASD to move, 8-dir animator."
+    },
+    "npcs": [
+      {
+        "id": "chief",
+        "sheet": "assets://npc_chief.png",
+        "cellSize": [24, 32], "cols": 4, "rows": 8, "pivotPx": [12, 32],
+        "worldPos": [-6.5, 4.0, 0.0],
+        "facing": "down",
+        "floor": 0,
+        "script": "assets://scripts/npc_chief.lua",
+        "dialogue": "assets://dialogue/chief.json",
+        "interactRadius": 1.4,
+        "nameKey": "npc.chief.name",
+        "comment": "Village chief stands by the fountain/statue on the plaza."
+      },
+      {
+        "id": "merchant",
+        "sheet": "assets://npc_merchant.png",
+        "cellSize": [24, 32], "cols": 4, "rows": 8, "pivotPx": [12, 32],
+        "worldPos": [2.5, 0.0, 0.0],
+        "facing": "left",
+        "floor": 0,
+        "script": "assets://scripts/npc_merchant.lua",
+        "dialogue": "assets://dialogue/merchant.json",
+        "interactRadius": 1.4,
+        "nameKey": "npc.merchant.name",
+        "comment": "Traveling merchant near the crossroads, just west of the creek/bridge approach."
+      },
+      {
+        "id": "guard",
+        "sheet": "assets://npc_guard.png",
+        "cellSize": [24, 32], "cols": 4, "rows": 8, "pivotPx": [12, 32],
+        "worldPos": [8.5, 0.0, 0.0],
+        "facing": "left",
+        "floor": 0,
+        "script": "assets://scripts/npc_guard.lua",
+        "dialogue": "assets://dialogue/guard.json",
+        "interactRadius": 1.4,
+        "nameKey": "npc.guard.name",
+        "comment": "Gate guard on the far (east) side of the bridge, across the creek."
+      }
+    ]
+  },
+
+  "camera": {
+    "followPlayer": true,
+    "pixelSnap": true,
+    "startWorldPos": [0.0, -3.0]
+  },
+
+  "audio": {
+    "bgm": "assets://audio/village_bgm.wav",
+    "footstep": "assets://audio/footstep.wav",
+    "dialogueBlip": "assets://audio/dialogue_blip.wav"
+  }
+}

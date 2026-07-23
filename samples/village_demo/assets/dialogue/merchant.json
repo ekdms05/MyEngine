@@ -1,0 +1,55 @@
+{
+  "startId": "greet",
+  "version": 1,
+  "lines": [
+    {
+      "id": "greet",
+      "speaker": { "key": "npc.merchant.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.merchant.greet", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "menu",
+      "choices": []
+    },
+    {
+      "id": "menu",
+      "speaker": { "key": "npc.merchant.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.merchant.menu", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": [
+        { "text": { "key": "dialogue.merchant.choice.buy",   "literal": "" }, "gotoId": "buy",   "conditionKey": "" },
+        { "text": { "key": "dialogue.merchant.choice.rumor", "literal": "" }, "gotoId": "rumor", "conditionKey": "" },
+        { "text": { "key": "dialogue.merchant.choice.leave", "literal": "" }, "gotoId": "farewell", "conditionKey": "" }
+      ]
+    },
+    {
+      "id": "buy",
+      "speaker": { "key": "npc.merchant.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.merchant.buy", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "menu",
+      "choices": []
+    },
+    {
+      "id": "rumor",
+      "speaker": { "key": "npc.merchant.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.merchant.rumor", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "menu",
+      "choices": []
+    },
+    {
+      "id": "farewell",
+      "speaker": { "key": "npc.merchant.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.merchant.farewell", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": []
+    }
+  ]
+}

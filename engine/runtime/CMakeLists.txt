@@ -45,6 +45,10 @@ add_library(mye_runtime STATIC
     include/mye/runtime/AudioListener.h
     src/AudioListener.cpp
 
+    # ---- NPC 배회·상호작용 시스템(M6-B — 배회 상태기계·접근·대화 개시) ----
+    include/mye/runtime/NpcSystem.h
+    src/NpcSystem.cpp
+
     # ---- 모듈 라이프사이클 배선 ----
     include/mye/runtime/RuntimeModule.h
     src/RuntimeModule.cpp
@@ -52,6 +56,10 @@ add_library(mye_runtime STATIC
     # ---- Lua 바인딩 모듈(sol 표면 — 벤더 경계) ----
     include/mye/runtime/RuntimeBindings.h
     src/RuntimeBindings.cpp
+
+    # ---- NPC Lua 바인딩 모듈(sol 표면 — 벤더 경계, M6-B) ----
+    include/mye/runtime/NpcBindings.h
+    src/NpcBindings.cpp
 )
 
 target_include_directories(mye_runtime PUBLIC
@@ -66,6 +74,6 @@ target_link_libraries(mye_runtime
 # RuntimeBindings.cpp 만 sol2 대형 단일 헤더를 소비한다. 라이브러리 전역을 낮추지 않고
 #   해당 TU 만 /W3 /bigobj 로 완화(벤더 경계 격리, mye_script 와 동일 정책).
 if(MSVC)
-    set_source_files_properties(src/RuntimeBindings.cpp PROPERTIES
+    set_source_files_properties(src/RuntimeBindings.cpp src/NpcBindings.cpp PROPERTIES
         COMPILE_OPTIONS "/W3;/bigobj")
 endif()

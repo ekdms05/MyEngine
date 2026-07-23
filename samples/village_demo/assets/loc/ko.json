@@ -1,0 +1,32 @@
+{
+  "npc.chief.name": "촌장",
+  "npc.merchant.name": "떠돌이 상인",
+  "npc.guard.name": "성문 경비병",
+
+  "dialogue.chief.greet": "어서 오게, 나그네여. 여긴 시냇물 마을이라네.",
+  "dialogue.chief.ask": "무엇이 궁금한가?",
+  "dialogue.chief.choice.village": "이 마을에 대해",
+  "dialogue.chief.choice.bridge": "저 다리에 대해",
+  "dialogue.chief.choice.leave": "그만 가보겠습니다",
+  "dialogue.chief.about_village": "우리 마을은 작지만 평화롭다네. 광장의 분수와 오래된 석상이 우리의 자랑이지.",
+  "dialogue.chief.about_bridge": "마을 한가운데로 시내가 흐르지. 저 나무 다리를 건너면 동쪽 성문으로 갈 수 있다네.",
+  "dialogue.chief.farewell": "그래, 편히 둘러보게나. 언제든 다시 오게.",
+
+  "dialogue.merchant.greet": "오, 손님! 좋은 물건 많으니 구경하고 가시오.",
+  "dialogue.merchant.menu": "무얼 도와드릴까요?",
+  "dialogue.merchant.choice.buy": "물건을 살게요",
+  "dialogue.merchant.choice.rumor": "요즘 소문은?",
+  "dialogue.merchant.choice.leave": "다음에 올게요",
+  "dialogue.merchant.buy": "안목이 좋으시군요! 이 회복약은 특별히 싸게 드리리다.",
+  "dialogue.merchant.rumor": "저 언덕 너머에서 이상한 빛이 보인다더군. 뭐, 나야 장사가 우선이지만.",
+  "dialogue.merchant.farewell": "또 오시오! 늘 여기 있으리다.",
+
+  "dialogue.guard.greet": "멈추시오. 다리 건너 성문은 통행 허가가 필요하오.",
+  "dialogue.guard.choice.pass": "지나가게 해주세요",
+  "dialogue.guard.choice.stay": "그냥 마을을 둘러볼게요",
+  "dialogue.guard.allow": "촌장의 손님이라면 좋소. 조심히 다녀오시오.",
+  "dialogue.guard.stay": "현명한 선택이오. 마을은 안전하니 마음껏 둘러보시오.",
+
+  "ui.prompt.interact": "대화하려면 [E] 를 누르세요",
+  "ui.title": "시냇물 마을"
+}

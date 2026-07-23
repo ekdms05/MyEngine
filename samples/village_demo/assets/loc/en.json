@@ -1,0 +1,32 @@
+{
+  "npc.chief.name": "Village Chief",
+  "npc.merchant.name": "Traveling Merchant",
+  "npc.guard.name": "Gate Guard",
+
+  "dialogue.chief.greet": "Welcome, traveler. This is Creekside Village.",
+  "dialogue.chief.ask": "What would you like to know?",
+  "dialogue.chief.choice.village": "About this village",
+  "dialogue.chief.choice.bridge": "About that bridge",
+  "dialogue.chief.choice.leave": "I'll be on my way",
+  "dialogue.chief.about_village": "Our village is small but peaceful. The fountain and the old statue in the plaza are our pride.",
+  "dialogue.chief.about_bridge": "A creek runs through the heart of the village. Cross that wooden bridge and you'll reach the east gate.",
+  "dialogue.chief.farewell": "Go on, look around. Come back any time.",
+
+  "dialogue.merchant.greet": "Oh, a customer! I've plenty of fine wares — take a look.",
+  "dialogue.merchant.menu": "How can I help you?",
+  "dialogue.merchant.choice.buy": "I'd like to buy something",
+  "dialogue.merchant.choice.rumor": "Any rumors lately?",
+  "dialogue.merchant.choice.leave": "Maybe next time",
+  "dialogue.merchant.buy": "Good eye! This potion, I'll give it to you at a special price.",
+  "dialogue.merchant.rumor": "They say a strange light was seen beyond the hill. Well, business comes first for me.",
+  "dialogue.merchant.farewell": "Come again! I'll always be right here.",
+
+  "dialogue.guard.greet": "Halt. The gate beyond the bridge requires a pass.",
+  "dialogue.guard.choice.pass": "Please let me through",
+  "dialogue.guard.choice.stay": "I'll just look around the village",
+  "dialogue.guard.allow": "A guest of the chief? Very well. Travel safely.",
+  "dialogue.guard.stay": "A wise choice. The village is safe — look around all you like.",
+
+  "ui.prompt.interact": "Press [E] to talk",
+  "ui.title": "Creekside Village"
+}

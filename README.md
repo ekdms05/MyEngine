@@ -17,15 +17,23 @@ The engine is being built milestone by milestone. Each milestone is gated on a
 | **M0** | Window + DX11 triangle | ✅ Done |
 | **M1** | Pixel-perfect sprites, WASD dot character | ✅ Done |
 | **M2** | Hybrid scene core — ECS, tilemap (height/bridge), physics, **hybrid depth rendering** | ✅ Done |
-| **M3** | 8-direction animation, audio, **Lua scripting**, hot reload | 🚧 In progress |
-| **M4** | Reflection-driven ImGui editor — inspector, scene save, undo, play mode | ⏳ Planned |
-| **M5** | Content tools — tilemap/animation editors, Korean text, in-game UI, pathfinding | ⏳ Planned |
-| **M6** | Vertical slice — dialogue, cutscenes, NPCs → a Tales Weaver-style demo | ⏳ Planned |
+| **M3** | 8-direction animation, audio, **Lua scripting**, hot reload | ✅ Done |
+| **M4** | Reflection-driven ImGui editor — inspector, scene save, undo, play mode | ✅ Done |
+| **M5** | Content tools — tilemap/animation editors, Korean text, in-game UI, pathfinding | ✅ Done |
+| **M6** | Vertical slice — dialogue, cutscenes, NPCs → a Tales Weaver-style demo | ✅ Done |
 
 The M2 demo already proves the hardest technical risk: a character can walk
 **over a bridge while another walks under it**, and step **behind a 3D statue**
 with correct per-pixel occlusion — all 2D sprites and 3D meshes sharing one
 depth buffer.
+
+The **M6 vertical slice** (`samples/village_demo`) is the roadmap's final
+deliverable: a dot character walks a Tales-Weaver-style village — sloped hill,
+a one-way bridge over a creek, 3D fountain/statue props — and talks with three
+NPCs (chief, merchant, guard) in **Korean**, complete with branching choices, an
+opening cutscene, wandering NPCs, footsteps and BGM. Map, dialogue (localization
+keys) and game logic (per-entity Lua) are all editable **without rebuilding the
+engine** (editor + Lua hot reload).
 
 ## Key features
 
@@ -70,9 +78,37 @@ cmake --build build/dev --config Debug
 Run a demo (from the build tree):
 
 ```sh
-build/dev/samples/sprite_demo/Debug/sprite_demo.exe    # M1: WASD dot character
-build/dev/samples/bridge_demo/Debug/bridge_demo.exe    # M2: bridge over/under, 3D occlusion
+build/dev/samples/sprite_demo/Debug/sprite_demo.exe      # M1: WASD dot character
+build/dev/samples/bridge_demo/Debug/bridge_demo.exe      # M2: bridge over/under, 3D occlusion
+build/dev/samples/character_demo/Debug/character_demo.exe # M3: 8-dir anim, Lua, footsteps, hot reload
+build/dev/samples/village_demo/Debug/village_demo.exe    # M6: full vertical slice (see below)
 ```
+
+### village_demo — the M6 vertical slice
+
+`village_demo` is the roadmap's final demo: one executable that walks the whole
+engine stack (RHI, ECS/scene, tilemap, physics, animation, audio, Lua scripting,
+runtime dialogue/cutscene/NPC systems, Korean text, pixel-perfect hybrid render).
+
+```sh
+# Interactive: WASD to move, E to talk to an NPC, Esc to quit.
+build/dev/samples/village_demo/Release/village_demo.exe
+
+# Deterministic verification scenarios (headless-friendly, auto-exit):
+village_demo.exe --scenario walk    --frames 45           # player renders + moves
+village_demo.exe --scenario bridge  --frames 15           # player on the bridge (floor 1)
+village_demo.exe --scenario talk    --frames 15 --dump-ui talk.bmp   # Korean dialogue box + choices
+village_demo.exe --scenario wander  --frames 90           # NPCs wander the plaza
+village_demo.exe --scenario behind_prop --frames 15 --dump prop.bmp # occlusion behind the 3D statue
+```
+
+CLI flags: `--frames N` (run N frames then exit 0), `--dump path.bmp` (dump the
+last frame, no overlay), `--dump-ui path.bmp` (dump including the dialogue box),
+`--scenario <name>`, `--headless`. Assets (map, character/tile PNGs, glTF props,
+audio) are regenerated deterministically by
+`samples/village_demo/tools/make_all.ps1`; map/dialogue/localization JSON and the
+Lua scripts under `samples/village_demo/assets/` are hand-authored and
+hot-reloadable.
 
 Run the tests:
 
@@ -95,8 +131,11 @@ engine/
   scene/     mye_scene  — ECS, tilemap, physics, animation, render extract
   audio/     mye_audio  — miniaudio backend, mixer, buses, cues
   imgui/     mye_imgui  — Dear ImGui DX11/win32 backend + debug overlay
-  script/    mye_script — Lua (sol2) runtime + bindings   (M3, in progress)
-samples/     runnable demos (hello_triangle, sprite_demo, bridge_demo, ...)
+  script/    mye_script — Lua (sol2) runtime + bindings
+  ui/        mye_ui     — in-game UI widgets + Korean text (FreeType) stack
+  runtime/   mye_runtime— dialogue, cutscene, NPC, save, localization, scene transition
+samples/     runnable demos (hello_triangle, sprite_demo, bridge_demo,
+             character_demo, village_demo)
 tests/       mye_tests  — unit + integration tests
 tools/mcp/   Model Context Protocol dev-tools server (TypeScript)
 docs/        design documents (Korean) + architecture overview

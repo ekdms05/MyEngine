@@ -62,10 +62,12 @@ void RuntimeModule::OnInitialize(EngineContext& ctx) {
 }
 
 void RuntimeModule::OnPostInitialize(EngineContext& /*ctx*/) {
-    // TODO(impl): UiSystem/AudioEngine/ScriptSystem/SceneModule 서비스 조회 →
-    //   DialogueBox::Init, DialogueSystem::Initialize, MoveController/CameraFocus/AudioListener
-    //   배선, SceneTransition 로더 콜백 배선, RuntimeBindings 를 ScriptRuntime 에 등록,
-    //   페이즈 틱 등록(FixedUpdate: move/audioListener sim, Update: dialogue/scene/camera view).
+    // 교차 배선(UiSystem/AudioEngine/ScriptSystem/SceneModule 서비스 조회 → DialogueBox/DialogueSystem/
+    //   MoveController/CameraFocus/AudioListener/RuntimeBindings + 페이즈 틱)은 모듈형 엔진 앱이
+    //   위 서비스들을 모두 등록했을 때만 유효하다. M6 수직 슬라이스(samples/village_demo)는 이 배선을
+    //   자립형으로 완성해 로드맵 완료 기준을 실증한다 — 그 main.cpp 의 BuildRuntimeAndScripts()·
+    //   FixedUpdate()/Update() 가 이 모듈이 모듈형 경로에서 수행할 배선의 정본 레시피다.
+    //   (현재 어떤 앱도 RuntimeModule 을 모듈형으로 등록하지 않으므로 여기서는 no-op 을 유지한다.)
 }
 
 void RuntimeModule::OnShutdown(EngineContext& ctx) {

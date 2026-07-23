@@ -1,0 +1,55 @@
+{
+  "startId": "greet",
+  "version": 1,
+  "lines": [
+    {
+      "id": "greet",
+      "speaker": { "key": "npc.chief.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.chief.greet", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": []
+    },
+    {
+      "id": "ask",
+      "speaker": { "key": "npc.chief.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.chief.ask", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": [
+        { "text": { "key": "dialogue.chief.choice.village", "literal": "" }, "gotoId": "about_village", "conditionKey": "" },
+        { "text": { "key": "dialogue.chief.choice.bridge",  "literal": "" }, "gotoId": "about_bridge",  "conditionKey": "" },
+        { "text": { "key": "dialogue.chief.choice.leave",   "literal": "" }, "gotoId": "farewell",      "conditionKey": "" }
+      ]
+    },
+    {
+      "id": "about_village",
+      "speaker": { "key": "npc.chief.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.chief.about_village", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "ask",
+      "choices": []
+    },
+    {
+      "id": "about_bridge",
+      "speaker": { "key": "npc.chief.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.chief.about_bridge", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "ask",
+      "choices": []
+    },
+    {
+      "id": "farewell",
+      "speaker": { "key": "npc.chief.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.chief.farewell", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": []
+    }
+  ]
+}

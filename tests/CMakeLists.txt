@@ -34,6 +34,7 @@ add_executable(mye_tests
     src/RuntimeSaveLocaleTests.cpp    # M6-A: 세이브 왕복·settings·로컬라이제이션·씬 전환(헤드리스)
     src/DialogueCutsceneTests.cpp     # M6-A: 대화 데이터/상태기계·say/choose·move_to 코루틴·로컬라이제이션
     src/M6AIntegrationSmokeTests.cpp  # M6-A: 통합 스모크 — Lua 컷신(say/choose/move)→세이브 왕복→씬전환→대화창 BMP
+    src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
 target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)

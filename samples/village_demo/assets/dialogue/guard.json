@@ -1,0 +1,36 @@
+{
+  "startId": "greet",
+  "version": 1,
+  "lines": [
+    {
+      "id": "greet",
+      "speaker": { "key": "npc.guard.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.guard.greet", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": [
+        { "text": { "key": "dialogue.guard.choice.pass",  "literal": "" }, "gotoId": "allow",  "conditionKey": "" },
+        { "text": { "key": "dialogue.guard.choice.stay",  "literal": "" }, "gotoId": "stay",   "conditionKey": "" }
+      ]
+    },
+    {
+      "id": "allow",
+      "speaker": { "key": "npc.guard.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.guard.allow", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": []
+    },
+    {
+      "id": "stay",
+      "speaker": { "key": "npc.guard.name", "literal": "" },
+      "portrait": "",
+      "body": { "key": "dialogue.guard.stay", "literal": "" },
+      "voiceCue": "",
+      "gotoId": "",
+      "choices": []
+    }
+  ]
+}

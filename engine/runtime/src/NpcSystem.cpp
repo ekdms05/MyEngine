@@ -211,11 +211,24 @@ bool NpcSystem::TryInteract(ecs::Entity npc) {
     if (!m_impl->interacting.IsNull()) return false;
     auto it = m_impl->npcs.find(npc.Packed());
     if (it == m_impl->npcs.end()) return false;
-    Impl::Npc& n = it->second;
+
+    // onBegin(Lua on_interact)은 동기 코루틴 첫 재개를 돌리며, 그 안에서 임의 Lua(mye.npc.unregister/
+    //   clear 등)가 이 NPC 를 npcs 에서 제거할 수 있다. 그러면 콜백 이후 it/n 참조가 무효(UAF).
+    //   → 콜백 전에 필요한 값(id)만 복사하고, 콜백 후 반드시 재조회(re-lookup)한다.
+    const std::string id = it->second.desc.id;   // 콜백 전 값 복사
 
     // 상호작용 개시 콜백(Lua on_interact). 수락되면 Interacting 으로 잠금·이동 정지.
-    bool accepted = m_impl->onBegin ? m_impl->onBegin(n.desc.id, npc) : false;
+    bool accepted = m_impl->onBegin ? m_impl->onBegin(id, npc) : false;
     if (!accepted) return false;
+
+    // 콜백이 npcs 를 변형했을 수 있으므로 이터레이터를 재취득한다.
+    it = m_impl->npcs.find(npc.Packed());
+    if (it == m_impl->npcs.end()) {
+        // 콜백이 이 NPC 를 제거함 — 상호작용 개시는 거부 취급(이동 취소만).
+        if (m_impl->move) m_impl->move->Cancel(npc);
+        return false;
+    }
+    Impl::Npc& n = it->second;
 
     if (m_impl->move) m_impl->move->Cancel(npc);
     n.state = NpcState::Interacting;

@@ -16,6 +16,8 @@
 #include "mye/runtime/SceneTransition.h"
 #include "mye/runtime/Localization.h"
 
+#include "mye/core/Log.h"
+
 #include <sol/sol.hpp>
 
 #include <string>
@@ -149,13 +151,20 @@ void RuntimeBindings::Register(sol::state& lua) {
         sv.set_function("exists", [s](int32_t slot) {
             return s && s->Exists(SlotId{slot});
         });
-        sv.set_function("write", [s](int32_t slot) {
-            if (!s) return false;
+        // 백엔드(SaveSystem) 미배선 시 조용한 false 대신 진단 로그(디버깅 함정 방지 — 리뷰 지적).
+        sv.set_function("write", [s](int32_t slot, sol::optional<std::string> title,
+                                     sol::optional<double> playTime) {
+            if (!s) { MYE_LOG_WARN("RuntimeBindings",
+                        "mye.save.write({}) no-op: SaveSystem 미배선(백엔드 없음)", slot); return false; }
             SaveHeader h;
+            if (title) h.title = *title;
+            if (playTime) h.playTimeSec = *playTime;
             return static_cast<bool>(s->WriteSlot(SlotId{slot}, h));
         });
         sv.set_function("read", [s](int32_t slot) {
-            return s && static_cast<bool>(s->ReadSlot(SlotId{slot}));
+            if (!s) { MYE_LOG_WARN("RuntimeBindings",
+                        "mye.save.read({}) no-op: SaveSystem 미배선(백엔드 없음)", slot); return false; }
+            return static_cast<bool>(s->ReadSlot(SlotId{slot}));
         });
     }
 
@@ -196,7 +205,9 @@ void RuntimeBindings::Register(sol::state& lua) {
             return st && st->IsTransitioning();
         });
         sc.set_function("change", [st](const std::string& vpath) {
-            if (!st) return false;
+            if (!st) { MYE_LOG_WARN("RuntimeBindings",
+                        "mye.scene.change('{}') no-op: SceneTransitionManager 미배선", vpath);
+                       return false; }
             TransitionDesc desc;
             return static_cast<bool>(st->ChangeScene(SceneRef{vpath}, desc));
         });

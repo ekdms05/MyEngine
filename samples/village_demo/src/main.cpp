@@ -76,7 +76,10 @@
 #include "mye/runtime/NpcSystem.h"
 #include "mye/runtime/NpcBindings.h"
 #include "mye/runtime/RuntimeBindings.h"
+#include "mye/runtime/SaveSystem.h"
 #include "mye/runtime/AudioListener.h"
+#include "mye/ser/Serialize.h"
+#include "mye/ser/JsonArchive.h"
 
 #include "mye/text/FontFace.h"
 #include "mye/text/GlyphAtlas.h"
@@ -212,6 +215,22 @@ struct AssetResolvers {
     }
 };
 
+// 플레이어 위치를 저장하는 간단한 세이브 참여자(수직 슬라이스 세이브 왕복 실증용).
+//   IArchive 프리미티브로 대칭 직렬화(리플렉션 불필요). 데모가 write 시 채워 넣고 read 시 복원.
+struct PlayerSaveParticipant : runtime::ISaveParticipant {
+    double  x = 0.0, y = 0.0;
+    int64_t floor = 0;
+    std::string_view SectionId() const override { return "player"; }
+    void Serialize(mye::ser::IArchive& ar) override {
+        uint32_t ver = 1;
+        ar.BeginObject("player", ver);
+        ar.Key("x");     ar.Value(x);
+        ar.Key("y");     ar.Value(y);
+        ar.Key("floor"); ar.Value(floor);
+        ar.EndObject();
+    }
+};
+
 // NPC 스폰 서술(맵 데이터에서 파생 — village.json spawns.npcs 반영).
 struct NpcSpawn {
     const char* id;
@@ -328,15 +347,15 @@ public:
         m_onResized.Reset();
         m_debugUi.Shutdown();
 
-        // 1) 스크립트/NPC (오디오 큐·sol 참조 해제).
+        // 1) 스크립트/NPC (오디오 큐·sol 참조 해제). 비소유 바인딩(sol 참조)은 VM(m_runtime) 보다
+        //    먼저 파괴한다.
         m_scriptSystem.reset();
-        m_npcBindings.reset();
+        m_npcBindings.reset();       // 비소유 sol 참조(mye.npc.*) — VM 이전.
+        m_runtimeBindings.reset();   // 비소유 sol 참조(mye.dialogue/save/...) — VM 이전.
         m_npc.reset();
         // 2) World (ScriptComponent sol::table 보유 → sol::state 보다 먼저 파괴).
         m_world.reset();
-        m_runtime.reset();
-        m_npcBindings.reset();       // (재확인) 비소유 바인딩 정리.
-        m_runtimeBindings.reset();
+        m_runtime.reset();           // sol::state — 위 바인딩·World 파괴 후.
         m_ecsBinding.reset();        // CommandBuffer(World&) 보유 → World 이후 즉시 파괴.
         // 3) 런타임 서브시스템.
         if (m_cutscene) { m_cutscene->Shutdown(); m_cutscene.reset(); }
@@ -344,6 +363,7 @@ public:
         m_move.reset();
         m_camFocus.reset();
         m_audioListener.reset();
+        if (m_save) { m_save->Shutdown(); m_save.reset(); }   // 참여자(&m_playerSave) 해제 후 파기
         if (m_loc) { m_loc->Shutdown(); m_loc.reset(); }
         // 4) 오디오.
         if (m_audio) { m_audio->Shutdown(); m_audio.reset(); }
@@ -755,6 +775,19 @@ private:
         m_npc->Initialize(m_world.get(), m_move.get());
         m_npc->SetPlayer(m_player);
 
+        // 세이브 시스템(user:// 슬롯 왕복). VFS 는 읽기 전용이라 쓰기 루트를 OS 경로로 직접 준다.
+        //   수직 슬라이스가 로드맵 5대 서브시스템(대화·컷신·NPC·로컬라이즈·세이브)을 모두 관통하도록,
+        //   mye.save.* Lua 표면에 실제 백엔드를 배선한다(nullptr 죽은 표면 → 실동작으로 승격).
+        m_save = std::make_unique<runtime::SaveSystem>();
+        m_save->Initialize(m_vfs.get(), "saves");
+        {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            const fs::path userRoot = fs::temp_directory_path(ec) / "mye_village_user";
+            m_save->SetUserRootDir(userRoot.string());
+        }
+        m_save->RegisterParticipant(&m_playerSave);
+
         // ---- 스크립트 런타임(package 활성 — require 커스텀 로더) ----
         m_runtime = std::make_unique<script::ScriptRuntime>();
         script::StdLibPolicy policy;
@@ -774,9 +807,10 @@ private:
             });
             m_runtime->AddBindingModule(std::move(audioBinding));
         }
-        // 런타임 바인딩(dialogue/cutscene/camera/save/loc/scene).
+        // 런타임 바인딩(dialogue/cutscene/camera/save/loc/scene). save 는 실제 백엔드 배선(위).
+        //   sceneTransition 은 이 데모가 단일 씬이라 미배선(nullptr) — 호출 시 진단 로그로 안내.
         m_runtimeBindings = std::make_unique<runtime::RuntimeBindings>(
-            m_dialogue.get(), m_cutscene.get(), nullptr, nullptr, m_loc.get());
+            m_dialogue.get(), m_cutscene.get(), m_save.get(), nullptr, m_loc.get());
         m_runtime->AddBindingModule(m_runtimeBindings.get());
         // NPC 바인딩(mye.npc.*).
         m_npcBindings = std::make_unique<runtime::NpcBindings>(m_npc.get(), m_runtime.get());
@@ -1014,6 +1048,15 @@ private:
             TriggerTalk(*m_forceTalk);
         }
 
+        // 인터랙티브(자유 플레이) 대화 진행 입력 배선: 대화창이 열려 있으면 Space/Enter/E(또는 좌클릭)로
+        //   say/choose 코루틴의 대기(rt.dlg_waiting_advance/choice)를 해제한다. 이 배선이 없으면
+        //   E 로 NPC 대화를 시작해도 첫 라인에서 코루틴이 무한 yield 하고 플레이어도 얼어붙는다
+        //   (헤드리스 표시 경로: DialogueBox 가 없어 시스템이 자체 advance 하지 않음).
+        DriveInteractiveDialogue();
+
+        // 세이브/로드 데모(F5=저장, F9=로드). 수직 슬라이스가 세이브 왕복을 실제 런타임에서 관통.
+        DriveSaveLoad();
+
         // 스크립트 on_update + 코루틴 tick.
         if (m_scriptSystem) {
             m_scriptSystem->EnsureInstances();
@@ -1069,6 +1112,93 @@ private:
             end)
         )LUA", "forced.talk");
         if (!r) MYE_LOG_WARN("VillageDemo", "forced talk failed: {}", r.GetError().message);
+    }
+
+    // 현재 플레이어 상태를 세이브 참여자에 스냅(F5 저장 시 이 값이 기록됨).
+    void SnapshotPlayerSave() {
+        if (const auto* lt = m_world->TryGet<scene::LocalTransform>(m_player)) {
+            m_playerSave.x = lt->position.x;
+            m_playerSave.y = lt->position.y;
+        }
+        if (const auto* fl = m_world->TryGet<scene::FloorLevel>(m_player))
+            m_playerSave.floor = fl->level;
+    }
+
+    // 세이브/로드 입력(F5/F9). 저장은 현재 위치를 슬롯0에 기록, 로드는 슬롯0을 복원해 플레이어에 적용.
+    void DriveSaveLoad() {
+        if (!m_input || !m_save) return;
+        if (m_input->WasPressed(mye::KeyCode::F5)) {
+            SnapshotPlayerSave();
+            runtime::SaveHeader h;
+            h.title = "village";
+            auto wr = m_save->WriteSlot(runtime::SlotId{0}, h);
+            MYE_LOG_INFO("VillageDemo", "save F5 -> slot0 pos=({:.2f},{:.2f}) ok={}",
+                         m_playerSave.x, m_playerSave.y, static_cast<bool>(wr));
+        }
+        if (m_input->WasPressed(mye::KeyCode::F9)) {
+            auto rd = m_save->ReadSlot(runtime::SlotId{0});
+            if (rd) {
+                SetPlayerPos(Vec3{static_cast<float>(m_playerSave.x),
+                                  static_cast<float>(m_playerSave.y), 0.0f});
+                if (auto* fl = m_world->TryGet<scene::FloorLevel>(m_player))
+                    fl->level = static_cast<int8_t>(m_playerSave.floor);
+                scene::UpdateWorldTransforms(*m_world);
+                MYE_LOG_INFO("VillageDemo", "load F9 <- slot0 pos=({:.2f},{:.2f})",
+                             m_playerSave.x, m_playerSave.y);
+            } else {
+                MYE_LOG_WARN("VillageDemo", "load F9 failed: {}", rd.GetError().message);
+            }
+        }
+    }
+
+    // 자동 검증용 세이브 왕복(헤드리스 시나리오에서 1회) — 로드맵 세이브 서브시스템 관통 실증.
+    //   현재 위치를 저장→값을 흔들고→로드→복원 일치를 확인해 m_saveRoundtripOk 에 기록.
+    void RunSaveRoundtripSelfCheck() {
+        if (!m_save || m_saveChecked) return;
+        m_saveChecked = true;
+        SnapshotPlayerSave();
+        const double sx = m_playerSave.x, sy = m_playerSave.y;
+        runtime::SaveHeader h; h.title = "selfcheck";
+        if (!m_save->WriteSlot(runtime::SlotId{0}, h)) return;
+        m_playerSave.x = sx + 999.0; m_playerSave.y = sy - 999.0;   // 오염
+        if (!m_save->ReadSlot(runtime::SlotId{0})) return;
+        m_saveRoundtripOk =
+            std::fabs(m_playerSave.x - sx) < 1e-3 && std::fabs(m_playerSave.y - sy) < 1e-3;
+    }
+
+    // 인터랙티브 진행: 대화창이 열려 있으면 플레이어의 진행 입력을 dialogue advance/pick 으로 배선.
+    //   choice 대기면 위/아래(또는 1..9)로 커서 이동, Space/Enter/E 로 확정. 라인 대기면 진행.
+    //   강제 대화 시나리오(m_forceTalk)는 DriveScriptedDialogue 가 결정적으로 몰기 때문에 여기선 제외.
+    void DriveInteractiveDialogue() {
+        if (m_forceTalk.has_value()) return;         // 시나리오 자동 진행 경로가 담당
+        if (!m_input || !m_dialogue || !m_dialogue->IsActive()) return;
+
+        const bool confirm =
+            m_input->WasPressed(mye::KeyCode::Space) ||
+            m_input->WasPressed(mye::KeyCode::Enter) ||
+            m_input->WasPressed(mye::KeyCode::E);
+
+        if (m_dialogue->IsWaitingChoice()) {
+            const int count = static_cast<int>(m_choiceLabels.size());
+            if (count > 0) {
+                if (m_input->WasPressed(mye::KeyCode::Down) || m_input->WasPressed(mye::KeyCode::S))
+                    m_choiceCursor = (m_choiceCursor + 1) % count;
+                if (m_input->WasPressed(mye::KeyCode::Up) || m_input->WasPressed(mye::KeyCode::W))
+                    m_choiceCursor = (m_choiceCursor + count - 1) % count;
+                // 숫자키 직접 선택(1..9).
+                for (int i = 0; i < count && i < 9; ++i) {
+                    const auto num = static_cast<mye::KeyCode>(
+                        static_cast<int>(mye::KeyCode::Num1) + i);
+                    if (m_input->WasPressed(num)) { m_dialogue->Pick(i); m_choiceCursor = 0; return; }
+                }
+            }
+            if (confirm) {
+                m_dialogue->Pick(count > 0 ? (m_choiceCursor % count) : 0);
+                m_choiceCursor = 0;
+            }
+        } else if (m_dialogue->IsWaitingAdvance()) {
+            if (confirm) m_dialogue->Advance();
+        }
     }
 
     // 결정적 진행: 시나리오 대화가 열려 있으면 프레임 간격으로 자동 advance/pick.
@@ -1170,10 +1300,13 @@ private:
         SubmitQuad(boxX + 12.0f, boxY - 26.0f, 180.0f, 28.0f, Color{0.15f, 0.20f, 0.34f, 0.95f});
         // 선택지 버튼(있으면).
         if (m_dialogue->IsWaitingChoice()) {
-            for (int i = 0; i < static_cast<int>(m_choiceLabels.size()); ++i) {
+            const int count = static_cast<int>(m_choiceLabels.size());
+            const int sel = (count > 0 && !m_forceTalk.has_value()) ? (m_choiceCursor % count) : -1;
+            for (int i = 0; i < count; ++i) {
                 float by = boxY + 40.0f + static_cast<float>(i) * 30.0f;
-                SubmitQuad(boxX + 40.0f, by, boxW - 80.0f, 26.0f,
-                           Color{0.22f, 0.26f, 0.36f, 0.95f});
+                const Color base{0.22f, 0.26f, 0.36f, 0.95f};
+                const Color hi{0.34f, 0.44f, 0.62f, 0.98f};   // 선택 커서 하이라이트
+                SubmitQuad(boxX + 40.0f, by, boxW - 80.0f, 26.0f, i == sel ? hi : base);
             }
         }
         m_spriteBatch.End(cmd);
@@ -1299,6 +1432,7 @@ private:
     }
 
     void EmitVerify() {
+        RunSaveRoundtripSelfCheck();   // 세이브 왕복 관통 자가검증(1회).
         Vec2 pp{m_curPlayer.x, m_curPlayer.y};
         int floor = 0;
         if (const auto* fl = m_world ? m_world->TryGet<scene::FloorLevel>(m_player) : nullptr)
@@ -1309,10 +1443,12 @@ private:
                      camPos.x, camPos.y, m_camFixed ? 1 : 0);
         MYE_LOG_INFO("VillageDemo",
             "M6-VERIFY: scenario={} frames={} playerPos=({:.2f},{:.2f}) floor={} footsteps={} "
-            "npcs={} dialogueActive={} scriptErrors={} sprites={} tiles={} meshes={} draws={} moved={:.3f}",
+            "npcs={} dialogueActive={} scriptErrors={} sprites={} tiles={} meshes={} draws={} "
+            "saveRoundtrip={} moved={:.3f}",
             static_cast<int>(m_control->scenario), m_frameCount, pp.x, pp.y, floor,
             m_footstepCount, m_npc ? m_npc->Count() : 0, dlgActive ? 1 : 0, m_scriptErrorCount,
             m_lastStats.spriteCount, m_lastStats.tileQuadCount, m_lastStats.meshCount, m_lastStats.drawCalls,
+            m_saveRoundtripOk ? 1 : 0,
             std::sqrt((pp.x - m_startPlayer.x) * (pp.x - m_startPlayer.x) +
                       (pp.y - m_startPlayer.y) * (pp.y - m_startPlayer.y)));
     }
@@ -1383,6 +1519,8 @@ private:
     std::unique_ptr<runtime::CutsceneRuntime>     m_cutscene;
     std::unique_ptr<runtime::AudioListenerBridge> m_audioListener;
     std::unique_ptr<runtime::NpcSystem>           m_npc;
+    std::unique_ptr<runtime::SaveSystem>          m_save;
+    PlayerSaveParticipant                         m_playerSave;
     std::unique_ptr<runtime::RuntimeBindings>     m_runtimeBindings;
     std::unique_ptr<runtime::NpcBindings>         m_npcBindings;
     bool m_pendingIntro = false;
@@ -1397,6 +1535,7 @@ private:
     render::SpriteBatch m_spriteBatch;
     std::string m_dialogueSpeaker, m_dialogueBody;
     std::vector<std::string> m_choiceLabels;
+    int m_choiceCursor = 0;   // 인터랙티브 선택지 커서(Free 플레이 진행 입력)
 
     render::PixelPerfectTarget m_rt;
     render::HybridRenderer     m_hybrid;
@@ -1416,6 +1555,8 @@ private:
     std::optional<ecs::Entity> m_forceTalk;
     bool m_forcedTalkFired = false;
     uint64_t m_dialogueVisibleFrames = 0;
+    bool m_saveChecked = false;
+    bool m_saveRoundtripOk = false;
 
     uint64_t m_frameCount = 0;
     bool     m_dumped = false;

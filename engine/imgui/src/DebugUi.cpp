@@ -1,5 +1,6 @@
 // mye/imgui/DebugUi.cpp — Dear ImGui(docking) win32 + DX11 백엔드 배선 (mye_imgui)
 #include "mye/imgui/DebugUi.h"
+#include "mye/imgui/ImGuiSkin.h"
 
 #include "mye/core/Input.h"
 #include "mye/core/Window.h"
@@ -79,7 +80,7 @@ Expected<void, Error> DebugUi::Initialize(win32::Win32Window& window, rhi::IDevi
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // 도킹 활성 (docs/07)
     io.IniFilename = nullptr;                              // imgui.ini 파일 미생성 (엔진이 레이아웃 관리)
-    ImGui::StyleColorsDark();
+    ApplySkin();                                           // devTool 스킨(다크+주황 액센트+라운드)
 
     // 기본 폰트로 충분 (오버레이는 ASCII 수치. 한국어 폰트는 M1 불필요).
     if (!ImGui_ImplWin32_Init(hwnd)) {

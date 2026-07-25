@@ -92,7 +92,7 @@ int main(int /*argc*/, char** /*argv*/) {
         ::LocalFree(wideArgv);
     }
     launch.mainWindow.title = "MyEngine — MyEditor (M4)";
-    launch.mainWindow.clientSize = {1280, 720};
+    launch.mainWindow.clientSize = {1920, 1080};
     launch.mainWindow.resizable = true;
     return mye::GuardedMain(launch);
 }

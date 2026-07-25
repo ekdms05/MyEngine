@@ -16,7 +16,7 @@ namespace mye {
 
 struct WindowDesc {
     std::string title = "MyEngine";     // UTF-8
-    Vec2i clientSize{1280, 720};
+    Vec2i clientSize{1920, 1080};   // 기본 엔진 창 크기 (1080p)
     bool  resizable = true;
     bool  borderless = false;
     bool  startMaximized = false;

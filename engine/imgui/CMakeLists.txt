@@ -4,7 +4,9 @@
 # 변수로 이 라이브러리 TU에 합류한다(imconfig.h 일관성 보장). /W4 경고는 imgui 소스에 한해 완화한다.
 add_library(mye_imgui STATIC
     include/mye/imgui/DebugUi.h
+    include/mye/imgui/ImGuiSkin.h
     src/DebugUi.cpp
+    src/ImGuiSkin.cpp
 
     ${IMGUI_CORE_SOURCES}
     ${IMGUI_BACKEND_SOURCES}

@@ -18,6 +18,7 @@ import { registerRunTool } from "./tools/run.js";
 import { registerCaptureTool } from "./tools/capture.js";
 import { registerLogsTool } from "./tools/logs.js";
 import { registerStatusTool } from "./tools/status.js";
+import { registerDotTools } from "./tools/dot.js";
 
 function readVersion(mcpDir: string): string {
   try {
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
   registerCaptureTool(server, ctx);
   registerLogsTool(server, ctx);
   registerStatusTool(server, ctx);
+  registerDotTools(server, ctx);
 
   await server.connect(new StdioServerTransport());
   // stderr 전용 — stdout 오염 = 프로토콜 파손.

@@ -5,8 +5,10 @@
 add_library(mye_imgui STATIC
     include/mye/imgui/DebugUi.h
     include/mye/imgui/ImGuiSkin.h
+    include/mye/imgui/ImGuiFonts.h
     src/DebugUi.cpp
     src/ImGuiSkin.cpp
+    src/ImGuiFonts.cpp
 
     ${IMGUI_CORE_SOURCES}
     ${IMGUI_BACKEND_SOURCES}

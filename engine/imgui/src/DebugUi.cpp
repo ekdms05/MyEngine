@@ -1,6 +1,7 @@
 // mye/imgui/DebugUi.cpp — Dear ImGui(docking) win32 + DX11 백엔드 배선 (mye_imgui)
 #include "mye/imgui/DebugUi.h"
 #include "mye/imgui/ImGuiSkin.h"
+#include "mye/imgui/ImGuiFonts.h"
 
 #include "mye/core/Input.h"
 #include "mye/core/Window.h"
@@ -82,7 +83,9 @@ Expected<void, Error> DebugUi::Initialize(win32::Win32Window& window, rhi::IDevi
     io.IniFilename = nullptr;                              // imgui.ini 파일 미생성 (엔진이 레이아웃 관리)
     ApplySkin();                                           // devTool 스킨(다크+주황 액센트+라운드)
 
-    // 기본 폰트로 충분 (오버레이는 ASCII 수치. 한국어 폰트는 M1 불필요).
+    // CJK 폰트(HaFont) 로드 — 한글/중/일 렌더링. 못 찾으면 기본 폰트 유지(no-op).
+    LoadEditorFonts(18.0f);
+
     if (!ImGui_ImplWin32_Init(hwnd)) {
         ImGui::DestroyContext();
         return Error{"DebugUi::Initialize — ImGui_ImplWin32_Init failed", 4};

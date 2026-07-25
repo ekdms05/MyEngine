@@ -92,6 +92,7 @@ struct EditorModule::Impl final : public IEditorViewport {
     std::string dumpPath;
     uint64_t frameCount = 0;
     bool     dumped = false;
+    rhi::TextureHandle dumpBackbuffer{};   // 창이 있으면 ImGui 셸까지 그려진 백버퍼를 덤프(스킨 확인용)
     std::function<void()> onExit;   // 프레임 한도 도달 시 호출(main 이 Application::RequestExit 배선).
 
     // 플레이 게이팅.
@@ -332,7 +333,8 @@ void EditorModule::Frame(const TimeStep& step) {
 
     ++s.frameCount;
 
-    // 4) 덤프(오프스크린 RT — 헤드리스에서도 검증 가능).
+    // 4) 덤프. 창이 있으면 ImGui 셸(스킨)까지 그려진 백버퍼를, 헤드리스면 오프스크린 RT 를 캡처.
+    s.dumpBackbuffer = haveWindow ? backbuffer : rhi::TextureHandle{};
     HandleDump();
 
     if (haveWindow) {
@@ -350,10 +352,13 @@ void EditorModule::HandleDump() {
     if (!s.dumpEnabled || s.dumped) return;
     const bool last = s.frameLimit ? (s.frameCount >= s.maxFrames) : (s.frameCount >= 3);
     if (!last) return;
-    if (!s.device || !s.rt.IsInitialized()) return;
-    // 오프스크린 RT 를 BMP 로 덤프(백버퍼가 없을 수도 있으므로 RT 를 캡처).
-    auto cap = rhi::CaptureBackbuffer(*s.device, s.rt.ColorTarget(), s.dumpPath);
-    if (cap) MYE_LOG_INFO("Editor", "뷰포트 덤프 -> '{}' (frame {})", s.dumpPath, s.frameCount);
+    if (!s.device) return;
+    // 창이 있으면 ImGui 셸(스킨/한글)까지 그려진 백버퍼를, 헤드리스면 오프스크린 RT 를 캡처.
+    rhi::TextureHandle target = s.dumpBackbuffer.IsValid() ? s.dumpBackbuffer
+                                                           : (s.rt.IsInitialized() ? s.rt.ColorTarget() : rhi::TextureHandle{});
+    if (!target.IsValid()) return;
+    auto cap = rhi::CaptureBackbuffer(*s.device, target, s.dumpPath);
+    if (cap) MYE_LOG_INFO("Editor", "프레임 덤프 -> '{}' (frame {})", s.dumpPath, s.frameCount);
     else     MYE_LOG_ERROR("Editor", "덤프 실패: {}", cap.GetError().message);
     s.dumped = true;
 }

@@ -102,6 +102,7 @@ void PanelManager::BuildDockspaceAndDrawAll(EditorContext& ctx) {
         ImGui::DockBuilderDockWindow("에셋",        bottom);
         ImGui::DockBuilderDockWindow("콘솔",        bottom);
         ImGui::DockBuilderDockWindow("씬 뷰포트",   center);
+        ImGui::DockBuilderDockWindow("닷 에디터",   center);   // 뷰포트와 탭 그룹
         ImGui::DockBuilderFinish(dockId);
     }
 

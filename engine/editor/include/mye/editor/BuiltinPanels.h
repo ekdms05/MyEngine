@@ -30,6 +30,9 @@ std::unique_ptr<IEditorPanelFactory> MakeTilemapEditorPanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeTilePalettePanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeAnimationEditorPanelFactory();
 
+// ---- 도트(픽셀아트) 에디터 패널 ----
+std::unique_ptr<IEditorPanelFactory> MakeDotEditorPanelFactory();
+
 // 콘솔 로그 싱크를 프로세스 전역 Log 에 1회 장착(EditorApp 초기화가 호출).
 void InstallConsoleLogSink();
 

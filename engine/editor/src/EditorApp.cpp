@@ -77,6 +77,7 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->RegisterFactory(MakeTilemapEditorPanelFactory());
     m_panels->RegisterFactory(MakeTilePalettePanelFactory());
     m_panels->RegisterFactory(MakeAnimationEditorPanelFactory());
+    m_panels->RegisterFactory(MakeDotEditorPanelFactory());   // 도트(픽셀아트) 에디터
 
     // 확장 경로(플러그인·MCP·Lua)로 등록된 패널 팩토리를 PanelManager로 위임(07 §확장:
     //   내장이 되는 건 플러그인도 된다). AddPanel이 보관한 팩토리를 여기서 흡수한다.
@@ -91,6 +92,7 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->Open("mye.inspector");
     m_panels->Open("mye.assets");
     m_panels->Open("mye.console");
+    m_panels->Open("mye.doteditor");
 }
 
 void EditorApp::RestoreLayout() {

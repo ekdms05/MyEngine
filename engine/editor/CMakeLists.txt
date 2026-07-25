@@ -68,10 +68,18 @@ add_library(mye_editor STATIC
     src/TilemapEditorPanel.cpp
     src/AnimClipEditCommand.cpp
     src/AnimationEditorPanel.cpp
+
+    # ---- 도트(픽셀아트) 에디터 패널 ----
+    src/DotEditorPanel.cpp
 )
 
 target_include_directories(mye_editor PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+# stb_image_write(도트 에디터 PNG 저장) — third_party 헤더 경로(PRIVATE).
+target_include_directories(mye_editor PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../third_party>
 )
 
 # 에디터는 엔진 전 계층을 소비. imgui는 도킹 셸(M4-B에서 DebugUi 직접 사용).

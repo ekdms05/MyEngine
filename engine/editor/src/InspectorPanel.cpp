@@ -16,6 +16,7 @@
 #include "mye/editor/Command.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/editor/PlayMode.h"
+#include "mye/core/I18n.h"
 
 #include "mye/ecs/World.h"
 #include "mye/ecs/ComponentType.h"
@@ -60,7 +61,7 @@ public:
     const PanelDesc& Desc() const override { return kInspectorDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin("인스펙터")) {
+        if (!ImGui::Begin(mye::i18n::T("panel.inspector"))) {
             ImGui::End();
             return;
         }
@@ -68,7 +69,7 @@ public:
         ecs::World* world = ctx.activeWorld();
         SelectionManager* sel = ctx.selection;
         if (!world || !sel || sel->Empty()) {
-            ImGui::TextDisabled("선택된 엔티티가 없습니다.");
+            ImGui::TextDisabled("%s", mye::i18n::T("inspector.empty"));
             ImGui::End();
             return;
         }

@@ -11,6 +11,7 @@
 #include "mye/editor/EditorContext.h"
 
 #include "mye/core/Log.h"
+#include "mye/core/I18n.h"
 
 #include "imgui.h"
 
@@ -130,15 +131,15 @@ public:
 
     void OnGui(EditorContext& ctx) override {
         (void)ctx;
-        if (!ImGui::Begin("콘솔")) {
+        if (!ImGui::Begin(mye::i18n::T("panel.console"))) {
             ImGui::End();
             return;
         }
 
         // ---- 툴바: 지우기 · 자동스크롤 · 레벨 토글 · 검색 ----
-        if (ImGui::Button("지우기")) ConsoleLogStore::Get().Clear();
+        if (ImGui::Button(mye::i18n::T("console.clear"))) ConsoleLogStore::Get().Clear();
         ImGui::SameLine();
-        ImGui::Checkbox("자동 스크롤", &m_autoScroll);
+        ImGui::Checkbox(mye::i18n::T("console.autoscroll"), &m_autoScroll);
         ImGui::SameLine();
         ImGui::TextDisabled("|");
         ImGui::SameLine();
@@ -153,7 +154,7 @@ public:
         ImGui::SetNextItemWidth(-1.0f);
         char buf[256];
         std::snprintf(buf, sizeof(buf), "%s", m_search.c_str());
-        if (ImGui::InputTextWithHint("##search", "검색...", buf, sizeof(buf)))
+        if (ImGui::InputTextWithHint("##search", mye::i18n::T("console.search"), buf, sizeof(buf)))
             m_search = buf;
 
         ImGui::Separator();

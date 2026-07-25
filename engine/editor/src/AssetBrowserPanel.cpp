@@ -14,6 +14,7 @@
 #include "mye/editor/Panel.h"
 #include "mye/editor/EditorContext.h"
 #include "mye/editor/Command.h"
+#include "mye/core/I18n.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/editor/PlayMode.h"
 #include "mye/editor/SceneSerializer.h"
@@ -247,7 +248,7 @@ public:
     const PanelDesc& Desc() const override { return kAssetBrowserDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin("에셋")) {
+        if (!ImGui::Begin(mye::i18n::T("panel.assets"))) {
             ImGui::End();
             return;
         }
@@ -255,7 +256,7 @@ public:
         // assets 마운트의 OS 루트 = <projectRoot>/assets. 프로젝트가 없으면 표시 불가.
         const std::string assetsRoot = AssetsRootOf(ctx);
         if (assetsRoot.empty()) {
-            ImGui::TextDisabled("프로젝트가 열려 있지 않습니다.");
+            ImGui::TextDisabled("%s", mye::i18n::T("assets.noproject"));
             ImGui::End();
             return;
         }

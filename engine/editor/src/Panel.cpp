@@ -11,6 +11,8 @@
 #include "imgui.h"
 #include "imgui_internal.h"   // DockBuilder* — 기본 도킹 레이아웃 프로그램적 구성
 
+#include "mye/core/I18n.h"
+
 #include <algorithm>
 #include <vector>
 
@@ -28,6 +30,7 @@ struct PanelManager::Impl {
     std::vector<Instance> instances;
     std::uint64_t nextInstanceId = 1;
     bool builtDefaultLayout = false;   // 첫 프레임 1회 기본 도킹 레이아웃 구성
+    std::uint32_t layoutLangVersion = 0xFFFFFFFFu;  // 언어 변경 시 레이아웃 재빌드 트리거
 
     IEditorPanelFactory* FindFactory(std::string_view panelId) {
         for (auto& f : factories)
@@ -83,11 +86,12 @@ void PanelManager::BuildDockspaceAndDrawAll(EditorContext& ctx) {
     ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_PassthruCentralNode;
     const ImGuiID dockId = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), dockFlags);
 
-    // 기본 레이아웃(첫 실행 1회): 좌=하이어라키, 우=인스펙터, 하=에셋/콘솔(탭), 중앙=씬 뷰포트.
-    //   IniFilename=null 이라 저장 레이아웃이 없으니, 창이 제각각 작게 뜨는 대신 사전 배치한다.
-    //   패널 창 제목(Begin 라벨)과 정확히 일치해야 도킹된다.
-    if (!m_impl->builtDefaultLayout) {
+    // 기본 레이아웃(첫 실행 1회 + 언어 변경 시): 좌=하이어라키, 우=인스펙터, 하=에셋/콘솔(탭),
+    //   중앙=씬 뷰포트/닷 에디터. IniFilename=null 이라 저장 레이아웃이 없으니 사전 배치한다.
+    //   패널 창 제목(Begin 라벨=i18n 번역)과 정확히 일치해야 도킹되므로, 언어가 바뀌면 재빌드한다.
+    if (!m_impl->builtDefaultLayout || m_impl->layoutLangVersion != mye::i18n::Version()) {
         m_impl->builtDefaultLayout = true;
+        m_impl->layoutLangVersion = mye::i18n::Version();
         ImGui::DockBuilderRemoveNode(dockId);
         ImGui::DockBuilderAddNode(dockId, dockFlags | ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetMainViewport()->WorkSize);
@@ -97,12 +101,13 @@ void PanelManager::BuildDockspaceAndDrawAll(EditorContext& ctx) {
         ImGuiID right  = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
         ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,  0.26f, nullptr, &center);
 
-        ImGui::DockBuilderDockWindow("하이어라키",  left);
-        ImGui::DockBuilderDockWindow("인스펙터",    right);
-        ImGui::DockBuilderDockWindow("에셋",        bottom);
-        ImGui::DockBuilderDockWindow("콘솔",        bottom);
-        ImGui::DockBuilderDockWindow("씬 뷰포트",   center);
-        ImGui::DockBuilderDockWindow("닷 에디터",   center);   // 뷰포트와 탭 그룹
+        using mye::i18n::T;
+        ImGui::DockBuilderDockWindow(T("panel.hierarchy"), left);
+        ImGui::DockBuilderDockWindow(T("panel.inspector"), right);
+        ImGui::DockBuilderDockWindow(T("panel.assets"),    bottom);
+        ImGui::DockBuilderDockWindow(T("panel.console"),   bottom);
+        ImGui::DockBuilderDockWindow(T("panel.viewport"),  center);
+        ImGui::DockBuilderDockWindow(T("panel.doteditor"), center);   // 뷰포트와 탭 그룹
         ImGui::DockBuilderFinish(dockId);
     }
 

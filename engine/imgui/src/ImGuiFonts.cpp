@@ -54,31 +54,45 @@ std::wstring ResolveFont(const wchar_t* file) {
 bool LoadEditorFonts(float sizePx) {
     ImGuiIO& io = ImGui::GetIO();
 
-    const std::wstring path = ResolveFont(L"HaFont.ttf");
-    if (path.empty())
+    const std::wstring haPath = ResolveFont(L"HaFont.ttf");
+    if (haPath.empty())
         return false;   // 폰트 없음 → 기본 폰트 유지(호출부 계속 진행)
 
-    // 글리프 범위: 기본(라틴) + 한글 + 중/일 상용. HaFont(haruna)는 CJK 커버리지가 넓어
-    // 한글은 확실히 렌더된다. ja/zh 미커버 글리프는 i18n 단계에서 폰트 병합으로 보강한다.
-    static ImVector<ImWchar> ranges;
-    if (ranges.empty()) {
+    // 베이스: HaFont(haruna) = 라틴 + 한글. 한자·가나는 아래 병합 폰트가 담당한다.
+    static ImVector<ImWchar> baseRanges;
+    if (baseRanges.empty()) {
         ImFontGlyphRangesBuilder b;
         b.AddRanges(io.Fonts->GetGlyphRangesDefault());
         b.AddRanges(io.Fonts->GetGlyphRangesKorean());
-        b.AddRanges(io.Fonts->GetGlyphRangesJapanese());
-        b.AddRanges(io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
-        b.BuildRanges(&ranges);
+        b.BuildRanges(&baseRanges);
     }
 
     ImFontConfig cfg;
-    cfg.OversampleH = 1;   // 아틀라스 크기 축소(한글 글리프 다수)
+    cfg.OversampleH = 1;   // 아틀라스 크기 축소(CJK 글리프 다수)
     cfg.OversampleV = 1;
     cfg.PixelSnapH  = true;
 
-    const std::string utf8 = Utf8(path);
-    ImFont* f = io.Fonts->AddFontFromFileTTF(utf8.c_str(), sizePx, &cfg, ranges.Data);
+    const std::string haUtf8 = Utf8(haPath);
+    ImFont* f = io.Fonts->AddFontFromFileTTF(haUtf8.c_str(), sizePx, &cfg, baseRanges.Data);
     if (f == nullptr)
         return false;
+
+    // 병합 폰트: 같은 글리프 아틀라스에 얹어 코드포인트 커버리지를 넓힌다(MergeMode).
+    //   먼저 병합된 폰트가 해당 코드포인트를 선점 → HaFont(한글)에 없는 일본어 한자/가나는
+    //   M PLUS Rounded 1c 가, 중국어 간체 한자는 ZCOOL KuaiLe 가 채운다. 둘 다 둥근 서체(가독성).
+    auto mergeFont = [&](const wchar_t* file, const ImWchar* rng) {
+        const std::wstring p = ResolveFont(file);
+        if (p.empty()) return;
+        ImFontConfig m;
+        m.MergeMode = true;
+        m.OversampleH = 1;
+        m.OversampleV = 1;
+        m.PixelSnapH = true;
+        const std::string u = Utf8(p);
+        io.Fonts->AddFontFromFileTTF(u.c_str(), sizePx, &m, rng);
+    };
+    mergeFont(L"MPLUSRounded1c-Regular.ttf", io.Fonts->GetGlyphRangesJapanese());
+    mergeFont(L"ZCOOLKuaiLe-Regular.ttf",    io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
 
     io.FontDefault = f;
     return true;

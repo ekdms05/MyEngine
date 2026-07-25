@@ -10,6 +10,7 @@
 #include "mye/editor/EditorContext.h"
 
 #include "mye/core/Json.h"
+#include "mye/core/I18n.h"
 
 #include "imgui.h"
 
@@ -68,7 +69,7 @@ public:
 
     void OnGui(EditorContext& /*ctx*/) override {
         if (m_firstFrame) { ImGui::SetNextWindowFocus(); m_firstFrame = false; }
-        if (!ImGui::Begin("닷 에디터")) { ImGui::End(); return; }
+        if (!ImGui::Begin(mye::i18n::T("panel.doteditor"))) { ImGui::End(); return; }
 
         DrawToolbar();
         ImGui::Separator();
@@ -112,16 +113,17 @@ private:
             if (ImGui::Button(label)) m_tool = t;
             if (sel) ImGui::PopStyleColor();
         };
-        toolBtn("브러시", Tool::Brush);     ImGui::SameLine();
-        toolBtn("지우개", Tool::Eraser);    ImGui::SameLine();
-        toolBtn("스포이드", Tool::Eyedropper); ImGui::SameLine();
-        toolBtn("채우기", Tool::Bucket);
+        using mye::i18n::T;
+        toolBtn(T("dot.brush"), Tool::Brush);     ImGui::SameLine();
+        toolBtn(T("dot.eraser"), Tool::Eraser);    ImGui::SameLine();
+        toolBtn(T("dot.eyedropper"), Tool::Eyedropper); ImGui::SameLine();
+        toolBtn(T("dot.bucket"), Tool::Bucket);
         ImGui::SameLine(); ImGui::TextDisabled("|"); ImGui::SameLine();
-        ImGui::Checkbox("격자", &m_showGrid);
+        ImGui::Checkbox(T("dot.grid"), &m_showGrid);
 
         // 현재 색.
         ImGui::SetNextItemWidth(220);
-        ImGui::ColorEdit4("색", &m_color.x,
+        ImGui::ColorEdit4(T("dot.color"), &m_color.x,
                           ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
 
         // 팔레트 스와치.
@@ -147,15 +149,15 @@ private:
         int cur = 2;
         for (int i = 0; i < 5; ++i) if (sizeVals[i] == m_w) cur = i;
         ImGui::SetNextItemWidth(80);
-        if (ImGui::Combo("크기", &cur, sizes, 5)) { size = sizeVals[cur]; Resize(size, size); }
+        if (ImGui::Combo(T("dot.size"), &cur, sizes, 5)) { size = sizeVals[cur]; Resize(size, size); }
         ImGui::SameLine();
-        if (ImGui::Button("전체 지우기")) std::fill(m_pixels.begin(), m_pixels.end(), IM_COL32(0, 0, 0, 0));
+        if (ImGui::Button(T("dot.clear"))) std::fill(m_pixels.begin(), m_pixels.end(), IM_COL32(0, 0, 0, 0));
 
         // 저장.
         ImGui::SetNextItemWidth(160);
-        ImGui::InputText("이름", m_name, sizeof(m_name));
+        ImGui::InputText(T("dot.name"), m_name, sizeof(m_name));
         ImGui::SameLine();
-        if (ImGui::Button("PNG 저장")) SavePng();
+        if (ImGui::Button(T("dot.savepng"))) SavePng();
         if (!m_status.empty()) { ImGui::SameLine(); ImGui::TextDisabled("%s", m_status.c_str()); }
     }
 

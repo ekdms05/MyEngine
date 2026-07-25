@@ -23,6 +23,7 @@
 #include "mye/scene/Renderable.h"
 
 #include "mye/core/Json.h"
+#include "mye/core/I18n.h"
 #include "mye/refl/PropertyPath.h"
 #include "mye/refl/TypeInfo.h"
 #include "mye/refl/TypeId.h"
@@ -95,7 +96,7 @@ public:
 
     void OnGui(EditorContext& ctx) override {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        const bool open = ImGui::Begin("씬 뷰포트");
+        const bool open = ImGui::Begin(mye::i18n::T("panel.viewport"));
         ImGui::PopStyleVar();
         if (!open) { ImGui::End(); return; }
 

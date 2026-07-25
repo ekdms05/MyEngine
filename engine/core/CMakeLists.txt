@@ -6,6 +6,7 @@ add_library(mye_core STATIC
     include/mye/core/Assert.h
     include/mye/core/CrashHandler.h
     include/mye/core/Json.h
+    include/mye/core/I18n.h
     include/mye/core/Config.h
     include/mye/core/Events.h
     include/mye/core/Time.h
@@ -22,6 +23,7 @@ add_library(mye_core STATIC
     src/Log.cpp
     src/Assert.cpp
     src/Json.cpp
+    src/I18n.cpp
     src/Config.cpp
     src/Events.cpp
     src/Time.cpp

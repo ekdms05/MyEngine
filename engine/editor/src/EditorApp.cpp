@@ -13,6 +13,7 @@
 #include "mye/editor/Project.h"
 #include "mye/core/Module.h"
 #include "mye/core/Log.h"
+#include "mye/core/I18n.h"
 #include "mye/ecs/World.h"
 
 #include "imgui.h"
@@ -21,6 +22,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 
 namespace mye::editor {
 
@@ -166,23 +168,38 @@ CommandStack* EditorApp::ActiveStack() {
     return active ? &active->Commands() : nullptr;
 }
 
+namespace {
+// 패널 id → i18n 제목. 알려진 내장 패널은 번역, 그 외(플러그인 등)는 등록 제목 유지.
+const char* PanelTitle(const PanelDesc& d) {
+    const std::string_view id = d.id;
+    if (id == "mye.hierarchy") return mye::i18n::T("panel.hierarchy");
+    if (id == "mye.viewport")  return mye::i18n::T("panel.viewport");
+    if (id == "mye.inspector") return mye::i18n::T("panel.inspector");
+    if (id == "mye.assets")    return mye::i18n::T("panel.assets");
+    if (id == "mye.console")   return mye::i18n::T("panel.console");
+    if (id == "mye.doteditor") return mye::i18n::T("panel.doteditor");
+    return d.title.c_str();
+}
+} // namespace
+
 void EditorApp::DrawMenuBar() {
     if (!ImGui::BeginMainMenuBar()) return;
 
-    if (ImGui::BeginMenu("파일")) {
-        if (ImGui::MenuItem("새 씬", "Ctrl+N")) NewScene();
-        if (ImGui::MenuItem("저장", "Ctrl+S")) SaveActive();
+    using mye::i18n::T;
+    if (ImGui::BeginMenu(T("menu.file"))) {
+        if (ImGui::MenuItem(T("file.newscene"), "Ctrl+N")) NewScene();
+        if (ImGui::MenuItem(T("file.save"), "Ctrl+S")) SaveActive();
         ImGui::Separator();
-        if (ImGui::MenuItem("레이아웃 저장")) SaveLayout();
+        if (ImGui::MenuItem(T("file.savelayout"))) SaveLayout();
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("편집")) {
+    if (ImGui::BeginMenu(T("menu.edit"))) {
         CommandStack* s = ActiveStack();
         const bool canUndo = s && s->CanUndo();
         const bool canRedo = s && s->CanRedo();
-        std::string undoLabel = "실행 취소";
-        std::string redoLabel = "다시 실행";
+        std::string undoLabel = T("edit.undo");
+        std::string redoLabel = T("edit.redo");
         if (canUndo) { undoLabel += " ("; undoLabel += std::string(s->UndoLabel()); undoLabel += ")"; }
         if (canRedo) { redoLabel += " ("; redoLabel += std::string(s->RedoLabel()); redoLabel += ")"; }
         if (ImGui::MenuItem(undoLabel.c_str(), "Ctrl+Z", false, canUndo) && s) s->Undo();
@@ -190,28 +207,39 @@ void EditorApp::DrawMenuBar() {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("플레이")) {
+    if (ImGui::BeginMenu(T("menu.play"))) {
         const bool playing = m_playMode && m_playMode->IsPlaying();
-        if (ImGui::MenuItem("재생/정지", "Ctrl+P")) TogglePlay();
-        if (ImGui::MenuItem("일시정지", "Ctrl+Shift+P", false, playing)) {
+        if (ImGui::MenuItem(T("play.toggle"), "Ctrl+P")) TogglePlay();
+        if (ImGui::MenuItem(T("play.pause"), "Ctrl+Shift+P", false, playing)) {
             if (m_playMode->State() == PlayState::Playing) m_playMode->Pause();
             else if (m_playMode->State() == PlayState::Paused) m_playMode->Resume();
         }
-        if (ImGui::MenuItem("프레임 스텝", "F10", false,
+        if (ImGui::MenuItem(T("play.step"), "F10", false,
                             playing && m_playMode->State() == PlayState::Paused))
             m_playMode->StepFrame();
         ImGui::EndMenu();
     }
 
-    // Window 메뉴 — 등록된 패널 목록에서 자동 생성(07 §7).
-    if (ImGui::BeginMenu("창")) {
+    // Window 메뉴 — 등록된 패널 목록에서 자동 생성(07 §7). 제목은 i18n 키(panel.<id뒷부분>)로 번역.
+    if (ImGui::BeginMenu(T("menu.window"))) {
         if (m_panels) {
             for (const PanelDesc& d : m_panels->RegisteredPanels()) {
                 const bool open = m_panels->IsOpen(d.id);
-                if (ImGui::MenuItem(d.title.c_str(), nullptr, open)) {
+                if (ImGui::MenuItem(PanelTitle(d), nullptr, open)) {
                     if (!open) m_panels->Open(d.id);
                 }
             }
+        }
+        ImGui::EndMenu();
+    }
+
+    // 언어 메뉴 — ko/en/ja/zh 전환. 선택 시 도킹 레이아웃이 재구성된다(Version 관찰).
+    if (ImGui::BeginMenu(T("menu.language"))) {
+        using mye::i18n::Lang;
+        const Lang cur = mye::i18n::GetLanguage();
+        for (Lang l : {Lang::Ko, Lang::En, Lang::Ja, Lang::Zh}) {
+            if (ImGui::MenuItem(mye::i18n::LangName(l), nullptr, cur == l))
+                mye::i18n::SetLanguage(l);
         }
         ImGui::EndMenu();
     }
@@ -244,28 +272,29 @@ void EditorApp::DrawToolbar() {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking |
                              ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
                              ImGuiWindowFlags_NoBringToFrontOnFocus;
+    using mye::i18n::T;
     if (ImGui::Begin("##toolbar", nullptr, flags)) {
-        if (ImGui::Button("새 씬")) NewScene();
+        if (ImGui::Button(T("toolbar.newscene"))) NewScene();
         ImGui::SameLine();
-        if (ImGui::Button("저장")) SaveActive();
+        if (ImGui::Button(T("toolbar.save"))) SaveActive();
         ImGui::SameLine();
         ImGui::TextDisabled("|");
         ImGui::SameLine();
 
         const bool playing = m_playMode && m_playMode->IsPlaying();
-        if (ImGui::Button(playing ? "■ 정지"
-                                  : "▶ 재생"))
+        const std::string playLabel = std::string(playing ? "■ " : "▶ ") + T(playing ? "toolbar.stop" : "toolbar.play");
+        if (ImGui::Button(playLabel.c_str()))
             TogglePlay();
         ImGui::SameLine();
         if (playing) {
             const bool paused = m_playMode->State() == PlayState::Paused;
-            if (ImGui::Button(paused ? "▶ 재개"
-                                     : "❚❚ 일시정지")) {
+            const std::string pauseLabel = std::string(paused ? "▶ " : "❚❚ ") + T(paused ? "play.toggle" : "play.pause");
+            if (ImGui::Button(pauseLabel.c_str())) {
                 if (paused) m_playMode->Resume(); else m_playMode->Pause();
             }
             ImGui::SameLine();
             ImGui::BeginDisabled(!paused);
-            if (ImGui::Button("스텝")) m_playMode->StepFrame();
+            if (ImGui::Button(T("play.step"))) m_playMode->StepFrame();
             ImGui::EndDisabled();
         }
 

@@ -15,6 +15,8 @@
 #include "mye/ecs/World.h"
 #include "mye/scene/Transform.h"
 
+#include "mye/core/I18n.h"
+
 #include "imgui.h"
 
 #include <cstring>
@@ -42,7 +44,7 @@ public:
     const PanelDesc& Desc() const override { return kHierarchyDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin("하이어라키")) {
+        if (!ImGui::Begin(mye::i18n::T("panel.hierarchy"))) {
             ImGui::End();
             return;
         }

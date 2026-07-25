@@ -10,6 +10,7 @@
 //   --dump path.bmp   마지막 프레임 뷰포트 RT 를 BMP 로 덤프.
 #include "mye/core/App.h"
 #include "mye/core/Log.h"
+#include "mye/core/I18n.h"
 
 #include "mye/scene/SceneModule.h"
 #include "mye/editor/EditorModule.h"
@@ -36,6 +37,13 @@ public:
             } else if (a[i] == "--dump" && i + 1 < a.size()) {
                 m_dumpEnabled = true;
                 m_dumpPath = a[++i];
+            } else if (a[i] == "--lang" && i + 1 < a.size()) {
+                const std::string& v = a[++i];
+                using mye::i18n::Lang;
+                if (v == "en") mye::i18n::SetLanguage(Lang::En);
+                else if (v == "ja") mye::i18n::SetLanguage(Lang::Ja);
+                else if (v == "zh") mye::i18n::SetLanguage(Lang::Zh);
+                else mye::i18n::SetLanguage(Lang::Ko);
             }
             // --headless 는 core(GuardedMain)가 소비해 창을 생략한다.
         }

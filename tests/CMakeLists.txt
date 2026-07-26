@@ -19,6 +19,7 @@ add_executable(mye_tests
     src/GameplayProgressionTests.cpp  # M8: 경험치/레벨업 + 스킬 쿨다운
     src/GameplayStatusTests.cpp       # M8: 버프/상태이상(수정자·DoT·플래그)
     src/GameplayQuestEconomyTests.cpp # M8: 퀘스트 진행 + 상점 매매
+    src/GameplayCraftingTests.cpp     # M8: 제작 레시피
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

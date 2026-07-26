@@ -12,6 +12,7 @@ add_library(mye_gameplay STATIC
     include/mye/gameplay/StatusEffect.h
     include/mye/gameplay/Quest.h
     include/mye/gameplay/Economy.h
+    include/mye/gameplay/Crafting.h
 
     src/StatSystem.cpp
     src/Combat.cpp
@@ -22,6 +23,7 @@ add_library(mye_gameplay STATIC
     src/StatusEffect.cpp
     src/Quest.cpp
     src/Economy.cpp
+    src/Crafting.cpp
 )
 
 target_include_directories(mye_gameplay PUBLIC

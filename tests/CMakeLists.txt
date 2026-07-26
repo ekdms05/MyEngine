@@ -14,6 +14,7 @@ add_executable(mye_tests
     src/Camera2DTests.cpp             # 강화 카메라(경계·데드존·셰이크)
     src/GameplayStatsTests.cpp        # M8: RPG 스탯 파생 계산
     src/GameplayCombatTests.cpp       # M8: 전투 데미지(감쇠·크리·RNG)
+    src/GameplayInventoryTests.cpp    # M8: 인벤토리(스택·용량·원자적 이동)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

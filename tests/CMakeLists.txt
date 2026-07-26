@@ -12,6 +12,7 @@ add_executable(mye_tests
     src/PakFileTests.cpp              # .pak 패킹/마운트 왕복(배포)
     src/SceneReflectionTests.cpp      # 씬 컴포넌트 리플렉션/직렬화 왕복(데이터드리븐 씬)
     src/Camera2DTests.cpp             # 강화 카메라(경계·데드존·셰이크)
+    src/GameplayStatsTests.cpp        # M8: RPG 스탯 파생 계산
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp
@@ -40,7 +41,7 @@ add_executable(mye_tests
     src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).

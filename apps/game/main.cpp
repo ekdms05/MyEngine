@@ -17,6 +17,7 @@
 #include "mye/core/Log.h"
 #include "mye/core/Math.h"
 #include "mye/core/Window.h"
+#include "mye/core/Input.h"
 #include "mye/core/Base.h"
 
 #include "mye/rhi/Rhi.h"
@@ -48,6 +49,7 @@
 #include <shellapi.h>
 
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -118,6 +120,7 @@ public:
     void OnInitialize(EngineContext& ctx) override {
         m_ctx = &ctx;
         m_scene = ctx.GetService<scene::SceneModule>();
+        m_input = ctx.GetService<InputState>();
 
         auto dev = rhi::CreateDevice(rhi::Backend::DX11, {});
         if (!dev) { MYE_LOG_ERROR("Game", "CreateDevice 실패: {}", dev.GetError().message); return; }
@@ -251,6 +254,41 @@ private:
         if (!r) { MYE_LOG_ERROR("Game", "씬 로드 실패 '{}': {}", path, r.GetError().message); return; }
         MYE_LOG_INFO("Game", "씬 로드: '{}' (루트 {}개)", path, r.Value().size());
         EnsureWorldTransforms();
+        FindPlayer();
+    }
+
+    // 첫 스프라이트 엔티티를 플레이어로 지정(입력 이동 + 카메라 팔로우 대상). 데모 편의.
+    void FindPlayer() {
+        ecs::World& world = m_scene->World();
+        m_player = ecs::Entity::Null();
+        world.Query<scene::LocalTransform, scene::SpriteRenderer>().Each(
+            [&](ecs::Entity e, scene::LocalTransform&, scene::SpriteRenderer&) {
+                if (m_player.IsNull()) m_player = e;
+            });
+        if (!m_player.IsNull())
+            m_camera.SetPosition(PlayerPos());
+    }
+
+    Vec2 PlayerPos() const {
+        if (m_player.IsNull()) return {};
+        auto* lt = m_scene->World().TryGet<scene::LocalTransform>(m_player);
+        return lt ? Vec2{lt->position.x, lt->position.y} : Vec2{};
+    }
+
+    // WASD/방향키/게임패드 왼쪽 스틱 → 이동 벡터(+Y 위). 정규화 없이 축 합.
+    Vec2 MoveInput() const {
+        Vec2 mv{0.0f, 0.0f};
+        if (!m_input) return mv;
+        if (m_input->IsDown(KeyCode::A) || m_input->IsDown(KeyCode::Left))  mv.x -= 1.0f;
+        if (m_input->IsDown(KeyCode::D) || m_input->IsDown(KeyCode::Right)) mv.x += 1.0f;
+        if (m_input->IsDown(KeyCode::W) || m_input->IsDown(KeyCode::Up))    mv.y += 1.0f;
+        if (m_input->IsDown(KeyCode::S) || m_input->IsDown(KeyCode::Down))  mv.y -= 1.0f;
+        const Vec2 stick = m_input->LeftStick(0);
+        mv.x += stick.x; mv.y += stick.y;
+        // 대각 과속 방지(길이 1로 제한).
+        const float len = std::sqrt(mv.x * mv.x + mv.y * mv.y);
+        if (len > 1.0f) { mv.x /= len; mv.y /= len; }
+        return mv;
     }
 
     // 씬 로드 엔티티는 파생 컴포넌트 WorldTransform이 없다(직렬화 제외). LocalTransform 보유
@@ -296,6 +334,20 @@ private:
 
     void Update(const TimeStep& step) {
         const float dt = static_cast<float>(step.deltaSeconds > 0 ? step.deltaSeconds : (1.0 / 60.0));
+
+        // 플레이어 이동(입력) — 데모 조작. LocalTransform 직접 이동(루트라 local==world).
+        if (!m_player.IsNull()) {
+            if (auto* lt = m_scene->World().TryGet<scene::LocalTransform>(m_player)) {
+                const Vec2 mv = MoveInput();
+                lt->position.x += mv.x * m_moveSpeed * dt;
+                lt->position.y += mv.y * m_moveSpeed * dt;
+                lt->dirty = true;
+            }
+            // 데드존 카메라 팔로우(캐릭터가 화면 중앙 박스 안이면 카메라 고정).
+            m_camera.FollowDeadzone(PlayerPos(), Vec2{2.5f, 1.5f});
+        }
+        m_camera.TickShake(dt);
+
         anim::RunAnimationSystem(m_scene->World(), dt);
         if (m_audio) m_audio->Update(dt);
         if (m_assets) m_assets->Update();
@@ -342,8 +394,11 @@ private:
 
     EngineContext*      m_ctx = nullptr;
     scene::SceneModule* m_scene = nullptr;
+    InputState*         m_input = nullptr;
     GameCli             m_cli;
     std::function<void()> m_onExit;
+    ecs::Entity         m_player = ecs::Entity::Null();
+    float               m_moveSpeed = 6.0f;   // unit/sec
 
     std::unique_ptr<rhi::IDevice>    m_device;
     std::unique_ptr<rhi::ISwapChain> m_swapChain;

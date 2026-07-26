@@ -3,6 +3,7 @@
 add_library(mye_asset STATIC
     include/mye/asset/AssetGuid.h
     include/mye/asset/FileSystem.h
+    include/mye/asset/PakFile.h
     include/mye/asset/AssetMeta.h
     include/mye/asset/AssetHandle.h
     include/mye/asset/Texture.h
@@ -22,6 +23,7 @@ add_library(mye_asset STATIC
 
     src/AssetGuid.cpp
     src/FileSystem.cpp
+    src/PakFile.cpp
     src/AssetMeta.cpp
     src/AssetHandle.cpp
     src/TextureImporter.cpp

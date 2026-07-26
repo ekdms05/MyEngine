@@ -9,6 +9,7 @@ add_executable(mye_tests
     src/MemoryTests.cpp
     src/InputTests.cpp
     src/AssetTests.cpp
+    src/PakFileTests.cpp              # .pak 패킹/마운트 왕복(배포)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

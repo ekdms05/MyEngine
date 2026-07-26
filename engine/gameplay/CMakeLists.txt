@@ -10,6 +10,8 @@ add_library(mye_gameplay STATIC
     include/mye/gameplay/Progression.h
     include/mye/gameplay/Skill.h
     include/mye/gameplay/StatusEffect.h
+    include/mye/gameplay/Quest.h
+    include/mye/gameplay/Economy.h
 
     src/StatSystem.cpp
     src/Combat.cpp
@@ -18,6 +20,8 @@ add_library(mye_gameplay STATIC
     src/Progression.cpp
     src/Skill.cpp
     src/StatusEffect.cpp
+    src/Quest.cpp
+    src/Economy.cpp
 )
 
 target_include_directories(mye_gameplay PUBLIC

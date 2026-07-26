@@ -22,6 +22,7 @@ add_executable(mye_tests
     src/GameplayCraftingTests.cpp     # M8: 제작 레시피
     src/NetBitStreamTests.cpp         # M9: 비트 직렬화(스냅샷 패킹 기반)
     src/NetQuantizationTests.cpp      # M9: 양자화(위치 압축)
+    src/NetDeltaTests.cpp             # M9: 스냅샷 필드 델타
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

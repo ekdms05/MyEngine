@@ -3,9 +3,11 @@
 add_library(mye_net STATIC
     include/mye/net/BitStream.h
     include/mye/net/Quantization.h
+    include/mye/net/DeltaCodec.h
 
     src/BitStream.cpp
     src/Quantization.cpp
+    src/DeltaCodec.cpp
 )
 
 target_include_directories(mye_net PUBLIC

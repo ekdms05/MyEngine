@@ -1,0 +1,401 @@
+{
+  "__version": 1,
+  "entities": [
+    {
+      "__handle": [
+        0,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": -3.5,
+          "py": -3.5,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 1
+    },
+    {
+      "__handle": [
+        1,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 0,
+          "py": -3.5,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 2
+    },
+    {
+      "__handle": [
+        2,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 3.5,
+          "py": -3.5,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 3
+    },
+    {
+      "__handle": [
+        3,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": -3.5,
+          "py": 0,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 4
+    },
+    {
+      "__handle": [
+        4,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 0,
+          "py": 0,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 5
+    },
+    {
+      "__handle": [
+        5,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 3.5,
+          "py": 0,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 6
+    },
+    {
+      "__handle": [
+        6,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": -3.5,
+          "py": 3.5,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 7
+    },
+    {
+      "__handle": [
+        7,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 0,
+          "py": 3.5,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 8
+    },
+    {
+      "__handle": [
+        8,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 3.5,
+          "py": 3.5,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 0.5,
+          "sy": 0.5,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 128,
+          "pvy": 128,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "431f899f-d279-ed72-9732-dc50f97e11d6",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 9
+    }
+  ]
+}

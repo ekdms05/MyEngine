@@ -4,6 +4,7 @@
 #include "mye/core/Events.h"
 #include "mye/scene/SystemScheduler.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/SceneReflection.h"
 #include "mye/ecs/CommandBuffer.h"
 #include "mye/ecs/World.h"
 
@@ -35,6 +36,9 @@ void SceneModule::OnInitialize(EngineContext& /*ctx*/) {
     // CommandBuffer::SetParent(Flush)가 Transform reparent로 이어지도록 후크 설치
     // (정적 초기화에 의존하지 않는 명시 배선 — 링커 stripping 방어).
     ecs::CommandBuffer::SetReparentHook(&ApplyReparent);
+
+    // 코어 씬 컴포넌트 리플렉션 등록(직렬화가 TypeRegistry에서 찾도록) — 에디터·게임 공용.
+    RegisterCoreComponentReflection();
 
     m_impl->world = std::make_unique<ecs::World>();
     m_impl->worldBus = std::make_unique<EventBus>();

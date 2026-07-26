@@ -21,6 +21,7 @@ add_executable(mye_tests
     src/GameplayQuestEconomyTests.cpp # M8: 퀘스트 진행 + 상점 매매
     src/GameplayCraftingTests.cpp     # M8: 제작 레시피
     src/NetBitStreamTests.cpp         # M9: 비트 직렬화(스냅샷 패킹 기반)
+    src/NetQuantizationTests.cpp      # M9: 양자화(위치 압축)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

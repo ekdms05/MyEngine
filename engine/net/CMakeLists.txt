@@ -2,8 +2,10 @@
 # 와이어 포맷·직렬화는 순수 로직(소켓 무관, 유닛 테스트). 전송(UDP)·서버는 후속.
 add_library(mye_net STATIC
     include/mye/net/BitStream.h
+    include/mye/net/Quantization.h
 
     src/BitStream.cpp
+    src/Quantization.cpp
 )
 
 target_include_directories(mye_net PUBLIC

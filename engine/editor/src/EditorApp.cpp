@@ -99,31 +99,48 @@ void EditorApp::RegisterBuiltinPanels() {
 }
 
 void EditorApp::RestoreLayout() {
-    if (!m_project || !m_project->IsOpen()) return;
-    // ImGui ini 경로를 프로젝트별 layout.ini로 지정(디렉터리 없으면 생성).
-    const std::string dir = m_project->EditorStateDir();
+    // ImGui ini(도킹 레이아웃) 경로 결정. 프로젝트가 열려 있으면 프로젝트별 layout.ini,
+    //   아니면 유저 스코프(<userDir>/editor_layout.ini)로 폴백 — 프로젝트 없이 그냥 실행해도
+    //   사용자가 조절한 레이아웃이 저장/복원된다(첫 실행은 기본 배치, 이후엔 저장된 배치).
     std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    m_layoutIniPath = m_project->LayoutIniPath();
-    // ImGui가 존재하는 프레임에서만 IO 접근(테스트 경로는 ImGui 미초기화).
-    if (ImGui::GetCurrentContext()) {
-        ImGuiIO& io = ImGui::GetIO();
-        io.IniFilename = m_layoutIniPath.c_str();
+    if (m_project && m_project->IsOpen()) {
+        std::filesystem::create_directories(m_project->EditorStateDir(), ec);
+        m_layoutIniPath = m_project->LayoutIniPath();
+    } else if (m_engine) {
+        std::filesystem::path userDir(m_engine->GetPaths().userDir);
+        std::filesystem::create_directories(userDir, ec);
+        m_layoutIniPath = (userDir / "editor_layout.ini").string();
     }
-    // 열린 패널 목록(session.json) 복원.
-    const std::string sessionPath = m_project->SessionJsonPath();
-    if (std::filesystem::exists(sessionPath, ec)) {
-        std::ifstream in(sessionPath, std::ios::binary);
-        if (in) {
-            std::string text((std::istreambuf_iterator<char>(in)),
-                             std::istreambuf_iterator<char>());
-            auto parsed = json::Parse(text);
-            if (parsed) m_panels->DeserializeLayout(parsed.Value());
+
+    // ImGui가 존재하는 프레임에서만 IO 접근(테스트 경로는 ImGui 미초기화).
+    if (ImGui::GetCurrentContext() && !m_layoutIniPath.empty()) {
+        ImGui::GetIO().IniFilename = m_layoutIniPath.c_str();
+        if (std::filesystem::exists(m_layoutIniPath, ec))
+            ImGui::LoadIniSettingsFromDisk(m_layoutIniPath.c_str());   // 저장된 도킹 레이아웃 즉시 복원
+    }
+
+    // 열린 패널 목록(session.json) 복원 — 프로젝트가 있을 때만.
+    if (m_project && m_project->IsOpen()) {
+        const std::string sessionPath = m_project->SessionJsonPath();
+        if (std::filesystem::exists(sessionPath, ec)) {
+            std::ifstream in(sessionPath, std::ios::binary);
+            if (in) {
+                std::string text((std::istreambuf_iterator<char>(in)),
+                                 std::istreambuf_iterator<char>());
+                auto parsed = json::Parse(text);
+                if (parsed) m_panels->DeserializeLayout(parsed.Value());
+            }
         }
     }
 }
 
 void EditorApp::SaveLayout() {
+    // 도킹 레이아웃(ImGui ini)은 프로젝트 유무와 무관하게 저장 — 그냥 실행한 경우도 유저 스코프
+    //   경로에 사용자가 조절한 배치를 남긴다.
+    if (ImGui::GetCurrentContext() && !m_layoutIniPath.empty())
+        ImGui::SaveIniSettingsToDisk(m_layoutIniPath.c_str());
+
+    // 열린 패널 목록(session.json)은 프로젝트가 있을 때만.
     if (!m_project || !m_project->IsOpen()) return;
     json::Value session;
     m_panels->SerializeLayout(session);
@@ -133,9 +150,6 @@ void EditorApp::SaveLayout() {
     std::filesystem::create_directories(m_project->EditorStateDir(), ec);
     std::ofstream out(sessionPath, std::ios::binary | std::ios::trunc);
     if (out) out.write(text.data(), static_cast<std::streamsize>(text.size()));
-    // ImGui ini는 IniFilename 지정 시 ImGui가 자동 저장하지만, 종료 시 명시 저장도 한다.
-    if (ImGui::GetCurrentContext() && !m_layoutIniPath.empty())
-        ImGui::SaveIniSettingsToDisk(m_layoutIniPath.c_str());
 }
 
 void EditorApp::OnFrame() {
@@ -150,8 +164,30 @@ void EditorApp::OnFrame() {
 
     HandleShortcuts();
     DrawMenuBar();
-    DrawToolbar();
-    if (m_panels) m_panels->BuildDockspaceAndDrawAll(m_ctx);
+
+    // 에디터 호스트 윈도우: 메인 메뉴바 아래 작업영역 전체를 덮고, 그 안에 [툴바 행][도크스페이스]
+    //   를 세로로 쌓는다. 이렇게 하면 툴바가 도크스페이스(씬 뷰포트 탭 포함) 위를 덮지 않아,
+    //   뷰포트 상단도 정상적으로 클릭된다. 도크스페이스에 도킹되는 패널들은 호스트 End 후 그린다.
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGui::SetNextWindowViewport(vp->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    const ImGuiWindowFlags hostFlags =
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse;
+    ImGui::Begin("##EditorHost", nullptr, hostFlags);
+    ImGui::PopStyleVar(3);
+
+    DrawToolbar();                                   // 툴바 행(인라인)
+    if (m_panels) m_panels->SetupDockspace(m_ctx);   // 남은 영역에 도크스페이스 + 최초 1회 기본 배치
+    ImGui::End();                                    // 호스트 종료
+
+    if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
 }
 
 CommandStack& EditorApp::Commands() {
@@ -290,52 +326,53 @@ void EditorApp::DrawMenuBar() {
 }
 
 void EditorApp::DrawToolbar() {
-    // 메인 메뉴바 아래 고정 툴바(간단 버튼 행). 도킹 대상 아님 — 상단 오버레이 윈도우.
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y));
-    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, 0));
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoDocking |
-                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
-                             ImGuiWindowFlags_NoBringToFrontOnFocus;
+    // 툴바 버튼 행 — 별도 창이 아니라 에디터 호스트 윈도우 안에 인라인으로 그린다(도크스페이스
+    //   위를 덮지 않도록). OnFrame 이 호스트 윈도우를 열고 이 함수 → 도크스페이스 순으로 그린다.
     using mye::i18n::T;
-    if (ImGui::Begin("##toolbar", nullptr, flags)) {
-        if (ImGui::Button(T("toolbar.newscene"))) NewScene();
-        ImGui::SameLine();
-        if (ImGui::Button(T("toolbar.save"))) SaveActive();
-        ImGui::SameLine();
-        ImGui::TextDisabled("|");
-        ImGui::SameLine();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+    ImGui::Dummy(ImVec2(0, 2));   // 상단 여백
+    ImGui::Indent(6.0f);
 
-        const bool playing = m_playMode && m_playMode->IsPlaying();
-        const std::string playLabel = std::string(playing ? "■ " : "▶ ") + T(playing ? "toolbar.stop" : "toolbar.play");
-        if (ImGui::Button(playLabel.c_str()))
-            TogglePlay();
+    if (ImGui::Button(T("toolbar.newscene"))) NewScene();
+    ImGui::SameLine();
+    if (ImGui::Button(T("toolbar.save"))) SaveActive();
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+
+    const bool playing = m_playMode && m_playMode->IsPlaying();
+    const std::string playLabel = std::string(playing ? "■ " : "▶ ") + T(playing ? "toolbar.stop" : "toolbar.play");
+    if (ImGui::Button(playLabel.c_str()))
+        TogglePlay();
+    ImGui::SameLine();
+    if (playing) {
+        const bool paused = m_playMode->State() == PlayState::Paused;
+        const std::string pauseLabel = std::string(paused ? "▶ " : "❚❚ ") + T(paused ? "play.toggle" : "play.pause");
+        if (ImGui::Button(pauseLabel.c_str())) {
+            if (paused) m_playMode->Resume(); else m_playMode->Pause();
+        }
         ImGui::SameLine();
-        if (playing) {
-            const bool paused = m_playMode->State() == PlayState::Paused;
-            const std::string pauseLabel = std::string(paused ? "▶ " : "❚❚ ") + T(paused ? "play.toggle" : "play.pause");
-            if (ImGui::Button(pauseLabel.c_str())) {
-                if (paused) m_playMode->Resume(); else m_playMode->Pause();
-            }
+        ImGui::BeginDisabled(!paused);
+        if (ImGui::Button(T("play.step"))) m_playMode->StepFrame();
+        ImGui::EndDisabled();
+    }
+
+    // 확장 툴바 버튼.
+    if (m_extensions) {
+        for (const auto& t : m_extensions->ToolbarEntries()) {
             ImGui::SameLine();
-            ImGui::BeginDisabled(!paused);
-            if (ImGui::Button(T("play.step"))) m_playMode->StepFrame();
+            bool enabled = !t.desc.isEnabled || t.desc.isEnabled();
+            ImGui::BeginDisabled(!enabled);
+            std::string caption = t.desc.icon.empty() ? t.desc.tooltip : t.desc.icon;
+            if (ImGui::Button(caption.c_str()) && t.onClick) t.onClick(m_ctx);
             ImGui::EndDisabled();
         }
-
-        // 확장 툴바 버튼.
-        if (m_extensions) {
-            for (const auto& t : m_extensions->ToolbarEntries()) {
-                ImGui::SameLine();
-                bool enabled = !t.desc.isEnabled || t.desc.isEnabled();
-                ImGui::BeginDisabled(!enabled);
-                std::string caption = t.desc.icon.empty() ? t.desc.tooltip : t.desc.icon;
-                if (ImGui::Button(caption.c_str()) && t.onClick) t.onClick(m_ctx);
-                ImGui::EndDisabled();
-            }
-        }
     }
-    ImGui::End();
+
+    ImGui::Unindent(6.0f);
+    ImGui::Dummy(ImVec2(0, 2));
+    ImGui::Separator();
+    ImGui::PopStyleVar();
 }
 
 void EditorApp::HandleShortcuts() {

@@ -10,6 +10,7 @@
 
 #include "mye/editor/EditorTypes.h"
 #include "mye/core/Json.h"
+#include "mye/core/I18n.h"
 
 #include <memory>
 #include <span>
@@ -18,6 +19,13 @@
 #include <vector>
 
 namespace mye::editor {
+
+// 패널 창 제목 = "i18n 라벨###안정 ID". ImGui 는 "###" 이후만 창 식별자로 해싱하므로,
+// 언어가 바뀌어 라벨이 달라져도 창 식별(=도킹 노드·layout.ini 키)은 불변이다.
+// 도킹 배치는 stableId 로만 매칭하면 되고(예: "###mye.viewport"), 저장 레이아웃도 언어 무관.
+inline std::string PanelWindowTitle(const char* i18nKey, const char* stableId) {
+    return std::string(mye::i18n::T(i18nKey)) + "###" + stableId;
+}
 
 // 패널 기본 도킹 위치 힌트(Default 프리셋 자동 배치, 07 §7).
 enum class DockSlot : std::uint8_t {
@@ -79,8 +87,10 @@ public:
     void Close(PanelInstanceId id);
     bool IsOpen(std::string_view panelId) const;
 
-    // 메인 도킹 스페이스 구성 + Window 메뉴 자동 항목 + 전체 패널 OnGui 호출(07 §7).
-    void BuildDockspaceAndDrawAll(EditorContext& ctx);
+    // 도킹 스페이스 구성(호스트 윈도우 내부에서 호출) — DockSpace + 최초 1회 기본 레이아웃 배치.
+    void SetupDockspace(EditorContext& ctx);
+    // 전체 패널 OnGui(도크스페이스로 도킹). SetupDockspace 후(호스트 End 후) 호출.
+    void DrawPanels(EditorContext& ctx);
 
     // 열린 패널·자체 상태를 json으로(session.json). 레이아웃 복원 시 역.
     void SerializeLayout(json::Value& out) const;

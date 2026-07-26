@@ -80,37 +80,41 @@ bool PanelManager::IsOpen(std::string_view panelId) const {
     return false;
 }
 
-void PanelManager::BuildDockspaceAndDrawAll(EditorContext& ctx) {
-    // 메인 뷰포트 전체를 덮는 도킹 스페이스(패널이 자유롭게 도킹·탭화). 메뉴바 영역은 EditorApp이
-    //   별도 메인 메뉴바로 그리므로 여기서는 passthru 중앙 노드만 만든다.
-    ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_PassthruCentralNode;
-    const ImGuiID dockId = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), dockFlags);
+void PanelManager::SetupDockspace(EditorContext& /*ctx*/) {
+    // 호스트 윈도우(EditorApp) 안에서 호출 — 툴바 아래 남은 영역에 도크스페이스를 만든다.
+    //   고정 ID 를 써서 layout.ini 가 이 도크스페이스 레이아웃을 저장/복원할 수 있게 한다.
+    const ImGuiID dockId = ImGui::GetID("MyeDockSpace");
+    const ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_PassthruCentralNode;
 
-    // 기본 레이아웃(첫 실행 1회 + 언어 변경 시): 좌=하이어라키, 우=인스펙터, 하=에셋/콘솔(탭),
-    //   중앙=씬 뷰포트/닷 에디터. IniFilename=null 이라 저장 레이아웃이 없으니 사전 배치한다.
-    //   패널 창 제목(Begin 라벨=i18n 번역)과 정확히 일치해야 도킹되므로, 언어가 바뀌면 재빌드한다.
-    if (!m_impl->builtDefaultLayout || m_impl->layoutLangVersion != mye::i18n::Version()) {
+    // 저장된 레이아웃(layout.ini)이 없을 때만 최초 1회 기본 배치. 이후엔 사용자가 조절/저장한
+    //   레이아웃을 ImGui 가 ini 에서 복원하므로 건드리지 않는다. 창 식별자는 "###안정ID" 라
+    //   언어가 바뀌어도 유지된다(재빌드 불필요).
+    if (!m_impl->builtDefaultLayout && ImGui::DockBuilderGetNode(dockId) == nullptr) {
         m_impl->builtDefaultLayout = true;
-        m_impl->layoutLangVersion = mye::i18n::Version();
-        ImGui::DockBuilderRemoveNode(dockId);
         ImGui::DockBuilderAddNode(dockId, dockFlags | ImGuiDockNodeFlags_DockSpace);
-        ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetMainViewport()->WorkSize);
+        ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetContentRegionAvail());
 
         ImGuiID center = dockId;
         ImGuiID left   = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left,  0.18f, nullptr, &center);
         ImGuiID right  = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
         ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,  0.26f, nullptr, &center);
 
-        using mye::i18n::T;
-        ImGui::DockBuilderDockWindow(T("panel.hierarchy"), left);
-        ImGui::DockBuilderDockWindow(T("panel.inspector"), right);
-        ImGui::DockBuilderDockWindow(T("panel.assets"),    bottom);
-        ImGui::DockBuilderDockWindow(T("panel.console"),   bottom);
-        ImGui::DockBuilderDockWindow(T("panel.viewport"),  center);
-        ImGui::DockBuilderDockWindow(T("panel.doteditor"), center);   // 뷰포트와 탭 그룹
+        // stableId 로만 매칭(언어 무관). 패널 Begin 은 "라벨###안정ID"를 쓴다(PanelWindowTitle).
+        ImGui::DockBuilderDockWindow("###mye.hierarchy", left);
+        ImGui::DockBuilderDockWindow("###mye.inspector", right);
+        ImGui::DockBuilderDockWindow("###mye.assets",    bottom);
+        ImGui::DockBuilderDockWindow("###mye.console",   bottom);
+        ImGui::DockBuilderDockWindow("###mye.viewport",  center);
+        ImGui::DockBuilderDockWindow("###mye.doteditor", center);   // 뷰포트와 탭 그룹
         ImGui::DockBuilderFinish(dockId);
+    } else {
+        m_impl->builtDefaultLayout = true;
     }
 
+    ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), dockFlags);
+}
+
+void PanelManager::DrawPanels(EditorContext& ctx) {
     // 전체 패널 OnGui. 순회 중 Close로 벡터가 흔들리지 않도록 인덱스 스냅샷.
     const std::size_t count = m_impl->instances.size();
     for (std::size_t i = 0; i < count && i < m_impl->instances.size(); ++i) {

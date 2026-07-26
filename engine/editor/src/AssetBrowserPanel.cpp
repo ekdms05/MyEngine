@@ -248,7 +248,7 @@ public:
     const PanelDesc& Desc() const override { return kAssetBrowserDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin(mye::i18n::T("panel.assets"))) {
+        if (!ImGui::Begin(PanelWindowTitle("panel.assets", "mye.assets").c_str())) {
             ImGui::End();
             return;
         }

@@ -131,7 +131,7 @@ public:
 
     void OnGui(EditorContext& ctx) override {
         (void)ctx;
-        if (!ImGui::Begin(mye::i18n::T("panel.console"))) {
+        if (!ImGui::Begin(PanelWindowTitle("panel.console", "mye.console").c_str())) {
             ImGui::End();
             return;
         }

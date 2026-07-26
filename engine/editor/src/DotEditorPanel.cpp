@@ -69,7 +69,7 @@ public:
 
     void OnGui(EditorContext& /*ctx*/) override {
         if (m_firstFrame) { ImGui::SetNextWindowFocus(); m_firstFrame = false; }
-        if (!ImGui::Begin(mye::i18n::T("panel.doteditor"))) { ImGui::End(); return; }
+        if (!ImGui::Begin(PanelWindowTitle("panel.doteditor", "mye.doteditor").c_str())) { ImGui::End(); return; }
 
         DrawToolbar();
         ImGui::Separator();

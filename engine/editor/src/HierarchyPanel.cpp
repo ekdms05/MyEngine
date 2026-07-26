@@ -44,7 +44,7 @@ public:
     const PanelDesc& Desc() const override { return kHierarchyDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin(mye::i18n::T("panel.hierarchy"))) {
+        if (!ImGui::Begin(PanelWindowTitle("panel.hierarchy", "mye.hierarchy").c_str())) {
             ImGui::End();
             return;
         }

@@ -61,7 +61,7 @@ public:
     const PanelDesc& Desc() const override { return kInspectorDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin(mye::i18n::T("panel.inspector"))) {
+        if (!ImGui::Begin(PanelWindowTitle("panel.inspector", "mye.inspector").c_str())) {
             ImGui::End();
             return;
         }

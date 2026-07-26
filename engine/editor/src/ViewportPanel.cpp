@@ -96,7 +96,7 @@ public:
 
     void OnGui(EditorContext& ctx) override {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        const bool open = ImGui::Begin(mye::i18n::T("panel.viewport"));
+        const bool open = ImGui::Begin(PanelWindowTitle("panel.viewport", "mye.viewport").c_str());
         ImGui::PopStyleVar();
         if (!open) { ImGui::End(); return; }
 

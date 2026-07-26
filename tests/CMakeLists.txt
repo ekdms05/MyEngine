@@ -17,6 +17,7 @@ add_executable(mye_tests
     src/GameplayInventoryTests.cpp    # M8: 인벤토리(스택·용량·원자적 이동)
     src/GameplayLootTests.cpp         # M8: 루트 테이블(결정론 가중 드롭)
     src/GameplayProgressionTests.cpp  # M8: 경험치/레벨업 + 스킬 쿨다운
+    src/GameplayStatusTests.cpp       # M8: 버프/상태이상(수정자·DoT·플래그)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

@@ -9,6 +9,7 @@ add_library(mye_gameplay STATIC
     include/mye/gameplay/Loot.h
     include/mye/gameplay/Progression.h
     include/mye/gameplay/Skill.h
+    include/mye/gameplay/StatusEffect.h
 
     src/StatSystem.cpp
     src/Combat.cpp
@@ -16,6 +17,7 @@ add_library(mye_gameplay STATIC
     src/Loot.cpp
     src/Progression.cpp
     src/Skill.cpp
+    src/StatusEffect.cpp
 )
 
 target_include_directories(mye_gameplay PUBLIC

@@ -34,6 +34,18 @@ enum class KeyCode : uint16_t {
 
 enum class MouseButton : uint8_t { Left, Right, Middle, X1, X2, Count };
 
+// 게임패드 버튼(XInput 매핑). 스틱/트리거는 아날로그 축으로 별도 조회.
+enum class GamepadButton : uint8_t {
+    A, B, X, Y,
+    DPadUp, DPadDown, DPadLeft, DPadRight,
+    LeftShoulder, RightShoulder,
+    LeftThumb, RightThumb,
+    Start, Back,
+    Count
+};
+
+inline constexpr int kMaxGamepads = 4;
+
 // ---- 버스로 발행되는 저수준 입력 이벤트 (06·게임 코드 구독) ----
 struct RawKeyEvent       { MYE_EVENT(RawKeyEvent);       KeyCode key; bool pressed; bool repeat; };
 struct RawMouseMoveEvent { MYE_EVENT(RawMouseMoveEvent); Vec2 delta;      // Raw Input 고해상도 델타
@@ -71,9 +83,21 @@ public:
     Vec2  MouseDelta() const;               // 이번 프레임 누적 Raw 델타
     float WheelDelta() const;               // 이번 프레임 누적 휠(수직)
 
+    // ---- 게임패드 폴링(XInput) — pad: 0..kMaxGamepads-1 ----
+    bool  IsGamepadConnected(int pad = 0) const;
+    bool  IsDown(GamepadButton btn, int pad = 0) const;
+    bool  WasPressed(GamepadButton btn, int pad = 0) const;   // 이번 프레임 down 엣지
+    bool  WasReleased(GamepadButton btn, int pad = 0) const;  // 이번 프레임 up 엣지
+    Vec2  LeftStick(int pad = 0) const;     // 데드존 적용, 각 축 -1..1
+    Vec2  RightStick(int pad = 0) const;
+    float LeftTrigger(int pad = 0) const;   // 0..1
+    float RightTrigger(int pad = 0) const;  // 0..1
+
     // ---- 갱신(엔진 루프·입력 백엔드 전용) ----
     // 프레임 경계: 이전 프레임 상태 저장 + 엣지/델타 리셋. PumpMessages 직후 1회.
     void NewFrame();
+    // 게임패드 폴링(XInput). 프레임당 1회(NewFrame 근처). 자체 이전상태를 롤오버해 엣지 계산.
+    void PollGamepads();
     // 입력 백엔드(win32 Raw Input)가 이벤트 처리 중 호출해 현재 상태를 밀어넣는다.
     void OnKey(KeyCode key, bool pressed);
     void OnMouseButton(MouseButton btn, bool pressed);
@@ -95,8 +119,20 @@ private:
         bool  keys[static_cast<size_t>(KeyCode::Count)] = {};
         bool  mouseButtons[static_cast<size_t>(MouseButton::Count)] = {};
     };
+    struct GamepadSnapshot {
+        bool  connected = false;
+        bool  buttons[static_cast<size_t>(GamepadButton::Count)] = {};
+        Vec2  leftStick{};
+        Vec2  rightStick{};
+        float leftTrigger = 0.0f;
+        float rightTrigger = 0.0f;
+    };
+
     Snapshot m_current{};
     Snapshot m_previous{};
+    GamepadSnapshot m_pads[kMaxGamepads]{};
+    GamepadSnapshot m_padsPrev[kMaxGamepads]{};
+    uint32_t m_gamepadPoll = 0;   // 미연결 슬롯 재검색 주기용 카운터
     Vec2i    m_mousePos{};
     Vec2     m_mouseDelta{};
     float    m_wheelDelta = 0.0f;

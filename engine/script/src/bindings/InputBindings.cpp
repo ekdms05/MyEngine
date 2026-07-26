@@ -24,6 +24,11 @@ KeyCode ToKey(int raw) {
     return static_cast<KeyCode>(raw);
 }
 
+bool ValidPadButton(int raw) {
+    return raw >= 0 && raw < static_cast<int>(GamepadButton::Count);
+}
+GamepadButton ToPad(int raw) { return static_cast<GamepadButton>(raw); }
+
 } // namespace
 
 void InputBindingModule::Register(sol::state& lua) {
@@ -54,6 +59,44 @@ void InputBindingModule::Register(sol::state& lua) {
         if (input->IsDown(ToKey(posY))) y += 1.0f;
         return Vec2{x, y};
     });
+
+    // ---- mye.input 게임패드(XInput) 폴링 -------------------------------
+    // pad 기본 0. 버튼은 mye.Pad.* 상수. 스틱은 Vec2(각 축 -1..1, +Y=위), 트리거는 0..1.
+    in.set_function("pad_connected", [input](sol::optional<int> pad) {
+        return input ? input->IsGamepadConnected(pad.value_or(0)) : false;
+    });
+    in.set_function("pad_down", [input](int btn, sol::optional<int> pad) {
+        return (input && ValidPadButton(btn)) ? input->IsDown(ToPad(btn), pad.value_or(0)) : false;
+    });
+    in.set_function("pad_pressed", [input](int btn, sol::optional<int> pad) {
+        return (input && ValidPadButton(btn)) ? input->WasPressed(ToPad(btn), pad.value_or(0)) : false;
+    });
+    in.set_function("pad_released", [input](int btn, sol::optional<int> pad) {
+        return (input && ValidPadButton(btn)) ? input->WasReleased(ToPad(btn), pad.value_or(0)) : false;
+    });
+    in.set_function("left_stick", [input](sol::optional<int> pad) -> Vec2 {
+        return input ? input->LeftStick(pad.value_or(0)) : Vec2{};
+    });
+    in.set_function("right_stick", [input](sol::optional<int> pad) -> Vec2 {
+        return input ? input->RightStick(pad.value_or(0)) : Vec2{};
+    });
+    in.set_function("left_trigger", [input](sol::optional<int> pad) {
+        return input ? input->LeftTrigger(pad.value_or(0)) : 0.0f;
+    });
+    in.set_function("right_trigger", [input](sol::optional<int> pad) {
+        return input ? input->RightTrigger(pad.value_or(0)) : 0.0f;
+    });
+
+    // ---- mye.Pad 상수(게임패드 버튼) ----
+    sol::table pad = mye["Pad"].get_or_create<sol::table>();
+    auto pb = [](GamepadButton c) { return static_cast<int>(c); };
+    pad["A"] = pb(GamepadButton::A); pad["B"] = pb(GamepadButton::B);
+    pad["X"] = pb(GamepadButton::X); pad["Y"] = pb(GamepadButton::Y);
+    pad["DUP"] = pb(GamepadButton::DPadUp);     pad["DDOWN"] = pb(GamepadButton::DPadDown);
+    pad["DLEFT"] = pb(GamepadButton::DPadLeft); pad["DRIGHT"] = pb(GamepadButton::DPadRight);
+    pad["LB"] = pb(GamepadButton::LeftShoulder); pad["RB"] = pb(GamepadButton::RightShoulder);
+    pad["LSTICK"] = pb(GamepadButton::LeftThumb); pad["RSTICK"] = pb(GamepadButton::RightThumb);
+    pad["START"] = pb(GamepadButton::Start); pad["BACK"] = pb(GamepadButton::Back);
 
     // ---- mye.Key 상수 --------------------------------------------------
     // 물리 스캔코드 기반(QWERTY/AZERTY 무관). 자주 쓰는 키만 노출.

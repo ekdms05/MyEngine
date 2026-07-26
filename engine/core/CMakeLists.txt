@@ -40,5 +40,5 @@ target_include_directories(mye_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-# user32: 창·메시지 펌프 / shell32: CommandLineToArgvW (UTF-8 커맨드라인 변환)
-target_link_libraries(mye_core PRIVATE user32 shell32)
+# user32: 창·메시지 펌프 / shell32: CommandLineToArgvW / Xinput9_1_0: 게임패드 폴링
+target_link_libraries(mye_core PRIVATE user32 shell32 Xinput9_1_0)

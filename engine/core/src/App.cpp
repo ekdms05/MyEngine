@@ -310,6 +310,7 @@ int GuardedMain(const LaunchArgs& args) {
             // 이전 프레임 상태 롤오버(WasPressed/WasReleased 엣지) + 마우스 델타/휠 리셋 후,
             // PumpMessages가 이번 프레임 입력을 m_current·델타에 누적한다(Update가 그대로 읽음).
             inputState.NewFrame();
+            inputState.PollGamepads();                   // XInput 게임패드 폴링(프레임당 1회)
             if (window) window->PumpMessages();          // win32 메시지 → 이벤트 버스 + InputState 갱신
             // 메인 스레드 전용 작업 소진(워커가 RunOnMainThread로 마샬링한 GPU 업로드·
             // 04 비동기 Finalize 등). 여기가 메인 스레드임을 JobSystem에 확정 기록.

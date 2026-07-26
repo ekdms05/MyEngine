@@ -7,11 +7,15 @@ add_library(mye_gameplay STATIC
     include/mye/gameplay/Item.h
     include/mye/gameplay/Inventory.h
     include/mye/gameplay/Loot.h
+    include/mye/gameplay/Progression.h
+    include/mye/gameplay/Skill.h
 
     src/StatSystem.cpp
     src/Combat.cpp
     src/Inventory.cpp
     src/Loot.cpp
+    src/Progression.cpp
+    src/Skill.cpp
 )
 
 target_include_directories(mye_gameplay PUBLIC

@@ -1,21 +1,16 @@
-// SceneSerializer.cpp — World ↔ JSON 씬 직렬화·저장/로드 (docs/07 §3, 오픈이슈 1)
+// SceneSerializer.cpp — World ↔ JSON 씬 직렬화·저장/로드 (docs/03, 07 §3)
 //
-// 07 §3·오픈이슈1: 엔티티·컴포넌트(리플렉션)·계층(Parent/Children)·Entity 참조 안정화를
-//   JSON에 왕복시킨다. 04 SerializeDynamic·JsonArchive·json::Value 를 소비한다.
+// 엔티티·컴포넌트(리플렉션)·계층(Parent/Children)·Entity 참조 안정화를 JSON에 왕복시킨다.
+// 04 SerializeDynamic·JsonArchive·json::Value 를 소비. (에디터·게임 런타임·세이브 공유.)
 //
 // [컴포넌트 타입 결정]
-//   대상 = "World에 등록되었고 리플렉션 메타가 있는 컴포넌트". World는 풀/타입 열거 공개 API가
-//   없으므로 refl::TypeRegistry::All() 의 Struct 타입을 훑어 그 ComponentTypeId 가 World에
-//   등록(IsRegistered)돼 있으면 대상으로 삼는다. ComponentTypeId 정본은 04 규약대로
-//   refl::TypeId(=HashFnv1a64(리플렉션 이름))이며, 03 MYE_COMPONENT 도 이 값의 별칭이다.
-//   (리플렉션 이름과 컴포넌트 이름이 같으면 두 해시가 일치 — 등록 시 이 규약을 지킬 것.)
+//   대상 = "World에 등록되었고 리플렉션 메타가 있는 컴포넌트". refl::TypeRegistry::All() 의
+//   Struct 타입을 훑어 그 ComponentTypeId(=refl::TypeId) 가 World에 등록돼 있으면 대상.
 //
 // [Entity 참조 안정화]
-//   파일 내부에서는 런타임 Entity(index/generation) 대신 1부터의 안정 로컬 ID를 부여한다.
-//   Parent 및 리플렉션 필드 안의 EntityRef(아래 규약)는 이 로컬 ID로 저장하고, 로드 시
-//   로컬 ID→새 Entity 매핑으로 재결선한다. Children/WorldTransform 같은 파생·캐시 컴포넌트는
-//   직렬화하지 않는다(로드 후 시스템이 재구성).
-#include "mye/editor/SceneSerializer.h"
+//   파일 내부에서는 런타임 Entity 대신 1부터의 안정 로컬 ID를 부여한다. Parent 및 리플렉션 필드
+//   안의 EntityRef 는 로컬 ID로 저장하고, 로드 시 로컬 ID→새 Entity 매핑으로 재결선한다.
+#include "mye/scene/SceneSerializer.h"
 
 #include "mye/core/Log.h"
 #include "mye/ecs/ComponentPool.h"
@@ -35,7 +30,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace mye::editor {
+namespace mye::scene {
 
 namespace {
 
@@ -47,13 +42,12 @@ ecs::ComponentTypeId ComponentIdOf(const refl::TypeInfo& t) {
 }
 
 // EntityRef로 취급할 리플렉션 struct 이름(index:u32, generation:u32 레이아웃 미러).
-//   씬 파일에서는 index=로컬 ID, generation=0으로 저장되고 로드 시 실제 Entity로 치환된다.
 bool IsEntityRefType(const refl::TypeInfo& t) {
     const std::string_view n = t.Name();
     return n == "mye::ecs::Entity" || n == "ecs::Entity" || n == "Entity";
 }
 
-// 파생·캐시 컴포넌트(직렬화 제외) — ComponentTypeId로 판정. 로드 후 TransformSystem이 재구성.
+// 파생·캐시 컴포넌트(직렬화 제외) — 로드 후 TransformSystem이 재구성.
 bool IsDerivedComponentId(ecs::ComponentTypeId id) {
     return id == scene::WorldTransform::kComponentTypeId ||
            id == scene::Children::kComponentTypeId;
@@ -93,7 +87,6 @@ private:
 };
 
 // World의 모든 엔티티 열거 — 등록 컴포넌트 풀들의 dense 엔티티 index 합집합.
-//   (World가 전역 엔티티 열거 API를 노출하지 않으므로 풀에서 역산한다.)
 std::vector<ecs::Entity> EnumerateEntities(const ecs::World& world,
                                            const std::vector<const refl::TypeInfo*>& types) {
     std::vector<std::uint32_t> indices;
@@ -103,10 +96,7 @@ std::vector<ecs::Entity> EnumerateEntities(const ecs::World& world,
         for (std::uint32_t idx : pool->DenseEntities()) indices.push_back(idx);
     };
     for (const refl::TypeInfo* t : types) addPool(ComponentIdOf(*t));
-    // 계층 풀도 포함(직렬화 컴포넌트가 없는 순수 그룹/부모 노드도 반드시 열거해야
-    //   자식이 고아가 되지 않는다). Parent=부모 링크 확보, Children=직렬화 컴포넌트 없는
-    //   순수 그룹 노드(부모도 없음) 확보. 둘 다 파생/캐시라 직렬화 대상은 아니지만
-    //   엔티티 존재 자체는 이 풀들로 역산한다.
+    // 계층 풀도 포함(직렬화 컴포넌트가 없는 순수 그룹/부모 노드도 열거해야 자식이 고아가 안 됨).
     addPool(scene::Parent::kComponentTypeId);
     addPool(scene::Children::kComponentTypeId);
 
@@ -157,16 +147,13 @@ void RelinkEntityRefs(const refl::TypeInfo& type, void* instance,
     }
 }
 
-// 쓰기 직후 컴포넌트 json 안의 EntityRef 필드(값이 index=런타임/generation)를 로컬 ID로 치환.
-//   SerializeDynamic은 Entity를 struct{index,generation}로 그대로 쓰므로, 여기서 index를
-//   로컬 ID로, generation을 0으로 바꾼 json으로 재구성한다.
+// 쓰기 직후 컴포넌트 json 안의 EntityRef 필드를 로컬 ID로 치환.
 json::Value RemapEntityRefsToLocal(const refl::TypeInfo& type, const json::Value& value,
                                    const ecs::World& world, LocalIdMap& ids);
 
 json::Value RemapStructRefs(const refl::TypeInfo& type, const json::Value& value,
                             const ecs::World& world, LocalIdMap& ids) {
     if (IsEntityRefType(type)) {
-        // {index, generation, __version} → 로컬 ID로 치환.
         std::uint32_t idx = 0, gen = 0;
         if (const json::Value* iv = value.Find("index")) idx = static_cast<std::uint32_t>(iv->AsInt());
         if (const json::Value* gv = value.Find("generation")) gen = static_cast<std::uint32_t>(gv->AsInt());
@@ -211,8 +198,7 @@ json::Value WriteEntity(const ecs::World& world, ecs::Entity e, LocalIdMap& ids,
     json::Value::Object obj;
     obj["id"] = json::Value(static_cast<std::int64_t>(ids.IdFor(e)));
 
-    // 실제 런타임 핸들(index/generation)을 부가 기록. 씬 파일 로드는 무시하지만,
-    //   DestroyEntityCommand undo(preserveHandles=true)가 원래 핸들 복원에 소비한다.
+    // 실제 런타임 핸들(index/generation)을 부가 기록(DestroyEntityCommand undo가 소비).
     {
         json::Value::Array handle;
         handle.push_back(json::Value(static_cast<std::int64_t>(e.index)));
@@ -232,7 +218,6 @@ json::Value WriteEntity(const ecs::World& world, ecs::Entity e, LocalIdMap& ids,
         const void* raw = world.TryGetDynamic(e, cid);
         if (!raw) continue;
         auto wr = ser::JsonArchive::ForWrite();
-        // 쓰기 모드에서는 값을 변경하지 않는다(const_cast 안전).
         auto r = ser::SerializeDynamic(wr, *t, const_cast<void*>(raw));
         if (!r) continue;
         json::Value remapped = RemapEntityRefsToLocal(*t, wr.Root(), world, ids);
@@ -271,7 +256,6 @@ SceneSerializer::WriteSubtree(const ecs::World& world, ecs::Entity root) const {
 
     const std::vector<const refl::TypeInfo*> types = CollectComponentTypes(world);
 
-    // root와 자손 수집(Children 캐시 기반 DFS).
     std::vector<ecs::Entity> subtree;
     std::vector<ecs::Entity> stack{root};
     while (!stack.empty()) {
@@ -291,7 +275,6 @@ SceneSerializer::WriteSubtree(const ecs::World& world, ecs::Entity root) const {
     json::Value::Array entities;
     for (ecs::Entity e : subtree) {
         json::Value ev = WriteEntity(world, e, ids, types);
-        // 루트의 부모(서브트리 밖) 참조는 끊는다.
         if (e == root && ev.IsObject()) {
             json::Value::Object obj = ev.AsObject();
             obj.erase("parent");
@@ -325,10 +308,8 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
         if (!ev.IsObject()) continue;
         const json::Value* idv = ev.Find("id");
         const std::uint32_t localId = idv ? static_cast<std::uint32_t>(idv->AsInt()) : 0;
-        if (localId == 0) continue;   // 유효 로컬 ID는 1부터
+        if (localId == 0) continue;
 
-        // preserveHandles: "__handle":[index,generation] 로 원래 핸들 복원(CreateWithId).
-        //   실패(핸들 없음/슬롯이 살아있음/세대 0) 시 Create() 폴백 → 항상 유효 엔티티 확보.
         ecs::Entity e = ecs::Entity::Null();
         if (preserveHandles) {
             const json::Value* hv = ev.Find("__handle");
@@ -356,8 +337,6 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
             for (const auto& [name, compValue] : pe.components->AsObject()) {
                 const refl::TypeInfo* t = refl::TypeRegistry::Get().Find(std::string_view(name));
                 if (!t) {
-                    // 스킵 = 조용한 데이터 손실. 리플렉션 이름 ↔ MYE_COMPONENT 이름 해시
-                    //   불일치(03/04 정본 규약 위반)일 수 있으므로 반드시 로그로 드러낸다.
                     MYE_LOG_WARN("SceneSerializer",
                                  "ReadInto: 미등록 컴포넌트 '{}' 스킵(데이터 손실) — "
                                  "리플렉션 이름/등록 규약 확인",
@@ -372,7 +351,6 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
             }
         }
 
-        // Parent 재결선(로컬 ID → 새 Entity). Children 캐시는 TransformSystem이 재구성.
         if (pe.parentLocalId != 0) {
             auto it = localToEntity.find(pe.parentLocalId);
             if (it != localToEntity.end()) {
@@ -427,4 +405,4 @@ Expected<void, Error> SceneSerializer::Restore(ecs::World& world, std::string_vi
     return {};
 }
 
-} // namespace mye::editor
+} // namespace mye::scene

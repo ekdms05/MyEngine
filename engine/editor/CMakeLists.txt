@@ -34,10 +34,9 @@ add_library(mye_editor STATIC
     include/mye/editor/PlayMode.h
     src/PlayMode.cpp
 
-    # ---- 씬/프리팹 직렬화 (docs/07 §3, 오픈이슈 1) ----
+    # ---- 씬/프리팹 직렬화 (씬 직렬화는 mye_scene으로 이동; 여기선 별칭 헤더 + 프리팹만) ----
     include/mye/editor/SceneSerializer.h
     include/mye/editor/Prefab.h
-    src/SceneSerializer.cpp
     src/Prefab.cpp
 
     # ---- 프로젝트·문서 (docs/07 §2, §6) ----

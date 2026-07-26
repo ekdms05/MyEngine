@@ -16,6 +16,7 @@ add_library(mye_scene STATIC
     include/mye/scene/SystemScheduler.h
     include/mye/scene/SceneModule.h
     include/mye/scene/Scene.h
+    include/mye/scene/SceneSerializer.h
 
     # ---- 렌더러블·정렬 추출(M2-B) ----
     include/mye/scene/Renderable.h
@@ -46,6 +47,7 @@ add_library(mye_scene STATIC
     src/scene/Transform.cpp
     src/scene/SystemScheduler.cpp
     src/scene/SceneModule.cpp
+    src/scene/SceneSerializer.cpp
     src/scene/RenderExtract.cpp
     src/anim/AnimationSystem.cpp
     src/tilemap/Tilemap.cpp
@@ -61,5 +63,6 @@ target_include_directories(mye_scene PUBLIC
 )
 
 target_link_libraries(mye_scene
-    PUBLIC mye_core mye_asset mye_render
+    PUBLIC  mye_core mye_asset mye_render
+    PRIVATE mye_reflect   # SceneSerializer: 리플렉션·JsonArchive(ser) 소비
 )

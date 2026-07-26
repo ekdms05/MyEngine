@@ -95,6 +95,7 @@ struct GameCli {
     std::string scenePath;          // 비면 <project>/assets/scenes/sample.scene
     bool        makeSample = false;
     bool        headless = false;
+    Color       ambient{1.0f, 1.0f, 1.0f, 1.0f};   // 전역 앰비언트(데이나이트 틴트) — 스프라이트 tint에 곱
     bool        frameLimit = false;
     uint64_t    maxFrames = 0;
     bool        dumpEnabled = false;
@@ -360,10 +361,20 @@ private:
         m_proxies.Clear();
         scene::ExtractRenderItems(world, m_proxies);
 
+        // 전역 앰비언트(데이나이트) — 각 스프라이트 tint에 색을 곱해 씬 전체를 물들인다(셰이더 무변경
+        //   2D 라이팅 1단계). 이후 포인트라이트/라이트버퍼는 M7 P1에서 렌더패스로 확장.
+        const Color amb = m_cli.ambient;
+        if (amb.r != 1.0f || amb.g != 1.0f || amb.b != 1.0f) {
+            for (scene::RenderItem& it : m_proxies.items) {
+                it.tint.r *= amb.r; it.tint.g *= amb.g; it.tint.b *= amb.b;
+            }
+        }
+        const Color clear{0.10f * amb.r, 0.12f * amb.g, 0.16f * amb.b, 1.0f};
+
         m_device->BeginFrame();
         rhi::ICommandContext& cmd = m_device->GetImmediateContext();
 
-        m_rt.BeginScenePass(cmd, Color{0.10f, 0.12f, 0.16f, 1.0f});
+        m_rt.BeginScenePass(cmd, clear);
         m_hybrid.Render(m_proxies, m_camera, cmd);
         m_rt.EndScenePass(cmd);
 
@@ -431,6 +442,12 @@ public:
             else if (a[i] == "--scene" && i + 1 < a.size()) m_cli.scenePath = a[++i];
             else if (a[i] == "--make-sample") m_cli.makeSample = true;
             else if (a[i] == "--headless") m_cli.headless = true;
+            else if (a[i] == "--night") m_cli.ambient = Color{0.42f, 0.50f, 0.85f, 1.0f};   // 밤(푸른 앰비언트)
+            else if (a[i] == "--ambient" && i + 3 < a.size()) {
+                m_cli.ambient.r = std::strtof(a[++i].c_str(), nullptr);
+                m_cli.ambient.g = std::strtof(a[++i].c_str(), nullptr);
+                m_cli.ambient.b = std::strtof(a[++i].c_str(), nullptr);
+            }
             else if (a[i] == "--frames" && i + 1 < a.size()) {
                 m_cli.frameLimit = true; m_cli.maxFrames = std::strtoull(a[++i].c_str(), nullptr, 10);
             } else if (a[i] == "--dump" && i + 1 < a.size()) {

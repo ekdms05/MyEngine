@@ -14,6 +14,7 @@
 #include "mye/core/Module.h"
 #include "mye/core/Log.h"
 #include "mye/core/I18n.h"
+#include "mye/core/Window.h"
 #include "mye/ecs/World.h"
 
 #include "imgui.h"
@@ -182,6 +183,20 @@ const char* PanelTitle(const PanelDesc& d) {
 }
 } // namespace
 
+IWindow* EditorApp::MainWindowOrNull() {
+    if (m_engine && m_engine->GetServiceRaw(kMainWindowServiceId))
+        return &m_engine->MainWindow();
+    return nullptr;
+}
+
+void EditorApp::ToggleFullscreen() {
+    IWindow* w = MainWindowOrNull();
+    if (!w) return;
+    const WindowMode next = (w->GetWindowMode() == WindowMode::BorderlessFullscreen)
+        ? WindowMode::Windowed : WindowMode::BorderlessFullscreen;
+    w->SetWindowMode(next);
+}
+
 void EditorApp::DrawMenuBar() {
     if (!ImGui::BeginMainMenuBar()) return;
 
@@ -230,6 +245,16 @@ void EditorApp::DrawMenuBar() {
                 }
             }
         }
+        ImGui::EndMenu();
+    }
+
+    // 화면 메뉴 — 전체화면 토글(F11) · 수직동기.
+    if (ImGui::BeginMenu(T("menu.display"))) {
+        IWindow* w = MainWindowOrNull();
+        const bool fs = w && w->GetWindowMode() == WindowMode::BorderlessFullscreen;
+        if (ImGui::MenuItem(T("display.fullscreen"), "F11", fs, w != nullptr))
+            ToggleFullscreen();
+        ImGui::MenuItem(T("display.vsync"), nullptr, &m_vsync);
         ImGui::EndMenu();
     }
 
@@ -340,6 +365,9 @@ void EditorApp::HandleShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_F10, false) && m_playMode &&
         m_playMode->State() == PlayState::Paused)
         m_playMode->StepFrame();
+
+    // F11 — 전체화면 토글.
+    if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) ToggleFullscreen();
 
     // 선택 이력(Alt+←/→).
     if (alt && m_selection) {

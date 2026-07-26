@@ -227,9 +227,53 @@ void Win32Window::SetTitle(std::string_view utf8) {
     }
 }
 
-void Win32Window::SetWindowMode(WindowMode /*mode*/, int /*displayIndex*/) {
-    // TODO(Phase 2): 보더리스 풀스크린 전환 + WindowModeChangedEvent → WindowResizedEvent 순 발행
-    MYE_LOG_WARN("Window", "SetWindowMode: Phase 2 기능 (M0 미구현)");
+void Win32Window::SetWindowMode(WindowMode mode, int /*displayIndex*/) {
+    if (mode == m_mode) return;
+    HWND hwnd = ToHwnd(m_hwnd);
+    if (hwnd == nullptr) return;
+
+    if (mode == WindowMode::BorderlessFullscreen) {
+        // 현재 창 스타일·위치 저장(복귀용) 후, 모니터 전체를 덮는 테두리 없는 팝업으로 전환.
+        m_savedStyle = static_cast<long long>(::GetWindowLongPtrW(hwnd, GWL_STYLE));
+        RECT wr{};
+        ::GetWindowRect(hwnd, &wr);
+        m_savedRect[0] = wr.left;  m_savedRect[1] = wr.top;
+        m_savedRect[2] = wr.right; m_savedRect[3] = wr.bottom;
+
+        HMONITOR mon = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        ::GetMonitorInfoW(mon, &mi);
+
+        ::SetWindowLongPtrW(hwnd, GWL_STYLE, static_cast<LONG_PTR>(WS_POPUP | WS_VISIBLE));
+        ::SetWindowPos(hwnd, HWND_TOP,
+                       mi.rcMonitor.left, mi.rcMonitor.top,
+                       mi.rcMonitor.right - mi.rcMonitor.left,
+                       mi.rcMonitor.bottom - mi.rcMonitor.top,
+                       SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    } else {
+        // 저장한 창 스타일·위치로 복귀(저장값이 없으면 표준 창 스타일).
+        const LONG_PTR style = m_savedStyle != 0
+            ? static_cast<LONG_PTR>(m_savedStyle)
+            : static_cast<LONG_PTR>(WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+        ::SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+        const int w = m_savedRect[2] - m_savedRect[0];
+        const int h = m_savedRect[3] - m_savedRect[1];
+        ::SetWindowPos(hwnd, nullptr, m_savedRect[0], m_savedRect[1],
+                       w > 0 ? w : 1280, h > 0 ? h : 720,
+                       SWP_FRAMECHANGED | SWP_NOZORDER | SWP_SHOWWINDOW);
+    }
+
+    m_mode = mode;
+    // 클라이언트 크기 갱신(SetWindowPos가 WM_SIZE→WindowResizedEvent를 이미 발행하지만, 즉시성 보장).
+    RECT client{};
+    ::GetClientRect(hwnd, &client);
+    m_clientSize = Vec2i{static_cast<int32_t>(client.right - client.left),
+                         static_cast<int32_t>(client.bottom - client.top)};
+    m_bus.Publish(WindowModeChangedEvent{this, mode, m_clientSize});
+    MYE_LOG_INFO("Window", "window mode -> {} ({}x{})",
+                 mode == WindowMode::BorderlessFullscreen ? "borderless-fullscreen" : "windowed",
+                 m_clientSize.x, m_clientSize.y);
 }
 
 void Win32Window::AddMessageHook(IWindowMessageHook* hook, int priority) {

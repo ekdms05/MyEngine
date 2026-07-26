@@ -50,6 +50,10 @@ private:
     WindowMode m_mode = WindowMode::Windowed;
     bool       m_closeRequested = false;
 
+    // 보더리스 풀스크린 전환 시 복원용 창 상태(Windows 타입 미노출 — 원시 값 보관).
+    long long  m_savedStyle = 0;      // GWL_STYLE
+    int        m_savedRect[4] = {0, 0, 0, 0};  // left,top,right,bottom (창모드 복귀용)
+
     struct HookEntry { IWindowMessageHook* hook; int priority; };
     std::vector<HookEntry> m_hooks;       // priority 오름차순 유지
 };

@@ -338,7 +338,7 @@ void EditorModule::Frame(const TimeStep& step) {
     HandleDump();
 
     if (haveWindow) {
-        s.swapChain->Present(false);
+        s.swapChain->Present(s.app ? s.app->Vsync() : false);
     }
     s.device->EndFrame();
 

@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 
+namespace mye { class IWindow; }
 namespace mye::editor { class IEditorViewport; }
 
 namespace mye::editor {
@@ -57,6 +58,9 @@ public:
     // 현재 프레임 컨텍스트(패널·커맨드에 전달). 프레임 시작 시 재구성.
     EditorContext& Context() { return m_ctx; }
 
+    // 디스플레이 옵션 — EditorModule 이 Present(vsync) 로 소비.
+    bool Vsync() const { return m_vsync; }
+
 private:
     void RegisterBuiltinPanels();   // 하이어라키·인스펙터·씬 뷰포트·콘솔 등 내장 패널
     void DrawMenuBar();             // File/Edit/View/... + 확장 메뉴 항목
@@ -75,6 +79,10 @@ private:
     void SaveActive();
     void TogglePlay();
 
+    // 디스플레이: 창 접근(헤드리스면 null) + 전체화면 토글.
+    IWindow* MainWindowOrNull();
+    void     ToggleFullscreen();
+
     // 미저장 새 씬의 기본 저장 경로(<projectRoot>/assets/scenes/untitled.scene). 미오픈 시 빈.
     std::string DefaultScenePath() const;
 
@@ -91,6 +99,7 @@ private:
     std::unique_ptr<InspectorRenderer>       m_inspector;
 
     EditorContext m_ctx{};
+    bool          m_vsync = false;   // 표시 옵션(수직동기)
 };
 
 } // namespace mye::editor

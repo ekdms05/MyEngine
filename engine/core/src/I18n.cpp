@@ -26,6 +26,10 @@ constexpr Entry kTable[] = {
     {"menu.play",      "플레이", "Play",   "プレイ",     "播放"},
     {"menu.window",    "창",     "Window", "ウィンドウ", "窗口"},
     {"menu.language",  "언어",   "Language", "言語",     "语言"},
+    {"menu.display",   "화면",   "Display",  "画面",     "显示"},
+
+    {"display.fullscreen", "전체화면", "Fullscreen", "フルスクリーン", "全屏"},
+    {"display.vsync",      "수직동기(VSync)", "VSync", "垂直同期(VSync)", "垂直同步(VSync)"},
 
     {"file.newscene",   "새 씬",        "New Scene",   "新規シーン",     "新建场景"},
     {"file.save",       "저장",         "Save",        "保存",           "保存"},

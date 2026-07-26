@@ -10,6 +10,7 @@ add_executable(mye_tests
     src/InputTests.cpp
     src/AssetTests.cpp
     src/PakFileTests.cpp              # .pak 패킹/마운트 왕복(배포)
+    src/SceneReflectionTests.cpp      # 씬 컴포넌트 리플렉션/직렬화 왕복(데이터드리븐 씬)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

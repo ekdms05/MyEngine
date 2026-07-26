@@ -17,6 +17,7 @@ add_library(mye_scene STATIC
     include/mye/scene/SceneModule.h
     include/mye/scene/Scene.h
     include/mye/scene/SceneSerializer.h
+    include/mye/scene/SceneReflection.h
 
     # ---- 렌더러블·정렬 추출(M2-B) ----
     include/mye/scene/Renderable.h
@@ -48,6 +49,7 @@ add_library(mye_scene STATIC
     src/scene/SystemScheduler.cpp
     src/scene/SceneModule.cpp
     src/scene/SceneSerializer.cpp
+    src/scene/SceneReflection.cpp
     src/scene/RenderExtract.cpp
     src/anim/AnimationSystem.cpp
     src/tilemap/Tilemap.cpp

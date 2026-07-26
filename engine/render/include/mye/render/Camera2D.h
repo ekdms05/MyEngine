@@ -45,6 +45,24 @@ public:
     // smoothing은 프레임률 독립 지수 감쇠 계수(0=즉시, 1에 가까울수록 느림).
     void Follow(Vec2 target, float smoothing = 0.0f, float dtSeconds = 0.0f);
 
+    // ---- 강화 카메라(게임 카메라) ----
+    // 데드존 추적: target이 카메라 중심 기준 halfExtents(월드 단위) 박스 밖으로 나갈 때만 그
+    //   초과분만큼 중심을 민다(캐릭터가 화면 중앙 사각형 안에선 카메라 고정 → 미세 흔들림 방지).
+    void FollowDeadzone(Vec2 target, Vec2 halfExtents);
+
+    // 월드 경계: 카메라 뷰가 이 사각형(월드 unit) 밖을 보지 않도록 중심을 클램프한다.
+    //   뷰가 경계보다 크면 해당 축은 경계 중앙에 고정. SetPosition/Follow* 후 자동 적용.
+    void SetWorldBounds(const Rect& worldBounds);
+    void ClearWorldBounds();
+    bool HasWorldBounds() const { return m_hasBounds; }
+
+    // 화면 흔들림: amplitude(월드 unit)로 duration(초) 동안 감쇠 흔들림. 연속 호출 시 더 큰 진폭
+    //   채택. TickShake(dt)를 매 프레임 호출해 진행/감쇠. 흔들림은 렌더 중심에만 적용(픽킹 불변).
+    void AddShake(float amplitude, float duration);
+    void TickShake(float dtSeconds);
+    bool IsShaking() const { return m_shakeElapsed < m_shakeDuration; }
+    Vec2 ShakeOffset() const;   // 현재 흔들림 오프셋(월드 unit)
+
     Vec2  Position() const;           // 논리(스냅 전) 중심
     Vec2  SnappedPosition() const;    // 픽셀 격자 스냅된 렌더 중심
     float Zoom() const;
@@ -65,7 +83,20 @@ private:
     // 픽셀당 월드 단위(줌 반영). 1픽셀 = worldPerPixel unit.
     float WorldPerPixel() const;
 
+    // 경계 클램프된 위치(경계 없으면 그대로). SetPosition/Follow* 후 적용.
+    Vec2 ClampToBounds(Vec2 pos) const;
+    // 렌더 중심(논리 위치 + 흔들림, 스냅 전). 스냅·서브픽셀·뷰행렬이 이걸 기준으로 계산.
+    Vec2 RenderCenterLogical() const;
+
     Camera2DDesc m_desc{};
+
+    Rect  m_bounds{};
+    bool  m_hasBounds = false;
+
+    // 흔들림 상태(감쇠 사인). 결정론적(시간 기반) — 테스트 가능.
+    float m_shakeAmplitude = 0.0f;
+    float m_shakeDuration  = 0.0f;
+    float m_shakeElapsed   = 0.0f;   // duration 이상이면 흔들림 종료
 };
 
 } // namespace mye::render

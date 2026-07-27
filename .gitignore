@@ -2,6 +2,7 @@
 build/
 out/
 bin/
+dist/
 *.obj
 *.pdb
 *.ilk

@@ -55,6 +55,46 @@ MYE_TEST(AccountSingleSessionInvalidatesOld) {
     MYE_EXPECT(store.ValidateSession(a.token) == 0);
 }
 
+MYE_TEST(AccountBanBlocksLoginAndPersists) {
+    namespace fs = std::filesystem;
+    const std::string path = (fs::temp_directory_path() / "mye_accounts_ban.json").string();
+    std::error_code ec; fs::remove(path, ec);
+
+    AccountStore store;
+    const AccountId id = store.Register("griefer", "pw").Value();
+
+    // 정상 로그인 → 세션 발급.
+    LoginResult ok = store.Login("griefer", "pw");
+    MYE_EXPECT(ok.ok);
+    MYE_EXPECT(store.ValidateSession(ok.token) == id);
+
+    // 밴: 이후 로그인 거부 + 기존 세션 즉시 무효화.
+    MYE_EXPECT(static_cast<bool>(store.Ban(id, "exploit")));
+    MYE_EXPECT(store.IsBanned(id));
+    MYE_EXPECT(store.ValidateSession(ok.token) == 0);      // 세션 무효화
+    LoginResult blocked = store.Login("griefer", "pw");
+    MYE_EXPECT(!blocked.ok);                               // 로그인 거부
+
+    // 없는 계정 밴/해제는 실패.
+    MYE_EXPECT(!store.Ban(9999, "x"));
+    MYE_EXPECT(!store.Unban(9999));
+
+    // 영속 후에도 밴 유지(사유 포함).
+    MYE_EXPECT(static_cast<bool>(store.SaveToFile(path)));
+    AccountStore loaded;
+    MYE_EXPECT(static_cast<bool>(loaded.LoadFromFile(path)));
+    MYE_EXPECT(loaded.IsBanned(id));
+    MYE_EXPECT(loaded.FindById(id)->banReason == "exploit");
+    MYE_EXPECT(!loaded.Login("griefer", "pw").ok);
+
+    // 해제 → 다시 로그인 가능.
+    MYE_EXPECT(static_cast<bool>(loaded.Unban(id)));
+    MYE_EXPECT(!loaded.IsBanned(id));
+    MYE_EXPECT(loaded.Login("griefer", "pw").ok);
+
+    fs::remove(path, ec);
+}
+
 MYE_TEST(AccountPersistRoundtrip) {
     namespace fs = std::filesystem;
     const std::string path = (fs::temp_directory_path() / "mye_accounts.json").string();

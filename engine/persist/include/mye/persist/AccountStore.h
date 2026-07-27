@@ -25,6 +25,7 @@ struct Account {
     uint64_t    salt = 0;
     uint64_t    passwordHash = 0;
     bool        banned = false;
+    std::string banReason;   // 제재 사유(GM 감사용)
 };
 
 struct LoginResult {
@@ -47,6 +48,13 @@ public:
 
     // 로그아웃(세션 무효화).
     void Logout(std::string_view token);
+
+    // ---- 제재(GM) ----
+    // 계정 차단: 이후 로그인 거부 + 기존 세션 무효화. 없는 계정이면 실패.
+    Expected<void, Error> Ban(AccountId id, std::string_view reason = {});
+    // 차단 해제.
+    Expected<void, Error> Unban(AccountId id);
+    bool IsBanned(AccountId id) const;
 
     // 조회.
     const Account* FindByName(std::string_view username) const;

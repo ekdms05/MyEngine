@@ -93,6 +93,30 @@ void AccountStore::Logout(std::string_view token) {
     m_sessions.erase(std::string(token));
 }
 
+Expected<void, Error> AccountStore::Ban(AccountId id, std::string_view reason) {
+    Account* acc = nullptr;
+    for (Account& a : m_accounts) if (a.id == id) { acc = &a; break; }
+    if (!acc) return Error{"Ban: 존재하지 않는 계정", 1};
+    acc->banned = true;
+    acc->banReason = std::string(reason);
+    // 진행 중 세션 무효화(즉시 로그아웃 효과).
+    for (auto it = m_sessions.begin(); it != m_sessions.end();) {
+        if (it->second == id) it = m_sessions.erase(it);
+        else ++it;
+    }
+    return {};
+}
+
+Expected<void, Error> AccountStore::Unban(AccountId id) {
+    for (Account& a : m_accounts) if (a.id == id) { a.banned = false; a.banReason.clear(); return {}; }
+    return Error{"Unban: 존재하지 않는 계정", 1};
+}
+
+bool AccountStore::IsBanned(AccountId id) const {
+    for (const Account& a : m_accounts) if (a.id == id) return a.banned;
+    return false;
+}
+
 const Account* AccountStore::FindByName(std::string_view username) const {
     auto it = m_byName.find(std::string(username));
     if (it == m_byName.end()) return nullptr;
@@ -114,6 +138,7 @@ Expected<void, Error> AccountStore::SaveToFile(std::string_view path) const {
         o["salt"] = json::Value(std::format("{:016x}", a.salt));
         o["hash"] = json::Value(std::format("{:016x}", a.passwordHash));
         o["banned"] = json::Value(a.banned);
+        if (!a.banReason.empty()) o["banReason"] = json::Value(a.banReason);
         arr.push_back(json::Value(std::move(o)));
     }
     json::Value::Object root;
@@ -154,6 +179,7 @@ Expected<void, Error> AccountStore::LoadFromFile(std::string_view path) {
             if (const auto* p = v.Find("salt")) a.salt = ParseHex(p->AsString());
             if (const auto* p = v.Find("hash")) a.passwordHash = ParseHex(p->AsString());
             if (const auto* p = v.Find("banned")) a.banned = p->AsBool();
+            if (const auto* p = v.Find("banReason")) a.banReason = std::string(p->AsString());
             m_byName.emplace(a.username, a.id);
             m_accounts.push_back(std::move(a));
         }

@@ -11,6 +11,7 @@
 //   --data <dir>      세이브 디렉터리(기본 server_data)
 //   --autosave <sec>  자동 저장 주기 초(기본 60; 0=끄기)
 //   --register u p    계정 등록 후 저장하고 종료(관리 도구)
+//   --ban <user> [r]  계정 차단 후 저장하고 종료(GM), --unban <user> 차단 해제
 #include "mye/net/NetServer.h"
 #include "mye/net/UdpSocket.h"
 #include "mye/persist/PersistenceService.h"
@@ -32,6 +33,7 @@ int main(int argc, char** argv) {
     int autosaveSec = 60;
     std::string regUser, regPass;
     bool doRegister = false;
+    std::string banUser, unbanUser, banReason;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -41,6 +43,8 @@ int main(int argc, char** argv) {
         else if (a == "--data" && i + 1 < argc) dataDir = argv[++i];
         else if (a == "--autosave" && i + 1 < argc) autosaveSec = std::atoi(argv[++i]);
         else if (a == "--register" && i + 2 < argc) { regUser = argv[++i]; regPass = argv[++i]; doRegister = true; }
+        else if (a == "--ban" && i + 1 < argc) { banUser = argv[++i]; if (i + 1 < argc && argv[i+1][0] != '-') banReason = argv[++i]; }
+        else if (a == "--unban" && i + 1 < argc) unbanUser = argv[++i];
     }
     if (tickrate < 1) tickrate = 20;
 
@@ -55,6 +59,19 @@ int main(int argc, char** argv) {
         if (!reg) { MYE_LOG_ERROR("Server", "계정 등록 실패: {}", reg.GetError().message); return 3; }
         if (auto s = persistence.SaveAll(dataDir); !s) { MYE_LOG_ERROR("Server", "저장 실패: {}", s.GetError().message); return 4; }
         MYE_LOG_INFO("Server", "계정 '{}' 등록 완료(id={})", regUser, reg.Value());
+        return 0;
+    }
+
+    // ---- 관리: 밴/언밴 후 종료(GM) ----
+    if (!banUser.empty() || !unbanUser.empty()) {
+        const std::string& target = banUser.empty() ? unbanUser : banUser;
+        const persist::Account* acc = persistence.Accounts().FindByName(target);
+        if (!acc) { MYE_LOG_ERROR("Server", "계정 '{}' 없음", target); return 5; }
+        auto r = banUser.empty() ? persistence.Accounts().Unban(acc->id)
+                                 : persistence.Accounts().Ban(acc->id, banReason);
+        if (!r) { MYE_LOG_ERROR("Server", "제재 실패: {}", r.GetError().message); return 6; }
+        if (auto s = persistence.SaveAll(dataDir); !s) { MYE_LOG_ERROR("Server", "저장 실패: {}", s.GetError().message); return 4; }
+        MYE_LOG_INFO("Server", "계정 '{}' {} 완료", target, banUser.empty() ? "차단해제" : "차단");
         return 0;
     }
 

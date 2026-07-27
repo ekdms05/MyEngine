@@ -30,6 +30,7 @@ add_executable(mye_tests
     src/PersistCharacterTests.cpp     # M10: 캐릭터 생성/계정인덱스/월드상태/영속
     src/PersistLedgerTests.cpp        # M10: 거래 원장(보존·dupe차단·무결성·영속)
     src/PersistServiceTests.cpp       # M10: 영속 파사드(디렉터리 로드/저장·원장 정합성 대조)
+    src/LiveopsConfigTests.cpp        # M11: 서버 CVar·피처플래그·점검모드·핫리로드
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp
@@ -58,7 +59,7 @@ add_executable(mye_tests
     src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).

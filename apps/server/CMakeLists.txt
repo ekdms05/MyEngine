@@ -4,5 +4,5 @@ add_executable(MyServer
 )
 
 target_link_libraries(MyServer PRIVATE
-    mye_core mye_net mye_persist
+    mye_core mye_net mye_persist mye_liveops
 )

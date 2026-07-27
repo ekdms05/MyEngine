@@ -15,7 +15,10 @@
 #include "mye/net/NetServer.h"
 #include "mye/net/UdpSocket.h"
 #include "mye/persist/PersistenceService.h"
+#include "mye/liveops/ServerConfig.h"
 #include "mye/core/Log.h"
+
+#include <filesystem>
 
 #include <chrono>
 #include <cstdint>
@@ -75,26 +78,43 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    // ---- 라이브옵스 설정 로드(config.json; 없으면 기본값) ----
+    liveops::ServerConfig config;
+    const std::string configPath = (std::filesystem::path(dataDir) / "config.json").string();
+    if (std::filesystem::exists(configPath)) {
+        if (auto r = config.LoadFromFile(configPath); !r) MYE_LOG_WARN("Server", "config 로드 경고: {}", r.GetError().message);
+    }
+    // CLI 기본을 CVar 로 오버라이드(있으면).
+    if (config.Has("tickrate")) tickrate = static_cast<int>(config.GetInt("tickrate", tickrate));
+    if (tickrate < 1) tickrate = 20;
+    const float moveSpeed = static_cast<float>(config.GetFloat("move_speed", 6.0));
+
     net::NetSubsystem sys;
     if (!sys.ok) { MYE_LOG_ERROR("Server", "Winsock 초기화 실패"); return 1; }
 
     net::NetServer server;
     if (!server.Start(port)) { MYE_LOG_ERROR("Server", "port {} 바인드 실패", port); return 2; }
+    server.SetMoveSpeed(moveSpeed);
+    if (config.Has("max_violations")) server.SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
 
-    // 등록된 계정이 있으면 인증 요구(자격증명 → accountId). 없으면 익명 허용(개발 편의).
+    // 인증기: 점검모드면 전원 거부, 아니면 등록계정은 로그인 검증(익명 서버는 인증기 없음).
     const bool requireAuth = persistence.Accounts().Count() > 0;
-    if (requireAuth) {
-        server.SetAuthenticator([&persistence](std::string_view u, std::string_view p) -> uint64_t {
+    if (requireAuth || config.MaintenanceMode()) {
+        server.SetAuthenticator([&persistence, &config, requireAuth](std::string_view u, std::string_view p) -> uint64_t {
+            if (config.MaintenanceMode()) return 0;              // 점검 중 접속 차단
+            if (!requireAuth) return 1;                          // 익명 허용(점검 아님)
             persist::LoginResult r = persistence.Accounts().Login(u, p);
             return r.ok ? r.accountId : 0;
         });
     }
-    MYE_LOG_INFO("Server", "MyServer 시작 — port {}, tickrate {}Hz, data '{}', auth {}",
-                 server.Port(), tickrate, dataDir, requireAuth ? "on" : "off(anon)");
+    MYE_LOG_INFO("Server", "MyServer 시작 — port {}, tickrate {}Hz, data '{}', auth {}, maint {}",
+                 server.Port(), tickrate, dataDir, requireAuth ? "on" : "off(anon)",
+                 config.MaintenanceMode() ? "ON" : "off");
 
     const float dt = 1.0f / static_cast<float>(tickrate);
     const auto tickDuration = std::chrono::microseconds(1'000'000 / tickrate);
     const long long autosaveTicks = autosaveSec > 0 ? static_cast<long long>(autosaveSec) * tickrate : 0;
+    const long long reloadTicks = static_cast<long long>(tickrate) * 5;   // 5초마다 config 핫리로드
 
     long long tick = 0;
     while (maxTicks < 0 || tick < maxTicks) {
@@ -107,6 +127,14 @@ int main(int argc, char** argv) {
 
         if (tick % tickrate == 0)   // 대략 1초마다
             MYE_LOG_INFO("Server", "tick {} · clients {}", server.CurrentTick(), server.ClientCount());
+
+        // config 핫리로드(운영 중 CVar/점검모드 조정 반영).
+        if (tick % reloadTicks == 0 && std::filesystem::exists(configPath)) {
+            if (auto r = config.LoadFromFile(configPath); r) {
+                server.SetMoveSpeed(static_cast<float>(config.GetFloat("move_speed", 6.0)));
+                if (config.Has("max_violations")) server.SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
+            }
+        }
 
         if (autosaveTicks > 0 && tick % autosaveTicks == 0) {
             if (auto s = persistence.SaveAll(dataDir); !s) MYE_LOG_WARN("Server", "자동저장 실패: {}", s.GetError().message);

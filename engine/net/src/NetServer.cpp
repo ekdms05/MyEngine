@@ -141,10 +141,22 @@ bool NetServer::GetEntity(uint32_t netId, float& x, float& y) const {
     return false;
 }
 
+void NetServer::SetEntity(uint32_t netId, float x, float y) {
+    for (Client& c : m_clients)
+        if (c.id == netId) { c.x = x; c.y = y; return; }
+}
+
 uint64_t NetServer::AccountOf(uint32_t netId) const {
     for (const Client& c : m_clients)
         if (c.id == netId) return c.accountId;
     return 0;
+}
+
+std::vector<uint32_t> NetServer::ClientIds() const {
+    std::vector<uint32_t> ids;
+    ids.reserve(m_clients.size());
+    for (const Client& c : m_clients) ids.push_back(c.id);
+    return ids;
 }
 
 } // namespace mye::net

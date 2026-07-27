@@ -44,7 +44,9 @@ public:
     size_t ClientCount() const { return m_clients.size(); }
     uint32_t CurrentTick() const { return m_tick; }
     bool GetEntity(uint32_t netId, float& x, float& y) const;
+    void SetEntity(uint32_t netId, float x, float y);   // 서버권위 위치 주입(상위 통합용)
     uint64_t AccountOf(uint32_t netId) const;   // 클라의 인증 계정 id(0=익명/없음)
+    std::vector<uint32_t> ClientIds() const;    // 현재 접속 클라 netId 목록(세션 diff용)
     uint64_t RejectedCount() const { return m_rejected; }
 
     void SetMoveSpeed(float s) { m_speed = s; }

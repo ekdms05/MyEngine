@@ -35,6 +35,7 @@ add_executable(mye_tests
     src/LiveopsGachaTests.cpp         # M11: 확률형 아이템 확률공개·결정론 롤·천장·감사
     src/LiveopsMetricsTests.cpp       # M11: 서버 메트릭(카운터·게이지·타이밍·스냅샷)
     src/GameServerTests.cpp           # 통합: 게임플레이↔영속(로그인·로드·조작·저장·정합)
+    src/NetGameServerTests.cpp        # 통합: 넷↔게임플레이↔영속 루프백(인증·세션·이동·저장)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

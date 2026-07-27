@@ -65,3 +65,48 @@ MYE_TEST(NetAuthoritativeReplicationLoopback) {
     MYE_EXPECT(std::fabs(cx - sx) <= 0.2f);
     MYE_EXPECT(client.LastTick() > 0);
 }
+
+// M9 게이트: 두 클라가 같은 존에서 서로를 본다.
+MYE_TEST(NetTwoClientsSeeEachOther) {
+    NetSubsystem net;
+    if (!net.ok) return;
+
+    NetServer server;
+    NetClient c1, c2;
+    if (!server.Start(0) || !c1.Open(0) || !c2.Open(0)) return;
+    server.SetMoveSpeed(6.0f);
+    const Endpoint sep = Endpoint::Loopback(server.Port());
+    c1.Connect(sep);
+    c2.Connect(sep);
+
+    for (int i = 0; i < 500 && !(c1.Connected() && c2.Connected()); ++i) {
+        server.Receive(); c1.Receive(); c2.Receive(); SleepMs(1);
+    }
+    MYE_EXPECT(c1.Connected() && c2.Connected());
+    MYE_EXPECT(server.ClientCount() == 2);
+    MYE_EXPECT(c1.Id() != c2.Id());
+
+    // c1 은 +X, c2 는 +Y 로 이동.
+    for (int i = 0; i < 60; ++i) {
+        c1.SendInput(static_cast<uint32_t>(i + 1), 1.0f, 0.0f);
+        c2.SendInput(static_cast<uint32_t>(i + 1), 0.0f, 1.0f);
+        SleepMs(1);
+        server.Receive();
+        server.Tick(1.0f / 60.0f);
+        server.Broadcast();
+        SleepMs(1);
+        c1.Receive(); c2.Receive();
+    }
+
+    // 각 클라 스냅샷에 엔티티 2개(자신 + 상대).
+    MYE_EXPECT(c1.EntityCount() == 2);
+    MYE_EXPECT(c2.EntityCount() == 2);
+
+    float x = 0, y = 0;
+    // c1 이 상대(c2)를 +Y 위치로 본다.
+    MYE_EXPECT(c1.GetEntity(c2.Id(), x, y));
+    MYE_EXPECT(y > 1.0f && std::fabs(x) < 0.05f);
+    // c2 가 상대(c1)를 +X 위치로 본다.
+    MYE_EXPECT(c2.GetEntity(c1.Id(), x, y));
+    MYE_EXPECT(x > 1.0f && std::fabs(y) < 0.05f);
+}

@@ -58,6 +58,12 @@ public:
     // 커스텀 마이그레이션 훅(계약만 — M3-A는 기록만 하고 실행 로직은 후속).
     TypeBuilder& Migrate(std::uint32_t fromVersion, MigrationFn fn);
 
+    // 메서드 등록 — 멤버함수 포인터를 NTTP로 받아 타입소거 호출 훅 생성(비침투).
+    //   b.Method<&Foo::Heal>("Heal");  파라미터/반환은 리플렉션 등록 타입(원시형 포함)이어야 함.
+    //   Lua 자동 바인딩·에디터 호출·플러그인 노출의 기반.
+    template <auto M>
+    TypeBuilder& Method(std::string_view name);
+
     // 상속 평탄화 — 베이스 U의 필드를 이 타입 앞에 포함(U도 리플렉션 등록 필요).
     template <typename U>
     TypeBuilder& Base();

@@ -92,6 +92,35 @@ private:
     std::uint32_t          m_renamedSince = 0;
 };
 
+// 메서드 리플렉션 — 타입 소거 호출 훅. 이름·반환·파라미터 타입 + 제네릭 Invoke.
+//   Lua 자동 바인딩·에디터 함수 호출·플러그인 노출의 공용 기반(05 착수 시 활성).
+//   Invoke 규약: instance=객체 포인터, args=파라미터 값 포인터 배열(ParamTypes 순서),
+//   ret=반환값 저장 포인터(반환 void면 무시). 호출자가 타입 정합을 보장한다.
+class MethodInfo {
+public:
+    using InvokeFn = void (*)(void* instance, void** args, void* ret);
+
+    std::string_view Name() const { return m_name; }
+    const TypeInfo*  ReturnType() const { return m_returnType; }   // nullptr = void
+    std::span<const TypeInfo* const> ParamTypes() const { return m_paramTypes; }
+    std::size_t      Arity() const { return m_paramTypes.size(); }
+    bool             IsConst() const { return m_isConst; }
+
+    void Invoke(void* instance, void** args, void* ret) const {
+        if (m_invoke) m_invoke(instance, args, ret);
+    }
+
+private:
+    friend class TypeRegistry;
+    friend struct TypeInfoAccess;
+
+    std::string_view             m_name;
+    const TypeInfo*              m_returnType = nullptr;
+    std::vector<const TypeInfo*> m_paramTypes;
+    InvokeFn                     m_invoke = nullptr;
+    bool                         m_isConst = false;
+};
+
 // 커스텀 직렬화 훅 서명 — 리플렉션 기본 순회를 대신하고 싶은 타입용(예: Vec2를 [x,y]로).
 //   기본 필드 순회로 충분하면 등록하지 않는다.
 using CustomSerializeFn = void (*)(ser::IArchive& ar, void* instance);
@@ -113,6 +142,10 @@ public:
     // Struct 전용 — 상속 평탄화된 전체 필드(베이스 먼저, 파생 나중).
     std::span<const FieldInfo> Fields() const { return m_fields; }
     const FieldInfo* FindField(std::string_view name) const;
+
+    // Struct 전용 — 등록된 메서드(리플렉션 호출·Lua 바인딩·에디터).
+    std::span<const MethodInfo> Methods() const { return m_methods; }
+    const MethodInfo* FindMethod(std::string_view name) const;
 
     // Enum 전용 — kind==Enum 이 아니면 nullptr.
     const EnumInfo* AsEnum() const { return m_kind == Kind::Enum ? &m_enum : nullptr; }
@@ -145,9 +178,10 @@ private:
     std::size_t            m_size = 0;
     std::size_t            m_align = 0;
 
-    std::vector<FieldInfo> m_fields;      // Struct
-    EnumInfo               m_enum;        // Enum
-    const TypeInfo*        m_element = nullptr;  // Vector 원소
+    std::vector<FieldInfo>  m_fields;      // Struct
+    std::vector<MethodInfo> m_methods;     // Struct 메서드
+    EnumInfo                m_enum;        // Enum
+    const TypeInfo*         m_element = nullptr;  // Vector 원소
 
     ConstructFn            m_construct = nullptr;
     DestructFn             m_destruct = nullptr;
@@ -159,8 +193,5 @@ private:
     void*       (*m_vecAt)(void*, std::size_t) = nullptr;
     const void* (*m_vecAtConst)(const void*, std::size_t) = nullptr;
 };
-
-// 전방선언(구현 계약은 아직 미정 — 05 Lua 착수 시 확정).
-class MethodInfo;
 
 } // namespace mye::refl

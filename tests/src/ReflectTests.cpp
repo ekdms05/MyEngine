@@ -56,6 +56,14 @@ struct Versioned {
 struct Base { std::int32_t id = 0; };
 struct Derived : Base { std::int32_t extra = 0; };
 
+// 메서드 리플렉션 테스트 — 필드 조작 + 반환/파라미터 있는 메서드.
+struct Actor {
+    std::int32_t hp = 100;
+    std::int32_t Damage(std::int32_t amount) { hp -= amount; return hp; }   // 반환 + 1파라미터
+    void         Heal(std::int32_t amount) { hp += amount; }                // void + 1파라미터
+    std::int32_t GetHp() const { return hp; }                               // const + 0파라미터
+};
+
 } // namespace refltest
 
 // ---- 리플렉션 등록(비침투 매크로 — 전역 스코프) ----
@@ -65,6 +73,7 @@ MYE_REFLECT(refltest::Outer);
 MYE_REFLECT(refltest::Versioned);
 MYE_REFLECT(refltest::Base);
 MYE_REFLECT(refltest::Derived);
+MYE_REFLECT(refltest::Actor);
 MYE_REFLECT_ENUM(refltest::Facing);
 
 template <> void mye::refl::Reflect(TypeBuilder<refltest::TVec2>& b) {
@@ -96,6 +105,13 @@ template <> void mye::refl::Reflect(TypeBuilder<refltest::Base>& b) {
 }
 template <> void mye::refl::Reflect(TypeBuilder<refltest::Derived>& b) {
     b.Version(1).Base<refltest::Base>().Field("extra", &refltest::Derived::extra);
+}
+template <> void mye::refl::Reflect(TypeBuilder<refltest::Actor>& b) {
+    b.Version(1)
+     .Field("hp", &refltest::Actor::hp)
+     .Method<&refltest::Actor::Damage>("Damage")
+     .Method<&refltest::Actor::Heal>("Heal")
+     .Method<&refltest::Actor::GetHp>("GetHp");
 }
 template <> void mye::refl::Reflect(EnumBuilder<refltest::Facing>& b) {
     b.Value("North", refltest::Facing::North)
@@ -177,6 +193,58 @@ MYE_TEST(ReflectInheritanceFlattening) {
     MYE_EXPECT(d->Fields().size() == 2);
     MYE_EXPECT(d->Fields()[0].Name() == std::string_view("id"));
     MYE_EXPECT(d->Fields()[1].Name() == std::string_view("extra"));
+}
+
+// -----------------------------------------------------------------------------
+// 메서드 리플렉션 — 등록·메타·제네릭 Invoke
+// -----------------------------------------------------------------------------
+MYE_TEST(ReflectMethodInvoke) {
+    using namespace refltest;
+    const refl::TypeInfo* t = refl::GetType<Actor>();
+    MYE_EXPECT(t != nullptr);
+    MYE_EXPECT(t->Methods().size() == 3);
+
+    // 메타: 반환·파라미터·const 판정.
+    const refl::MethodInfo* dmg = t->FindMethod("Damage");
+    MYE_EXPECT(dmg != nullptr);
+    MYE_EXPECT(dmg->Arity() == 1);
+    MYE_EXPECT(dmg->ReturnType() != nullptr && dmg->ReturnType()->Name() == std::string_view("i32"));
+    MYE_EXPECT(dmg->ParamTypes()[0]->Name() == std::string_view("i32"));
+    MYE_EXPECT(!dmg->IsConst());
+
+    const refl::MethodInfo* getHp = t->FindMethod("GetHp");
+    MYE_EXPECT(getHp != nullptr && getHp->Arity() == 0 && getHp->IsConst());
+    MYE_EXPECT(getHp->ReturnType() != nullptr);
+
+    const refl::MethodInfo* heal = t->FindMethod("Heal");
+    MYE_EXPECT(heal != nullptr && heal->ReturnType() == nullptr);   // void
+
+    // 제네릭 Invoke: 반환 + 1파라미터.
+    Actor a;   // hp=100
+    std::int32_t amount = 30;
+    void* args[1] = { &amount };
+    std::int32_t ret = 0;
+    dmg->Invoke(&a, args, &ret);
+    MYE_EXPECT(a.hp == 70);
+    MYE_EXPECT(ret == 70);   // Damage 는 남은 hp 반환
+
+    // void + 1파라미터(ret 무시).
+    std::int32_t healAmt = 15;
+    void* hargs[1] = { &healAmt };
+    heal->Invoke(&a, hargs, nullptr);
+    MYE_EXPECT(a.hp == 85);
+
+    // const + 0파라미터.
+    std::int32_t hp = 0;
+    getHp->Invoke(&a, nullptr, &hp);
+    MYE_EXPECT(hp == 85);
+
+    // 필드도 여전히 조작 가능(범용 접근).
+    const refl::FieldInfo* hpField = t->FindField("hp");
+    MYE_EXPECT(hpField != nullptr);
+    *static_cast<std::int32_t*>(hpField->GetPtr(&a)) = 200;
+    getHp->Invoke(&a, nullptr, &hp);
+    MYE_EXPECT(hp == 200);
 }
 
 // -----------------------------------------------------------------------------

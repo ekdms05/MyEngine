@@ -59,6 +59,17 @@ struct TypeInfoAccess {
         if (!t.m_fields.empty()) t.m_fields.back().m_attributes.push_back(std::move(a));
     }
 
+    static void AddMethod(TypeInfo& t, std::string_view name, const TypeInfo* ret,
+                          std::vector<const TypeInfo*> params, MethodInfo::InvokeFn fn, bool isConst) {
+        MethodInfo m;
+        m.m_name = name;
+        m.m_returnType = ret;
+        m.m_paramTypes = std::move(params);
+        m.m_invoke = fn;
+        m.m_isConst = isConst;
+        t.m_methods.push_back(std::move(m));
+    }
+
     static void SetLastFieldRename(TypeInfo& t, std::uint32_t since, std::string_view oldName) {
         if (!t.m_fields.empty()) {
             t.m_fields.back().m_renamedFrom = oldName;

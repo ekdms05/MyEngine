@@ -91,6 +91,13 @@ const FieldInfo* TypeInfo::FindField(std::string_view name) const {
     return nullptr;
 }
 
+const MethodInfo* TypeInfo::FindMethod(std::string_view name) const {
+    for (const auto& m : m_methods) {
+        if (m.Name() == name) return &m;
+    }
+    return nullptr;
+}
+
 std::size_t TypeInfo::VectorSize(const void* vec) const { return m_vecSize ? m_vecSize(vec) : 0; }
 void TypeInfo::VectorResize(void* vec, std::size_t n) const { if (m_vecResize) m_vecResize(vec, n); }
 void* TypeInfo::VectorElementAt(void* vec, std::size_t i) const { return m_vecAt ? m_vecAt(vec, i) : nullptr; }

@@ -22,7 +22,9 @@
 #include <cstdint>
 #include <new>          // placement new
 #include <string>
+#include <tuple>
 #include <type_traits>
+#include <utility>      // index_sequence
 #include <vector>
 
 namespace mye::asset { struct AssetRef; }
@@ -83,6 +85,55 @@ const TypeInfo* RegisterVector() {
 // asset::AssetRef TypeInfo (Kind::AssetRef) — 전방선언만 사용(크기/정렬은 알려진 고정값).
 //   AssetRef = { AssetGuid(16B) + AssetTypeId(8B) } = 24B, align 8. 링크 없이 값 의미만.
 const TypeInfo* RegisterAssetRef();
+
+// ---- 메서드 리플렉션: 멤버함수 포인터(NTTP) → 타입소거 호출 훅 ----
+// 멤버함수 시그니처 분해(비-const/const 오버로드).
+template <typename M> struct MemFnTraits;
+template <typename C, typename R, typename... A>
+struct MemFnTraits<R (C::*)(A...)> {
+    using Class = C; using Ret = R; using ArgsTuple = std::tuple<A...>;
+    static constexpr std::size_t Arity = sizeof...(A);
+    static constexpr bool IsConst = false;
+};
+template <typename C, typename R, typename... A>
+struct MemFnTraits<R (C::*)(A...) const> {
+    using Class = C; using Ret = R; using ArgsTuple = std::tuple<A...>;
+    static constexpr std::size_t Arity = sizeof...(A);
+    static constexpr bool IsConst = true;
+};
+
+// 파라미터 값 타입(참조·cv 제거) — 호출 시 args[i] 를 이 타입 포인터로 역참조.
+template <typename A>
+using ArgValueT = std::remove_cv_t<std::remove_reference_t<A>>;
+
+template <auto M, std::size_t... I>
+void InvokeMethodImpl(void* inst, void** args, void* ret, std::index_sequence<I...>) {
+    using Tr = MemFnTraits<decltype(M)>;
+    using C  = typename Tr::Class;
+    C* self = static_cast<C*>(inst);
+    if constexpr (std::is_void_v<typename Tr::Ret>) {
+        (void)ret;
+        (self->*M)(*static_cast<ArgValueT<std::tuple_element_t<I, typename Tr::ArgsTuple>>*>(args[I])...);
+    } else {
+        *static_cast<ArgValueT<typename Tr::Ret>*>(ret) =
+            (self->*M)(*static_cast<ArgValueT<std::tuple_element_t<I, typename Tr::ArgsTuple>>*>(args[I])...);
+    }
+}
+
+template <auto M>
+void InvokeMethodThunk(void* inst, void** args, void* ret) {
+    using Tr = MemFnTraits<decltype(M)>;
+    InvokeMethodImpl<M>(inst, args, ret, std::make_index_sequence<Tr::Arity>{});
+}
+
+// 파라미터 TypeInfo* 목록 수집(리플렉션 등록 타입/원시형).
+template <typename Tuple, std::size_t... I>
+std::vector<const TypeInfo*> CollectParamTypes(std::index_sequence<I...>) {
+    std::vector<const TypeInfo*> v;
+    v.reserve(sizeof...(I));
+    (v.push_back(GetType<ArgValueT<std::tuple_element_t<I, Tuple>>>()), ...);
+    return v;
+}
 
 } // namespace detail
 
@@ -164,6 +215,22 @@ TypeBuilder<T>& TypeBuilder<T>::RenamedFrom(std::uint32_t sinceVersion, std::str
 template <typename T>
 TypeBuilder<T>& TypeBuilder<T>::Migrate(std::uint32_t /*fromVersion*/, MigrationFn /*fn*/) {
     // M3-A: 계약만 — 기록/실행 로직은 첫 실제 스키마 변경 시점(후속).
+    return *this;
+}
+
+template <typename T>
+template <auto M>
+TypeBuilder<T>& TypeBuilder<T>::Method(std::string_view name) {
+    using Tr = detail::MemFnTraits<decltype(M)>;
+    static_assert(std::is_base_of_v<typename Tr::Class, T> || std::is_same_v<typename Tr::Class, T>,
+                  "TypeBuilder::Method<M>(): M must be a member function of T (or a base)");
+    const TypeInfo* ret = nullptr;
+    if constexpr (!std::is_void_v<typename Tr::Ret>)
+        ret = GetType<detail::ArgValueT<typename Tr::Ret>>();
+    std::vector<const TypeInfo*> params =
+        detail::CollectParamTypes<typename Tr::ArgsTuple>(std::make_index_sequence<Tr::Arity>{});
+    TypeInfoAccess::AddMethod(*m_info, name, ret, std::move(params),
+                              &detail::InvokeMethodThunk<M>, Tr::IsConst);
     return *this;
 }
 

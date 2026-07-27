@@ -2,8 +2,10 @@
 # 윈도우 개발/서버 전제. 1단계는 파일 기반(JSON) — 스케일용 Postgres/Redis는 후속(설계 문서).
 add_library(mye_persist STATIC
     include/mye/persist/AccountStore.h
+    include/mye/persist/CharacterStore.h
 
     src/AccountStore.cpp
+    src/CharacterStore.cpp
 )
 
 target_include_directories(mye_persist PUBLIC

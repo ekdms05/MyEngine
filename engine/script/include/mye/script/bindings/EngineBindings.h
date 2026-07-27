@@ -113,6 +113,21 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// ReflectBindingModule — 리플렉션 기반 범용 바인딩. 손으로 쓴 per-타입 바인딩 없이
+//   레지스트리에 등록된 임의 리플렉션 타입을 Lua 에서 생성·조작한다(엔진 확장성 핵심):
+//     local s = mye.reflect.new("plugintest::Buff")   -- 등록된 타입 인스턴스 생성
+//     s:set("power", 10);  local p = s:get("power")     -- 필드 get/set(원시형)
+//     local hp = s:call("Damage", 5)                    -- 메서드 호출(MethodInfo.Invoke)
+//   플러그인/게임이 GetType<T>() 로 타입만 등록하면 즉시 Lua 에서 다룰 수 있다.
+//   서비스 의존 없음(TypeRegistry 전역).
+// ---------------------------------------------------------------------------
+class ReflectBindingModule final : public IBindingModule {
+public:
+    std::string_view Name() const override { return "reflect"; }
+    void Register(sol::state& lua) override;
+};
+
+// ---------------------------------------------------------------------------
 // 편의 팩토리 — 표준 엔진 바인딩 모듈 묶음을 생성해 소유 벡터로 반환한다.
 //   데모/App 배선: for (auto& m : MakeStandardBindings(...)) rt.AddBindingModule(std::move(m));
 //   각 인자는 nullptr 허용(해당 표면은 안전 no-op 또는 폴백).

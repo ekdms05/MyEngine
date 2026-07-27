@@ -25,11 +25,12 @@ enum class MsgType : uint8_t {
     Disconnect = 5,
 };
 
-// 복제 엔티티 상태(스냅샷 원소).
+// 복제 엔티티 상태(스냅샷 원소). lastInputSeq 는 소유 클라의 마지막 처리 입력(재조정용).
 struct EntitySnap {
     uint32_t netId = 0;
     float    x = 0.0f;
     float    y = 0.0f;
+    uint32_t lastInputSeq = 0;
 };
 
 // ---- 헤더(모든 패킷 공통) ----
@@ -75,6 +76,7 @@ inline void WriteSnapshot(BitWriter& w, uint32_t tick, const std::vector<EntityS
         w.WriteVarUint(e.netId);
         w.WriteBits(QuantizeFloat(e.x, kWorldMin, kWorldMax, kPosBits), kPosBits);
         w.WriteBits(QuantizeFloat(e.y, kWorldMin, kWorldMax, kPosBits), kPosBits);
+        w.WriteVarUint(e.lastInputSeq);
     }
 }
 inline bool ReadSnapshot(BitReader& r, uint32_t& tick, std::vector<EntitySnap>& out) {
@@ -88,6 +90,7 @@ inline bool ReadSnapshot(BitReader& r, uint32_t& tick, std::vector<EntitySnap>& 
         e.netId = static_cast<uint32_t>(r.ReadVarUint());
         e.x = DequantizeFloat(r.ReadBits(kPosBits), kWorldMin, kWorldMax, kPosBits);
         e.y = DequantizeFloat(r.ReadBits(kPosBits), kWorldMin, kWorldMax, kPosBits);
+        e.lastInputSeq = static_cast<uint32_t>(r.ReadVarUint());
         out.push_back(e);
     }
     return r.Ok();

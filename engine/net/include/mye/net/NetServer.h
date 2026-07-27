@@ -35,6 +35,7 @@ private:
         uint32_t id = 0;
         float    x = 0.0f, y = 0.0f;   // 서버권위 위치
         float    inX = 0.0f, inY = 0.0f;  // 최근 입력
+        uint32_t lastInputSeq = 0;     // 마지막 처리 입력(클라 재조정용)
     };
     Client* Find(const Endpoint& ep);
 

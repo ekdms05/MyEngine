@@ -45,7 +45,10 @@ void NetServer::Receive() {
         case MsgType::Input: {
             uint32_t seq = 0; float mx = 0, my = 0;
             ReadInput(r, seq, mx, my);
-            if (Client* c = Find(from)) { c->inX = mx; c->inY = my; }
+            if (Client* c = Find(from)) {
+                c->inX = mx; c->inY = my;
+                if (seq > c->lastInputSeq) c->lastInputSeq = seq;   // 재조정 기준
+            }
             break;
         }
         case MsgType::Disconnect: {
@@ -69,7 +72,7 @@ void NetServer::Tick(float dt) {
 void NetServer::Broadcast() {
     std::vector<EntitySnap> snap;
     snap.reserve(m_clients.size());
-    for (const Client& c : m_clients) snap.push_back(EntitySnap{c.id, c.x, c.y});
+    for (const Client& c : m_clients) snap.push_back(EntitySnap{c.id, c.x, c.y, c.lastInputSeq});
 
     BitWriter w;
     WriteSnapshot(w, m_tick, snap);

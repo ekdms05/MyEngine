@@ -16,9 +16,11 @@
 #include "mye/net/UdpSocket.h"
 #include "mye/persist/PersistenceService.h"
 #include "mye/liveops/ServerConfig.h"
+#include "mye/liveops/Metrics.h"
 #include "mye/core/Log.h"
 
 #include <filesystem>
+#include <fstream>
 
 #include <chrono>
 #include <cstdint>
@@ -114,7 +116,17 @@ int main(int argc, char** argv) {
     const float dt = 1.0f / static_cast<float>(tickrate);
     const auto tickDuration = std::chrono::microseconds(1'000'000 / tickrate);
     const long long autosaveTicks = autosaveSec > 0 ? static_cast<long long>(autosaveSec) * tickrate : 0;
-    const long long reloadTicks = static_cast<long long>(tickrate) * 5;   // 5초마다 config 핫리로드
+    const long long reloadTicks = static_cast<long long>(tickrate) * 5;   // 5초마다 config 핫리로드·메트릭
+
+    // ---- 메트릭/텔레메트리 ----
+    liveops::MetricsRegistry metrics;
+    const std::string metricsPath = (std::filesystem::path(dataDir) / "metrics.json").string();
+    uint64_t lastKicked = 0;
+    auto writeMetrics = [&]() {
+        const std::string json = metrics.SnapshotJson();
+        std::ofstream os(metricsPath, std::ios::binary | std::ios::trunc);
+        if (os) os.write(json.data(), static_cast<std::streamsize>(json.size()));
+    };
 
     long long tick = 0;
     while (maxTicks < 0 || tick < maxTicks) {
@@ -125,15 +137,26 @@ int main(int argc, char** argv) {
         server.Broadcast();
         ++tick;
 
+        // 메트릭 수집: 틱 처리 시간(ms)·접속 클라 수·누적 틱·킥.
+        const auto processed = std::chrono::steady_clock::now() - start;
+        const double tickMs = std::chrono::duration<double, std::milli>(processed).count();
+        metrics.Counter("ticks");
+        metrics.Observe("tick_ms", tickMs);
+        metrics.Gauge("clients", static_cast<double>(server.ClientCount()));
+        if (server.KickedCount() > lastKicked) { metrics.Counter("kicks", static_cast<int64_t>(server.KickedCount() - lastKicked)); lastKicked = server.KickedCount(); }
+
         if (tick % tickrate == 0)   // 대략 1초마다
             MYE_LOG_INFO("Server", "tick {} · clients {}", server.CurrentTick(), server.ClientCount());
 
-        // config 핫리로드(운영 중 CVar/점검모드 조정 반영).
-        if (tick % reloadTicks == 0 && std::filesystem::exists(configPath)) {
-            if (auto r = config.LoadFromFile(configPath); r) {
-                server.SetMoveSpeed(static_cast<float>(config.GetFloat("move_speed", 6.0)));
-                if (config.Has("max_violations")) server.SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
+        // config 핫리로드 + 메트릭 스냅샷 기록(운영 관찰성).
+        if (tick % reloadTicks == 0) {
+            if (std::filesystem::exists(configPath)) {
+                if (auto r = config.LoadFromFile(configPath); r) {
+                    server.SetMoveSpeed(static_cast<float>(config.GetFloat("move_speed", 6.0)));
+                    if (config.Has("max_violations")) server.SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
+                }
             }
+            writeMetrics();
         }
 
         if (autosaveTicks > 0 && tick % autosaveTicks == 0) {
@@ -146,9 +169,10 @@ int main(int argc, char** argv) {
         if (elapsed < tickDuration) std::this_thread::sleep_for(tickDuration - elapsed);
     }
 
-    // ---- 종료 시 저장(백업 회전) ----
+    // ---- 종료 시 저장(백업 회전) + 메트릭 스냅샷 ----
     if (auto s = persistence.SaveAllWithBackup(dataDir, static_cast<int>(config.GetInt("max_backups", 10))); !s)
         MYE_LOG_WARN("Server", "종료 저장 실패: {}", s.GetError().message);
+    writeMetrics();
     MYE_LOG_INFO("Server", "종료 (총 {} tick, data '{}')", tick, dataDir);
     server.Stop();
     return 0;

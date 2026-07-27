@@ -32,6 +32,7 @@ add_executable(mye_tests
     src/PersistServiceTests.cpp       # M10: 영속 파사드(디렉터리 로드/저장·원장 정합성 대조)
     src/LiveopsConfigTests.cpp        # M11: 서버 CVar·피처플래그·점검모드·핫리로드
     src/LiveopsGachaTests.cpp         # M11: 확률형 아이템 확률공개·결정론 롤·천장·감사
+    src/LiveopsMetricsTests.cpp       # M11: 서버 메트릭(카운터·게이지·타이밍·스냅샷)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

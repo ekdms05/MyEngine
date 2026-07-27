@@ -3,9 +3,11 @@
 add_library(mye_liveops STATIC
     include/mye/liveops/ServerConfig.h
     include/mye/liveops/GachaTable.h
+    include/mye/liveops/Metrics.h
 
     src/ServerConfig.cpp
     src/GachaTable.cpp
+    src/Metrics.cpp
 )
 
 target_include_directories(mye_liveops PUBLIC

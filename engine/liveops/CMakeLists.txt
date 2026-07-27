@@ -2,8 +2,10 @@
 # 윈도우 개발/서버 전제. 파일 기반(JSON) — 원격 CVar 푸시·대시보드는 후속.
 add_library(mye_liveops STATIC
     include/mye/liveops/ServerConfig.h
+    include/mye/liveops/GachaTable.h
 
     src/ServerConfig.cpp
+    src/GachaTable.cpp
 )
 
 target_include_directories(mye_liveops PUBLIC

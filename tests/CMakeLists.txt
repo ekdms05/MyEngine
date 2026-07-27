@@ -27,6 +27,7 @@ add_executable(mye_tests
     src/NetReplicationTests.cpp       # M9: 권위 서버 + 스냅샷 복제 루프백
     src/PersistAccountTests.cpp       # M10: 계정 등록/로그인/세션/영속
     src/PersistCharacterTests.cpp     # M10: 캐릭터 생성/계정인덱스/월드상태/영속
+    src/PersistLedgerTests.cpp        # M10: 거래 원장(보존·dupe차단·무결성·영속)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

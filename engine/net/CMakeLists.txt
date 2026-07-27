@@ -4,10 +4,12 @@ add_library(mye_net STATIC
     include/mye/net/BitStream.h
     include/mye/net/Quantization.h
     include/mye/net/DeltaCodec.h
+    include/mye/net/UdpSocket.h
 
     src/BitStream.cpp
     src/Quantization.cpp
     src/DeltaCodec.cpp
+    src/UdpSocket.cpp
 )
 
 target_include_directories(mye_net PUBLIC
@@ -15,5 +17,6 @@ target_include_directories(mye_net PUBLIC
 )
 
 target_link_libraries(mye_net
-    PUBLIC mye_core
+    PUBLIC  mye_core
+    PRIVATE Ws2_32
 )

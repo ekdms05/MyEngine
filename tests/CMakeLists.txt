@@ -26,6 +26,7 @@ add_executable(mye_tests
     src/NetSocketTests.cpp            # M9: Winsock UDP 루프백
     src/NetReplicationTests.cpp       # M9: 권위 서버 + 스냅샷 복제 루프백
     src/NetAuthTests.cpp              # M10: 서버 인증 커넥트(계정 검증 후 수락/거부)
+    src/NetPredictionTests.cpp        # M9: 클라 예측(CSP) + 서버 재조정 루프백
     src/PersistAccountTests.cpp       # M10: 계정 등록/로그인/세션/영속
     src/PersistCharacterTests.cpp     # M10: 캐릭터 생성/계정인덱스/월드상태/영속
     src/PersistLedgerTests.cpp        # M10: 거래 원장(보존·dupe차단·무결성·영속)

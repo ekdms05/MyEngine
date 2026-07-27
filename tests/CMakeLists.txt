@@ -24,6 +24,7 @@ add_executable(mye_tests
     src/NetQuantizationTests.cpp      # M9: 양자화(위치 압축)
     src/NetDeltaTests.cpp             # M9: 스냅샷 필드 델타
     src/NetSocketTests.cpp            # M9: Winsock UDP 루프백
+    src/NetReplicationTests.cpp       # M9: 권위 서버 + 스냅샷 복제 루프백
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

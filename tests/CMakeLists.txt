@@ -45,6 +45,7 @@ add_executable(mye_tests
     src/PhysTests.cpp
     src/SceneSmokeTests.cpp
     src/ReflectTests.cpp
+    src/PluginHostTests.cpp           # 엔진 확장성: 플러그인 로드/언로드·틱·버전 게이팅
     src/AudioHotReloadTests.cpp   # M3-A: 오디오 임포터(WAV) + 핫 리로드
     src/AnimationTests.cpp        # M3-B: 스프라이트 애니메이션·8방향·상태머신·이벤트
     src/AudioPlaybackTests.cpp    # M3-B: 믹서·버스·큐·크로스페이드·공간화(헤드리스)
@@ -64,7 +65,7 @@ add_executable(mye_tests
     src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).

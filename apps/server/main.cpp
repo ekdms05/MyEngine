@@ -11,10 +11,11 @@
 //   --data <dir>      세이브 디렉터리(기본 server_data)
 //   --autosave <sec>  자동 저장 주기 초(기본 60; 0=끄기)
 //   --register u p    계정 등록 후 저장하고 종료(관리 도구)
+//   --make-char u name 계정 u 에 캐릭터 생성 후 저장하고 종료(관리 도구)
 //   --ban <user> [r]  계정 차단 후 저장하고 종료(GM), --unban <user> 차단 해제
 // 운영: <data>/config.json 으로 CVar/피처플래그/점검모드 핫리로드, <data>/metrics.json 관찰성.
 // Ctrl+C·콘솔 닫기 시 우아한 종료(세이브·백업·메트릭 기록 후 정지).
-#include "mye/net/NetServer.h"
+#include "mye/gameserver/NetGameServer.h"
 #include "mye/net/UdpSocket.h"
 #include "mye/persist/PersistenceService.h"
 #include "mye/liveops/ServerConfig.h"
@@ -57,6 +58,8 @@ int main(int argc, char** argv) {
     std::string regUser, regPass;
     bool doRegister = false;
     std::string banUser, unbanUser, banReason;
+    std::string charUser, charName;
+    bool doMakeChar = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -66,6 +69,7 @@ int main(int argc, char** argv) {
         else if (a == "--data" && i + 1 < argc) dataDir = argv[++i];
         else if (a == "--autosave" && i + 1 < argc) autosaveSec = std::atoi(argv[++i]);
         else if (a == "--register" && i + 2 < argc) { regUser = argv[++i]; regPass = argv[++i]; doRegister = true; }
+        else if (a == "--make-char" && i + 2 < argc) { charUser = argv[++i]; charName = argv[++i]; doMakeChar = true; }
         else if (a == "--ban" && i + 1 < argc) { banUser = argv[++i]; if (i + 1 < argc && argv[i+1][0] != '-') banReason = argv[++i]; }
         else if (a == "--unban" && i + 1 < argc) unbanUser = argv[++i];
     }
@@ -82,6 +86,17 @@ int main(int argc, char** argv) {
         if (!reg) { MYE_LOG_ERROR("Server", "계정 등록 실패: {}", reg.GetError().message); return 3; }
         if (auto s = persistence.SaveAll(dataDir); !s) { MYE_LOG_ERROR("Server", "저장 실패: {}", s.GetError().message); return 4; }
         MYE_LOG_INFO("Server", "계정 '{}' 등록 완료(id={})", regUser, reg.Value());
+        return 0;
+    }
+
+    // ---- 관리: 캐릭터 생성 후 종료 ----
+    if (doMakeChar) {
+        const persist::Account* acc = persistence.Accounts().FindByName(charUser);
+        if (!acc) { MYE_LOG_ERROR("Server", "계정 '{}' 없음", charUser); return 5; }
+        auto c = persistence.Characters().Create(acc->id, charName);
+        if (!c) { MYE_LOG_ERROR("Server", "캐릭터 생성 실패: {}", c.GetError().message); return 7; }
+        if (auto s = persistence.SaveAll(dataDir); !s) { MYE_LOG_ERROR("Server", "저장 실패: {}", s.GetError().message); return 4; }
+        MYE_LOG_INFO("Server", "캐릭터 '{}' 생성 완료(id={}, 계정={})", charName, c.Value(), charUser);
         return 0;
     }
 
@@ -115,23 +130,20 @@ int main(int argc, char** argv) {
     // 우아한 종료: Ctrl+C·콘솔 닫기 → 루프 탈출 후 세이브.
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
-    net::NetServer server;
+    // 통합 게임 서버(넷↔게임플레이↔영속). 인증된 계정만 캐릭터 세션을 얻는다.
+    gameserver::NetGameServer server(persistence);
     if (!server.Start(port)) { MYE_LOG_ERROR("Server", "port {} 바인드 실패", port); return 2; }
     server.SetMoveSpeed(moveSpeed);
-    if (config.Has("max_violations")) server.SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
+    if (config.Has("max_violations")) server.Net().SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
 
-    // 인증기: 점검모드면 전원 거부, 아니면 등록계정은 로그인 검증(익명 서버는 인증기 없음).
-    const bool requireAuth = persistence.Accounts().Count() > 0;
-    if (requireAuth || config.MaintenanceMode()) {
-        server.SetAuthenticator([&persistence, &config, requireAuth](std::string_view u, std::string_view p) -> uint64_t {
-            if (config.MaintenanceMode()) return 0;              // 점검 중 접속 차단
-            if (!requireAuth) return 1;                          // 익명 허용(점검 아님)
-            persist::LoginResult r = persistence.Accounts().Login(u, p);
-            return r.ok ? r.accountId : 0;
-        });
-    }
-    MYE_LOG_INFO("Server", "MyServer 시작 — port {}, tickrate {}Hz, data '{}', auth {}, maint {}",
-                 server.Port(), tickrate, dataDir, requireAuth ? "on" : "off(anon)",
+    // 인증기 재정의: 점검모드면 전원 거부, 아니면 계정 로그인 검증.
+    server.Net().SetAuthenticator([&persistence, &config](std::string_view u, std::string_view p) -> uint64_t {
+        if (config.MaintenanceMode()) return 0;                  // 점검 중 접속 차단
+        persist::LoginResult r = persistence.Accounts().Login(u, p);
+        return r.ok ? r.accountId : 0;
+    });
+    MYE_LOG_INFO("Server", "MyServer 시작 — port {}, tickrate {}Hz, data '{}', 계정 {}명, maint {}",
+                 server.Port(), tickrate, dataDir, persistence.Accounts().Count(),
                  config.MaintenanceMode() ? "ON" : "off");
 
     const float dt = 1.0f / static_cast<float>(tickrate);
@@ -153,28 +165,27 @@ int main(int argc, char** argv) {
     while ((maxTicks < 0 || tick < maxTicks) && !g_stop.load()) {
         const auto start = std::chrono::steady_clock::now();
 
-        server.Receive();
-        server.Tick(dt);
-        server.Broadcast();
+        server.Tick(dt);   // 수신→세션 diff→권위 시뮬→위치 동기→브로드캐스트
         ++tick;
 
-        // 메트릭 수집: 틱 처리 시간(ms)·접속 클라 수·누적 틱·킥.
+        // 메트릭 수집: 틱 처리 시간(ms)·접속 클라·게임 세션·누적 틱·킥.
         const auto processed = std::chrono::steady_clock::now() - start;
         const double tickMs = std::chrono::duration<double, std::milli>(processed).count();
         metrics.Counter("ticks");
         metrics.Observe("tick_ms", tickMs);
-        metrics.Gauge("clients", static_cast<double>(server.ClientCount()));
-        if (server.KickedCount() > lastKicked) { metrics.Counter("kicks", static_cast<int64_t>(server.KickedCount() - lastKicked)); lastKicked = server.KickedCount(); }
+        metrics.Gauge("clients", static_cast<double>(server.Net().ClientCount()));
+        metrics.Gauge("players", static_cast<double>(server.PlayerCount()));
+        if (server.Net().KickedCount() > lastKicked) { metrics.Counter("kicks", static_cast<int64_t>(server.Net().KickedCount() - lastKicked)); lastKicked = server.Net().KickedCount(); }
 
         if (tick % tickrate == 0)   // 대략 1초마다
-            MYE_LOG_INFO("Server", "tick {} · clients {}", server.CurrentTick(), server.ClientCount());
+            MYE_LOG_INFO("Server", "tick {} · clients {} · players {}", server.Net().CurrentTick(), server.Net().ClientCount(), server.PlayerCount());
 
         // config 핫리로드 + 메트릭 스냅샷 기록(운영 관찰성).
         if (tick % reloadTicks == 0) {
             if (std::filesystem::exists(configPath)) {
                 if (auto r = config.LoadFromFile(configPath); r) {
                     server.SetMoveSpeed(static_cast<float>(config.GetFloat("move_speed", 6.0)));
-                    if (config.Has("max_violations")) server.SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
+                    if (config.Has("max_violations")) server.Net().SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
                 }
             }
             writeMetrics();

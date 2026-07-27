@@ -12,6 +12,8 @@
 //   --autosave <sec>  자동 저장 주기 초(기본 60; 0=끄기)
 //   --register u p    계정 등록 후 저장하고 종료(관리 도구)
 //   --ban <user> [r]  계정 차단 후 저장하고 종료(GM), --unban <user> 차단 해제
+// 운영: <data>/config.json 으로 CVar/피처플래그/점검모드 핫리로드, <data>/metrics.json 관찰성.
+// Ctrl+C·콘솔 닫기 시 우아한 종료(세이브·백업·메트릭 기록 후 정지).
 #include "mye/net/NetServer.h"
 #include "mye/net/UdpSocket.h"
 #include "mye/persist/PersistenceService.h"
@@ -22,11 +24,27 @@
 #include <filesystem>
 #include <fstream>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <string>
 #include <thread>
+
+#include <windows.h>   // SetConsoleCtrlHandler (우아한 종료)
+
+// Ctrl+C·콘솔 닫기 시 세이브 후 안전 종료를 위한 플래그(핸들러에서만 set).
+static std::atomic<bool> g_stop{false};
+static BOOL WINAPI ConsoleCtrlHandler(DWORD type) {
+    switch (type) {
+    case CTRL_C_EVENT: case CTRL_BREAK_EVENT: case CTRL_CLOSE_EVENT:
+    case CTRL_LOGOFF_EVENT: case CTRL_SHUTDOWN_EVENT:
+        g_stop.store(true);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
 
 using namespace mye;
 
@@ -94,6 +112,9 @@ int main(int argc, char** argv) {
     net::NetSubsystem sys;
     if (!sys.ok) { MYE_LOG_ERROR("Server", "Winsock 초기화 실패"); return 1; }
 
+    // 우아한 종료: Ctrl+C·콘솔 닫기 → 루프 탈출 후 세이브.
+    SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+
     net::NetServer server;
     if (!server.Start(port)) { MYE_LOG_ERROR("Server", "port {} 바인드 실패", port); return 2; }
     server.SetMoveSpeed(moveSpeed);
@@ -129,7 +150,7 @@ int main(int argc, char** argv) {
     };
 
     long long tick = 0;
-    while (maxTicks < 0 || tick < maxTicks) {
+    while ((maxTicks < 0 || tick < maxTicks) && !g_stop.load()) {
         const auto start = std::chrono::steady_clock::now();
 
         server.Receive();
@@ -173,7 +194,7 @@ int main(int argc, char** argv) {
     if (auto s = persistence.SaveAllWithBackup(dataDir, static_cast<int>(config.GetInt("max_backups", 10))); !s)
         MYE_LOG_WARN("Server", "종료 저장 실패: {}", s.GetError().message);
     writeMetrics();
-    MYE_LOG_INFO("Server", "종료 (총 {} tick, data '{}')", tick, dataDir);
+    MYE_LOG_INFO("Server", "종료{} (총 {} tick, data '{}')", g_stop.load() ? "(우아한 종료)" : "", tick, dataDir);
     server.Stop();
     return 0;
 }

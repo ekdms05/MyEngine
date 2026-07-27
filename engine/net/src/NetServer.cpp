@@ -67,7 +67,12 @@ void NetServer::Receive() {
             uint32_t seq = 0; float mx = 0, my = 0;
             ReadInput(r, seq, mx, my);
             if (Client* c = Find(from)) {
-                c->inX = mx; c->inY = my;
+                // 안티치트: 이동 입력은 단위벡터 성분(±1) 범위. 초과는 조작 → 위반 누적 후 클램프.
+                if (mx < -1.001f || mx > 1.001f || my < -1.001f || my > 1.001f) {
+                    ++c->violations;
+                }
+                c->inX = mx < -1.0f ? -1.0f : (mx > 1.0f ? 1.0f : mx);
+                c->inY = my < -1.0f ? -1.0f : (my > 1.0f ? 1.0f : my);
                 if (seq > c->lastInputSeq) c->lastInputSeq = seq;   // 재조정 기준
             }
             break;
@@ -86,8 +91,36 @@ void NetServer::Tick(float dt) {
     for (Client& c : m_clients) {
         c.x += c.inX * m_speed * dt;
         c.y += c.inY * m_speed * dt;
+        // 좌표 sanity: 월드 경계 밖으로는 못 나감(서버권위 클램프).
+        if (c.x < m_minX) c.x = m_minX; else if (c.x > m_maxX) c.x = m_maxX;
+        if (c.y < m_minY) c.y = m_minY; else if (c.y > m_maxY) c.y = m_maxY;
+    }
+    // 위반 누적이 임계 도달한 클라 자동 킥(뒤에서 앞으로 안전 제거).
+    if (m_maxViolations > 0) {
+        for (size_t i = m_clients.size(); i-- > 0;) {
+            if (m_clients[i].violations >= m_maxViolations) {
+                MYE_LOG_WARN("Net", "client {} 안티치트 킥(위반 {})", m_clients[i].id, m_clients[i].violations);
+                KickIndex(i);
+            }
+        }
     }
     ++m_tick;
+}
+
+void NetServer::KickIndex(size_t i) {
+    if (i >= m_clients.size()) return;
+    BitWriter w;
+    WriteHeader(w, MsgType::Disconnect);
+    const auto& bytes = w.Finish();
+    m_sock.SendTo(m_clients[i].ep, bytes.data(), bytes.size());
+    m_clients.erase(m_clients.begin() + static_cast<std::ptrdiff_t>(i));
+    ++m_kicked;
+}
+
+uint32_t NetServer::ViolationsOf(uint32_t netId) const {
+    for (const Client& c : m_clients)
+        if (c.id == netId) return c.violations;
+    return 0;
 }
 
 void NetServer::Broadcast() {

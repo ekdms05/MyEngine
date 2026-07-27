@@ -26,6 +26,16 @@ public:
     // 인증기 주입(선택). 없으면 모든 Connect 를 익명 수락(하위 호환).
     void SetAuthenticator(Authenticator fn) { m_auth = std::move(fn); }
 
+    // ---- 안티치트 이동 검증(서버권위 강화) ----
+    // 월드 경계(이 밖으로는 못 나감; 좌표 sanity). 기본 [kWorldMin, kWorldMax].
+    void SetWorldBounds(float minX, float minY, float maxX, float maxY) {
+        m_minX = minX; m_minY = minY; m_maxX = maxX; m_maxY = maxY;
+    }
+    // 위반(범위초과 입력) 누적이 이 값에 도달하면 자동 킥. 0=끄기(기본 10).
+    void SetMaxViolations(uint32_t n) { m_maxViolations = n; }
+    uint32_t ViolationsOf(uint32_t netId) const;
+    uint64_t KickedCount() const { return m_kicked; }
+
     void Receive();          // 소켓 드레인 + Connect/Input/Disconnect 처리
     void Tick(float dt);     // 서버 시뮬: 클라 입력을 각 엔티티에 적용
     void Broadcast();        // 스냅샷을 전 클라에 송신
@@ -47,8 +57,10 @@ private:
         float    inX = 0.0f, inY = 0.0f;  // 최근 입력
         uint32_t lastInputSeq = 0;     // 마지막 처리 입력(클라 재조정용)
         uint64_t accountId = 0;        // 인증 계정(0=익명)
+        uint32_t violations = 0;       // 안티치트 위반 누적(범위초과 입력)
     };
     Client* Find(const Endpoint& ep);
+    void KickIndex(size_t i);          // 인덱스 클라 제거(+ Disconnect 회신)
 
     UdpSocket           m_sock;
     std::vector<Client> m_clients;
@@ -57,6 +69,10 @@ private:
     uint32_t            m_tick = 0;
     float               m_speed = 6.0f;
     uint64_t            m_rejected = 0;
+    uint64_t            m_kicked = 0;
+    uint32_t            m_maxViolations = 10;
+    // 월드 경계 기본값 = Protocol kWorldMin/kWorldMax(±512). SetWorldBounds 로 조정.
+    float m_minX = -512.0f, m_minY = -512.0f, m_maxX = 512.0f, m_maxY = 512.0f;
 };
 
 } // namespace mye::net

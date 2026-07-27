@@ -80,3 +80,37 @@ MYE_TEST(NetAnonymousConnectWithoutAuthenticator) {
     MYE_EXPECT(server.AccountOf(client.Id()) == 0);   // 익명
     MYE_EXPECT(server.RejectedCount() == 0);
 }
+
+// 안티치트: 월드 경계 밖으로는 못 나감(좌표 sanity). 정상 플레이는 위반/킥 0.
+MYE_TEST(NetAntiCheatWorldBoundsClamp) {
+    NetSubsystem net;
+    if (!net.ok) return;
+
+    NetServer server;
+    NetClient client;
+    if (!server.Start(0) || !client.Open(0)) return;
+    server.SetMoveSpeed(6.0f);
+    server.SetWorldBounds(-5.0f, -5.0f, 5.0f, 5.0f);   // 좁은 경계
+
+    const Endpoint sep = Endpoint::Loopback(server.Port());
+    client.Connect(sep);
+    for (int i = 0; i < 500 && !client.Connected(); ++i) { server.Receive(); client.Receive(); SleepMs(1); }
+    MYE_EXPECT(client.Connected());
+
+    // +X로 오래 달려도(누적 이동이 경계 훨씬 초과) 경계에서 멈춘다.
+    for (int i = 0; i < 200; ++i) {
+        client.SendInput(static_cast<uint32_t>(i + 1), 1.0f, 0.0f);
+        SleepMs(1);
+        server.Receive();
+        server.Tick(1.0f / 60.0f);
+    }
+    float sx = 0, sy = 0;
+    MYE_EXPECT(server.GetEntity(client.Id(), sx, sy));
+    MYE_EXPECT(sx <= 5.0f + 1e-4f);   // 경계 밖으로 못 감
+    MYE_EXPECT(sx > 4.9f);            // 경계까지는 도달
+
+    // 정상(범위 내) 입력은 위반/킥을 유발하지 않음(오탐 없음).
+    MYE_EXPECT(server.ViolationsOf(client.Id()) == 0);
+    MYE_EXPECT(server.KickedCount() == 0);
+    MYE_EXPECT(server.ClientCount() == 1);
+}

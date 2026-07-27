@@ -30,11 +30,32 @@ void NetServer::Receive() {
 
         switch (type) {
         case MsgType::Connect: {
+            std::string user, pass;
+            if (!ReadConnect(r, user, pass)) break;   // 손상 패킷 방어
+
             Client* c = Find(from);
             if (!c) {
-                m_clients.push_back(Client{from, m_nextId++, 0.0f, 0.0f, 0.0f, 0.0f});
+                // 인증기가 있으면 자격증명 검증 → 거부 시 admit 하지 않음.
+                uint64_t accountId = 0;
+                if (m_auth) {
+                    accountId = m_auth(user, pass);
+                    if (accountId == 0) {
+                        ++m_rejected;
+                        MYE_LOG_WARN("Net", "client 인증 거부 {} user='{}'", from.ToString(), user);
+                        BitWriter dw;
+                        WriteHeader(dw, MsgType::Disconnect);
+                        const auto& db = dw.Finish();
+                        m_sock.SendTo(from, db.data(), db.size());
+                        break;
+                    }
+                }
+                Client nc{};
+                nc.ep = from;
+                nc.id = m_nextId++;
+                nc.accountId = accountId;
+                m_clients.push_back(nc);
                 c = &m_clients.back();
-                MYE_LOG_INFO("Net", "client {} 접속 {}", c->id, from.ToString());
+                MYE_LOG_INFO("Net", "client {} 접속 {} account={}", c->id, from.ToString(), accountId);
             }
             BitWriter w;
             WriteAccept(w, c->id);
@@ -85,6 +106,12 @@ bool NetServer::GetEntity(uint32_t netId, float& x, float& y) const {
     for (const Client& c : m_clients)
         if (c.id == netId) { x = c.x; y = c.y; return true; }
     return false;
+}
+
+uint64_t NetServer::AccountOf(uint32_t netId) const {
+    for (const Client& c : m_clients)
+        if (c.id == netId) return c.accountId;
+    return 0;
 }
 
 } // namespace mye::net

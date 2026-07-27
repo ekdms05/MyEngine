@@ -8,6 +8,8 @@
 #include "mye/net/Protocol.h"
 
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace mye::net {
@@ -17,7 +19,8 @@ public:
     bool Open(uint16_t port = 0) { return m_sock.Open(port); }
     void Close() { m_sock.Close(); }
 
-    void Connect(const Endpoint& server);
+    // 자격증명으로 접속. 익명은 빈 문자열(기본) — 서버 인증기 유무에 따라 수락/거부.
+    void Connect(const Endpoint& server, std::string_view username = {}, std::string_view password = {});
     void SendInput(uint32_t seq, float moveX, float moveY);
     void Disconnect();
 

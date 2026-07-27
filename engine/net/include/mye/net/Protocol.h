@@ -8,6 +8,8 @@
 #include "mye/net/Quantization.h"
 
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace mye::net {
@@ -44,6 +46,34 @@ inline bool ReadHeader(BitReader& r, MsgType& outType) {
     const uint32_t t = r.ReadBits(8);
     if (!r.Ok() || proto != kProtocolId) return false;
     outType = static_cast<MsgType>(t);
+    return true;
+}
+
+// ---- 문자열(길이 접두 + 바이트) ----
+inline void WriteString(BitWriter& w, std::string_view s) {
+    w.WriteVarUint(s.size());
+    if (!s.empty()) w.WriteBytes(s.data(), s.size());
+}
+// maxLen 초과·언더런 시 false(신뢰 못 할 입력 방어).
+inline bool ReadString(BitReader& r, std::string& out, size_t maxLen) {
+    const uint64_t n = r.ReadVarUint();
+    if (!r.Ok() || n > maxLen) { out.clear(); return false; }
+    out.resize(static_cast<size_t>(n));
+    if (n) r.ReadBytes(out.data(), static_cast<size_t>(n));
+    return r.Ok();
+}
+
+// ---- Connect(인증) ----
+// 접속 요청에 자격증명(username/password)을 실어 서버가 계정 인증 후 수락하게 한다.
+// 익명 접속은 빈 문자열(하위 호환) — 서버에 인증기가 없으면 그대로 수락.
+inline void WriteConnect(BitWriter& w, std::string_view username, std::string_view password) {
+    WriteHeader(w, MsgType::Connect);
+    WriteString(w, username);
+    WriteString(w, password);
+}
+inline bool ReadConnect(BitReader& r, std::string& username, std::string& password) {
+    if (!ReadString(r, username, 64)) return false;
+    if (!ReadString(r, password, 128)) return false;
     return true;
 }
 

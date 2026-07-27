@@ -3,10 +3,10 @@
 
 namespace mye::net {
 
-void NetClient::Connect(const Endpoint& server) {
+void NetClient::Connect(const Endpoint& server, std::string_view username, std::string_view password) {
     m_server = server;
     BitWriter w;
-    WriteHeader(w, MsgType::Connect);
+    WriteConnect(w, username, password);
     const auto& bytes = w.Finish();
     m_sock.SendTo(m_server, bytes.data(), bytes.size());
 }

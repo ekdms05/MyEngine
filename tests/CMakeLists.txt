@@ -25,6 +25,7 @@ add_executable(mye_tests
     src/NetDeltaTests.cpp             # M9: 스냅샷 필드 델타
     src/NetSocketTests.cpp            # M9: Winsock UDP 루프백
     src/NetReplicationTests.cpp       # M9: 권위 서버 + 스냅샷 복제 루프백
+    src/PersistAccountTests.cpp       # M10: 계정 등록/로그인/세션/영속
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp
@@ -53,7 +54,7 @@ add_executable(mye_tests
     src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_reflect mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).

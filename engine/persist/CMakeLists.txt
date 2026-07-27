@@ -4,10 +4,12 @@ add_library(mye_persist STATIC
     include/mye/persist/AccountStore.h
     include/mye/persist/CharacterStore.h
     include/mye/persist/ItemLedger.h
+    include/mye/persist/PersistenceService.h
 
     src/AccountStore.cpp
     src/CharacterStore.cpp
     src/ItemLedger.cpp
+    src/PersistenceService.cpp
 )
 
 target_include_directories(mye_persist PUBLIC

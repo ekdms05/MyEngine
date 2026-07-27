@@ -28,6 +28,7 @@ add_executable(mye_tests
     src/PersistAccountTests.cpp       # M10: 계정 등록/로그인/세션/영속
     src/PersistCharacterTests.cpp     # M10: 캐릭터 생성/계정인덱스/월드상태/영속
     src/PersistLedgerTests.cpp        # M10: 거래 원장(보존·dupe차단·무결성·영속)
+    src/PersistServiceTests.cpp       # M10: 영속 파사드(디렉터리 로드/저장·원장 정합성 대조)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
     src/JobsTests.cpp

@@ -161,18 +161,23 @@
 
 > 아래 마일스톤 상세는 **이상적 목표(Postgres/Redis·Linux 헤드리스)**를 담는다. 실제 진행은
 > 사용자 결정에 따라 **윈도우 네이티브·외부 DB 없이 파일 기반**으로 선(先)구현하고, 스케일용
-> Postgres/Redis·컨테이너는 M13에서 승격한다. 현재 상태:
+> Postgres/Redis·컨테이너는 M13에서 승격한다. **M7~M11 선구현 완료(2026-07, 테스트 402/402)**. 현재 상태:
 
 | MS | 상태 | 실제 구현(파일 기반/Winsock) | 차이(이상 대비) |
 |---|---|---|---|
 | M7 | **Strong** | `apps/game` 데이터드리븐 런타임·SceneSerializer 승격·씬 로딩 | 타일 UV·2D 라이팅·파티클 일부 잔여 |
 | M8 | **Strong** | `engine/gameplay`: 스탯·전투·인벤(원자적)·루트·경험치·스킬·상태이상·퀘·경제·제작 (전부 유닛테스트) | AI/스폰·ContentDB·Lua 배선 잔여 |
-| M9 | **Strong** | `engine/net`: BitStream·양자화·델타·**Winsock UDP**·권위 서버·스냅샷 복제·**인증 커넥트** (127.0.0.1 루프백 검증) | 클라 예측/재조정·AoI·암호화 잔여 / Linux 대신 Winsock |
-| M10 | **Strong** | `engine/persist`: AccountStore(로그인/세션)·CharacterStore·**ItemLedger(보존·dupe차단·무결성)**·PersistenceService 파사드·MyServer 배선 | **JSON 파일 원장**(Postgres 대신)·Redis 캐시 미도입 → M13 승격 |
+| M9 | **Strong** | `engine/net`: BitStream·양자화·델타·**Winsock UDP**·권위 서버·스냅샷 복제·**인증 커넥트**·안티치트 경계클램프 (127.0.0.1 루프백 검증) | 클라 예측/재조정·AoI·암호화 잔여 / Linux 대신 Winsock |
+| M10 | **Strong** | `engine/persist`: AccountStore(로그인/세션/밴)·CharacterStore·**ItemLedger(보존·dupe차단·무결성)**·PersistenceService 파사드(백업/롤백)·MyServer 배선 | **JSON 파일 원장**(Postgres 대신)·Redis 캐시 미도입 → M13 승격 |
+| M11 | **Strong** | `engine/liveops`: ServerConfig(CVar/피처플래그/점검모드/핫리로드)·**GachaTable(확률공개·천장·감사)**·MetricsRegistry(텔레메트리)·안티치트·계정밴·세이브백업/롤백·우아한종료·**배포 패키징 스크립트** | .mpak zstd/서명·런처/CDN·컨테이너 블루그린 잔여 → M13 승격 |
 
 **M10 게이트 달성**: 계정 등록→로그인(세션)→캐릭터 생성/월드상태 저장→아이템 거래(원장 보존)→
 재부팅 시 진행 보존, 동시 이동은 원장 잔고 검증으로 dupe 0. 서버가 등록 계정에 대해 자격증명 인증.
-현재 테스트 **388/388** 통과.
+
+**M11 게이트 달성**: 서버 config.json 으로 드랍률/점검모드 무중단 조정(핫리로드), 안티치트가 월드 경계
+이탈·범위초과 입력 차단, GM 밴이 로그인·세션 차단, 확률형 아이템 확률공개 JSON·천장·감사 로그,
+자동저장 백업 회전으로 롤백(PIT), metrics.json 관찰성, Ctrl+C 우아한 종료, 배포 번들(exe+pak+config) 생성.
+현재 테스트 **402/402** 통과.
 
 ---
 

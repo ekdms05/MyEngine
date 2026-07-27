@@ -137,16 +137,18 @@ int main(int argc, char** argv) {
         }
 
         if (autosaveTicks > 0 && tick % autosaveTicks == 0) {
-            if (auto s = persistence.SaveAll(dataDir); !s) MYE_LOG_WARN("Server", "자동저장 실패: {}", s.GetError().message);
-            else MYE_LOG_INFO("Server", "자동저장 완료 (tick {})", tick);
+            const int maxBk = static_cast<int>(config.GetInt("max_backups", 10));
+            if (auto s = persistence.SaveAllWithBackup(dataDir, maxBk); !s) MYE_LOG_WARN("Server", "자동저장 실패: {}", s.GetError().message);
+            else MYE_LOG_INFO("Server", "자동저장(백업 회전) 완료 (tick {})", tick);
         }
 
         const auto elapsed = std::chrono::steady_clock::now() - start;
         if (elapsed < tickDuration) std::this_thread::sleep_for(tickDuration - elapsed);
     }
 
-    // ---- 종료 시 저장 ----
-    if (auto s = persistence.SaveAll(dataDir); !s) MYE_LOG_WARN("Server", "종료 저장 실패: {}", s.GetError().message);
+    // ---- 종료 시 저장(백업 회전) ----
+    if (auto s = persistence.SaveAllWithBackup(dataDir, static_cast<int>(config.GetInt("max_backups", 10))); !s)
+        MYE_LOG_WARN("Server", "종료 저장 실패: {}", s.GetError().message);
     MYE_LOG_INFO("Server", "종료 (총 {} tick, data '{}')", tick, dataDir);
     server.Stop();
     return 0;

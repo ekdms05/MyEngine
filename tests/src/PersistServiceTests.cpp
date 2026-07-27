@@ -62,6 +62,61 @@ MYE_TEST(ServiceSaveLoadRoundtrip) {
     std::error_code ec; fs::remove_all(dir, ec);
 }
 
+MYE_TEST(ServiceBackupRotationAndRestore) {
+    namespace fs = std::filesystem;
+    const std::string dir = MakeTempDir("backup");
+
+    // v1 저장(백업 없음: 최초라 이전 상태 없음).
+    AccountId acc = 0; CharacterId chr = 0;
+    {
+        PersistenceService svc;
+        acc = svc.Accounts().Register("king", "pw").Value();
+        chr = svc.Characters().Create(acc, "Arthur").Value();
+        svc.Characters().GetMutable(chr)->gold = 100;
+        MYE_EXPECT(static_cast<bool>(svc.SaveAllWithBackup(dir, 3)));
+        MYE_EXPECT(svc.ListBackups(dir).empty());   // 최초 저장은 백업 안 함
+    }
+    // v2 저장(v1 을 backup_0001 로 회전).
+    {
+        PersistenceService svc;
+        MYE_EXPECT(static_cast<bool>(svc.LoadAll(dir)));
+        svc.Characters().GetMutable(chr)->gold = 200;
+        MYE_EXPECT(static_cast<bool>(svc.SaveAllWithBackup(dir, 3)));
+        const auto backups = svc.ListBackups(dir);
+        MYE_EXPECT(backups.size() == 1 && backups[0] == 1);
+    }
+    // 현재는 v2(gold 200).
+    {
+        PersistenceService svc;
+        MYE_EXPECT(static_cast<bool>(svc.LoadAll(dir)));
+        MYE_EXPECT(svc.Characters().Get(chr)->gold == 200);
+        // 롤백: backup_0001(v1, gold 100) 복원.
+        MYE_EXPECT(static_cast<bool>(svc.RestoreFromBackup(dir, 1)));
+        MYE_EXPECT(svc.Characters().Get(chr)->gold == 100);
+        // 없는 백업 복원은 실패.
+        MYE_EXPECT(!svc.RestoreFromBackup(dir, 999));
+    }
+    std::error_code ec; fs::remove_all(dir, ec);
+}
+
+MYE_TEST(ServiceBackupPrunesToMax) {
+    namespace fs = std::filesystem;
+    const std::string dir = MakeTempDir("backup_prune");
+
+    PersistenceService svc;
+    (void)svc.Accounts().Register("u", "p");
+    // 최초 저장 + 이후 5회 저장 → 백업 5개 생성되지만 maxBackups=2 로 정리.
+    MYE_EXPECT(static_cast<bool>(svc.SaveAllWithBackup(dir, 2)));
+    for (int i = 0; i < 5; ++i)
+        MYE_EXPECT(static_cast<bool>(svc.SaveAllWithBackup(dir, 2)));
+
+    const auto backups = svc.ListBackups(dir);
+    MYE_EXPECT(backups.size() == 2);          // 최근 2개만 유지
+    MYE_EXPECT(backups[0] == 4 && backups[1] == 5);   // 오래된 1~3 삭제됨
+
+    std::error_code ec; fs::remove_all(dir, ec);
+}
+
 MYE_TEST(ServiceReconcileDetectsMismatch) {
     PersistenceService svc;
     const AccountId acc = svc.Accounts().Register("gm", "pw").Value();

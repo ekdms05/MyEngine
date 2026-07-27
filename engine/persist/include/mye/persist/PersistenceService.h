@@ -33,6 +33,16 @@ public:
     // 세 파일을 디렉터리에 원자적으로 저장(디렉터리 없으면 생성).
     Expected<void, Error> SaveAll(std::string_view dir) const;
 
+    // 저장 전 현재 디스크 상태를 백업으로 회전한 뒤 저장(롤백/PIT 복구용).
+    //   백업은 <dir>/backups/backup_NNNN/ 에 보관, 최근 maxBackups 개만 유지(오래된 것 삭제).
+    Expected<void, Error> SaveAllWithBackup(std::string_view dir, int maxBackups = 5) const;
+
+    // 사용 가능한 백업 인덱스 목록(오름차순).
+    std::vector<int> ListBackups(std::string_view dir) const;
+
+    // 지정 백업을 디렉터리로 복원하고 메모리에 다시 로드(롤백).
+    Expected<void, Error> RestoreFromBackup(std::string_view dir, int backupIndex);
+
     AccountStore&        Accounts()       { return m_accounts; }
     const AccountStore&  Accounts() const  { return m_accounts; }
     CharacterStore&      Characters()      { return m_characters; }

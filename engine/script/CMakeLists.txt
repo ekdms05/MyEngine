@@ -23,6 +23,7 @@ add_library(mye_script STATIC
     src/bindings/AudioBindings.cpp
     src/bindings/EventBindings.cpp
     src/bindings/ReflectBindings.cpp
+    src/bindings/DdcBindings.cpp
     src/bindings/EngineBindings.cpp
 
     # ---- 런타임·컴포넌트·시스템·코루틴(sol 표면) ----
@@ -45,7 +46,7 @@ target_include_directories(mye_script PUBLIC
 )
 
 target_link_libraries(mye_script
-    PUBLIC  mye_core mye_scene mye_asset mye_audio mye_reflect
+    PUBLIC  mye_core mye_scene mye_asset mye_audio mye_reflect mye_ddc
     PRIVATE mye_thirdparty_sol2
 )
 

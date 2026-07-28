@@ -24,6 +24,7 @@ class InputState;
 namespace mye::ecs { class World; class CommandBuffer; }
 namespace mye::audio { class AudioEngine; struct AudioCue; }
 namespace mye::asset { struct AudioClip; }
+namespace mye::ddc { class SchemaRegistry; }
 
 namespace mye::script {
 
@@ -125,6 +126,28 @@ class ReflectBindingModule final : public IBindingModule {
 public:
     std::string_view Name() const override { return "reflect"; }
     void Register(sol::state& lua) override;
+};
+
+// ---------------------------------------------------------------------------
+// DdcBindingModule — 데이터드리븐 컴포넌트 Lua 바인딩(플러그인·Lua·데이터 삼위일체 완성):
+//     mye.ddc.define(jsonString)                 -- 스키마를 데이터로 정의(런타임)
+//     local c = mye.ddc.new("Stats")             -- 인스턴스 생성
+//     c:set("hp", 70);  local hp = c:get("hp")   -- 필드 get/set(타입드)
+//   게임이 엔진 재컴파일 없이 컴포넌트를 정의(데이터)하고 조작(Lua)한다. 모듈이 SchemaRegistry 소유.
+//   [주의] throw 금지(ReflectBindings 와 동일) — 오류는 nil/false/no-op.
+// ---------------------------------------------------------------------------
+class DdcBindingModule final : public IBindingModule {
+public:
+    DdcBindingModule();
+    ~DdcBindingModule() override;
+    std::string_view Name() const override { return "ddc"; }
+    void Register(sol::state& lua) override;
+
+    // 앱/플러그인이 스키마를 미리 로드할 수 있게 레지스트리 노출(비소유 참조).
+    ddc::SchemaRegistry& Registry();
+
+private:
+    std::unique_ptr<ddc::SchemaRegistry> m_registry;
 };
 
 // ---------------------------------------------------------------------------

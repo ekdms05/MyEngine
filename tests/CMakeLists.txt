@@ -52,6 +52,7 @@ add_executable(mye_tests
     src/AudioPlaybackTests.cpp    # M3-B: 믹서·버스·큐·크로스페이드·공간화(헤드리스)
     src/ScriptBindingTests.cpp    # M3-C: 엔진 API Lua 바인딩(Math/ECS/Input/Audio/Event)
     src/ScriptReflectTests.cpp    # 엔진 확장성: 리플렉션 기반 Lua 범용 바인딩(new/get/set/call)
+    src/ScriptDdcTests.cpp        # 엔진 확장성: 데이터드리븐 컴포넌트 Lua 바인딩(define/new/get/set)
     src/ScriptTests.cpp           # M3-C: Lua 런타임·콜백·에러격리·핫리로드·코루틴
     src/EditorSerializationTests.cpp  # M4-A: 씬/프리팹 직렬화·인스펙터 값 blob
     src/EditorTests.cpp               # M4-A: 커맨드/Undo·선택·플레이모드·확장·패널

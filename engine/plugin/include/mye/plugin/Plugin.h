@@ -70,4 +70,21 @@ public:
     virtual void OnUnload(PluginContext& ctx) = 0;   // 대칭 해제(호스트가 타입 Unregister 는 자동)
 };
 
+// ---- 네이티브 DLL 플러그인 C ABI 계약 ----
+// DLL 은 아래 두 심볼을 export 한다. 호스트(PluginHost::LoadLibrary)가 GetProcAddress 로 찾는다.
+//   생성/파괴를 DLL 이 담당해야 한다(exe/DLL 힙 분리 — new/delete 를 섞으면 안 됨).
+using CreatePluginFn  = IPlugin* (*)();
+using DestroyPluginFn = void (*)(IPlugin*);
+inline constexpr const char* kCreatePluginSymbol  = "MyeCreatePlugin";
+inline constexpr const char* kDestroyPluginSymbol = "MyeDestroyPlugin";
+
+// DLL 소스에서 사용하는 export 매크로. 예:
+//   MYE_PLUGIN_EXPORT mye::plugin::IPlugin* MyeCreatePlugin() { return new MyGamePlugin(); }
+//   MYE_PLUGIN_EXPORT void MyeDestroyPlugin(mye::plugin::IPlugin* p) { delete p; }
+#if defined(_WIN32)
+    #define MYE_PLUGIN_EXPORT extern "C" __declspec(dllexport)
+#else
+    #define MYE_PLUGIN_EXPORT extern "C" __attribute__((visibility("default")))
+#endif
+
 } // namespace mye::plugin

@@ -60,6 +60,7 @@ add_executable(mye_tests
     src/SceneSmokeTests.cpp
     src/ReflectTests.cpp
     src/PluginHostTests.cpp           # 엔진 확장성: 플러그인 로드/언로드·틱·버전 게이팅
+    src/PluginDllTests.cpp            # 엔진 확장성: 네이티브 DLL 플러그인 로드/틱/언로드
     src/DdcSchemaTests.cpp            # 엔진 확장성: 데이터드리븐 컴포넌트(스키마·인스턴스·직렬화·레지스트리)
     src/DdcStoreTests.cpp             # 엔진 확장성: 동적 컴포넌트 엔티티 스토어·질의·월드 세이브
     src/PluginGameIntegrationTests.cpp # 엔진 확장성 검증: 플러그인+데이터+시스템 엔드투엔드
@@ -91,5 +92,12 @@ target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).
 target_link_libraries(mye_tests PRIVATE mye_thirdparty_sol2)
+
+# 네이티브 DLL 플러그인 테스트 픽스처(shared) — PluginDllTests 가 런타임 로드한다.
+add_library(mye_sample_plugin SHARED fixtures/sample_plugin.cpp)
+target_link_libraries(mye_sample_plugin PRIVATE mye_plugin)
+add_dependencies(mye_tests mye_sample_plugin)
+# 빌드된 DLL 절대경로를 테스트에 주입 + 실행 시 찾을 수 있게 출력 위치 정렬.
+target_compile_definitions(mye_tests PRIVATE MYE_SAMPLE_PLUGIN_DLL="$<TARGET_FILE:mye_sample_plugin>")
 
 add_test(NAME mye_tests COMMAND mye_tests)

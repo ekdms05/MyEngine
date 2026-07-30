@@ -7,6 +7,7 @@ add_library(mye_social STATIC
     include/mye/social/ChatRouter.h
     include/mye/social/PartySystem.h
     include/mye/social/GuildSystem.h
+    include/mye/social/GuildBank.h
 
     src/LoginQueue.cpp
     src/FriendGraph.cpp
@@ -14,6 +15,7 @@ add_library(mye_social STATIC
     src/ChatRouter.cpp
     src/PartySystem.cpp
     src/GuildSystem.cpp
+    src/GuildBank.cpp
 )
 
 target_include_directories(mye_social PUBLIC
@@ -21,5 +23,5 @@ target_include_directories(mye_social PUBLIC
 )
 
 target_link_libraries(mye_social
-    PUBLIC mye_core
+    PUBLIC mye_core mye_persist
 )

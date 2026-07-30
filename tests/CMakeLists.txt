@@ -36,6 +36,7 @@ add_executable(mye_tests
     src/SocialChatTests.cpp           # M12 소셜: 채팅 채널 라우팅 + 차단/필터
     src/SocialPartyTests.cpp          # M12 소셜: 파티 로스터·초대·리더승계·추방·해산
     src/SocialGuildTests.cpp          # M12 소셜: 길드 직급·권한·승진/위임·승계
+    src/SocialGuildBankTests.cpp      # M12 소셜: 길드 은행(원장 연동·직급·보존)
     src/LiveopsConfigTests.cpp        # M11: 서버 CVar·피처플래그·점검모드·핫리로드
     src/LiveopsGachaTests.cpp         # M11: 확률형 아이템 확률공개·결정론 롤·천장·감사
     src/LiveopsMetricsTests.cpp       # M11: 서버 메트릭(카운터·게이지·타이밍·스냅샷)

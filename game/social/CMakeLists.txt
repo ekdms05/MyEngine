@@ -11,6 +11,7 @@ add_library(mye_social STATIC
     include/mye/social/MailSystem.h
     include/mye/social/TradeSystem.h
     include/mye/social/AuctionHouse.h
+    include/mye/social/Matchmaking.h
 
     src/LoginQueue.cpp
     src/FriendGraph.cpp
@@ -22,6 +23,7 @@ add_library(mye_social STATIC
     src/MailSystem.cpp
     src/TradeSystem.cpp
     src/AuctionHouse.cpp
+    src/Matchmaking.cpp
 )
 
 target_include_directories(mye_social PUBLIC

@@ -6,12 +6,14 @@ add_library(mye_social STATIC
     include/mye/social/Presence.h
     include/mye/social/ChatRouter.h
     include/mye/social/PartySystem.h
+    include/mye/social/GuildSystem.h
 
     src/LoginQueue.cpp
     src/FriendGraph.cpp
     src/Presence.cpp
     src/ChatRouter.cpp
     src/PartySystem.cpp
+    src/GuildSystem.cpp
 )
 
 target_include_directories(mye_social PUBLIC

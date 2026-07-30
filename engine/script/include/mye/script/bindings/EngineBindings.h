@@ -24,7 +24,8 @@ class InputState;
 namespace mye::ecs { class World; class CommandBuffer; }
 namespace mye::audio { class AudioEngine; struct AudioCue; }
 namespace mye::asset { struct AudioClip; }
-namespace mye::ddc { class SchemaRegistry; }
+namespace mye::ddc { class SchemaRegistry; class DynamicComponentStore; }
+namespace sol { class state; }
 
 namespace mye::script {
 
@@ -131,9 +132,12 @@ public:
 // ---------------------------------------------------------------------------
 // DdcBindingModule — 데이터드리븐 컴포넌트 Lua 바인딩(플러그인·Lua·데이터 삼위일체 완성):
 //     mye.ddc.define(jsonString)                 -- 스키마를 데이터로 정의(런타임)
-//     local c = mye.ddc.new("Stats")             -- 인스턴스 생성
+//     local c = mye.ddc.new("Stats")             -- 독립 인스턴스(값)
 //     c:set("hp", 70);  local hp = c:get("hp")   -- 필드 get/set(타입드)
-//   게임이 엔진 재컴파일 없이 컴포넌트를 정의(데이터)하고 조작(Lua)한다. 모듈이 SchemaRegistry 소유.
+//   [엔티티 부착·시스템] 게임 로직 전체를 데이터+Lua 로:
+//     mye.ddc.attach(entityId, "Health")         -- 엔티티에 컴포넌트 부착(참조 핸들)
+//     mye.system("Health", function(e, c) ... end)  -- 컴포넌트별 per-frame 시스템(Lua)
+//   모듈이 SchemaRegistry + DynamicComponentStore 소유. Tick(dt) 이 Lua 시스템을 스토어 위에서 실행.
 //   [주의] throw 금지(ReflectBindings 와 동일) — 오류는 nil/false/no-op.
 // ---------------------------------------------------------------------------
 class DdcBindingModule final : public IBindingModule {
@@ -143,11 +147,17 @@ public:
     std::string_view Name() const override { return "ddc"; }
     void Register(sol::state& lua) override;
 
-    // 앱/플러그인이 스키마를 미리 로드할 수 있게 레지스트리 노출(비소유 참조).
-    ddc::SchemaRegistry& Registry();
+    // 등록된 Lua 시스템을 스토어의 해당 컴포넌트 엔티티마다 실행(매 프레임 앱/ScriptSystem 호출).
+    void Tick(float dt);
+
+    // 앱/플러그인이 미리 로드할 수 있게 노출(비소유 참조).
+    ddc::SchemaRegistry&        Registry();
+    ddc::DynamicComponentStore& Store();
 
 private:
-    std::unique_ptr<ddc::SchemaRegistry> m_registry;
+    std::unique_ptr<ddc::SchemaRegistry>        m_registry;
+    std::unique_ptr<ddc::DynamicComponentStore> m_store;
+    sol::state* m_lua = nullptr;   // Register 에서 설정(비소유 원시 포인터 — 계약 안전)
 };
 
 // ---------------------------------------------------------------------------

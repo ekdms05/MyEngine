@@ -69,6 +69,26 @@ MYE_TEST(ScriptDdcLuaSystemRegen) {
     MYE_EXPECT(cur1 == 10);
 }
 
+MYE_TEST(ScriptDdcSystemAutoDrivenByRuntime) {
+    // 앱은 rt.UpdateBindings(dt) 만 호출 — 모듈 Tick 을 직접 안 불러도 Lua 시스템이 구동된다.
+    ScriptRuntime rt;
+    (void)SetupDdcSystem(rt);   // 모듈 소유는 런타임
+    sol::state& lua = rt.State();
+
+    auto setup = rt.DoString(R"(
+        mye.ddc.define([[{ "name":"Counter", "fields":[ {"name":"n","type":"i32","default":0} ] }]])
+        mye.ddc.attach(1, "Counter")
+        mye.system("Counter", function(e, c, dt) c:set("n", c:get("n") + 1) end)
+    )", "@counter");
+    MYE_EXPECT(static_cast<bool>(setup));
+
+    rt.UpdateBindings(1.0f / 60.0f);
+    rt.UpdateBindings(1.0f / 60.0f);
+    rt.UpdateBindings(1.0f / 60.0f);
+    std::int64_t n = lua.script(R"(return mye.ddc.get(1,"Counter"):get("n"))");
+    MYE_EXPECT(n == 3);
+}
+
 MYE_TEST(ScriptDdcSystemSafeAndDynamic) {
     ScriptRuntime rt;
     DdcBindingModule* mod = SetupDdcSystem(rt);

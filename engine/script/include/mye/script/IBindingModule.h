@@ -31,6 +31,10 @@ public:
     //   ScriptRuntime 이 `mye` 전역 테이블을 이미 만들어 두므로 모듈은 lua["mye"] 하위에
     //   자기 표면을 추가한다(get_or_create 로 안전 접근). 예외를 던질 수 있다(sol2 경계 허용).
     virtual void Register(sol::state& lua) = 0;
+
+    // 선택: 매 프레임 갱신(ScriptRuntime::UpdateBindings 이 호출). 기본 no-op.
+    //   예) DdcBindingModule 은 여기서 등록된 Lua 시스템을 스토어 위에서 실행한다.
+    virtual void OnUpdate(float /*dt*/) {}
 };
 
 } // namespace mye::script

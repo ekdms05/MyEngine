@@ -185,6 +185,12 @@ void ScriptRuntime::ReapplyBindings() {
     m_impl->registeredOwned = m_impl->owned.size();
 }
 
+void ScriptRuntime::UpdateBindings(float dt) {
+    if (!m_impl->initialized) return;
+    for (IBindingModule* m : m_impl->borrowed) m->OnUpdate(dt);
+    for (auto& m : m_impl->owned)              m->OnUpdate(dt);
+}
+
 Expected<void, ScriptError> ScriptRuntime::DoString(std::string_view source,
                                                     std::string_view chunkName) {
     std::string named = "@";

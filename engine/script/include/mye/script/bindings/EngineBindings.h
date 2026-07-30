@@ -146,8 +146,9 @@ public:
     ~DdcBindingModule() override;
     std::string_view Name() const override { return "ddc"; }
     void Register(sol::state& lua) override;
+    void OnUpdate(float dt) override { Tick(dt); }   // ScriptRuntime::UpdateBindings 이 자동 호출
 
-    // 등록된 Lua 시스템을 스토어의 해당 컴포넌트 엔티티마다 실행(매 프레임 앱/ScriptSystem 호출).
+    // 등록된 Lua 시스템을 스토어의 해당 컴포넌트 엔티티마다 실행(수동 호출도 가능).
     void Tick(float dt);
 
     // 앱/플러그인이 미리 로드할 수 있게 노출(비소유 참조).

@@ -78,6 +78,8 @@ public:
     void AddBindingModule(IBindingModule* module);                    // 비소유
     void AddBindingModule(std::unique_ptr<IBindingModule> module);    // 소유(런타임이 보관)
     void ReapplyBindings();               // 모든 등록 모듈의 Register(state) 재호출
+    // 매 프레임 — 등록 모듈의 OnUpdate(dt) 호출(예: ddc Lua 시스템 실행). 앱이 프레임마다 호출.
+    void UpdateBindings(float dt);
 
     // ---- 안전한 실행 ----
     // 소스 문자열을 청크로 로드·실행하고 반환값을 클래스 테이블로 취급(mye.script 규약).

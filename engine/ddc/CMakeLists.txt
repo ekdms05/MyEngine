@@ -3,9 +3,11 @@
 add_library(mye_ddc STATIC
     include/mye/ddc/ComponentSchema.h
     include/mye/ddc/SchemaRegistry.h
+    include/mye/ddc/DynamicComponentStore.h
 
     src/ComponentSchema.cpp
     src/SchemaRegistry.cpp
+    src/DynamicComponentStore.cpp
 )
 
 target_include_directories(mye_ddc PUBLIC

@@ -105,6 +105,30 @@ std::string DynamicComponent::GetString(std::string_view field, std::string_view
     return m_values[idx].s;
 }
 
+json::Value DynamicComponent::ToJson() const {
+    if (!m_schema) return json::Value();
+    json::Value::Object o;
+    for (const FieldDef& f : m_schema->Fields()) {
+        if (f.type == FieldType::String)      o[f.name] = json::Value(GetString(f.name));
+        else if (IsFloatKind(f.type))         o[f.name] = json::Value(GetFloat(f.name));
+        else if (f.type == FieldType::Bool)   o[f.name] = json::Value(GetBool(f.name));
+        else                                  o[f.name] = json::Value(static_cast<std::int64_t>(GetInt(f.name)));
+    }
+    return json::Value(std::move(o));
+}
+
+void DynamicComponent::ApplyJson(const json::Value& obj) {
+    if (!m_schema || !obj.IsObject()) return;
+    for (const FieldDef& f : m_schema->Fields()) {
+        const json::Value* v = obj.Find(f.name);
+        if (!v) continue;
+        if (f.type == FieldType::String)      SetString(f.name, v->AsString());
+        else if (IsFloatKind(f.type))         SetFloat(f.name, v->AsDouble());
+        else if (f.type == FieldType::Bool)   SetBool(f.name, v->AsBool());
+        else                                  SetInt(f.name, v->AsInt());
+    }
+}
+
 // ---- ComponentSchema ----
 ComponentSchema::ComponentSchema(std::string name)
     : m_name(std::move(name)), m_id(HashFnv1a64(m_name)) {}

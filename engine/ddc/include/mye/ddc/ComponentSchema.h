@@ -63,6 +63,12 @@ public:
 
     bool Has(std::string_view field) const;
 
+    // ---- 인스턴스 직렬화(월드 세이브) ----
+    // 필드값을 { name: value } 오브젝트로. 스키마 없으면 null.
+    json::Value ToJson() const;
+    // 오브젝트에서 필드값 반영(스키마에 있는 필드만, 타입 맞춰). 없는 키는 무시.
+    void ApplyJson(const json::Value& obj);
+
 private:
     friend class ComponentSchema;
     const ComponentSchema*  m_schema = nullptr;

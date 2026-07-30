@@ -10,6 +10,7 @@ add_library(mye_social STATIC
     include/mye/social/GuildBank.h
     include/mye/social/MailSystem.h
     include/mye/social/TradeSystem.h
+    include/mye/social/AuctionHouse.h
 
     src/LoginQueue.cpp
     src/FriendGraph.cpp
@@ -20,6 +21,7 @@ add_library(mye_social STATIC
     src/GuildBank.cpp
     src/MailSystem.cpp
     src/TradeSystem.cpp
+    src/AuctionHouse.cpp
 )
 
 target_include_directories(mye_social PUBLIC

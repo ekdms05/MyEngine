@@ -42,6 +42,7 @@ add_executable(mye_tests
     src/SceneTests.cpp
     src/TilemapTests.cpp
     src/TilesetUvTests.cpp            # M7 렌더 잔여: 타일 아틀라스 UV 계산(순수 로직)
+    src/ParticleTests.cpp             # M7 렌더 잔여: 파티클 에미터 시뮬(순수·결정론)
     src/NavTests.cpp                  # M5-B: 길찾기(그리드 A*·다리·비동기) + CreateWithId
     src/PhysTests.cpp
     src/SceneSmokeTests.cpp

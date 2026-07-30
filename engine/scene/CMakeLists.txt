@@ -51,6 +51,7 @@ add_library(mye_scene STATIC
     src/scene/SceneSerializer.cpp
     src/scene/SceneReflection.cpp
     src/scene/RenderExtract.cpp
+    src/scene/Particle.cpp
     src/anim/AnimationSystem.cpp
     src/tilemap/Tilemap.cpp
     src/nav/Pathfinding.cpp

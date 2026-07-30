@@ -31,6 +31,7 @@ add_executable(mye_tests
     src/PersistCharacterTests.cpp     # M10: 캐릭터 생성/계정인덱스/월드상태/영속
     src/PersistLedgerTests.cpp        # M10: 거래 원장(보존·dupe차단·무결성·영속)
     src/PersistServiceTests.cpp       # M10: 영속 파사드(디렉터리 로드/저장·원장 정합성 대조)
+    src/SocialLoginQueueTests.cpp     # M12 소셜: 로그인 대기열(순번·용량·우선순위·admit)
     src/LiveopsConfigTests.cpp        # M11: 서버 CVar·피처플래그·점검모드·핫리로드
     src/LiveopsGachaTests.cpp         # M11: 확률형 아이템 확률공개·결정론 롤·천장·감사
     src/LiveopsMetricsTests.cpp       # M11: 서버 메트릭(카운터·게이지·타이밍·스냅샷)
@@ -76,7 +77,7 @@ add_executable(mye_tests
     src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_audio mye_script mye_editor mye_ui mye_runtime)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_social mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).

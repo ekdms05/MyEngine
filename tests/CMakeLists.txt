@@ -48,6 +48,7 @@ add_executable(mye_tests
     src/PluginHostTests.cpp           # 엔진 확장성: 플러그인 로드/언로드·틱·버전 게이팅
     src/DdcSchemaTests.cpp            # 엔진 확장성: 데이터드리븐 컴포넌트(스키마·인스턴스·직렬화·레지스트리)
     src/DdcStoreTests.cpp             # 엔진 확장성: 동적 컴포넌트 엔티티 스토어·질의·월드 세이브
+    src/PluginGameIntegrationTests.cpp # 엔진 확장성 검증: 플러그인+데이터+시스템 엔드투엔드
     src/AudioHotReloadTests.cpp   # M3-A: 오디오 임포터(WAV) + 핫 리로드
     src/AnimationTests.cpp        # M3-B: 스프라이트 애니메이션·8방향·상태머신·이벤트
     src/AudioPlaybackTests.cpp    # M3-B: 믹서·버스·큐·크로스페이드·공간화(헤드리스)

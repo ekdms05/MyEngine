@@ -2,8 +2,12 @@
 # 엔진이 아니라 엔진 위에 얹는 게임 레이어. 순수 로직 위주(서버 사용).
 add_library(mye_social STATIC
     include/mye/social/LoginQueue.h
+    include/mye/social/FriendGraph.h
+    include/mye/social/Presence.h
 
     src/LoginQueue.cpp
+    src/FriendGraph.cpp
+    src/Presence.cpp
 )
 
 target_include_directories(mye_social PUBLIC

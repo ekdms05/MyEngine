@@ -267,4 +267,178 @@ void Window::draw(UiDrawContext& ctx) {
     // 자식은 Panel::draw 가 이미 그림(drawChildren) — 중복 방지 위해 여기서 다시 그리지 않음.
 }
 
+// ---------------------------------------------------------------------------
+// Phase 2 위젯: TextInput / ScrollView / ListView
+// ---------------------------------------------------------------------------
+namespace {
+// UTF-8 코드포인트 경계 유틸(커서 이동/삭제가 멀티바이트 문자를 쪼개지 않게).
+bool IsCont(unsigned char c) { return (c & 0xC0) == 0x80; }
+uint32_t PrevCp(const std::string& s, uint32_t i) {
+    if (i == 0 || i > s.size()) return 0;
+    uint32_t j = i - 1;
+    while (j > 0 && IsCont(static_cast<unsigned char>(s[j]))) --j;
+    return j;
+}
+uint32_t NextCp(const std::string& s, uint32_t i) {
+    if (i >= s.size()) return static_cast<uint32_t>(s.size());
+    uint32_t j = i + 1;
+    while (j < s.size() && IsCont(static_cast<unsigned char>(s[j]))) ++j;
+    return j;
+}
+} // namespace
+
+// ---- TextInput ----
+Vec2 TextInput::measure(Vec2 avail) { return Vec2{avail.x, height}; }
+
+bool TextInput::onEvent(UiEvent& e) {
+    switch (e.type) {
+        case UiEventType::FocusGained: focused = true;  return true;
+        case UiEventType::FocusLost:   focused = false; return false;
+        case UiEventType::PointerDown: focused = true;  return true;
+        case UiEventType::TextInput: {
+            uint32_t n = 0;
+            while (n < sizeof(e.utf8) && e.utf8[n] != '\0') ++n;
+            if (n > 0) {
+                if (cursor > text.size()) cursor = static_cast<uint32_t>(text.size());
+                text.insert(text.begin() + cursor, e.utf8, e.utf8 + n);
+                cursor += n;
+            }
+            return true;
+        }
+        case UiEventType::KeyDown:
+            if (e.key == KeyCode::Backspace) {
+                if (cursor > 0) { uint32_t p = PrevCp(text, cursor); text.erase(p, cursor - p); cursor = p; }
+                return true;
+            }
+            if (e.key == KeyCode::Left)  { cursor = PrevCp(text, cursor); return true; }
+            if (e.key == KeyCode::Right) { cursor = NextCp(text, cursor); return true; }
+            if (e.key == KeyCode::Enter) { if (onSubmit) onSubmit(text); return true; }
+            return false;
+        default: return false;
+    }
+}
+
+void TextInput::draw(UiDrawContext& ctx) {
+    ctx.DrawRect(computedRect, background);
+    if (!text.empty()) {
+        text::LayoutParams lp; lp.maxWidth = computedRect.w; lp.wrap = text::WrapMode::None;
+        ctx.DrawText(computedRect, text, style, lp);
+    }
+    if (focused) {
+        // 캐럿(좌측 근사 위치의 얇은 세로선 — 정밀 x는 텍스트 measure 후속).
+        UiRect caret{computedRect.x + 2.0f, computedRect.y + 2.0f, 1.5f, computedRect.h - 4.0f};
+        ctx.DrawRect(caret, textColor);
+    }
+}
+
+// ---- ScrollView ----
+Vec2 ScrollView::measure(Vec2 avail) {
+    for (auto& c : children())
+        if (c->visibility != Visibility::Collapsed) c->measure(avail);
+    return avail;
+}
+
+void ScrollView::arrange(const UiRect& finalRect) {
+    computedRect = finalRect;
+    // 콘텐츠 높이 = 보이는 자식 sizeDelta.y 합(세로 콘텐츠 컬럼).
+    contentHeight = 0.0f;
+    for (auto& c : children())
+        if (c->visibility != Visibility::Collapsed) contentHeight += c->anchors.sizeDelta.y;
+    // 오프셋 클램프.
+    const float maxS = MaxScroll();
+    if (scrollOffset.y < 0.0f) scrollOffset.y = 0.0f;
+    if (scrollOffset.y > maxS) scrollOffset.y = maxS;
+    // 자식 배치(오프셋만큼 위로).
+    float cursor = finalRect.y - scrollOffset.y;
+    for (auto& c : children()) {
+        if (c->visibility == Visibility::Collapsed) continue;
+        UiRect r;
+        r.x = std::round(finalRect.x - scrollOffset.x);
+        r.y = std::round(cursor);
+        r.w = std::round(finalRect.w);
+        r.h = std::round(c->anchors.sizeDelta.y);
+        if (r.h < 0.0f) r.h = 0.0f;
+        c->arrange(r);
+        cursor += c->anchors.sizeDelta.y;
+    }
+}
+
+bool ScrollView::onEvent(UiEvent& e) {
+    if (e.type == UiEventType::Scroll) {
+        scrollOffset.y += e.scrollDelta * wheelSensitivity;
+        const float maxS = MaxScroll();
+        if (scrollOffset.y < 0.0f) scrollOffset.y = 0.0f;
+        if (scrollOffset.y > maxS) scrollOffset.y = maxS;
+        return true;
+    }
+    return false;
+}
+
+void ScrollView::draw(UiDrawContext& ctx) {
+    ctx.PushScissor(computedRect);
+    drawChildren(ctx);
+    ctx.PopScissor();
+}
+
+// ---- ListView ----
+void ListView::addLine(std::string_view utf8) {
+    items.emplace_back(utf8);
+    if (followTail) scrollOffset = MaxScroll();   // 하단 고정(채팅창)
+}
+
+float ListView::MaxScroll() const {
+    const float over = ContentHeight() - computedRect.h;
+    return over > 0.0f ? over : 0.0f;
+}
+
+int ListView::FirstVisible() const {
+    if (lineHeight <= 0.0f) return 0;
+    int f = static_cast<int>(std::floor(scrollOffset / lineHeight));
+    if (f < 0) f = 0;
+    const int n = static_cast<int>(items.size());
+    return f > n ? n : f;
+}
+
+int ListView::LastVisible() const {
+    const int n = static_cast<int>(items.size());
+    if (lineHeight <= 0.0f) return n;
+    int l = static_cast<int>(std::ceil((scrollOffset + computedRect.h) / lineHeight));
+    if (l > n) l = n;
+    const int f = FirstVisible();
+    return l < f ? f : l;
+}
+
+Vec2 ListView::measure(Vec2 avail) { return avail; }
+
+bool ListView::onEvent(UiEvent& e) {
+    if (e.type == UiEventType::Scroll) {
+        scrollOffset += e.scrollDelta * wheelSensitivity;
+        const float maxS = MaxScroll();
+        if (scrollOffset < 0.0f) scrollOffset = 0.0f;
+        if (scrollOffset > maxS) scrollOffset = maxS;
+        return true;
+    }
+    if (e.type == UiEventType::PointerDown || e.type == UiEventType::PointerClick) {
+        if (lineHeight > 0.0f && computedRect.Contains(e.pointerPos)) {
+            const int idx = static_cast<int>(std::floor((e.pointerPos.y - computedRect.y + scrollOffset) / lineHeight));
+            if (idx >= 0 && idx < static_cast<int>(items.size())) { selected = idx; return true; }
+        }
+        return false;
+    }
+    return false;
+}
+
+void ListView::draw(UiDrawContext& ctx) {
+    ctx.PushScissor(computedRect);
+    const int first = FirstVisible(), last = LastVisible();
+    text::LayoutParams lp; lp.maxWidth = computedRect.w; lp.wrap = text::WrapMode::None;
+    for (int i = first; i < last; ++i) {
+        UiRect line{computedRect.x, computedRect.y + static_cast<float>(i) * lineHeight - scrollOffset,
+                    computedRect.w, lineHeight};
+        if (i == selected) ctx.DrawRect(line, selectedColor);
+        ctx.DrawText(line, items[static_cast<size_t>(i)], style, lp);
+    }
+    ctx.PopScissor();
+}
+
 } // namespace mye::ui

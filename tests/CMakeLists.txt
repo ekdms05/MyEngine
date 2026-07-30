@@ -64,6 +64,7 @@ add_executable(mye_tests
     src/EditorWorkflowTests.cpp       # M4-B: 배치·편집·저장·플레이·Undo 엔드투엔드 워크플로우
     src/UiSmokeTests.cpp              # M5-A: 인게임 UI + 텍스트 골격 계약 스모크(헤드리스)
     src/UiLayoutTests.cpp             # M5-A: 앵커·레이아웃·히트테스트·이벤트·직렬화·9slice·BMP 덤프
+    src/UiPhase2Tests.cpp             # M7 렌더 잔여: TextInput/ScrollView/ListView 로직
     src/TextTests.cpp                 # M5-A: 한글 텍스트 렌더링(FreeType 래스터·아틀라스·리치·레이아웃)
     src/UiIntegrationTests.cpp        # M5-A: 통합 스모크 — 한글 래스터+대화창+버튼콜백+줄바꿈 BMP 덤프
     src/TileAnimEditorTests.cpp       # M5-B: 타일맵 스트로크 Undo·오토타일·높이/경사·애니 클립/이벤트·8방향

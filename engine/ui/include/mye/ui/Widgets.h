@@ -136,4 +136,71 @@ private:
     Vec2 m_dragOffset{};
 };
 
+// ---------------------------------------------------------------------------
+// TextInput — 한 줄 텍스트 편집(UTF-8·커서·백스페이스·화살표·Enter 제출). IME 확정 문자 수신.
+//   상태 머신은 순수 로직(GPU 무관) — 이벤트 주입으로 헤드리스 테스트.
+// ---------------------------------------------------------------------------
+class TextInput : public Widget {
+public:
+    MYE_WIDGET(mye::ui::TextInput);
+    std::string     text;                 // UTF-8 확정 버퍼
+    uint32_t        cursor = 0;           // 바이트 오프셋(코드포인트 경계)
+    bool            focused = false;
+    text::TextStyle style{};
+    Color           background = {0.12f, 0.12f, 0.14f, 1.0f};
+    Color           textColor  = Color::White();
+    float           height = 24.0f;
+    std::function<void(const std::string&)> onSubmit;   // Enter 시 호출
+
+    bool onEvent(UiEvent& e) override;
+    void draw(UiDrawContext& ctx) override;
+    Vec2 measure(Vec2 avail) override;
+};
+
+// ---------------------------------------------------------------------------
+// ScrollView — 자식을 세로로 쌓고 스크롤 오프셋만큼 이동, 시저로 클리핑. 휠 스크롤.
+//   자식은 AnchorRect.sizeDelta.y 높이로 세로 배치(콘텐츠 컬럼).
+// ---------------------------------------------------------------------------
+class ScrollView : public Widget {
+public:
+    MYE_WIDGET(mye::ui::ScrollView);
+    Vec2  scrollOffset{0.0f, 0.0f};
+    float wheelSensitivity = 30.0f;
+    float contentHeight = 0.0f;           // arrange 가 계산(자식 높이 합)
+
+    float MaxScroll() const { return contentHeight > computedRect.h ? contentHeight - computedRect.h : 0.0f; }
+
+    bool onEvent(UiEvent& e) override;
+    void draw(UiDrawContext& ctx) override;
+    Vec2 measure(Vec2 avail) override;
+    void arrange(const UiRect& finalRect) override;
+};
+
+// ---------------------------------------------------------------------------
+// ListView — 텍스트 라인 목록(채팅·로그·인벤 리스트). 가상화(보이는 라인만 그림)·선택·하단고정.
+// ---------------------------------------------------------------------------
+class ListView : public Widget {
+public:
+    MYE_WIDGET(mye::ui::ListView);
+    std::vector<std::string> items;
+    float           lineHeight = 24.0f;
+    int             selected = -1;        // 선택 인덱스(-1=없음)
+    float           scrollOffset = 0.0f;  // 세로 스크롤(px)
+    bool            followTail = false;   // 추가 시 하단 자동 스크롤(채팅창)
+    float           wheelSensitivity = 30.0f;
+    text::TextStyle style{};
+    Color           selectedColor = {0.25f, 0.35f, 0.55f, 1.0f};
+
+    void  addLine(std::string_view utf8);
+    float ContentHeight() const { return static_cast<float>(items.size()) * lineHeight; }
+    float MaxScroll() const;
+    // 가상화: 현재 스크롤에서 보이는 라인 [First, Last) 반개구간.
+    int   FirstVisible() const;
+    int   LastVisible() const;
+
+    bool onEvent(UiEvent& e) override;
+    void draw(UiDrawContext& ctx) override;
+    Vec2 measure(Vec2 avail) override;
+};
+
 } // namespace mye::ui

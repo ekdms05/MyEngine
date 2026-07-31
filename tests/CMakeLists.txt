@@ -41,6 +41,7 @@ add_executable(mye_tests
     src/SocialTradeTests.cpp          # M12 경제: 2자 직접거래(escrow·확인·재확인·보존)
     src/SocialAuctionTests.cpp        # M12 경제: 경매장(등록·구매·취소·escrow·보존)
     src/SocialMatchmakingTests.cpp    # M12 콘텐츠: 던전 매칭(역할 구성·FIFO·다중 그룹)
+    src/MmoJobHuntTests.cpp           # 게임: 3직업(검사/마법사/버퍼) 역할 + 파티 사냥 시너지
     src/LiveopsConfigTests.cpp        # M11: 서버 CVar·피처플래그·점검모드·핫리로드
     src/LiveopsGachaTests.cpp         # M11: 확률형 아이템 확률공개·결정론 롤·천장·감사
     src/LiveopsMetricsTests.cpp       # M11: 서버 메트릭(카운터·게이지·타이밍·스냅샷)
@@ -87,7 +88,7 @@ add_executable(mye_tests
     src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_social mye_audio mye_script mye_editor mye_ui mye_runtime)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_social mye_mmo mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).

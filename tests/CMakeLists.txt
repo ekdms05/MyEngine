@@ -43,6 +43,7 @@ add_executable(mye_tests
     src/SocialMatchmakingTests.cpp    # M12 콘텐츠: 던전 매칭(역할 구성·FIFO·다중 그룹)
     src/MmoJobHuntTests.cpp           # 게임: 3직업(검사/마법사/버퍼) 역할 + 파티 사냥 시너지
     src/MmoContentTests.cpp           # 게임 콘텐츠: 몹 카탈로그·드롭 + 사냥터 스폰/리스폰
+    src/MmoHuntSessionTests.cpp       # 게임 캡스톤: 핵심 루프(파티 사냥→성장+보상)
     src/LiveopsConfigTests.cpp        # M11: 서버 CVar·피처플래그·점검모드·핫리로드
     src/LiveopsGachaTests.cpp         # M11: 확률형 아이템 확률공개·결정론 롤·천장·감사
     src/LiveopsMetricsTests.cpp       # M11: 서버 메트릭(카운터·게이지·타이밍·스냅샷)

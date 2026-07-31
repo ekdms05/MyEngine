@@ -5,11 +5,13 @@ add_library(mye_mmo STATIC
     include/mye/mmo/PartyHunt.h
     include/mye/mmo/Monster.h
     include/mye/mmo/HuntingGround.h
+    include/mye/mmo/HuntSession.h
 
     src/Jobs.cpp
     src/PartyHunt.cpp
     src/Monster.cpp
     src/HuntingGround.cpp
+    src/HuntSession.cpp
 )
 
 target_include_directories(mye_mmo PUBLIC

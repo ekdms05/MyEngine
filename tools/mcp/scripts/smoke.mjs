@@ -29,7 +29,7 @@ if (!fs.existsSync(serverJs)) {
 
 const child = spawn(process.execPath, [serverJs], {
   cwd: mcpDir,
-  env: { ...process.env, MYE_ROOT: repoRoot, MYE_BUILD_DIR: "build/dev" },
+  env: { ...process.env, MYE_ROOT: repoRoot, MYE_BUILD_DIR: "build/_smoke_mcp_none" },
   stdio: ["pipe", "pipe", "pipe"],
 });
 
@@ -101,6 +101,8 @@ const EXPECTED_TOOLS = [
   "engine_capture_frame",
   "engine_logs",
   "project_status",
+  "dot_write_sprite",
+  "dot_from_photo",
 ];
 
 async function main() {
@@ -122,7 +124,7 @@ async function main() {
   const tools = list.result?.tools ?? [];
   const names = tools.map((t) => t.name).sort();
   check(
-    `tools/list — 6개 툴 전부 노출`,
+    `tools/list — 8개 툴 전부 노출(Stage A 6 + dot 2)`,
     EXPECTED_TOOLS.every((n) => names.includes(n)) && names.length === EXPECTED_TOOLS.length,
     names.join(", "),
   );

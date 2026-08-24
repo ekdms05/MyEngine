@@ -149,12 +149,23 @@ export function parseCtestOutput(text: string): CtestSummary {
     failedTests: [],
   };
 
+  // 총계 라인 — 두 형식 지원:
+  //   구형/실패 있음: "100% tests passed, 0 tests failed out of 13"
+  //   ctest ≥4.x 실패 0: "100% tests passed out of 13"   ← 실패 없을 때만 축약되어 나온다.
   const totals = /(\d+)% tests passed,\s*(\d+) tests? failed out of (\d+)/.exec(text);
   if (totals !== null) {
     sum.parsed = true;
     sum.failed = Number(totals[2] ?? "0");
     sum.total = Number(totals[3] ?? "0");
     sum.passed = sum.total - sum.failed;
+  } else {
+    const short = /(\d+)% tests passed out of (\d+)/.exec(text);
+    if (short !== null) {
+      sum.parsed = true;
+      sum.total = Number(short[2] ?? "0");
+      sum.failed = Math.max(0, sum.total - Math.round((Number(short[1] ?? "0") / 100) * sum.total));
+      sum.passed = sum.total - sum.failed;
+    }
   }
   const elapsed = /Total Test time \(real\)\s*=\s*([\d.]+)\s*sec/.exec(text);
   if (elapsed !== null) sum.elapsedSec = Number(elapsed[1] ?? "0");

@@ -1,0 +1,181 @@
+{
+  "__version": 1,
+  "entities": [
+    {
+      "__handle": [
+        0,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": -2.200000047683716,
+          "py": -1,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 3,
+          "sy": 3,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 24,
+          "pvy": 24,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "50b719b2-4e63-9356-666b-aa090ae4e1e2",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 1
+    },
+    {
+      "__handle": [
+        1,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": -5.400000095367432,
+          "py": 0.6000000238418579,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 2.799999952316284,
+          "sy": 2.799999952316284,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 24,
+          "pvy": 24,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "11e02b7e-58da-f454-e2c8-a0f30c9879bc",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 2
+    },
+    {
+      "__handle": [
+        2,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": -5.400000095367432,
+          "py": -2.5999999046325684,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 2.799999952316284,
+          "sy": 2.799999952316284,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 24,
+          "pvy": 24,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "31478b7c-f9b8-3658-0bab-a452aa4f7b88",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 3
+    },
+    {
+      "__handle": [
+        3,
+        1
+      ],
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 4.199999809265137,
+          "py": -1.2000000476837158,
+          "pz": 0,
+          "rw": 1,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "sx": 3.5999999046325684,
+          "sy": 3.5999999046325684,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "flipX": false,
+          "flipY": false,
+          "orderInLayer": 0,
+          "pvx": 24,
+          "pvy": 24,
+          "sortLayer": 100,
+          "sprite": {
+            "guid": "4ea9c07b-c40a-9880-88b9-f920bc7a0fc0",
+            "type": "0"
+          },
+          "ta": 1,
+          "tb": 1,
+          "tg": 1,
+          "tr": 1,
+          "uvh": 1,
+          "uvw": 1,
+          "uvx": 0,
+          "uvy": 0,
+          "visible": true
+        }
+      },
+      "id": 4
+    }
+  ]
+}

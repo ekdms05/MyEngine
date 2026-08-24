@@ -4,5 +4,5 @@ add_executable(MyGame
 )
 
 target_link_libraries(MyGame PRIVATE
-    mye_core mye_rhi mye_asset mye_render mye_audio mye_scene
+    mye_core mye_rhi mye_asset mye_render mye_audio mye_scene mye_net
 )

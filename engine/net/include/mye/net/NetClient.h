@@ -33,6 +33,8 @@ public:
     uint32_t LastTick() const { return m_tick; }
     bool GetEntity(uint32_t netId, float& x, float& y) const;
     size_t EntityCount() const { return m_snapshot.size(); }
+    // 최근 수신 스냅샷 읽기 전용 뷰(원격 엔티티 보간 렌더용). 갱신은 Receive() 만.
+    const std::vector<EntitySnap>& LatestSnapshot() const { return m_snapshot; }
 
     // ---- 클라 예측/재조정(CSP) ----
     // 서버와 동일한 이동 속도·월드 경계로 예측/replay 해야 재조정이 수렴한다.

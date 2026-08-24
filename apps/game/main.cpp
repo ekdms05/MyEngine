@@ -5,10 +5,16 @@
 // 렌더러·에셋·오디오를 조립하고, 데이터드리븐 씬을 mye::scene::SceneSerializer 로 로드해 매
 // 프레임 렌더한다. village_demo(하드코딩 C++ 데모)를 데이터드리븐으로 일반화한 것.
 //
+// --connect 네트워크 모드(M9): 권위 서버(MyServer)에 접속해 서버권위 이동 + 클라 예측/재조정 +
+// 원격 플레이어 스냅샷 보간 렌더를 수행한다. 같은 존의 다른 접속자(봇 포함)가 원격 도트로 보인다.
+//
 // CLI:
 //   --project <dir>        프로젝트 루트(assets/ 를 포함). 기본 samples/game_sample.
 //   --scene <vpath|path>   로드할 씬(예: assets://scenes/sample.scene). 기본 위 프로젝트의 sample.
 //   --make-sample          텍스처 하나로 데모 씬을 생성·저장하고 종료(자체 검증 시드).
+//   --connect <ip:port>    네트워크 모드 — 권위 서버에 접속(예: 127.0.0.1:27015).
+//   --account <user>       접속 계정(--connect 시 필요. 서버가 --register 로 등록한 계정).
+//   --password <pass>      계정 비밀번호.
 //   --frames N             N 프레임 후 종료(자동 검증).
 //   --dump <path.bmp>      마지막 프레임(내부 RT)을 BMP 로 덤프.
 //   --headless             창 없이(오프스크린) — 실GPU present 회피.
@@ -35,6 +41,10 @@
 
 #include "mye/audio/AudioEngine.h"
 
+#include "mye/net/NetClient.h"
+#include "mye/net/SnapshotInterpolator.h"
+#include "mye/net/UdpSocket.h"
+
 #include "mye/scene/SceneModule.h"
 #include "mye/scene/SceneSerializer.h"
 #include "mye/scene/SceneReflection.h"
@@ -49,6 +59,7 @@
 #include <shellapi.h>
 
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -58,6 +69,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -94,12 +106,17 @@ struct GameCli {
     std::string projectDir = "samples/game_sample";
     std::string scenePath;          // 비면 <project>/assets/scenes/sample.scene
     bool        makeSample = false;
+    bool        makeHunt = false;   // 3직업 파티 vs 슬라임 사냥 대치 씬 생성
     bool        headless = false;
     Color       ambient{1.0f, 1.0f, 1.0f, 1.0f};   // 전역 앰비언트(데이나이트 틴트) — 스프라이트 tint에 곱
     bool        frameLimit = false;
     uint64_t    maxFrames = 0;
     bool        dumpEnabled = false;
     std::string dumpPath;
+    // 네트워크 모드(M9) — --connect 가 있으면 권위 서버에 접속.
+    std::string connectAddr;        // "ip:port"
+    std::string account;
+    std::string password;
 };
 
 // -----------------------------------------------------------------------------
@@ -193,7 +210,19 @@ public:
             return;
         }
 
+        if (m_cli.makeHunt) {
+            MakeHuntScene();
+            RequestExit();
+            return;
+        }
+
         LoadScene();
+
+        if (m_cli.connectAddr.empty()) {
+            FindPlayer();   // 로컬 모드: 씬의 첫 스프라이트를 조작 대상으로.
+        } else if (SetupNetworking()) {
+            SetupNetEntities();
+        }
 
         ctx.Modules().AddTick(this, UpdatePhase::Update,
                               [this](const TimeStep& s) { Update(s); }, 0);
@@ -202,6 +231,9 @@ public:
     }
 
     void OnShutdown(EngineContext&) override {
+        if (m_net) m_net->Disconnect();
+        m_net.reset();
+        m_netSys.reset();
         m_texHandles.clear();
         m_audio.reset();
         m_hybrid.Shutdown();
@@ -333,11 +365,46 @@ private:
         else   MYE_LOG_ERROR("Game", "샘플 씬 저장 실패: {}", r.GetError().message);
     }
 
+    // 스프라이트 엔티티 하나 생성(48x48 도트, 중심 피벗). 낮은 y일수록 앞(2.5D Y소트).
+    ecs::Entity SpawnSprite(std::string_view vpath, Vec3 pos, float scale) {
+        ecs::World& world = m_scene->World();
+        ecs::Entity e = world.Create();
+        auto* lt = static_cast<scene::LocalTransform*>(
+            world.AddDynamic(e, scene::LocalTransform::kComponentTypeId));
+        lt->position = pos;
+        lt->scale = Vec3{scale, scale, 1.0f};
+        auto* sr = static_cast<scene::SpriteRenderer*>(
+            world.AddDynamic(e, scene::SpriteRenderer::kComponentTypeId));
+        sr->sprite.guid = DeterministicGuid(vpath);
+        sr->pivotPx = Vec2{24.0f, 24.0f};   // 48px 도트의 중심
+        sr->sort.sortLayer = scene::kSortLayerWorldBase;
+        return e;
+    }
+
+    // 사냥 대치 씬: 검사(앞라인)·마법사·버퍼가 왼쪽, 슬라임이 오른쪽. 아기자기한 파티 사냥 한 컷.
+    void MakeHuntScene() {
+        // 파티 — 검사 앞라인(탱), 마법사·버퍼 후열(위/아래로 스태거).
+        SpawnSprite("assets://sprites/swordsman.png", Vec3{-2.2f, -1.0f, 0.0f}, 3.0f);
+        SpawnSprite("assets://sprites/mage.png",      Vec3{-5.4f,  0.6f, 0.0f}, 2.8f);
+        SpawnSprite("assets://sprites/buffer.png",    Vec3{-5.4f, -2.6f, 0.0f}, 2.8f);
+        // 몹 — 오른쪽에서 파티와 대치(살짝 크게).
+        SpawnSprite("assets://sprites/slime.png",     Vec3{ 4.2f, -1.2f, 0.0f}, 3.6f);
+
+        const fs::path out = fs::path(m_assetsDir) / "scenes" / "hunt.scene";
+        std::error_code ec; fs::create_directories(out.parent_path(), ec);
+        scene::SceneSerializer ser;
+        auto r = ser.SaveToFile(m_scene->World(), out.string());
+        if (r) MYE_LOG_INFO("Game", "사냥 씬 저장: {}", out.string());
+        else   MYE_LOG_ERROR("Game", "사냥 씬 저장 실패: {}", r.GetError().message);
+    }
+
     void Update(const TimeStep& step) {
         const float dt = static_cast<float>(step.deltaSeconds > 0 ? step.deltaSeconds : (1.0 / 60.0));
 
-        // 플레이어 이동(입력) — 데모 조작. LocalTransform 직접 이동(루트라 local==world).
-        if (!m_player.IsNull()) {
+        if (m_net) {
+            NetUpdate(dt);
+        } else if (!m_player.IsNull()) {
+            // 플레이어 이동(입력) — 데모 조작. LocalTransform 직접 이동(루트라 local==world).
             if (auto* lt = m_scene->World().TryGet<scene::LocalTransform>(m_player)) {
                 const Vec2 mv = MoveInput();
                 lt->position.x += mv.x * m_moveSpeed * dt;
@@ -403,6 +470,141 @@ private:
         m_dumped = true;
     }
 
+    // -------------------------------------------------------------------------
+    // 네트워크 모드(M9) — 권위 서버 접속: 클라 예측/재조정 + 원격 엔티티 보간.
+    // -------------------------------------------------------------------------
+    static uint64_t SteadyMs() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // "ip:port" 파싱(포트 없으면 27015).
+    static bool ParseEndpoint(std::string_view text, net::Endpoint& out) {
+        const size_t colon = text.rfind(':');
+        std::string_view ip = text;
+        uint16_t port = 27015;
+        if (colon != std::string_view::npos) {
+            ip = text.substr(0, colon);
+            port = static_cast<uint16_t>(std::strtoul(std::string(text.substr(colon + 1)).c_str(), nullptr, 10));
+        }
+        auto ep = net::Endpoint::Parse(ip, port);
+        if (!ep) return false;
+        out = ep.Value();
+        return true;
+    }
+
+    bool SetupNetworking() {
+        if (!ParseEndpoint(m_cli.connectAddr, m_serverEp)) {
+            MYE_LOG_ERROR("Game", "--connect 주소 파싱 실패: '{}'", m_cli.connectAddr);
+            return false;
+        }
+        m_netSys = std::make_unique<net::NetSubsystem>();
+        if (!m_netSys->ok) { MYE_LOG_ERROR("Game", "Winsock 초기화 실패"); return false; }
+
+        m_net = std::make_unique<net::NetClient>();
+        if (!m_net->Open(0)) { MYE_LOG_ERROR("Game", "UDP 소켓 열기 실패"); return false; }
+        // 서버 이동 파라미터와 동일하게(예측 수렴 조건) — NetServer 기본값과 일치.
+        m_net->SetMoveSpeed(m_moveSpeed);
+        m_net->Connect(m_serverEp, m_cli.account, m_cli.password);
+        MYE_LOG_INFO("Game", "넷 모드 — {} 접속 시도(account='{}')", m_serverEp.ToString(), m_cli.account);
+        return true;
+    }
+
+    // 로드된 텍스처 중 첫 사용 가능한 스프라이트 vpath 탐색(프로젝트 에셋에 따라 다름).
+    std::string FirstLoadedSprite(std::initializer_list<std::string_view> candidates) const {
+        for (std::string_view v : candidates)
+            if (m_resolvers.textures.count(AssetResolvers::Key(DeterministicGuid(v)))) return std::string(v);
+        return "assets://sprites/hero.png";   // 최후 폴백(없으면 스프라이트 미표시 — 치명적 아님)
+    }
+
+    void SetupNetEntities() {
+        // 자기 캐릭터(로컬 예측으로 구동). 씬 플레이어와 무관하게 별도 스폰.
+        const std::string self = FirstLoadedSprite({
+            "assets://sprites/swordsman.png", "assets://sprites/hero.png"});
+        m_player = SpawnSprite(self, Vec3{0.0f, 0.0f, 0.0f}, 2.6f);
+
+        // 원격 플레이어 표시용 스프라이트(다른 직업/색으로 구분).
+        m_remoteSprite = FirstLoadedSprite({
+            "assets://sprites/mage.png", "assets://sprites/buffer.png",
+            "assets://sprites/slime.png", "assets://sprites/hero.png"});
+    }
+
+    // netId → 안정적인 구분 틴트(원격 플레이어 식별 보조).
+    static Color RemoteTint(uint32_t netId) {
+        switch (netId % 3) {
+        case 0:  return Color{1.00f, 0.72f, 0.72f, 1.0f};   // 붉은 기
+        case 1:  return Color{0.72f, 0.86f, 1.00f, 1.0f};   // 푸른 기
+        default: return Color{0.78f, 1.00f, 0.78f, 1.0f};   // 푸른빛 녹색
+        }
+    }
+
+    void NetUpdate(float dt) {
+        // 핸드셰이크 — UDP 손실 대비 Connect 재전송(0.5s 간격, 수락될 때까지).
+        if (!m_net->Connected()) {
+            m_connectRetry += dt;
+            if (m_connectRetry >= 0.5f) {
+                m_connectRetry = 0.0f;
+                m_net->Connect(m_serverEp, m_cli.account, m_cli.password);
+            }
+        }
+        m_net->Receive();
+
+        // 입력 송신 + 클라 예측 — 고정 60Hz 스텝(프레임레이트와 분리, 폭주 가드 8스텝).
+        m_netAccum += dt;
+        const float fixedDt = 1.0f / 60.0f;
+        for (int guard = 0; m_netAccum >= fixedDt && guard < 8; ++guard) {
+            const Vec2 mv = MoveInput();
+            m_net->SendInput(m_inputSeq++, mv.x, mv.y, fixedDt);
+            m_netAccum -= fixedDt;
+        }
+
+        // 자기 캐릭터 위치 = 예측(스냅샷 수신 시 NetClient 내부에서 권위 재조정).
+        float px = 0.0f, py = 0.0f;
+        if (m_net->GetPredicted(px, py)) {
+            if (auto* lt = m_scene->World().TryGet<scene::LocalTransform>(m_player)) {
+                lt->position.x = px;
+                lt->position.y = py;
+                lt->dirty = true;
+            }
+            m_camera.FollowDeadzone(Vec2{px, py}, Vec2{2.5f, 1.5f});
+        }
+
+        // 원격 엔티티 — 틱 변경 시에만 보간 버퍼에 적재, 표시 시각(now−지연)으로 샘플.
+        if (m_net->LastTick() != m_lastPushedTick) {
+            m_lastPushedTick = m_net->LastTick();
+            m_interp.Push(SteadyMs(), m_net->LatestSnapshot());
+        }
+        m_interp.Sample(SteadyMs() - m_interp.InterpolationDelayMs(), m_net->Id(), m_remoteSnaps);
+        SyncRemoteEntities();
+    }
+
+    // 보간 결과 → 원격 스프라이트 엔티티 스폰/제거/위치 갱신.
+    void SyncRemoteEntities() {
+        ecs::World& world = m_scene->World();
+        std::unordered_set<uint32_t> live;
+        for (const net::EntitySnap& s : m_remoteSnaps) {
+            live.insert(s.netId);
+            auto it = m_remoteEnts.find(s.netId);
+            if (it == m_remoteEnts.end()) {
+                const ecs::Entity e = SpawnSprite(m_remoteSprite, Vec3{s.x, s.y, 0.0f}, 2.4f);
+                if (auto* sr = world.TryGet<scene::SpriteRenderer>(e)) sr->tint = RemoteTint(s.netId);
+                it = m_remoteEnts.emplace(s.netId, e).first;
+                MYE_LOG_INFO("Game", "원격 플레이어 #{} 스폰", s.netId);
+            }
+            if (auto* lt = world.TryGet<scene::LocalTransform>(it->second)) {
+                lt->position.x = s.x;
+                lt->position.y = s.y;
+                lt->dirty = true;
+            }
+        }
+        for (auto it = m_remoteEnts.begin(); it != m_remoteEnts.end();) {
+            if (live.count(it->first)) { ++it; continue; }
+            world.Destroy(it->second);
+            MYE_LOG_INFO("Game", "원격 플레이어 #{} 제거", it->first);
+            it = m_remoteEnts.erase(it);
+        }
+    }
+
     EngineContext*      m_ctx = nullptr;
     scene::SceneModule* m_scene = nullptr;
     InputState*         m_input = nullptr;
@@ -424,6 +626,19 @@ private:
     scene::RenderProxyList     m_proxies;
     std::string m_assetsDir;
 
+    // 네트워크 모드(M9) — 권위 서버 접속 상태.
+    std::unique_ptr<net::NetSubsystem>        m_netSys;   // Winsock RAII(넷 모드만 생성)
+    std::unique_ptr<net::NetClient>           m_net;
+    net::SnapshotInterpolator                 m_interp;
+    std::vector<net::EntitySnap>              m_remoteSnaps;   // 보간 샘플 결과(재사용 버퍼)
+    std::unordered_map<uint32_t, ecs::Entity> m_remoteEnts;    // netId → 원격 스프라이트
+    net::Endpoint                             m_serverEp{};
+    std::string                               m_remoteSprite;
+    uint32_t                                  m_inputSeq = 1;
+    uint32_t                                  m_lastPushedTick = 0;
+    float                                     m_netAccum = 0.0f;
+    float                                     m_connectRetry = 0.0f;
+
     bool     m_hasWindow = false;
     bool     m_ready = false;
     uint64_t m_frameCount = 0;
@@ -441,6 +656,10 @@ public:
             if (a[i] == "--project" && i + 1 < a.size()) m_cli.projectDir = a[++i];
             else if (a[i] == "--scene" && i + 1 < a.size()) m_cli.scenePath = a[++i];
             else if (a[i] == "--make-sample") m_cli.makeSample = true;
+            else if (a[i] == "--make-hunt") m_cli.makeHunt = true;
+            else if (a[i] == "--connect" && i + 1 < a.size()) m_cli.connectAddr = a[++i];
+            else if (a[i] == "--account" && i + 1 < a.size()) m_cli.account = a[++i];
+            else if (a[i] == "--password" && i + 1 < a.size()) m_cli.password = a[++i];
             else if (a[i] == "--headless") m_cli.headless = true;
             else if (a[i] == "--night") m_cli.ambient = Color{0.42f, 0.50f, 0.85f, 1.0f};   // 밤(푸른 앰비언트)
             else if (a[i] == "--ambient" && i + 3 < a.size()) {

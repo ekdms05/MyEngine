@@ -157,19 +157,27 @@
 
 ---
 
-### 실제 구현 진척 (2026-07, Windows-native 경로)
+### 실제 구현 진척 (2026-08 갱신, Windows-native 경로)
 
 > 아래 마일스톤 상세는 **이상적 목표(Postgres/Redis·Linux 헤드리스)**를 담는다. 실제 진행은
 > 사용자 결정에 따라 **윈도우 네이티브·외부 DB 없이 파일 기반**으로 선(先)구현하고, 스케일용
-> Postgres/Redis·컨테이너는 M13에서 승격한다. **M7~M11 선구현 완료(2026-07, 테스트 402/402)**. 현재 상태:
+> Postgres/Redis·컨테이너는 M13에서 승격한다. **M7~M12 선구현 완료(2026-08, 테스트 498/498)**. 현재 상태:
 
 | MS | 상태 | 실제 구현(파일 기반/Winsock) | 차이(이상 대비) |
 |---|---|---|---|
 | M7 | **Strong** | `apps/game` 데이터드리븐 런타임·SceneSerializer 승격·씬 로딩 | 타일 UV·2D 라이팅·파티클 일부 잔여 |
 | M8 | **Strong** | `engine/gameplay`: 스탯·전투·인벤(원자적)·루트·경험치·스킬·상태이상·퀘·경제·제작 (전부 유닛테스트) | AI/스폰·ContentDB·Lua 배선 잔여 |
-| M9 | **Strong** | `engine/net`: BitStream·양자화·델타·**Winsock UDP**·권위 서버·스냅샷 복제·**인증 커넥트**·안티치트 경계클램프 (127.0.0.1 루프백 검증) | 클라 예측/재조정·AoI·암호화 잔여 / Linux 대신 Winsock |
+| M9 | **Strong** | `engine/net`: BitStream·양자화·델타·**Winsock UDP**·권위 서버·스냅샷 복제·**인증 커넥트**·안티치트 경계클램프·**클라 예측/재조정**·**SnapshotInterpolator 원격 보간**·**`apps/game --connect` 클라 배선**·**`apps/server --bots` 배회 봇** (루프백+렌더 덤프 검증) | AoI·암호화 잔여 / Linux 대신 Winsock |
 | M10 | **Strong** | `engine/persist`: AccountStore(로그인/세션/밴)·CharacterStore·**ItemLedger(보존·dupe차단·무결성)**·PersistenceService 파사드(백업/롤백)·MyServer 배선 | **JSON 파일 원장**(Postgres 대신)·Redis 캐시 미도입 → M13 승격 |
 | M11 | **Strong** | `engine/liveops`: ServerConfig(CVar/피처플래그/점검모드/핫리로드)·**GachaTable(확률공개·천장·감사)**·MetricsRegistry(텔레메트리)·안티치트·계정밴·세이브백업/롤백·우아한종료·**배포 패키징 스크립트** | .mpak zstd/서명·런처/CDN·컨테이너 블루그린 잔여 → M13 승격 |
+| M12 | **Strong** | `game/social`: 로그인큐·친구/차단/프레즌스·채팅라우팅·파티·길드·길드은행·우편·직접거래·경매장·매치메이킹(전부 원장 escrow 경유, 유닛테스트) + `game/mmo`: 3직업 파티 사냥 수직슬라이스(HuntSession) + DLL 플러그인 로더 | 온보딩/FTUE 문서·앱 배선 잔여(현재 테스트만 소비) — M12 앱 통합은 후속 |
+
+**M9 클라이언트 배선(2026-08)**: `MyGame --connect 127.0.0.1:27015 --account u --password p` 로
+권위 서버에 접속 — 자기 캐릭터는 클라 예측(CSP)으로 즉시 조작되고 스냅샷 수신 시 재조정(replay),
+원격 플레이어는 SnapshotInterpolator(100ms 보간 버퍼)로 부드럽게 보간 렌더된다.
+`MyServer --bots N` 이 서버 안에서 실제 NetClient 경로(계정 자동 등록→인증→입력)로 배회 봇을
+띄우므로 혼자서도 원격 플레이어가 보인다. 검증: 서버(봇 3)+클라 루프백 → BMP 덤프에 틴트된
+원격 스프라이트 확인, 서버 metrics clients/players 정합.
 
 **M10 게이트 달성**: 계정 등록→로그인(세션)→캐릭터 생성/월드상태 저장→아이템 거래(원장 보존)→
 재부팅 시 진행 보존, 동시 이동은 원장 잔고 검증으로 dupe 0. 서버가 등록 계정에 대해 자격증명 인증.
@@ -177,7 +185,7 @@
 **M11 게이트 달성**: 서버 config.json 으로 드랍률/점검모드 무중단 조정(핫리로드), 안티치트가 월드 경계
 이탈·범위초과 입력 차단, GM 밴이 로그인·세션 차단, 확률형 아이템 확률공개 JSON·천장·감사 로그,
 자동저장 백업 회전으로 롤백(PIT), metrics.json 관찰성, Ctrl+C 우아한 종료, 배포 번들(exe+pak+config) 생성.
-현재 테스트 **402/402** 통과.
+현재 테스트 **498/498** 통과.
 
 ---
 

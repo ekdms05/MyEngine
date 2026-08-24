@@ -8,6 +8,7 @@ add_library(mye_net STATIC
     include/mye/net/Protocol.h
     include/mye/net/NetServer.h
     include/mye/net/NetClient.h
+    include/mye/net/SnapshotInterpolator.h
 
     src/BitStream.cpp
     src/Quantization.cpp
@@ -15,6 +16,7 @@ add_library(mye_net STATIC
     src/UdpSocket.cpp
     src/NetServer.cpp
     src/NetClient.cpp
+    src/SnapshotInterpolator.cpp
 )
 
 target_include_directories(mye_net PUBLIC

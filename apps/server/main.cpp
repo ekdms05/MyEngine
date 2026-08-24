@@ -10,12 +10,14 @@
 //   --ticks <n>       n틱 후 종료(검증용; 기본 무한)
 //   --data <dir>      세이브 디렉터리(기본 server_data)
 //   --autosave <sec>  자동 저장 주기 초(기본 60; 0=끄기)
+//   --bots <n>        배회 봇 n개 내장(계정 자동 등록 — 혼자서도 원격 플레이어가 보임)
 //   --register u p    계정 등록 후 저장하고 종료(관리 도구)
 //   --make-char u name 계정 u 에 캐릭터 생성 후 저장하고 종료(관리 도구)
 //   --ban <user> [r]  계정 차단 후 저장하고 종료(GM), --unban <user> 차단 해제
 // 운영: <data>/config.json 으로 CVar/피처플래그/점검모드 핫리로드, <data>/metrics.json 관찰성.
 // Ctrl+C·콘솔 닫기 시 우아한 종료(세이브·백업·메트릭 기록 후 정지).
 #include "mye/gameserver/NetGameServer.h"
+#include "mye/net/NetClient.h"
 #include "mye/net/UdpSocket.h"
 #include "mye/persist/PersistenceService.h"
 #include "mye/liveops/ServerConfig.h"
@@ -27,10 +29,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <windows.h>   // SetConsoleCtrlHandler (우아한 종료)
 
@@ -49,6 +54,17 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD type) {
 
 using namespace mye;
 
+// 배회 봇(--bots) — 서버 프로세스 안의 가짜 클라. 진짜 NetClient 로 접속·인증·입력
+// 송신까지 실제 클라이언트 경로를 그대로 통과한다(클라 로직 검증 + M13 부하테스트 씨앗).
+// 움직임: 천천히 회전하는 단위 방향 → 원점 주변 원형 배회(봇마다 위상 차이).
+struct ServerBot {
+    net::NetClient cli;
+    std::string user;
+    std::string pass;
+    double     phase = 0.0;
+    uint32_t   seq = 1;
+};
+
 int main(int argc, char** argv) {
     uint16_t port = 27015;
     int tickrate = 20;
@@ -60,6 +76,7 @@ int main(int argc, char** argv) {
     std::string banUser, unbanUser, banReason;
     std::string charUser, charName;
     bool doMakeChar = false;
+    int botCount = 0;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -68,6 +85,7 @@ int main(int argc, char** argv) {
         else if (a == "--ticks" && i + 1 < argc) maxTicks = std::atoll(argv[++i]);
         else if (a == "--data" && i + 1 < argc) dataDir = argv[++i];
         else if (a == "--autosave" && i + 1 < argc) autosaveSec = std::atoi(argv[++i]);
+        else if (a == "--bots" && i + 1 < argc) botCount = std::atoi(argv[++i]);
         else if (a == "--register" && i + 2 < argc) { regUser = argv[++i]; regPass = argv[++i]; doRegister = true; }
         else if (a == "--make-char" && i + 2 < argc) { charUser = argv[++i]; charName = argv[++i]; doMakeChar = true; }
         else if (a == "--ban" && i + 1 < argc) { banUser = argv[++i]; if (i + 1 < argc && argv[i+1][0] != '-') banReason = argv[++i]; }
@@ -146,6 +164,34 @@ int main(int argc, char** argv) {
                  server.Port(), tickrate, dataDir, persistence.Accounts().Count(),
                  config.MaintenanceMode() ? "ON" : "off");
 
+    // ---- 배회 봇(--bots) — 계정/캐릭터 자동 등록 후 루프백 접속(실제 클라 경로) ----
+    std::vector<std::unique_ptr<ServerBot>> bots;
+    if (botCount > 0) {
+        bool touched = false;
+        for (int i = 0; i < botCount; ++i) {
+            auto bot = std::make_unique<ServerBot>();
+            bot->user = "bot" + std::to_string(i + 1);
+            bot->pass = "botpass";
+            bot->phase = i * 1.7;   // 봇마다 다른 위상 → 경로 분산
+            if (!persistence.Accounts().FindByName(bot->user)) {
+                (void)persistence.Accounts().Register(bot->user, bot->pass);   // 중복(동시 부팅)은 무시
+                touched = true;
+            }
+            if (const persist::Account* acc = persistence.Accounts().FindByName(bot->user)) {
+                if (persistence.Characters().ListByAccount(acc->id).empty()) {
+                    (void)persistence.Characters().Create(acc->id, bot->user);
+                    touched = true;
+                }
+            }
+            if (bot->cli.Open(0)) {
+                bot->cli.Connect(net::Endpoint::Loopback(server.Port()), bot->user, bot->pass);
+                bots.push_back(std::move(bot));
+            }
+        }
+        if (touched) (void)persistence.SaveAll(dataDir);   // 봇 계정 영속(재부팅 시 재등록 방지)
+        MYE_LOG_INFO("Server", "봇 {}개 기동(배회 시작)", bots.size());
+    }
+
     const float dt = 1.0f / static_cast<float>(tickrate);
     const auto tickDuration = std::chrono::microseconds(1'000'000 / tickrate);
     const long long autosaveTicks = autosaveSec > 0 ? static_cast<long long>(autosaveSec) * tickrate : 0;
@@ -167,6 +213,17 @@ int main(int argc, char** argv) {
 
         server.Tick(dt);   // 수신→세션 diff→권위 시뮬→위치 동기→브로드캐스트
         ++tick;
+
+        // 봇 틱 — 스냅샷 수신 + 배회 입력(회전하는 단위 방향 → 원형 경로, 재접속 재시도).
+        for (auto& b : bots) {
+            b->cli.Receive();
+            if (!b->cli.Connected() && tick % tickrate == 0)
+                b->cli.Connect(net::Endpoint::Loopback(server.Port()), b->user, b->pass);
+            const double ang = b->phase + static_cast<double>(tick) * dt * 0.35;
+            b->cli.SendInput(b->seq++,
+                             static_cast<float>(std::cos(ang)),
+                             static_cast<float>(std::sin(ang)), dt);
+        }
 
         // 메트릭 수집: 틱 처리 시간(ms)·접속 클라·게임 세션·누적 틱·킥.
         const auto processed = std::chrono::steady_clock::now() - start;
@@ -202,6 +259,7 @@ int main(int argc, char** argv) {
     }
 
     // ---- 종료 시 저장(백업 회전) + 메트릭 스냅샷 ----
+    for (auto& b : bots) b->cli.Disconnect();
     if (auto s = persistence.SaveAllWithBackup(dataDir, static_cast<int>(config.GetInt("max_backups", 10))); !s)
         MYE_LOG_WARN("Server", "종료 저장 실패: {}", s.GetError().message);
     writeMetrics();

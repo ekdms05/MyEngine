@@ -58,6 +58,7 @@ void UiDrawContext::DrawSprite(const UiRect& rect, const UiSprite& sprite, Color
     }
 
     render::SpriteDraw d{};
+    d.yDown = true;
     d.position = Vec2{dst.x, dst.y};
     d.size     = Vec2{dst.w, dst.h};
     d.uv       = uv;

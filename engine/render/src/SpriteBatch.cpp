@@ -33,13 +33,13 @@ struct VsIn {
     float2 pos   : POSITION;    // 월드(unit)
     float2 uv    : TEXCOORD0;
     float4 color : COLOR0;      // straight 틴트 rgba
-    float  flash : TEXCOORD1;   // 히트 플래시 강도 0..1
+    float2 effects : TEXCOORD1; // x=히트 플래시, y=R8 알파 마스크
 };
 struct VsOut {
     float4 pos   : SV_Position;
     float2 uv    : TEXCOORD0;
     float4 color : COLOR0;
-    float  flash : TEXCOORD1;
+    float2 effects : TEXCOORD1;
 };
 
 VsOut vs_main(VsIn i) {
@@ -47,17 +47,18 @@ VsOut vs_main(VsIn i) {
     o.pos   = mul(float4(i.pos, 0.0, 1.0), gViewProj);
     o.uv    = i.uv;
     o.color = i.color;
-    o.flash = i.flash;
+    o.effects = i.effects;
     return o;
 }
 
 float4 ps_main(VsOut i) : SV_Target {
     float4 texel = gTex.Sample(gSampler, i.uv);   // premultiplied RGBA
+    if (i.effects.y > 0.5) texel = texel.rrrr;
     // straight 틴트 → premultiplied 곱: rgb *= tint.rgb*tint.a, a *= tint.a
     float4 tint = i.color;
     float4 outc = texel * float4(tint.rgb * tint.a, tint.a);
     // 히트 플래시: 알파에 비례한 화이트로 블렌드(premultiplied 유지, 알파 보존)
-    outc.rgb = lerp(outc.rgb, outc.a.xxx, saturate(i.flash));
+    outc.rgb = lerp(outc.rgb, outc.a.xxx, saturate(i.effects.x));
     return outc;
 }
 )hlsl";
@@ -132,10 +133,7 @@ void SpriteBatch::Init(rhi::IDevice& device, rhi::Format colorFormat, bool depth
     fbDesc.debugName = "sprite.frameBindGroup";
     m_frameBindGroup = device.CreateBindGroup(fbDesc);
 
-    // 파이프라인 정점 레이아웃. flash는 스칼라이나 R32Float 포맷이 없어 TEXCOORD1을
-    // RG32Float(x=flash, y=패딩)로 선언한다(Vertex.flash 뒤 4바이트 여유 필요 없음 —
-    // 마지막 필드이지만 stride는 sizeof(Vertex)라 다음 정점 첫 4바이트를 y로 읽지 않도록
-    // 아래에서 Vertex에 flashPad를 두어 안전하게 처리).
+    // TEXCOORD1의 두 성분에 플래시와 알파 마스크 모드를 전달한다.
     const rhi::VertexAttribute attrs2[] = {
         {"POSITION", 0, rhi::Format::RG32Float,   offsetof(Vertex, x),     0},
         {"TEXCOORD", 0, rhi::Format::RG32Float,   offsetof(Vertex, u),     0},
@@ -279,8 +277,9 @@ void SpriteBatch::End(rhi::ICommandContext& ctx) {
         const float left   = s.position.x - s.pivot.x * sizeUnit.x;
         const float right  = left + sizeUnit.x;
         // 월드 +Y 위: 상단(top)은 pivot 위쪽 (pivot.y*h). pivot.y=1(하단)이면 top=position.y+h.
-        const float top    = s.position.y + s.pivot.y * sizeUnit.y;
-        const float bottom = top - sizeUnit.y;
+        const float direction = s.yDown ? 1.0f : -1.0f;
+        const float top    = s.position.y - direction * s.pivot.y * sizeUnit.y;
+        const float bottom = top + direction * sizeUnit.y;
 
         const Color c = s.tint;
         const float f = s.flashAmount;
@@ -289,6 +288,7 @@ void SpriteBatch::End(rhi::ICommandContext& ctx) {
             out.x = px; out.y = py; out.u = pu; out.v = pv;
             out.r = c.r; out.g = c.g; out.b = c.b; out.a = c.a;
             out.flash = f;
+            out.alphaMask = s.alphaMask ? 1.0f : 0.0f;
         };
         // 두 삼각형(좌상,좌하,우상 / 우상,좌하,우하). v0=상단(top 월드), v1=하단(bottom).
         put(vtx[0], left,  top,    u0, v0);

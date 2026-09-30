@@ -8,7 +8,7 @@
 ## 목표와 책임
 
 - **RHI(Render Hardware Interface)**: DX11을 1차 백엔드로 하되, DX12/Vulkan 백엔드를 *코드 구조 변경 없이 추가*할 수 있는 그래픽 API 추상화를 제공한다.
-- **하이브리드 렌더 파이프라인**: 2D 레이어(테일즈위버식 도트 맵)와 3D 지오메트리(삽입 오브젝트, HD-2D 월드)가 **하나의 깊이 도메인**에서 올바르게 정렬·가림 처리되는 렌더러를 제공한다. 이것이 본 모듈의 핵심 난제이자 차별점이다.
+- **하이브리드 렌더 파이프라인**: 2D 레이어(2.5D 픽셀아트 RPG 도트 맵)와 3D 지오메트리(삽입 오브젝트, Billboard3D 월드)가 **하나의 깊이 도메인**에서 올바르게 정렬·가림 처리되는 렌더러를 제공한다. 이것이 본 모듈의 핵심 난제이자 차별점이다.
 - **픽셀아트 특화**: 픽셀 퍼펙트 저해상도 렌더링, 정수배 업스케일, 팔레트 스왑·아웃라인 등 도트 게임 관용 효과를 1급 기능으로 지원한다.
 - **확장성**: 커스텀 렌더 패스·머티리얼·포스트 이펙트를 플러그인이 등록할 수 있는 구조. ImGui 렌더러 백엔드도 RHI 위에 자체 구현한다.
 - 비책임: 씬 그래프·컬링용 공간 자료구조(03), 에셋 로딩·셰이더 오프라인 컴파일 파이프라인(04), 인게임 UI 위젯 로직(06), 윈도우 생성(01).
@@ -24,7 +24,7 @@
 | 핸드니스 | **왼손 좌표계(Left-handed)** | DX11 관행. DirectXMath `*LH` 계열과 일치 |
 | 월드 업 축 | **+Y** | |
 | 월드 전방 | **+Z** ("북쪽") | 카메라 기본 시선 방향 = +Z |
-| 지면 평면 (3D/HD2D) | **XZ 평면** | 캐릭터 발이 닿는 면 |
+| 지면 평면 (3D/Billboard3D) | **XZ 평면** | 캐릭터 발이 닿는 면 |
 | 월드 단위 | **1.0 unit = 1 m** (3D 기준) | 물리·오디오 감쇠 등 전 모듈 공통 |
 | PPU (Pixels Per Unit) | **기본 48** (프로젝트 설정으로 변경 가능) | **1 unit = 1타일 = 48px** (48×48px 타일 = 1×1 unit) |
 | 내부 해상도 (PixelPerfect) | **기본 960×540 (16:9)** | 정수배 래더: 1080p ×2, 4K ×4. 비정수배는 sharp-bilinear (아래 해상도 모드) |
@@ -39,7 +39,7 @@
 
 하나의 축 규약 안에서, 씬(Scene)은 둘 중 하나의 **공간 프리셋**을 선택한다. (씬별 설정, 03이 씬 에셋에 저장)
 
-| | `Screen2D` (테일즈위버식) | `HD2D` (옥토패스식) |
+| | `Screen2D` (2.5D 픽셀아트 RPG) | `Billboard3D` (빌보드 기반 3D 구성) |
 |---|---|---|
 | 콘텐츠 배치 평면 | **XY 평면** (X=화면 오른쪽, +Y=화면 위) | XZ 지면 + Y 높이 |
 | 카메라 | 직교, 시선 +Z (정면 응시) | 원근(저 FOV) 또는 직교, 피치 약 -30°~-60° |
@@ -223,7 +223,7 @@ enum class PassStage : uint16_t {     // 고정 스테이지 슬롯. 플러그�
 
 struct PassContext {
     rhi::ICommandContext& cmd;
-    const ViewInfo&       view;        // 카메라 행렬·뷰포트·프리셋(Screen2D/HD2D)·픽셀스냅 정보
+    const ViewInfo&       view;        // 카메라 행렬·뷰포트·프리셋(Screen2D/Billboard3D)·픽셀스냅 정보
     const RenderWorld&    world;       // 프록시 스냅샷
     TransientRTPool&      rtPool;      // 프레임 일시 RT 할당 (선언 기반)
 };
@@ -253,7 +253,7 @@ public:
 
 ```cpp
 struct SpriteProxy {
-    Mat3x4    transform;        // 현재 고정스텝의 월드 변환 (Screen2D: XY 평면 / HD2D: 빌보드 원점)
+    Mat3x4    transform;        // 현재 고정스텝의 월드 변환 (Screen2D: XY 평면 / Billboard3D: 빌보드 원점)
     Mat3x4    prevTransform;    // 직전 고정스텝의 월드 변환 — alpha 보간용 (아래 보간 계약)
     RectF     atlasRect;        TextureRef atlas;
     Vec2      pivotPx;          // 스프라이트 픽셀 기준 피벗(보통 발밑)
@@ -321,7 +321,7 @@ depth = LayerBand(sortLayer).base
 |---|---|---|
 | `AnchorFlat` | 오브젝트 전체를 anchorSortY의 flat depth로 | 소형 오브젝트(항아리·의자). 스프라이트와 동일 취급 |
 | `AnchorBiased` (기본) | `depth = anchorDepth + (viewZ − anchorViewZ) × ε` | **대형 오브젝트(석상·풍차·마차)**. 전체 정렬은 앵커(발밑 라인) 기준으로 Y-sort 도메인에 참여하되, 오브젝트 *내부* 픽셀 간에는 실제 지오메트리 깊이의 축소본(ε)을 더해 자기 앞뒤가 유지됨 |
-| `Geometry` | 실제 카메라 깊이 | HD2D 프리셋, 또는 Screen2D에서 밴드 전체를 점유하는 배경 구조물 |
+| `Geometry` | 실제 카메라 깊이 | Billboard3D 프리셋, 또는 Screen2D에서 밴드 전체를 점유하는 배경 구조물 |
 
 **구체 사례 — 큰 3D 석상 뒤로 캐릭터가 돌아 들어감**: 석상(AnchorBiased)의 앵커는 석상 발밑 라인. 캐릭터가 석상 발밑보다 위(sortKeyY가 큼, 화면상 더 뒤)로 가면 캐릭터 깊이 > 석상 앵커 깊이 → 깊이 테스트로 석상의 해당 픽셀들에 가려진다. 석상 *앞*(아래)에 서면 반대. 석상의 튀어나온 팔 부분과 캐릭터가 겹치는 미세 케이스는 ε 바이어스가 근사 처리한다. ε는 레이어 밴드 폭 대비 충분히 작게 잡아 인접 오브젝트 정렬을 침범하지 않게 한다.
 
@@ -337,7 +337,7 @@ depth = LayerBand(sortLayer).base
    - 플레이어가 해당 오브젝트 뒤/아래로 진입하면(트리거 판정은 03 책임 — 플레이어 위치·FloorLevel 공급) 렌더러가 페이드 계수를 받아 **디더링 컷아웃 페이드**(스크린도어 패턴으로 clip 임계 조절)로 사라지게 한다. cutout·premultiplied 정책과 정합 — 뎁스 기록·정렬을 깨지 않으면서 반투명처럼 보이게 하는 관용 기법.
    - 페이드 대상 지정·트리거 조건(플레이어 위치, FloorLevel, 볼륨)은 03 소유. 02는 프록시의 페이드 계수(`flags` + per-instance 파라미터)를 소비해 렌더만 담당한다.
 
-### HD2D 프리셋
+### Billboard3D 프리셋
 
 전부 실제 깊이(`Geometry`). Y-sort 비활성. 스프라이트는 업라이트 빌보드로 지면에 "서고", 깊이 버퍼가 모든 가림을 처리한다. 빌보드가 경사·지면에 파고드는 문제는 (a) 빌보드 하단 피벗 + 약간의 카메라 방향 기울임, (b) 뎁스 바이어스 옵션으로 완화. Transparent만 카메라 거리 back-to-front CPU 정렬.
 
@@ -357,7 +357,7 @@ flowchart LR
     I --> J[Overlay/ImGui]
 ```
 
-(*는 확장 단계. HD2D 프리셋은 D가 실깊이 불투명·컷아웃 패스로 단순화되고 F가 3D 라이팅으로 대체/병행된다.)
+(*는 확장 단계. Billboard3D 프리셋은 D가 실깊이 불투명·컷아웃 패스로 단순화되고 F가 3D 라이팅으로 대체/병행된다.)
 
 ---
 
@@ -406,21 +406,21 @@ struct CameraDesc {
     Projection projection;        // Orthographic | Perspective
     float orthoHeightUnits;       // 직교: 세로 뷰 크기 (내부해상도/PPU와 연동)
     float fovY, nearZ, farZ;      // 원근
-    CameraPreset preset;          // Screen2D | TopDown | HD2D_45 | HD2D_60 | Custom
+    CameraPreset preset;          // Screen2D | TopDown | Billboard3D_45 | Billboard3D_60 | Custom
     bool  pixelSnap;              // PixelPerfect 모드에서 픽셀 스냅 카메라
     RenderTargetRef target;       // null = 화면 (에디터 뷰포트는 오프스크린 RT 지정)
     int   priority;  LayerMask cullingMask;  RectF viewportRect;
 };
 ```
 
-- **프리셋**: `Screen2D`(직교 정면), `HD2D_45/60`(피치 고정 + 요 스냅 회전 옵션 — 2.5D 고정각), `Custom`(자유). 프리셋은 깊이 함수 선택(위 정렬 전략)과 결합된다.
+- **프리셋**: `Screen2D`(직교 정면), `Billboard3D_45/60`(피치 고정 + 요 스냅 회전 옵션 — 2.5D 고정각), `Custom`(자유). 프리셋은 깊이 함수 선택(위 정렬 전략)과 결합된다.
 - **Screen↔World 변환 API (본 모듈 소유·정본)**: PixelPerfect 모드는 내부 RT + 정수배 업스케일 + 레터박스 + 픽셀 스냅 + 서브픽셀 UV 오프셋을 거치므로 변환이 자명하지 않다. 카메라/`ViewInfo`에 다음을 제공한다.
 
 ```cpp
 // ViewInfo 멤버 — 내부 RT 스케일·레터박스 오프셋·서브픽셀 오프셋·카메라 스택(뷰포트 렉트)을 모두 반영
 Vec2  WorldToScreen(Vec3 world) const;                  // → 네이티브 해상도 px (좌상단 원점)
-Ray   ScreenToWorldRay(Vec2 nativePx) const;            // 원근(HD2D) 일반형
-Vec3  ScreenToWorld(Vec2 nativePx, float planeCoord = 0) const; // 직교(Screen2D): XY 평면 / HD2D: XZ 지면 교점
+Ray   ScreenToWorldRay(Vec2 nativePx) const;            // 원근(Billboard3D) 일반형
+Vec3  ScreenToWorld(Vec2 nativePx, float planeCoord = 0) const; // 직교(Screen2D): XY 평면 / Billboard3D: XZ 지면 교점
 ```
 
   사용처: (a) 런타임 마우스 타게팅(NPC 클릭·툴팁), (b) 06 월드 앵커 UI(머리 위 HP바·이름표·데미지 숫자 — 네이티브 해상도 UI가 월드 좌표 추적), (c) 07 에디터 뷰포트 픽킹·기즈모. 06·07은 이 API를 인용만 하고 자체 변환을 구현하지 않는다. Lua에도 노출한다(확장 포인트 4).
@@ -445,7 +445,7 @@ Vec3  ScreenToWorld(Vec2 nativePx, float planeCoord = 0) const; // 직교(Screen
 ### 3D 라이팅
 
 - MVP: **포워드** — 디렉셔널 1 + 드로우당 포인트 라이트 최대 4개. 확장: Forward+(클러스터드, DX12 시점), 섀도맵(디렉셔널 CSM 1단부터).
-- **HD2D에서 스프라이트 조명**: 빌보드 스프라이트가 머티리얼 플래그로 3D 라이팅에 opt-in — 고정 노멀(카메라 지향 + 상향 틸트) 또는 작가 제작 노멀맵 사용. 옥토패스식 "빛 받는 도트 캐릭터"를 위한 핵심 장치.
+- **Billboard3D에서 스프라이트 조명**: 빌보드 스프라이트가 머티리얼 플래그로 3D 라이팅에 opt-in — 고정 노멀(카메라 지향 + 상향 틸트) 또는 작가 제작 노멀맵 사용. 빌보드 기반 3D 구성 "빛 받는 도트 캐릭터"를 위한 핵심 장치.
 - 두 파이프라인 모두 동일한 `Light` 컴포넌트(03)에서 추출하며, 2D/3D 적용 여부는 라이트의 플래그로 구분.
 
 ---
@@ -484,19 +484,25 @@ Vec3  ScreenToWorld(Vec2 nativePx, float planeCoord = 0) const; // 직교(Screen
 | **M1 2D 기초** | 스프라이트 배처·아틀라스, Screen2D 카메라, PixelPerfect 내부 RT + 정수배 업스케일 + 픽셀 스냅(06 정수 픽셀 스냅 요건), 고정스텝 alpha 보간(보간→스냅 순서), sortLayer·orderInLayer + CPU Y-sort(깊이 트릭 없이), 히트 플래시·틴트, `WorldToScreen`/`ScreenToWorld` |
 | **M2 하이브리드 핵심** | **단일 깊이 도메인**: cutout 뎁스 기록, flat depth 스프라이트, 레이어 밴드, 타일 청크 렌더(경사 램프 깊이), 3D 메시 포워드 렌더 + `AnchorBiased` 깊이 모드, 다리 위/아래 검증 씬, **엔티티 ID 버퍼 패스 + 1px 리드백(07 P0 픽킹)**, GPU 타임스탬프 쿼리(07 프로파일러) |
 | **M3 표현력** | Lighting2D(라이트 버퍼(포인트/스팟)·데이/나이트 앰비언트), 포스트 체인(컬러 그레이딩 LUT·비네트), 실루엣(SilhouetteFX)·오버헤드 디더 페이드, 팔레트 스왑·아웃라인, Transparent 패스·파티클 렌더 지원, 창별 스왑체인+ImGui 멀티 뷰포트(07 P1), 셰이더 임포터 연동(04)·핫 리로드·퍼뮤테이션 키 |
-| **M4 HD2D·3D 강화** | HD2D 프리셋(빌보드·실깊이), 디렉셔널 섀도맵, 스프라이트 3D 라이팅 opt-in, 노멀맵 2D 라이팅(MRT), sharp-bilinear 업스케일, 카메라 스택 완성(분할·RT 카메라), 라이트맵 소비(07 베이크 워크플로우 마일스톤 확정과 짝지어 착수) |
+| **M4 Billboard3D·3D 강화** | Billboard3D 프리셋(빌보드·실깊이), 디렉셔널 섀도맵, 스프라이트 3D 라이팅 opt-in, 노멀맵 2D 라이팅(MRT), sharp-bilinear 업스케일, 카메라 스택 완성(분할·RT 카메라), 라이트맵 소비(07 베이크 워크플로우 마일스톤 확정과 짝지어 착수) |
 | **M5 차세대** | DX12 백엔드 + `DeclareResources` 기반 프레임 그래프 활성화, 멀티스레드 커맨드 기록, Forward+, DXC/SM6·SPIR-V 경로(Vulkan 준비), 바인드리스 검토 |
 
 ---
 
 ## 오픈 이슈
 
+### 현재 UI 출력 계약 (2026-10-01)
+
+월드는 +Y 위를 유지한다. 화면 UI/Text는 좌상단 원점·+Y 아래이므로 `SpriteDraw::yDown`을 명시한다. 폰트 아틀라스의 R8은 컬러 RGBA가 아니라 coverage다. `alphaMask`로 R을 premultiplied 흰색/알파에 사용한다. UI 패널·텍스트는 같은 sortY에서 제출 순서를 유지하고 월드 깊이와 혼용하지 않는다. `TextSpriteBatchR8CoverageAndScreenOrientation`은 실제 DX11 출력의 투명·반투명·불투명 픽셀과 방향을 검사한다.
+
+마우스 좌표 변환은 `PixelPerfectTarget::ComputeLayout`의 정수 배율·destRect와 동일해야 한다. 설계의 sharp-bilinear 옵션은 현재 구현 완료로 취급하지 않는다.
+
 1. **PPU 기본값·내부 해상도**: ✅ 확정(2026-07): PPU 48, 타일 48×48px(1 unit = 1타일 = 48px), 내부 해상도 960×540(16:9), 권장 캐릭터 스프라이트 높이 64~96px. 정수배 래더는 1080p ×2 / 4K ×4.
 2. **비정수배 스케일 정책**: ✅ 확정(2026-07): 정수배 우선, 비정수배 해상도(1440p 등)는 sharp-bilinear 업스케일로 전체 화면 채움 — 유저 설정으로 순수 정수배+레터박스도 선택 가능.
 3. **Screen2D 삽입 3D의 연출 규약**: 3D 모델을 아트의 페이크 원근에 맞춰 기울여 배치(모델 측 대응) vs 전용 페이크-피치 투영 행렬 제공(엔진 측 대응) — 아트 파이프라인과 함께 결정.
 4. **반투명 대형 스프라이트의 하이브리드 정렬**: Transparent 분류 시 flat depth 정밀도가 떨어지는 케이스(반투명 유령이 다리 아래 통과 등)의 허용 수준.
 5. **2D 노멀맵 라이팅 도입 시점**: MRT 비용과 아트 제작 부담(노멀맵 작가 작업) 대비 효용 — M3에 당길지 M4 유지할지.
-6. **HDR·블룸**: 도트 감성 유지 관점에선 불필요하나 HD2D 연출(옥토패스식 블룸·DoF)에는 사실상 필수 — 내부 RT를 처음부터 RGBA16F로 갈지.
+6. **HDR·블룸**: 도트 감성 유지 관점에선 불필요하나 Billboard3D 연출(빌보드 기반 3D 구성 블룸·DoF)에는 사실상 필수 — 내부 RT를 처음부터 RGBA16F로 갈지.
 7. **Reversed-Z**: 3D 원근 깊이 정밀도 개선 옵션. Screen2D 깊이 밴드 인코딩과의 상호작용 정리 필요.
 8. **셰이더 언어 장기 전략**: HLSL + DXC→SPIR-V 유지 vs Slang 도입(퍼뮤테이션·모듈화 우수, 의존성 추가).
 9. **렌더 스레드 분리 시점**: RenderWorld 더블 버퍼링 구조는 준비하되, 실제 스레드 분리를 M5 이전에 할 이유가 생기는지(프레임 타임 데이터 확보 후 판단).

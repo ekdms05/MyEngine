@@ -1,5 +1,18 @@
 # MMORPG 03. 영속성 · 계정 · 월드 상태 (Persistence · Accounts · World State)
 
+> 현재 구현과 설계 후보 구분 (2026-10-01): 아래 Postgres/Redis/분산 서버 토폴로지는 장기 설계 자료이며 현재 실행 경로가 아니다. 현재 MyServer는 루프백 UDP + 단일 작성자 JSON 스냅샷을 사용한다. 실제 상태·우선순위는 [현재 구조](../13-architecture-and-features.md)와 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
+## 현재 파일 저장 계약
+
+- version=1 `state.json`에 accounts/characters/ledger를 함께 저장한다. `.tmp`에 쓰고 FlushFileBuffers 후 MoveFileExW로 게시한다. 한 작성자, 64 MiB 상한. DB/WAL·정전 무손실 보장은 구현하지 않았다.
+- 로드는 후보 전체를 검증한 뒤 교체하고 실패하면 기존 메모리를 보존한다. 완전한 구형 accounts.json/characters.json/ledger.json은 읽고 다음 저장부터 변환한다. 일부 파일만 있는 저장과 빈 백업은 거부한다. state.json이 있으면 구형 파일보다 우선한다.
+- 활성 세션은 GameServer::Save/FlushSessions와 정상 Stop/Leave에서 기록에 반영한다. 서버 앱은 초기 로드·관리 저장·종료 저장 오류를 성공으로 처리하지 않는다. 자동 저장 실패는 로그를 남기며 다음 저장 전까지 디스크는 이전 세대다.
+- 신규 비밀번호는 Windows CNG PBKDF2-SHA256 600,000회·난수 salt로 저장한다. 구형 해시는 성공 로그인에서 새 형식으로 이관된다. 이관 결과를 디스크에 유지하려면 다음 저장이 성공해야 한다. 토큰은 난수·24시간 만료이나 UDP 패킷 인증에 아직 연결되지 않았다.
+- 64비트 정수 ID·골드는 JSON 내부에서도 정수로 보관한다. 스택은 합산하고 원장 전용 아이템도 대조한다. 인벤토리 후보와 원장 결과를 함께 확인해 실패 시 인벤토리를 반영하지 않는다.
+
+실제 앱 재현: `powershell -File tools/verify-foundation.ps1 -Configuration Debug` (프로젝트 루트). 실행마다 새 build 하위 데이터를 사용한다. 백업 복원/실패 보존·구형 비밀번호 이관·정수 경계는 기존 C++ 테스트에 있다. 전송 보안·동시 운영·멱등 요청은 미완성이다.
+
+
 > 소유 도메인: **계정/인증**, **캐릭터/인벤토리/장비/은행/우편**, **월드상태(퀘스트·플래그·스폰·소유권)**,
 > **경제(재화·거래로그·경매·세금)**, **저장소 선택(Postgres + Redis + Object Storage)**, **스키마·마이그레이션·버저닝**,
 > **샤딩·파티셔닝·리전**, **트랜잭션·원자성·멱등성(아이템 복사·롤백 방지)**, **백업·복구·PITR**,
@@ -7,8 +20,8 @@
 > **리플렉션 직렬화(JsonArchive)와 DB 매핑**.
 >
 > 이 문서는 "권위 있는 진실(source of truth)이 어디에 어떻게 저장되고, 어떻게 절대 유실·복제되지 않는가"를 정한다.
-> 게임플레이 규칙(전투·스탯 공식)은 [06 게임플레이](06-gameplay-systems.md), 그 데이터가 오가는 방식은
-> [02 넷코드](02-netcode-replication.md)가 소유하며, 이 문서는 **그 데이터가 프로세스가 죽어도 살아남는 계층**을 소유한다.
+> 게임플레이 규칙(전투·스탯 공식)은 [06 게임플레이](04-gameplay-systems.md), 그 데이터가 오가는 방식은
+> [02 넷코드](02-netcode-server.md)가 소유하며, 이 문서는 **그 데이터가 프로세스가 죽어도 살아남는 계층**을 소유한다.
 
 ---
 
@@ -26,20 +39,20 @@
 
 | In (이 문서 소유) | Out (참조만) |
 |---|---|
-| 계정·세션·인증(가입/로그인/OAuth/2FA/토큰/차단) | 실시간 이동·전투 복제 → [02 넷코드](02-netcode-replication.md) |
-| 캐릭터 CRUD·슬롯·외형·스탯 영속 | 전투/스탯 **공식**·인벤 UI → [06 게임플레이](06-gameplay-systems.md) |
-| 인벤/장비/은행/창고/우편 **저장 스키마·원자적 이동** | 채팅 전송·소셜 그래프 → [07 소셜](07-social-chat.md) |
-| 월드상태(퀘스트 진행·플래그·스폰·소유권) 영속 | 필드 스폰 **AI 동작** → [06 게임플레이](06-gameplay-systems.md) |
-| 경제(재화 원장·거래로그·경매·세금) | 경매 UI·가격 표시 → [06 게임플레이](06-gameplay-systems.md) |
-| 저장소 토폴로지(RDB/캐시/오브젝트) | 배포·오토스케일 → [09 운영·인프라](09-liveops-infra.md) |
-| 스키마·마이그레이션·버저닝·롤백 | 치트 탐지 로직 → [08 보안·안티치트](08-security-anticheat.md) |
-| 트랜잭션·멱등성·중복방지 | 서버 프레임 루프 → [01 서버 아키텍처](01-server-architecture.md) |
-| 백업·PITR·저장주기·저널 | 로그 수집 파이프라인 → [09 운영·인프라](09-liveops-infra.md) |
-| 감사로그(economy audit) | GM 툴 UI → [09 운영·인프라](09-liveops-infra.md) |
-| 캐릭터 이전·서버통합(merge) | 매치메이킹/방 → [01 서버 아키텍처](01-server-architecture.md) |
-| GDPR 삭제/추출·청소년보호 시간제 | 결제(PG 연동) → [09 운영·인프라](09-liveops-infra.md) |
+| 계정·세션·인증(가입/로그인/OAuth/2FA/토큰/차단) | 실시간 이동·전투 복제 → [02 넷코드](02-netcode-server.md) |
+| 캐릭터 CRUD·슬롯·외형·스탯 영속 | 전투/스탯 **공식**·인벤 UI → [06 게임플레이](04-gameplay-systems.md) |
+| 인벤/장비/은행/창고/우편 **저장 스키마·원자적 이동** | 채팅 전송·소셜 그래프 → [07 소셜](04-gameplay-systems.md) |
+| 월드상태(퀘스트 진행·플래그·스폰·소유권) 영속 | 필드 스폰 **AI 동작** → [06 게임플레이](04-gameplay-systems.md) |
+| 경제(재화 원장·거래로그·경매·세금) | 경매 UI·가격 표시 → [06 게임플레이](04-gameplay-systems.md) |
+| 저장소 토폴로지(RDB/캐시/오브젝트) | 배포·오토스케일 → [09 운영·인프라](09-liveops-security.md) |
+| 스키마·마이그레이션·버저닝·롤백 | 치트 탐지 로직 → [08 보안·안티치트](09-liveops-security.md) |
+| 트랜잭션·멱등성·중복방지 | 서버 프레임 루프 → 01 서버 아키텍처 (별도 문서 미작성) |
+| 백업·PITR·저장주기·저널 | 로그 수집 파이프라인 → [09 운영·인프라](09-liveops-security.md) |
+| 감사로그(economy audit) | GM 툴 UI → [09 운영·인프라](09-liveops-security.md) |
+| 캐릭터 이전·서버통합(merge) | 매치메이킹/방 → 01 서버 아키텍처 (별도 문서 미작성) |
+| GDPR 삭제/추출·청소년보호 시간제 | 결제(PG 연동) → [09 운영·인프라](09-liveops-security.md) |
 
-> **주의**: MyEngine은 오늘 클라이언트/에디터 엔진이다. 이 문서의 대부분은 `server/` 아래 **신규 배포 단위**를 정의한다. 기존 엔진과의 접점은 (1) `engine/reflect`(직렬화 재사용), (2) `engine/runtime`의 `SaveSystem`(싱글플레이 폴백·오프라인 모드), (3) `engine/scene`의 컴포넌트 타입(서버가 헤드리스로 같은 ECS를 돌림 — [01](01-server-architecture.md))이다.
+> **주의**: MyEngine은 오늘 클라이언트/에디터 엔진이다. 이 문서의 대부분은 `server/` 아래 **신규 배포 단위**를 정의한다. 기존 엔진과의 접점은 (1) `engine/reflect`(직렬화 재사용), (2) `engine/runtime`의 `SaveSystem`(싱글플레이 폴백·오프라인 모드), (3) `engine/scene`의 컴포넌트 타입(서버가 헤드리스로 같은 ECS를 돌림 — 01 (별도 문서 미작성))이다.
 
 ---
 
@@ -140,9 +153,9 @@ snowflake = [ 42bit: ms since epoch ] [ 6bit: shardId ] [ 6bit: nodeId ] [ 10bit
 | 재접속·토큰 갱신·다중 기기 정책 | P0 | 신규 | Redis `session:{accountId}` 단일화(중복 로그인 축출) |
 | OAuth(구글/애플/스팀) 연동 | P1 | 신규 | `server/account/oauth` 어댑터. provider→account 링크 테이블 |
 | 2FA(TOTP/이메일 OTP) | P1 | 신규 | `accounts.totp_secret`(암호화). 로그인 2단계 챌린지 |
-| 비밀번호 재설정·이메일 검증 | P1 | 신규 | 만료 토큰 + 이메일 발송([09](09-liveops-infra.md) 연동) |
+| 비밀번호 재설정·이메일 검증 | P1 | 신규 | 만료 토큰 + 이메일 발송([09](09-liveops-security.md) 연동) |
 | 계정 차단/정지(ban·suspend·shadowban) | P0 | 신규 | `accounts.status` + 만료. 게이트웨이가 로그인 거부 |
-| 로그인 속도제한·브루트포스 방어 | P0 | 부분 | Redis rate-limit. [08 보안](08-security-anticheat.md)과 공유 |
+| 로그인 속도제한·브루트포스 방어 | P0 | 부분 | Redis rate-limit. [08 보안](09-liveops-security.md)과 공유 |
 | 디바이스/IP 지문·이상 로그인 알림 | P2 | 신규 | 로그인 감사 + 이상 위치 탐지 |
 
 ### 3.2 캐릭터
@@ -152,11 +165,11 @@ snowflake = [ 42bit: ms since epoch ] [ 6bit: shardId ] [ 6bit: nodeId ] [ 10bit
 | 캐릭터 생성(외형·직업·이름 유니크) | P0 | 신규 | `server/character`. 이름 예약어·비속어 필터. 이름 UNIQUE(리전) |
 | 캐릭터 슬롯(계정당 N개·확장 상품) | P0 | 신규 | `accounts.char_slots` + 생성 시 카운트 체크 |
 | 캐릭터 삭제(소프트 삭제 + 유예기간) | P0 | 신규 | `characters.deleted_at`. 유예 내 복구 가능 |
-| 캐릭터 로드(로그인 → World 스폰) | P0 | 부분 | 서버 헤드리스 ECS([01](01-server-architecture.md)) + `JsonArchive` 역직렬화 재사용 |
+| 캐릭터 로드(로그인 → World 스폰) | P0 | 부분 | 서버 헤드리스 ECS(01 (별도 문서 미작성)) + `JsonArchive` 역직렬화 재사용 |
 | 캐릭터 스탯·경험치·외형 영속 | P0 | 부분 | `Reflect<T>` 컴포넌트 → JSONB. write-behind |
 | 캐릭터 저장(주기+이벤트 트리거) | P0 | 부분 | `SaveSystem`의 참여자 패턴을 서버 `IPersistParticipant`로 이식 |
 | 캐릭터 이름 변경(상품·쿨다운) | P2 | 신규 | 이름 유니크 재검사 + 감사로그 |
-| 캐릭터 외형 커스터마이즈 저장 | P1 | 신규 | 외형 JSONB. [06](06-gameplay-systems.md) 렌더 연동 |
+| 캐릭터 외형 커스터마이즈 저장 | P1 | 신규 | 외형 JSONB. [06](04-gameplay-systems.md) 렌더 연동 |
 
 ### 3.3 인벤토리 · 장비 · 은행 · 창고 · 우편
 
@@ -170,7 +183,7 @@ snowflake = [ 42bit: ms since epoch ] [ 6bit: shardId ] [ 6bit: nodeId ] [ 10bit
 | 우편(첨부 아이템·골드·만료·수령) | P1 | 신규 | `mail` + 첨부는 `items.container=mail:{id}`. 만료 큐(Redis) |
 | 아이템 강화/개조/귀속(bind) | P2 | 신규 | `items.data` JSONB(강화수치)·`bound_to` |
 | 아이템 이동 원자성(복사 방지) | P0 | 신규 | 단일 트랜잭션 + `rowVersion` 낙관락 + 멱등키 |
-| 컨테이너 용량·무게 제약 | P1 | 신규 | 서버 검증(클라 신뢰 금지, [08](08-security-anticheat.md)) |
+| 컨테이너 용량·무게 제약 | P1 | 신규 | 서버 검증(클라 신뢰 금지, [08](09-liveops-security.md)) |
 
 ### 3.4 월드 상태
 
@@ -178,9 +191,9 @@ snowflake = [ 42bit: ms since epoch ] [ 6bit: shardId ] [ 6bit: nodeId ] [ 10bit
 |---|---|---|---|
 | 퀘스트 진행·완료·반복 쿨다운 | P0 | 신규 | `world_state`(character 스코프) JSONB + 정형 인덱스 |
 | 전역 플래그·이벤트 상태(월드 보스 처치 등) | P1 | 신규 | `world_flags`(shard 스코프). Redis 캐시 |
-| 스폰 소유권·채집물·필드 오브젝트 상태 | P1 | 신규 | 대부분 휘발(RAM)·중요분만 영속. [06](06-gameplay-systems.md) |
+| 스폰 소유권·채집물·필드 오브젝트 상태 | P1 | 신규 | 대부분 휘발(RAM)·중요분만 영속. [06](04-gameplay-systems.md) |
 | 하우징/필드 소유권·임대 만료 | P3 | 신규 | `ownership`(만료 큐). 오브젝트 스토리지에 레이아웃 |
-| 존/맵 인스턴스 상태(던전 진행) | P2 | 부분 | 인스턴스는 휘발, 결과만 영속. [01](01-server-architecture.md) 인스턴싱 |
+| 존/맵 인스턴스 상태(던전 진행) | P2 | 부분 | 인스턴스는 휘발, 결과만 영속. 01 (별도 문서 미작성) 인스턴싱 |
 | 캐릭터 위치 복원(로그아웃 지점) | P0 | 부분 | `characters.mapId/x/y/floor` write-behind |
 
 ### 3.5 경제 (Economy)
@@ -194,7 +207,7 @@ snowflake = [ 42bit: ms since epoch ] [ 6bit: shardId ] [ 6bit: nodeId ] [ 10bit
 | NPC 상점(구매/판매/재고·시세) | P1 | 신규 | 트랜잭션. 재고 shard 스코프 |
 | 세금·수수료·재화 sink | P1 | 신규 | 인플레 제어. 원장에 sink 엔트리 |
 | 재화/아이템 상한·오버플로우 방지 | P0 | 신규 | int64 + 서버 검증. 음수/오버플로 거부 |
-| 경제 지표·인플레 모니터링 | P2 | 신규 | 원장 집계 → [09](09-liveops-infra.md) 대시보드 |
+| 경제 지표·인플레 모니터링 | P2 | 신규 | 원장 집계 → [09](09-liveops-security.md) 대시보드 |
 
 ### 3.6 저장소 · 스키마 · 신뢰성
 
@@ -207,7 +220,7 @@ snowflake = [ 42bit: ms since epoch ] [ 6bit: shardId ] [ 6bit: nodeId ] [ 10bit
 | write-behind 더티 큐·저널 | P0 | 부분 | `SaveSystem` 원자 쓰기 개념 확장. WAL 스타일 저널 |
 | Redis 캐시·분산락·만료큐 | P0 | 신규 | `server/cache` hiredis 래퍼 |
 | 백업·PITR·WAL 아카이브 | P0 | 신규 | pg_basebackup + WAL → S3. 복구 리허설 |
-| 감사로그(economy/admin action) | P0 | 신규 | `audit_log` append-only + [09](09-liveops-infra.md) 수집 |
+| 감사로그(economy/admin action) | P0 | 신규 | `audit_log` append-only + [09](09-liveops-security.md) 수집 |
 | 샤딩·파티셔닝·리전 | P2 | 신규 | shardId 라우팅. char/account 파티션 |
 | 캐릭터 이전·서버 통합(merge) | P3 | 신규 | export→import 파이프라인. 이름 충돌 해소 |
 | GDPR 삭제·데이터 추출 | P1 | 신규 | 삭제 요청 큐 + 추출 dump(S3). 익명화 |
@@ -407,7 +420,7 @@ Expected<void, Error> MoveItem(pg::Txn& tx, ItemMove m) {
 | 거래 확정 중 한쪽 로그아웃/크래시 | 아이템 이중 지급 or 유실 | 단일 트랜잭션 확정(양쪽 확정 후 원자 커밋), 미확정 시 escrow에서 원위치 롤백 |
 | 우편 첨부 수령 도중 서버 크래시 | 우편·인벤 양쪽 존재(복사) | 첨부는 `items` 이동 UPDATE 1건. `mail.claimed`도 같은 트랜잭션 |
 | 같은 "장착" 요청 네트워크 재시도 2회 | 아이템 2개 생성 | **멱등키**(요청 UUID) — 두 번째는 무효 |
-| 존 이동 중 저장 전 크래시 | 출발/도착 양쪽에 캐릭터·아이템 | 핸드오프는 [01](01-server-architecture.md) 프로토콜: DB 커밋 완료 후에만 도착 존이 소유권 획득 |
+| 존 이동 중 저장 전 크래시 | 출발/도착 양쪽에 캐릭터·아이템 | 핸드오프는 01 (별도 문서 미작성) 프로토콜: DB 커밋 완료 후에만 도착 존이 소유권 획득 |
 | 두 존 서버가 같은 캐릭터 동시 로드 | 병행 소유(복사 근원) | Redis `lock:char:{id}` SET NX — 단일 소유권. 락 없으면 로드 거부 |
 | 낙관적 락 충돌(동시 두 이동) | 마지막 쓰기 승리로 한 이동 소실 | `row_version` 불일치 → 실패 반환 → 상위가 재시도 |
 | 스택 분할/합치기 경합 | stack_count 계산 오류 | `SELECT FOR UPDATE` 행 잠금 + CHECK 제약 |
@@ -422,7 +435,7 @@ Expected<void, Error> MoveItem(pg::Txn& tx, ItemMove m) {
 - **이중 지급**: 원장 append + 멱등키. 같은 quest 보상은 `idem_key=quest:{qid}:{charId}`로 1회만.
 - **거래 취소 롤백**: escrow 상태(`container=trade_escrow`)로 격리 → 취소 시 원소유자 복귀 UPDATE.
 - **경매 동시 입찰**: Redis 락으로 입찰 직렬화 + Postgres `cur_bid` 낙관락. 진 입찰자 골드는 escrow에서 자동 환불.
-- **인플레 모니터링**: 원장 집계로 faucet(생성)/sink(소각) 균형 추적 → [09](09-liveops-infra.md).
+- **인플레 모니터링**: 원장 집계로 faucet(생성)/sink(소각) 균형 추적 → [09](09-liveops-security.md).
 
 ### 5.3 계정·세션·인증
 
@@ -430,7 +443,7 @@ Expected<void, Error> MoveItem(pg::Txn& tx, ItemMove m) {
 |---|---|
 | 중복 로그인(같은 계정 두 기기) | Redis `session:{acc}` 단일화 → 기존 세션 축출(kick) 또는 신규 거부(정책) |
 | 세션 토큰 탈취 | 짧은 access TTL + refresh 회전(rotation) + 기기지문 불일치 시 재인증 |
-| 로그인 브루트포스 | Redis rate-limit + 계정 잠금(status_until) + [08](08-security-anticheat.md) |
+| 로그인 브루트포스 | Redis rate-limit + 계정 잠금(status_until) + [08](09-liveops-security.md) |
 | 밴 우회(재가입) | 기기/결제 지문 + 이메일 도메인 규칙. 밴은 계정+지문 스코프 |
 | 2FA 분실 | 백업 코드 + 이메일 검증 복구 경로 |
 | OAuth provider 장애 | 자체 비번 폴백(링크된 경우). provider 링크는 다대일 금지 |
@@ -554,13 +567,13 @@ engine/runtime/  (기존 — 오프라인/싱글 폴백)
 
 ### 8.1 MMORPG 도메인 문서 (`docs/mmorpg/`)
 
-- [01 서버 아키텍처](01-server-architecture.md) — 존/게이트웨이 토폴로지, 헤드리스 ECS, 존 핸드오프(캐릭터 소유권 이전 프로토콜의 상대편).
-- [02 넷코드·복제](02-netcode-replication.md) — 이 문서가 저장하는 상태가 클라에 복제되는 경로. snapshot/delta의 source.
-- [04 클라이언트 부트·데이터드리븐](04-client-bootstrap.md) — 클라 로그인 흐름·오프라인 폴백(SaveSystem)과의 경계.
-- [06 게임플레이 시스템](06-gameplay-systems.md) — 스탯/인벤/퀘스트/경제의 **런타임 규칙**(이 문서는 그 데이터의 영속을 소유).
-- [07 소셜·채팅·길드](07-social-chat.md) — 길드/친구 그래프 영속(이 문서 스키마 확장), 채팅 로그 보존.
-- [08 보안·안티치트](08-security-anticheat.md) — 서버 권위 검증·rate-limit·이상거래 탐지(이 문서 트랜잭션과 공유).
-- [09 운영·인프라](09-liveops-infra.md) — 배포·백업 운용·GM 툴·로그 수집·결제(PG)·경제 대시보드.
+- 01 서버 아키텍처 (별도 문서 미작성) — 존/게이트웨이 토폴로지, 헤드리스 ECS, 존 핸드오프(캐릭터 소유권 이전 프로토콜의 상대편).
+- [02 넷코드·복제](02-netcode-server.md) — 이 문서가 저장하는 상태가 클라에 복제되는 경로. snapshot/delta의 source.
+- [04 클라이언트 부트·데이터드리븐](01-client-rendering.md) — 클라 로그인 흐름·오프라인 폴백(SaveSystem)과의 경계.
+- [06 게임플레이 시스템](04-gameplay-systems.md) — 스탯/인벤/퀘스트/경제의 **런타임 규칙**(이 문서는 그 데이터의 영속을 소유).
+- [07 소셜·채팅·길드](04-gameplay-systems.md) — 길드/친구 그래프 영속(이 문서 스키마 확장), 채팅 로그 보존.
+- [08 보안·안티치트](09-liveops-security.md) — 서버 권위 검증·rate-limit·이상거래 탐지(이 문서 트랜잭션과 공유).
+- [09 운영·인프라](09-liveops-security.md) — 배포·백업 운용·GM 툴·로그 수집·결제(PG)·경제 대시보드.
 
 ### 8.2 기존 엔진 설계 문서 (`docs/`)
 

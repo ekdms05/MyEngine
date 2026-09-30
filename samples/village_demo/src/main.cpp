@@ -1,6 +1,6 @@
 // village_demo — M6-B 로드맵 최종 수직 슬라이스 데모 (docs/00 §7 M6 완료 기준)
 //
-// 테일즈위버풍 마을: 도트 캐릭터가 하이브리드 맵(지면·길·다리·개울·경사 언덕·3D 프랍)을 걸어다니고
+// 2.5D 픽셀아트 RPG풍 마을: 도트 캐릭터가 하이브리드 맵(지면·길·다리·개울·경사 언덕·3D 프랍)을 걸어다니고
 //   NPC(촌장·상인·경비병)와 한글로 대화하는 수직 슬라이스. 실행 파일 하나로 처음부터 끝까지 시연.
 //   맵·대사·게임 로직 수정이 엔진 재빌드 없이(Lua 핫리로드) 이뤄진다.
 //
@@ -1360,12 +1360,13 @@ private:
 
     void SubmitQuad(float x, float y, float w, float h, Color c) {
         render::SpriteDraw d;
+        d.yDown = true;
         d.position = {x, y};
         d.size = {w, h};
         d.pivot = {0.0f, 0.0f};   // 좌상단 기준
         d.texture = WhiteTexture();
         d.tint = c;
-        d.sortY = y;
+        d.sortY = 0;
         m_spriteBatch.Submit(d);
     }
 

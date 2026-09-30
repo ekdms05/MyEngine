@@ -4,8 +4,21 @@
 #include "mye/core/Json.h"
 
 #include <string>
+#include <limits>
 
 using namespace mye;
+
+MYE_TEST(JsonExactSignedIntegers) {
+    for (const int64_t value : {std::numeric_limits<int64_t>::min(),
+                               int64_t{9007199254740993},
+                               std::numeric_limits<int64_t>::max()}) {
+        const std::string text = std::to_string(value);
+        MYE_EXPECT(json::Stringify(json::Value(value), 0) == text);
+        const auto parsed = json::Parse(text);
+        MYE_EXPECT(parsed && parsed.Value().AsInt() == value);
+    }
+    MYE_EXPECT(json::Value(1e30).AsInt(-9) == -9);
+}
 
 MYE_TEST(JsonParseScalars) {
     auto t = json::Parse("true");

@@ -50,14 +50,14 @@ UdpSocket& UdpSocket::operator=(UdpSocket&& o) noexcept {
     return *this;
 }
 
-bool UdpSocket::Open(uint16_t port) {
+bool UdpSocket::Open(uint16_t port, uint32_t bindAddress) {
     Close();
     SOCKET s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (s == INVALID_SOCKET) { MYE_LOG_ERROR("Net", "socket 실패 (WSA={})", ::WSAGetLastError()); return false; }
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_addr.s_addr = ::htonl(bindAddress);
     addr.sin_port = ::htons(port);
     if (::bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
         MYE_LOG_ERROR("Net", "bind({}) 실패 (WSA={})", port, ::WSAGetLastError());

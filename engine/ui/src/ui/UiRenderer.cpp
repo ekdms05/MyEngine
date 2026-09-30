@@ -1,4 +1,4 @@
-// mye/ui/UiRenderer.cpp — UI 스크린 레이어 렌더 (M5-A 골격; 화이트텍스처·viewProj·시저는 구현 에이전트)
+// mye/ui/UiRenderer.cpp — UI 스크린 레이어 렌더 (M5-A 골격; 화이트텍스처·viewProj·시저는 공용 렌더 경로)
 #include "mye/ui/UiRenderer.h"
 #include "mye/ui/Widget.h"
 

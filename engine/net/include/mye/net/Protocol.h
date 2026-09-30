@@ -8,6 +8,8 @@
 #include "mye/net/Quantization.h"
 
 #include <cstdint>
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -15,6 +17,9 @@
 namespace mye::net {
 
 inline constexpr uint32_t kProtocolId = 0x4D594547u;   // 'MYEG'
+inline constexpr uint16_t kProtocolVersion = 1;
+// ponytail: one complete snapshot fits in 1400 bytes; use AOI before raising this limit.
+inline constexpr size_t kMaxSnapshotEntities = 64;
 inline constexpr float    kWorldMin = -512.0f;
 inline constexpr float    kWorldMax = 512.0f;
 inline constexpr int      kPosBits = 16;
@@ -38,13 +43,16 @@ struct EntitySnap {
 // ---- 헤더(모든 패킷 공통) ----
 inline void WriteHeader(BitWriter& w, MsgType type) {
     w.WriteBits(kProtocolId, 32);
+    w.WriteBits(kProtocolVersion, 16);
     w.WriteBits(static_cast<uint32_t>(type), 8);
 }
 // 헤더 검증 + 타입 반환. 실패 시 false.
 inline bool ReadHeader(BitReader& r, MsgType& outType) {
     const uint32_t proto = r.ReadBits(32);
+    const uint32_t version = r.ReadBits(16);
     const uint32_t t = r.ReadBits(8);
-    if (!r.Ok() || proto != kProtocolId) return false;
+    if (!r.Ok() || proto != kProtocolId || version != kProtocolVersion ||
+        t < static_cast<uint32_t>(MsgType::Connect) || t > static_cast<uint32_t>(MsgType::Disconnect)) return false;
     outType = static_cast<MsgType>(t);
     return true;
 }
@@ -84,10 +92,25 @@ inline void WriteInput(BitWriter& w, uint32_t seq, float moveX, float moveY) {
     w.WriteBits(QuantizeFloat(moveX, -1.0f, 1.0f, 12), 12);
     w.WriteBits(QuantizeFloat(moveY, -1.0f, 1.0f, 12), 12);
 }
-inline void ReadInput(BitReader& r, uint32_t& seq, float& moveX, float& moveY) {
-    seq = static_cast<uint32_t>(r.ReadVarUint());
+inline bool ReadInput(BitReader& r, uint32_t& seq, float& moveX, float& moveY) {
+    const uint64_t sequence = r.ReadVarUint();
+    if (!r.Ok() || sequence > UINT32_MAX) return false;
+    seq = static_cast<uint32_t>(sequence);
     moveX = DequantizeFloat(r.ReadBits(12), -1.0f, 1.0f, 12);
     moveY = DequantizeFloat(r.ReadBits(12), -1.0f, 1.0f, 12);
+    return r.Ok();
+}
+
+inline bool SequenceNewer(uint32_t sequence, uint32_t previous) {
+    return sequence != previous && sequence - previous < 0x80000000u;
+}
+
+inline void NormalizeMove(float& x, float& y) {
+    if (!std::isfinite(x) || !std::isfinite(y)) { x = y = 0; return; }
+    x = std::clamp(x, -1.0f, 1.0f);
+    y = std::clamp(y, -1.0f, 1.0f);
+    const float length = std::hypot(x, y);
+    if (length > 1) { x /= length; y /= length; }
 }
 
 // ---- Accept ----
@@ -95,7 +118,10 @@ inline void WriteAccept(BitWriter& w, uint32_t clientId) {
     WriteHeader(w, MsgType::Accept);
     w.WriteVarUint(clientId);
 }
-inline uint32_t ReadAccept(BitReader& r) { return static_cast<uint32_t>(r.ReadVarUint()); }
+inline uint32_t ReadAccept(BitReader& r) {
+    const uint64_t id = r.ReadVarUint();
+    return r.Ok() && id <= UINT32_MAX ? static_cast<uint32_t>(id) : 0;
+}
 
 // ---- Snapshot ----
 inline void WriteSnapshot(BitWriter& w, uint32_t tick, const std::vector<EntitySnap>& ents) {
@@ -110,20 +136,30 @@ inline void WriteSnapshot(BitWriter& w, uint32_t tick, const std::vector<EntityS
     }
 }
 inline bool ReadSnapshot(BitReader& r, uint32_t& tick, std::vector<EntitySnap>& out) {
-    tick = static_cast<uint32_t>(r.ReadVarUint());
+    const uint64_t tickValue = r.ReadVarUint();
+    if (!r.Ok() || tickValue > UINT32_MAX) return false;
+    tick = static_cast<uint32_t>(tickValue);
     const uint64_t count = r.ReadVarUint();
-    if (!r.Ok() || count > 100000) return false;
-    out.clear();
-    out.reserve(static_cast<size_t>(count));
+    if (!r.Ok() || count > kMaxSnapshotEntities) return false;
+    std::vector<EntitySnap> snapshot;
+    snapshot.reserve(static_cast<size_t>(count));
     for (uint64_t i = 0; i < count; ++i) {
         EntitySnap e;
-        e.netId = static_cast<uint32_t>(r.ReadVarUint());
+        const uint64_t id = r.ReadVarUint();
+        if (!r.Ok() || id == 0 || id > UINT32_MAX) return false;
+        e.netId = static_cast<uint32_t>(id);
         e.x = DequantizeFloat(r.ReadBits(kPosBits), kWorldMin, kWorldMax, kPosBits);
         e.y = DequantizeFloat(r.ReadBits(kPosBits), kWorldMin, kWorldMax, kPosBits);
-        e.lastInputSeq = static_cast<uint32_t>(r.ReadVarUint());
-        out.push_back(e);
+        const uint64_t sequence = r.ReadVarUint();
+        if (!r.Ok() || sequence > UINT32_MAX) return false;
+        e.lastInputSeq = static_cast<uint32_t>(sequence);
+        if (std::any_of(snapshot.begin(), snapshot.end(), [&](const auto& existing) { return existing.netId == e.netId; }))
+            return false;
+        snapshot.push_back(e);
     }
-    return r.Ok();
+    if (!r.Ok()) return false;
+    out = std::move(snapshot);
+    return true;
 }
 
 } // namespace mye::net

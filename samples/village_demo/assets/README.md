@@ -1,8 +1,8 @@
 # village_demo assets — content spec (M6-B)
 
-Tales-Weaver-style village vertical-slice content. All binary assets are produced by deterministic
-generators in `../tools`; data files (JSON + Lua) are hand-authored. The **integration agent** owns
-the C++ (`samples/village_demo/src/main.cpp` + CMake) and loads everything below.
+Layered 2.5D village demo content. Binary assets are produced by deterministic
+generators in `../tools`; JSON and Lua files define editable content.
+`samples/village_demo/src/main.cpp` loads the assets described below.
 
 ## Regenerate binaries
 ```

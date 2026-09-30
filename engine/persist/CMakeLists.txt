@@ -18,4 +18,5 @@ target_include_directories(mye_persist PUBLIC
 
 target_link_libraries(mye_persist
     PUBLIC mye_core
+    PRIVATE bcrypt
 )

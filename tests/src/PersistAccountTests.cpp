@@ -123,3 +123,43 @@ MYE_TEST(AccountPersistRoundtrip) {
     }
     fs::remove(path, ec);
 }
+
+MYE_TEST(AccountUsesRandomSaltsAndExpiringSessions) {
+    AccountStore store;
+    const auto first = store.Register("first", "same-password").Value();
+    const auto second = store.Register("second", "same-password").Value();
+    const auto* a = store.FindById(first);
+    const auto* b = store.FindById(second);
+    MYE_EXPECT(a->passwordIterations >= 600'000);
+    MYE_EXPECT(a->passwordSalt != b->passwordSalt);
+    MYE_EXPECT(a->passwordDigest != b->passwordDigest);
+    const auto login = store.Login("first", "same-password");
+    MYE_EXPECT(login.ok && login.token.size() == 64);
+    MYE_EXPECT(store.ValidateSession(login.token, std::chrono::steady_clock::now() + std::chrono::hours(25)) == 0);
+    MYE_EXPECT(!store.Register("oversized", std::string(129, 'x')));
+}
+
+MYE_TEST(AccountLegacyLoginMigratesPasswordAndRejectsInvalidBanFlag) {
+    // Fixture from the previous file format: password "legacy-pass", salt 0x1234.
+    auto parsed = json::Parse(R"({"nextId":2,"accounts":[{"id":1,"username":"legacy",
+        "salt":"0000000000001234","hash":"1d5f868ffda34e5d","banned":false}]})");
+    MYE_EXPECT(parsed);
+    if (!parsed) return;
+    AccountStore store;
+    MYE_EXPECT(store.LoadJson(parsed.Value()));
+    MYE_EXPECT(!store.Login("legacy", "wrong").ok);
+    MYE_EXPECT(store.Login("legacy", "legacy-pass").ok);
+    MYE_EXPECT(store.FindById(1)->passwordIterations == 600'000);
+    const auto migrated = store.ToJson();
+    AccountStore reloaded;
+    MYE_EXPECT(reloaded.LoadJson(migrated));
+    MYE_EXPECT(reloaded.Login("legacy", "legacy-pass").ok);
+    auto invalid = parsed.Value().AsObject();
+    auto accounts = invalid["accounts"].AsArray();
+    auto account = accounts[0].AsObject();
+    account["banned"] = json::Value(std::string("false"));
+    accounts[0] = json::Value(std::move(account));
+    invalid["accounts"] = json::Value(std::move(accounts));
+    MYE_EXPECT(!reloaded.LoadJson(json::Value(std::move(invalid))));
+    MYE_EXPECT(reloaded.FindById(1)->passwordIterations == 600'000);
+}

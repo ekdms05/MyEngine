@@ -1,5 +1,7 @@
 # 04. 게임플레이 시스템 (데이터드리븐 + Lua)
 
+> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
 > 소유 범위: 픽셀 2.5D MMORPG의 "콘텐츠 루프" 전체 — 스탯·레벨·경험치, 스킬·쿨다운·자원, 전투(명중/회피/크리/속성/데미지/헤이트), 몬스터 AI(스폰·순찰·추격·귀환·군집), 인벤토리·장비·강화·제작·수리, 루트·드랍·희귀도·바인딩, 경제(상점·거래·경매장·화폐싱크), 퀘스트(수주·진행·보상·체인·일일/주간), 파티·레이드·전리품 분배, 길드·영지·길드전, 채팅(채널·필터·명령어), PvP/PvE·결투·전장·공성·카르마, 인스턴스 던전·매칭, 버프/디버프/상태이상/CC, 사망/부활/페널티, 탈것·펫·페이퍼돌, 상호작용(NPC/오브젝트/채집/포탈), 그리고 이 모두를 잇는 **ECS 컴포넌트 + Lua 훅 매핑**.
 >
 > 이 문서는 "게임을 게임답게 만드는 규칙 계층"을 정의한다. 렌더·입력·UI·오디오·씬 로딩은 다른 도메인이 소유하고, 여기서는 **서버 권위 시뮬레이션 상태와 그 위의 Lua 콘텐츠**만 다룬다. 핵심 원칙: **모든 게임플레이 상태 변경은 서버 권위 고정틱 위에서만 일어난다. 클라이언트는 표현·예측만 한다.**
@@ -20,13 +22,13 @@
 
 | 관심사 | 소유 도메인 |
 |---|---|
-| 넷코드·복제·예측·스냅샷·RPC 프로토콜 | [05-netcode-replication](05-netcode-replication.md) |
-| 서버 프로세스·존 샤딩·매치메이킹 인프라 | [06-server-architecture](06-server-architecture.md) |
-| 계정·인증·DB 영속화·트랜잭션 | [07-persistence-accounts](07-persistence-accounts.md) |
-| 인게임 UI 위젯(인벤토리 창·채팅창·스킬바) 렌더 | [09-ui-mmo-widgets](09-ui-mmo-widgets.md), 기존 [../06-runtime-systems.md](../06-runtime-systems.md) |
-| 데이터드리븐 씬/존 로딩·스트리밍 | [02-world-streaming](02-world-streaming.md), 기존 [../03-scene-world.md](../03-scene-world.md) |
-| 게임 런타임 앱(클라 exe·서버 exe 부트) | [01-runtime-app](01-runtime-app.md) |
-| AI 콘텐츠 생성(스프라이트·밸런스·대사) | [08-ai-content-pipeline](08-ai-content-pipeline.md) |
+| 넷코드·복제·예측·스냅샷·RPC 프로토콜 | [05-netcode-replication](02-netcode-server.md) |
+| 서버 프로세스·존 샤딩·매치메이킹 인프라 | 06-server-architecture (별도 문서 미작성) |
+| 계정·인증·DB 영속화·트랜잭션 | [07-persistence-accounts](03-persistence-accounts.md) |
+| 인게임 UI 위젯(인벤토리 창·채팅창·스킬바) 렌더 | [09-ui-mmo-widgets](../06-runtime-systems.md), 기존 [../06-runtime-systems.md](../06-runtime-systems.md) |
+| 데이터드리븐 씬/존 로딩·스트리밍 | 02-world-streaming (별도 문서 미작성), 기존 [../03-scene-world.md](../03-scene-world.md) |
+| 게임 런타임 앱(클라 exe·서버 exe 부트) | [01-runtime-app](../01-core-platform.md) |
+| AI 콘텐츠 생성(스프라이트·밸런스·대사) | [08-ai-content-pipeline](08-content-tooling.md) |
 
 본 문서는 이 도메인들과 **경계 계약**으로 맞물린다. 특히: 모든 게임플레이 컴포넌트는 05의 복제 대상 후보이고, 모든 영속 상태는 07의 저장 대상이며, 모든 상태 변경은 06의 존 틱 위에서 일어난다.
 
@@ -520,7 +522,7 @@ assets/skills/   *.lua (효과 훅)
 ### 6.4 MCP·에디터 도구 (기존 확장, [08-mcp](../08-mcp.md))
 
 - **MCP 툴 신규**: `gameplay_validate`(밸런스 데이터 정합성 검사 — 존재하지 않는 아이템/스킬 참조, 순환 퀘스트, 드랍 확률 합), `balance_sim`(전투 공식 몬테카를로 시뮬 — DPS·TTK 산출).
-- **AI 콘텐츠 생성**([08-ai-content-pipeline](08-ai-content-pipeline.md)): 아이템/스킬/드랍 데이터의 AI 생성 초안 + 밸런스 검증 루프.
+- **AI 콘텐츠 생성**([08-ai-content-pipeline](08-content-tooling.md)): 아이템/스킬/드랍 데이터의 AI 생성 초안 + 밸런스 검증 루프.
 
 ---
 
@@ -568,13 +570,13 @@ G0~G9는 **단일 프로세스(존 로컬)에서 완결 검증** 가능 — 넷�
 
 ### 8.2 이 도메인이 계약으로 넘기는 것 (타 도메인 참조)
 
-- **[05-netcode-replication](05-netcode-replication.md)**: 모든 게임플레이 컴포넌트는 "복제 대상 후보 + 델타 인코딩 스키마". GameEvent는 클라 브로드캐스트 대상. 클라 예측/서버 화해 대상 정의(이동·시전). `NetId` 소유.
-- **[06-server-architecture](06-server-architecture.md)**: 존 틱 위에서 게임플레이 시스템 실행. 파티/길드/경매/인스턴스 세션 서비스 호스팅. AoI 필터링. 존 초월 라우팅.
-- **[07-persistence-accounts](07-persistence-accounts.md)**: 인벤/장비/스탯/퀘스트/화폐/우편/경매의 DB 영속·**원자적 트랜잭션**(dupe 방지 핵심). 아이템 인스턴스 고유 ID·감사 로그.
-- **[02-world-streaming](02-world-streaming.md)** / 기존 [03](../03-scene-world.md): 존 로딩 시 스포너·NPC·채집물·포탈 배치. 타일 충돌(현 미구현 갭)로 이동 판정.
-- **[09-ui-mmo-widgets](09-ui-mmo-widgets.md)** / 기존 [06](../06-runtime-systems.md): 인벤토리 창·스킬바·퀘스트 로그·채팅창·상점창 UI. 이 도메인은 데이터·이벤트만 제공.
-- **[01-runtime-app](01-runtime-app.md)**: 게임 클라/서버 exe가 GameplayModule을 부트 배선. (현재 게임 런타임 앱 부재 갭.)
-- **[08-ai-content-pipeline](08-ai-content-pipeline.md)** / 기존 [08-mcp](../08-mcp.md): 아이템/스킬/드랍/밸런스 데이터 AI 생성 + 검증 루프.
+- **[05-netcode-replication](02-netcode-server.md)**: 모든 게임플레이 컴포넌트는 "복제 대상 후보 + 델타 인코딩 스키마". GameEvent는 클라 브로드캐스트 대상. 클라 예측/서버 화해 대상 정의(이동·시전). `NetId` 소유.
+- **06-server-architecture (별도 문서 미작성)**: 존 틱 위에서 게임플레이 시스템 실행. 파티/길드/경매/인스턴스 세션 서비스 호스팅. AoI 필터링. 존 초월 라우팅.
+- **[07-persistence-accounts](03-persistence-accounts.md)**: 인벤/장비/스탯/퀘스트/화폐/우편/경매의 DB 영속·**원자적 트랜잭션**(dupe 방지 핵심). 아이템 인스턴스 고유 ID·감사 로그.
+- **02-world-streaming (별도 문서 미작성)** / 기존 [03](../03-scene-world.md): 존 로딩 시 스포너·NPC·채집물·포탈 배치. 타일 충돌(현 미구현 갭)로 이동 판정.
+- **[09-ui-mmo-widgets](../06-runtime-systems.md)** / 기존 [06](../06-runtime-systems.md): 인벤토리 창·스킬바·퀘스트 로그·채팅창·상점창 UI. 이 도메인은 데이터·이벤트만 제공.
+- **[01-runtime-app](../01-core-platform.md)**: 게임 클라/서버 exe가 GameplayModule을 부트 배선. (현재 게임 런타임 앱 부재 갭.)
+- **[08-ai-content-pipeline](08-content-tooling.md)** / 기존 [08-mcp](../08-mcp.md): 아이템/스킬/드랍/밸런스 데이터 AI 생성 + 검증 루프.
 - **[00-overview](../00-overview.md)**: 전체 아키텍처·레이어 위치.
 
 ---

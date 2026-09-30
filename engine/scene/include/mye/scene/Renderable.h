@@ -31,7 +31,7 @@ struct SpriteRenderer {
     SortingRef sort;
 };
 
-// 3D 월드 안에서 카메라를 향하는 스프라이트(HD-2D 캐릭터).
+// 3D 월드 안에서 카메라를 향하는 스프라이트(Billboard3D 캐릭터).
 enum class BillboardMode : uint8_t { Full = 0, YAxis = 1, None = 2 };
 
 struct BillboardRenderer {
@@ -45,7 +45,7 @@ struct BillboardRenderer {
     SortingRef    sort;
 };
 
-// 3D 메시(테일즈위버식 3D 오브젝트 삽입, HD-2D 월드). 메시·머티리얼 핸들은 M2-C가 채운다.
+// 3D 메시(2.5D 픽셀아트 RPG 3D 오브젝트 삽입, Billboard3D 월드). 메시·머티리얼 핸들은 M2-C가 채운다.
 // depthMode: 02 MeshProxy::DepthMode(AnchorFlat/AnchorBiased/Geometry) 인덱스 인용.
 struct MeshRenderer {
     MYE_COMPONENT(MeshRenderer);

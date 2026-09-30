@@ -51,9 +51,12 @@ public:
 
     // ---- 게임플레이 조작(원장 일관) ----
     // 아이템 지급: 인벤에 넣고(용량/스택 규칙) 실제 들어간 수만큼 원장 Grant. 반환=실제 지급 수.
-    int32_t GrantItem(SessionId id, gameplay::ItemId itemId, int32_t count, const gameplay::ItemCatalog& cat);
+    Expected<int32_t, Error> GrantItem(SessionId id, gameplay::ItemId itemId, int32_t count, const gameplay::ItemCatalog& cat);
     // 아이템 소모: 인벤에서 빼고 실제 제거 수만큼 원장 Consume. 반환=실제 제거 수.
-    int32_t ConsumeItem(SessionId id, gameplay::ItemId itemId, int32_t count);
+    Expected<int32_t, Error> ConsumeItem(SessionId id, gameplay::ItemId itemId, int32_t count);
+
+    Expected<void, Error> FlushSessions();
+    Expected<void, Error> Save(std::string_view dir, int maxBackups = 5);
     // 골드 증감(원장 반영). 음수 잔고면 실패(변화 없음).
     bool    AddGold(SessionId id, int64_t delta);
 

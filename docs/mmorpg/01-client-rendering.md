@@ -1,5 +1,7 @@
 # MMORPG 01 — 클라이언트 아키텍처 & 픽셀 2.5D 렌더링
 
+> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
 > 도메인 소유 주제: **게임 클라이언트가 화면에 그리는 모든 것** — 대규모 월드 스트리밍, 수백~수천 엔티티의 배칭/컬링/LOD, 2D 라이팅, 파티클, 포스트프로세싱, 강화 카메라, 네트워크 엔티티 보간·스냅샷 렌더, 월드 앵커 오버레이(이름표·HP바·데미지 플로터), 미니맵/월드맵, 런타임 타일맵 렌더.
 > 전제: 픽셀 2.5D MMORPG, 수백~수천 동접, RTT 30~300ms, 서버 권위 복제, 치트 방어, 라이브 운영.
 > 이 문서는 기존 [docs/02-rendering.md](../02-rendering.md)가 확정한 좌표계·PPU·레이어 밴드·깊이 함수 규약을 **인용만** 하고 재정의하지 않는다. 렌더 데이터 계약은 02, 씬 추출은 [docs/03-scene-world.md](../03-scene-world.md)가 정본이다.
@@ -21,9 +23,9 @@
 
 **포함**: 클라이언트 렌더 파이프라인 확장(라이팅/파티클/포스트/카메라), 월드 스트리밍(청크·존·프리페치), 엔티티 배칭/컬링/LOD, 네트워크 엔티티 보간·외삽·스냅샷 렌더링(**렌더 소비 측**), 월드 앵커 오버레이 UI, 미니맵/월드맵, 런타임 타일맵 렌더+오토타일 런타임 반영, 성능 예산·프로파일링·품질 스케일러.
 
-**비포함(타 도메인)**: 네트워크 트랜스포트·스냅샷 프로토콜·예측/보정 로직 자체([02-netcode](02-netcode-replication.md)), 서버 권위·관심관리(interest management) 서버측([03-server-world](03-server-world.md)), 게임플레이 데이터 모델([04-gameplay-framework](04-gameplay-framework.md)), 인게임 UI 위젯 프레임워크·채팅·인벤토리([05-ui-social](05-ui-social.md)), 에셋 스트리밍 전송·CDN·패치([06-asset-streaming](06-asset-streaming.md)). 본 문서는 이들의 **렌더 소비 측**만 다룬다.
+**비포함(타 도메인)**: 네트워크 트랜스포트·스냅샷 프로토콜·예측/보정 로직 자체([02-netcode](02-netcode-server.md)), 서버 권위·관심관리(interest management) 서버측(03-server-world (별도 문서 미작성)), 게임플레이 데이터 모델([04-gameplay-framework](04-gameplay-systems.md)), 인게임 UI 위젯 프레임워크·채팅·인벤토리([05-ui-social](04-gameplay-systems.md)), 에셋 스트리밍 전송·CDN·패치([06-asset-streaming](08-content-tooling.md)). 본 문서는 이들의 **렌더 소비 측**만 다룬다.
 
-> 상호참조 표기: `[NN-slug](NN-slug.md)`는 같은 `docs/mmorpg/` 폴더의 자매 도메인 문서, `[docs/NN](../NN-....md)`는 기존 엔진 설계 문서다. 자매 문서 슬러그는 이 도메인 시리즈의 제안 파일명이며, 실제 생성 시 조정될 수 있다(§8).
+> 상호참조 표기: `NN-slug (별도 문서 미작성)`는 같은 `docs/mmorpg/` 폴더의 자매 도메인 문서, `docs/NN (별도 문서 미작성)`는 기존 엔진 설계 문서다. 자매 문서 슬러그는 이 도메인 시리즈의 제안 파일명이며, 실제 생성 시 조정될 수 있다(§8).
 
 ---
 
@@ -36,7 +38,7 @@ MMO 클라이언트는 **세 개의 서로 다른 클럭**을 하나의 렌더 �
 | 클럭 | 주기 | 소스 | 렌더 처리 |
 |---|---|---|---|
 | **로컬 시뮬레이션** (내 캐릭터·예측 이동·이펙트) | 고정 60Hz | 01 메인 루프 FixedUpdate | `lerp(prev, curr, alpha)` — 02 기존 보간 계약 그대로 |
-| **원격 스냅샷** (타 플레이어·몹·투사체) | 서버 tick 10~30Hz + RTT | 넷코드([02-netcode](02-netcode-replication.md)) | 스냅샷 버퍼에서 **보간 지연(interpolation delay)** 후 `slerp/lerp`, 부족 시 **외삽(extrapolation)** |
+| **원격 스냅샷** (타 플레이어·몹·투사체) | 서버 tick 10~30Hz + RTT | 넷코드([02-netcode](02-netcode-server.md)) | 스냅샷 버퍼에서 **보간 지연(interpolation delay)** 후 `slerp/lerp`, 부족 시 **외삽(extrapolation)** |
 | **렌더 프레임** | 가변 60~300Hz | 01 렌더 루프 | 위 둘을 각자의 alpha로 합성 → 픽셀 스냅 → 패스 체인 |
 
 핵심 규칙(02의 "보간 → 픽셀 스냅" 순서를 확장):
@@ -76,7 +78,7 @@ Opaque3D → TerrainTiles(청크 스트리밍) → WorldSorted(수천 스프라�
 - **청크(chunk)**: 03의 `TilemapWorld`가 이미 32×32 셀 청크를 희소 보관. **로드 단위이자 컬링 단위**로 승격한다. `TilemapRenderer.runtime`(비소유 포인터)이 렌더 추출 진입점.
 - **존(zone/map)**: 마을·던전·필드 등 논리 맵. 각 존 = 하나의 `TilemapWorld` + ECS 서브월드(또는 태그). 존 간 이동은 로딩 화면(포탈) 또는 심리스(경계 프리로드).
 - **프리페치**: 플레이어 위치+속도 벡터로 진행 방향 청크를 미리 IO 큐(01 JobSystem IO 큐)로 로드. 히스테리시스로 경계 왕복 시 로드/언로드 채터링 방지.
-- **서버 권위와 정합**: 클라이언트가 그리는 존/청크 범위는 서버의 관심관리(AOI) 범위 안에 있어야 한다. 서버가 보내지 않은 엔티티는 렌더 대상이 아니다([03-server-world](03-server-world.md)).
+- **서버 권위와 정합**: 클라이언트가 그리는 존/청크 범위는 서버의 관심관리(AOI) 범위 안에 있어야 한다. 서버가 보내지 않은 엔티티는 렌더 대상이 아니다(03-server-world (별도 문서 미작성)).
 
 ### 2.4 엔티티 렌더 스케일 파이프라인
 
@@ -104,7 +106,7 @@ Opaque3D → TerrainTiles(청크 스트리밍) → WorldSorted(수천 스프라�
 | 뷰 컬링(프러스텀/뷰렉트) | P0 | 신규 | 03 `ExtractRenderItems`에 뷰 렉트 컬 삽입 또는 신규 `render/CullingSystem` |
 | 스프라이트 인스턴싱 배칭 | P0 | 신규 | RHI `DrawIndexedInstanced` 계약 존재하나 DX11 미배선. **인스턴스 VB 슬롯·StructuredBuffer 배선 필요**(현 `SetVertexBuffer` 슬롯0만) |
 | 엔티티 LOD(애니/정지/임포스터) | P1 | 신규 | 신규 `render/EntityLod`. 03 애니 샘플링 게이팅 + 렌더 임포스터 |
-| 원격 엔티티 스냅샷 보간/외삽 | P0 | 신규 | 신규 `render/SnapshotInterpolator`(렌더 소비). 넷코드([02-netcode](02-netcode-replication.md))가 스냅샷 공급 |
+| 원격 엔티티 스냅샷 보간/외삽 | P0 | 신규 | 신규 `render/SnapshotInterpolator`(렌더 소비). 넷코드([02-netcode](02-netcode-server.md))가 스냅샷 공급 |
 | 로컬 예측 엔티티 렌더 스무딩 | P0 | 부분 | 02 고정스텝 보간 재사용 + 보정 스무딩(reconciliation smoothing) 신규 |
 | 2D 라이팅(포인트·앰비언트·데이나이트) | P1 | 신규 | 02 `Lighting2D` 스테이지 설계는 있음, 구현 0. 신규 `render/Light2DPass` + 라이트버퍼 RGBA16F RT |
 | 노멀맵 2D 라이팅 | P3 | 신규 | 02 `LIT2D` 퍼뮤테이션 설계만. MRT 필요 — 확장 |
@@ -260,7 +262,7 @@ struct DamageFloater {     // 오브젝트 풀(초당 수백 생성 가능)
 | 패킷 로스(스냅샷 유실) | 보간 소스 부재 | 마지막 속도로 외삽(한계 250ms clamp). 초과 시 위치 홀드 + 페이드 후보 |
 | 순간이동·넉백(불연속 이동) | 보간이 미끄러짐(순간이동이 슬라이드로) | 넷코드가 `teleport` 플래그 → 보간 스킵·즉시 스냅(02 `NoInterpolate` 확장) |
 | 로컬 예측 오차 → 서버 보정 | 내 캐릭터가 튐(rubber-banding) | 보정 스무딩: 오차를 수 프레임에 걸쳐 흡수(위치 lerp). 큰 오차만 즉시 스냅 |
-| 높은 RTT(300ms)에서 원격 캐릭터 | 과거 시점만 보임(전투 판정 괴리) | 렌더는 과거 보간 유지(부드러움 우선), 판정은 서버 권위([03-server-world](03-server-world.md)). 스킬 이펙트는 로컬 즉시 재생 |
+| 높은 RTT(300ms)에서 원격 캐릭터 | 과거 시점만 보임(전투 판정 괴리) | 렌더는 과거 보간 유지(부드러움 우선), 판정은 서버 권위(03-server-world (별도 문서 미작성)). 스킬 이펙트는 로컬 즉시 재생 |
 | 엔티티가 AOI 밖으로(서버가 제거) | 갑자기 사라짐 | 페이드아웃(디더/알파) 후 제거. 재진입 시 페이드인 |
 | 층 전환(다리 위→아래)이 스냅샷에 지연 반영 | 잘못된 밴드로 그려짐(가림 오류) | floorLevel을 스냅샷에 포함(§4.3) → sortLayer 밴드 즉시 반영. 전환 프레임 1~2개 tolerance |
 | 시계 드리프트(서버-클라 시간차) | 보간 시점 오프셋 누적 | 넷코드가 RTT/오프셋 추정 → renderTime 보정. 렌더는 보정된 serverTime 소비 |
@@ -325,12 +327,12 @@ struct DamageFloater {     // 오브젝트 풀(초당 수백 생성 가능)
 
 | 상황 | 문제 | 대응 |
 |---|---|---|
-| 벽 투시(월핵) 메모리 스캔 | 안 보여야 할 적 위치 노출 | **서버가 AOI 밖 엔티티를 아예 안 보냄**([03-server-world](03-server-world.md)). 클라는 받은 것만 렌더 — 렌더 차원 방어는 보조 |
+| 벽 투시(월핵) 메모리 스캔 | 안 보여야 할 적 위치 노출 | **서버가 AOI 밖 엔티티를 아예 안 보냄**(03-server-world (별도 문서 미작성)). 클라는 받은 것만 렌더 — 렌더 차원 방어는 보조 |
 | 텍스처/셰이더 개조(투명벽 제거) | 지형 투시 | 근본 방어는 서버 권위. 렌더는 클라 신뢰 안 함 |
 | 렌더 오버레이 자동조준(ESP) | 이름표 좌표 훅 | 클라 방어 한계 인정. 서버 이동/판정 검증이 주 방어 |
 | 카메라 줌아웃 핵(맵 전체 관찰) | AOI 밖 정보 | 서버 AOI로 애초에 데이터 없음. 클라 줌 상한(zoomMax)은 UX용 |
 
-> 원칙: **렌더는 서버가 보낸 것만 그린다. 클라이언트 렌더 차원의 치트 방어는 보조이며, 근본 방어는 서버 권위·AOI다.** 상세는 [02-netcode](02-netcode-replication.md)·[03-server-world](03-server-world.md).
+> 원칙: **렌더는 서버가 보낸 것만 그린다. 클라이언트 렌더 차원의 치트 방어는 보조이며, 근본 방어는 서버 권위·AOI다.** 상세는 [02-netcode](02-netcode-server.md)·03-server-world (별도 문서 미작성).
 
 ### 5.9 동시성·스레딩
 
@@ -345,7 +347,7 @@ struct DamageFloater {     // 오브젝트 풀(초당 수백 생성 가능)
 
 ## 6. 신규 모듈·파일 제안
 
-기존 `engine/render`·`engine/scene`를 확장하고, MMO 전용 렌더 확장은 `engine/render` 하위에 배치. 게임 런타임 앱은 별도(현재 부재 — [04-gameplay-framework](04-gameplay-framework.md) 및 apps와 협의).
+기존 `engine/render`·`engine/scene`를 확장하고, MMO 전용 렌더 확장은 `engine/render` 하위에 배치. 게임 런타임 앱은 별도(현재 부재 — [04-gameplay-framework](04-gameplay-systems.md) 및 apps와 협의).
 
 ```
 engine/render/
@@ -424,11 +426,11 @@ engine/scene/ (03 협의)
 
 | 문서(제안 슬러그) | 경계 관계 |
 |---|---|
-| [02-netcode-replication.md](02-netcode-replication.md) | **스냅샷 공급자.** 본 문서는 렌더 소비(보간·외삽) 측. 트랜스포트·프로토콜·예측/보정 로직은 그쪽 |
-| [03-server-world.md](03-server-world.md) | **AOI/관심관리·서버 권위.** "무엇을 렌더할지"는 서버가 결정. 치트 방어 근본은 그쪽 |
-| [04-gameplay-framework.md](04-gameplay-framework.md) | 스탯·전투·상태이상 데이터를 오버레이(HP/버프/캐스팅바)가 소비. 게임 런타임 앱 부트스트랩 |
-| [05-ui-social.md](05-ui-social.md) | 인게임 UI 위젯(HUD·채팅·인벤). 본 문서 오버레이(월드앵커)와 HUD(스크린공간)의 경계 |
-| [06-asset-streaming.md](06-asset-streaming.md) | 원격 에셋 다운로드·패치·버전드 pak. 청크 스트리밍이 소비하는 에셋 공급 |
+| [02-netcode-replication.md](02-netcode-server.md) | **스냅샷 공급자.** 본 문서는 렌더 소비(보간·외삽) 측. 트랜스포트·프로토콜·예측/보정 로직은 그쪽 |
+| 03-server-world.md (별도 문서 미작성) | **AOI/관심관리·서버 권위.** "무엇을 렌더할지"는 서버가 결정. 치트 방어 근본은 그쪽 |
+| [04-gameplay-framework.md](04-gameplay-systems.md) | 스탯·전투·상태이상 데이터를 오버레이(HP/버프/캐스팅바)가 소비. 게임 런타임 앱 부트스트랩 |
+| [05-ui-social.md](04-gameplay-systems.md) | 인게임 UI 위젯(HUD·채팅·인벤). 본 문서 오버레이(월드앵커)와 HUD(스크린공간)의 경계 |
+| [06-asset-streaming.md](08-content-tooling.md) | 원격 에셋 다운로드·패치·버전드 pak. 청크 스트리밍이 소비하는 에셋 공급 |
 
 ### 8.3 의존 방향 요약
 

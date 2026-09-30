@@ -18,7 +18,7 @@ public:
     explicit NetGameServer(persist::PersistenceService& persist);
 
     bool     Start(uint16_t port);
-    void     Stop() { m_net.Stop(); m_netToSession.clear(); }
+    Expected<void, Error> Stop();
     uint16_t Port() const { return m_net.Port(); }
     bool     IsRunning() const { return m_net.IsRunning(); }
 

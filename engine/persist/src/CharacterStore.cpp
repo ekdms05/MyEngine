@@ -1,18 +1,16 @@
 // mye/persist/CharacterStore.cpp — 캐릭터 영속 구현 (CharacterStore.h 참조)
 #include "mye/persist/CharacterStore.h"
 
-#include "mye/core/Json.h"
-
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <system_error>
+#include "JsonFile.h"
+#include <cmath>
+#include <limits>
 
 namespace mye::persist {
 
 Expected<CharacterId, Error> CharacterStore::Create(AccountId accountId, std::string_view name) {
-    if (accountId == 0)  return Error{"Create: 유효하지 않은 계정", 1};
-    if (name.empty())    return Error{"Create: 캐릭터명이 비었습니다", 2};
+    if (accountId == 0 || accountId >= INT64_MAX || m_nextId >= INT64_MAX)
+        return Error{"Create: identity out of range", 1};
+    if (name.empty() || name.size() > 64) return Error{"Create: invalid character name", 2};
     const std::string cname(name);
     if (m_byName.find(cname) != m_byName.end())
         return Error{"Create: 이미 존재하는 캐릭터명 '" + cname + "'", 3};
@@ -88,7 +86,7 @@ void CharacterStore::RebuildIndex() {
         if (!c.name.empty()) m_byName.emplace(c.name, c.id);
 }
 
-Expected<void, Error> CharacterStore::SaveToFile(std::string_view path) const {
+json::Value CharacterStore::ToJson() const {
     json::Value::Array arr;
     for (const CharacterRecord& c : m_chars) {
         json::Value::Object o;
@@ -121,34 +119,47 @@ Expected<void, Error> CharacterStore::SaveToFile(std::string_view path) const {
     json::Value::Object root;
     root["characters"] = json::Value(std::move(arr));
     root["nextId"]     = json::Value(static_cast<std::int64_t>(m_nextId));
-    const std::string text = json::Stringify(json::Value(std::move(root)));
+    return json::Value(std::move(root));
+}
 
-    // 원자적 쓰기(임시 → rename).
-    const std::string tmp = std::string(path) + ".tmp";
-    { std::ofstream os(tmp, std::ios::binary | std::ios::trunc);
-      if (!os) return Error{"SaveToFile: 열기 실패 '" + std::string(path) + "'", 1};
-      os.write(text.data(), static_cast<std::streamsize>(text.size()));
-      if (!os) return Error{"SaveToFile: 쓰기 실패", 2}; }
-    std::error_code ec;
-    std::filesystem::rename(tmp, path, ec);
-    if (ec) return Error{"SaveToFile: rename 실패", 3};
-    return {};
+Expected<void, Error> CharacterStore::SaveToFile(std::string_view path) const {
+    return detail::WriteJsonFile(detail::Utf8Path(path), ToJson());
 }
 
 Expected<void, Error> CharacterStore::LoadFromFile(std::string_view path) {
-    std::ifstream in(std::string(path), std::ios::binary);
-    if (!in) return Error{"LoadFromFile: 열기 실패 '" + std::string(path) + "'", 1};
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    auto parsed = json::Parse(text);
+    auto parsed = detail::ReadJsonFile(detail::Utf8Path(path));
     if (!parsed) return parsed.GetError();
-    const json::Value& root = parsed.Value();
+    return LoadJson(parsed.Value());
+}
 
-    m_chars.clear();
+Expected<void, Error> CharacterStore::LoadJson(const json::Value& root) {
+    CharacterStore candidate;
+    candidate.m_chars.clear();
     const json::Value* arr = root.Find("characters");
-    if (arr && arr->IsArray()) {
+    if (!arr || !arr->IsArray()) return Error{"CharacterStore: missing characters array", 1};
+    {
         for (const json::Value& v : arr->AsArray()) {
-            if (!v.IsObject()) continue;
+            if (!v.IsObject()) return Error{"CharacterStore: invalid record", 1};
             CharacterRecord c;
+            if (!detail::IntegerInRange(v, "id", 1, INT64_MAX - 1) ||
+                !detail::IntegerInRange(v, "accountId", 1, INT64_MAX - 1))
+                return Error{"CharacterStore: invalid identity", 1};
+            for (const char* key : {"level", "str", "agi", "int", "vit", "hp", "mp"})
+                if (!detail::IntegerInRange(v, key, 0, INT32_MAX, false))
+                    return Error{"CharacterStore: invalid stat", 1};
+            for (const char* key : {"xp", "gold"})
+                if (!detail::IntegerInRange(v, key, 0, INT64_MAX, false))
+                    return Error{"CharacterStore: invalid balance", 1};
+            for (const char* key : {"posX", "posY"}) {
+                const auto* p = v.Find(key);
+                if (p && (!p->IsNumber() || !std::isfinite(p->AsDouble()) ||
+                          std::abs(p->AsDouble()) > std::numeric_limits<float>::max()))
+                    return Error{"CharacterStore: invalid position", 1};
+            }
+            if (const auto* p = v.Find("sceneId"); p && !p->IsString())
+                return Error{"CharacterStore: invalid scene id", 1};
+            if (const auto* p = v.Find("items"); p && !p->IsArray())
+                return Error{"CharacterStore: invalid items array", 1};
             if (const auto* p = v.Find("id"))        c.id        = static_cast<CharacterId>(p->AsInt());
             if (const auto* p = v.Find("accountId")) c.accountId = static_cast<AccountId>(p->AsInt());
             if (const auto* p = v.Find("name"))      c.name      = std::string(p->AsString());
@@ -166,19 +177,28 @@ Expected<void, Error> CharacterStore::LoadFromFile(std::string_view path) {
             if (const auto* p = v.Find("gold"))      c.gold      = p->AsInt();
             if (const auto* p = v.Find("items"); p && p->IsArray()) {
                 for (const json::Value& sv : p->AsArray()) {
-                    if (!sv.IsObject()) continue;
+                    if (!sv.IsObject() || !detail::IntegerInRange(sv, "itemId", 1, UINT32_MAX) ||
+                        !detail::IntegerInRange(sv, "count", 1, INT32_MAX))
+                        return Error{"CharacterStore: invalid item stack", 1};
                     ItemStackRecord s;
                     if (const auto* q = sv.Find("itemId")) s.itemId = static_cast<uint32_t>(q->AsInt());
                     if (const auto* q = sv.Find("count"))  s.count  = static_cast<int32_t>(q->AsInt());
                     c.items.push_back(s);
                 }
             }
-            m_chars.push_back(std::move(c));
+            if (c.name.empty() || c.name.size() > 64 || candidate.Get(c.id) ||
+                !candidate.m_byName.emplace(c.name, c.id).second)
+                return Error{"CharacterStore: empty or duplicate identity", 1};
+            candidate.m_chars.push_back(std::move(c));
         }
     }
-    if (const auto* p = root.Find("nextId")) m_nextId = static_cast<CharacterId>(p->AsInt());
-    if (m_nextId < 1) m_nextId = 1;
-    RebuildIndex();
+    if (const auto* p = root.Find("nextId")) candidate.m_nextId = static_cast<CharacterId>(p->AsInt());
+    if (!detail::IntegerInRange(root, "nextId", 1, INT64_MAX))
+        return Error{"CharacterStore: invalid nextId", 1};
+    for (const auto& character : candidate.m_chars)
+        if (character.id >= candidate.m_nextId) return Error{"CharacterStore: reused nextId", 1};
+    candidate.RebuildIndex();
+    *this = std::move(candidate);
     return {};
 }
 

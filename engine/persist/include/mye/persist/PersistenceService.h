@@ -26,11 +26,12 @@ struct ReconcileReport {
 
 class PersistenceService {
 public:
-    // 디렉터리에서 accounts.json / characters.json / ledger.json 로드.
-    //   파일이 없으면 빈 상태로 시작(첫 부팅 허용). 손상 파싱만 오류.
+    // state.json을 검증한 뒤 전체 상태를 교체한다. 실패하면 메모리 상태를 보존한다.
+    // 이전 형식은 세 파일이 모두 있어야 로드하며, 다음 저장부터 단일 스냅샷을 쓴다.
+    // 저장 파일이 하나도 없는 디렉터리만 첫 부팅으로 취급한다.
     Expected<void, Error> LoadAll(std::string_view dir);
 
-    // 세 파일을 디렉터리에 원자적으로 저장(디렉터리 없으면 생성).
+    // 한 디렉터리에 한 작성자. 64 MiB 이하 스냅샷을 flush 후 원자적으로 교체한다.
     Expected<void, Error> SaveAll(std::string_view dir) const;
 
     // 저장 전 현재 디스크 상태를 백업으로 회전한 뒤 저장(롤백/PIT 복구용).

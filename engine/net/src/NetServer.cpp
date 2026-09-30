@@ -7,7 +7,8 @@
 namespace mye::net {
 
 bool NetServer::Start(uint16_t port) {
-    if (!m_sock.Open(port)) return false;
+    // Credentials are not encrypted by this development transport.
+    if (!m_sock.Open(port, Endpoint::Loopback(port).addr)) return false;
     MYE_LOG_INFO("Net", "server 시작 port={}", m_sock.LocalPort());
     return true;
 }
@@ -35,6 +36,14 @@ void NetServer::Receive() {
 
             Client* c = Find(from);
             if (!c) {
+                if (m_clients.size() >= kMaxSnapshotEntities) {
+                    ++m_rejected;
+                    BitWriter rejection;
+                    WriteHeader(rejection, MsgType::Disconnect);
+                    const auto& bytes = rejection.Finish();
+                    m_sock.SendTo(from, bytes.data(), bytes.size());
+                    break;
+                }
                 // 인증기가 있으면 자격증명 검증 → 거부 시 admit 하지 않음.
                 uint64_t accountId = 0;
                 if (m_auth) {
@@ -65,15 +74,17 @@ void NetServer::Receive() {
         }
         case MsgType::Input: {
             uint32_t seq = 0; float mx = 0, my = 0;
-            ReadInput(r, seq, mx, my);
+            if (!ReadInput(r, seq, mx, my)) break;
             if (Client* c = Find(from)) {
+                if (!SequenceNewer(seq, c->lastInputSeq)) break;
                 // 안티치트: 이동 입력은 단위벡터 성분(±1) 범위. 초과는 조작 → 위반 누적 후 클램프.
                 if (mx < -1.001f || mx > 1.001f || my < -1.001f || my > 1.001f) {
                     ++c->violations;
                 }
-                c->inX = mx < -1.0f ? -1.0f : (mx > 1.0f ? 1.0f : mx);
-                c->inY = my < -1.0f ? -1.0f : (my > 1.0f ? 1.0f : my);
-                if (seq > c->lastInputSeq) c->lastInputSeq = seq;   // 재조정 기준
+                NormalizeMove(mx, my);
+                c->inX = mx;
+                c->inY = my;
+                c->lastInputSeq = seq;
             }
             break;
         }

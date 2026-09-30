@@ -4,6 +4,13 @@
 namespace mye::net {
 
 void NetClient::Connect(const Endpoint& server, std::string_view username, std::string_view password) {
+    if (!m_connected) {
+        m_id = m_tick = 0;
+        m_predX = m_predY = 0;
+        m_hasPred = m_hasSnapshot = false;
+        m_pending.clear();
+        m_snapshot.clear();
+    }
     m_server = server;
     BitWriter w;
     WriteConnect(w, username, password);
@@ -19,12 +26,17 @@ void ClampTo(float& x, float& y, float minX, float minY, float maxX, float maxY)
 }
 
 void NetClient::SendInput(uint32_t seq, float moveX, float moveY, float dt) {
+    if (!m_connected || !std::isfinite(dt) || dt <= 0 || dt > 1) return;
+    NormalizeMove(moveX, moveY);
     BitWriter w;
     WriteInput(w, seq, moveX, moveY);
     const auto& bytes = w.Finish();
     m_sock.SendTo(m_server, bytes.data(), bytes.size());
 
     // 클라 예측: 서버 응답을 기다리지 않고 로컬 위치를 즉시 이동(입력 지연 은폐).
+    moveX = DequantizeFloat(QuantizeFloat(moveX, -1, 1, 12), -1, 1, 12);
+    moveY = DequantizeFloat(QuantizeFloat(moveY, -1, 1, 12), -1, 1, 12);
+    NormalizeMove(moveX, moveY);
     m_predX += moveX * m_speed * dt;
     m_predY += moveY * m_speed * dt;
     ClampTo(m_predX, m_predY, m_minX, m_minY, m_maxX, m_maxY);
@@ -48,20 +60,25 @@ void NetClient::Receive() {
     for (int guard = 0; guard < 1024; ++guard) {
         const int n = m_sock.RecvFrom(from, buf, sizeof(buf));
         if (n <= 0) break;
+        if (from != m_server) continue;
 
         BitReader r(buf, static_cast<size_t>(n));
         MsgType type;
         if (!ReadHeader(r, type)) continue;
 
         switch (type) {
-        case MsgType::Accept:
-            m_id = ReadAccept(r);
-            m_connected = true;
+        case MsgType::Accept: {
+            const uint32_t id = ReadAccept(r);
+            if (id != 0 && r.Ok()) { m_id = id; m_connected = true; }
             break;
+        }
         case MsgType::Snapshot: {
             uint32_t tick = 0;
             std::vector<EntitySnap> snap;
-            if (ReadSnapshot(r, tick, snap)) { m_tick = tick; m_snapshot = std::move(snap); Reconcile(); }
+            if (m_connected && ReadSnapshot(r, tick, snap) &&
+                (!m_hasSnapshot || SequenceNewer(tick, m_tick))) {
+                m_tick = tick; m_snapshot = std::move(snap); m_hasSnapshot = true; Reconcile();
+            }
             break;
         }
         case MsgType::Disconnect:
@@ -84,8 +101,9 @@ void NetClient::Reconcile() {
     m_hasPred = true;
 
     // 이미 서버가 처리한 입력은 확인됨 → 버린다.
-    auto it = m_pending.begin();
-    while (it != m_pending.end() && it->seq <= mine->lastInputSeq) it = m_pending.erase(it);
+    const auto unconfirmed = std::find_if(m_pending.begin(), m_pending.end(),
+        [&](const auto& input) { return SequenceNewer(input.seq, mine->lastInputSeq); });
+    m_pending.erase(m_pending.begin(), unconfirmed);
 
     // 아직 미확인인 입력을 권위 위치 위에 다시 적용(replay) → 예측을 서버와 정합.
     for (const PendingInput& p : m_pending) {

@@ -82,6 +82,8 @@ void SubmitGlyphQuad(render::SpriteBatch& batch, const PositionedGlyph& g,
     }
 
     render::SpriteDraw d{};
+    d.yDown = true;
+    d.alphaMask = true;
     d.position = Vec2{px, py};
     d.size    = Vec2{pw, ph};
     d.uv      = uv;

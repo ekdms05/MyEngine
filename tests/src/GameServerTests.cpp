@@ -4,6 +4,7 @@
 #include "mye/gameserver/GameServer.h"
 
 #include <string>
+#include <limits>
 
 using namespace mye;
 using namespace mye::gameserver;
@@ -60,14 +61,14 @@ MYE_TEST(GameServerItemGrantKeepsLedgerConsistent) {
     const SessionId sid = gs.Join(acc, cid).Value();
 
     // 지급: 인벤과 원장이 함께 증가.
-    MYE_EXPECT(gs.GrantItem(sid, 100, 10, cat) == 10);
-    MYE_EXPECT(gs.GrantItem(sid, 200, 1, cat) == 1);
+    MYE_EXPECT(gs.GrantItem(sid, 100, 10, cat).Value() == 10);
+    MYE_EXPECT(gs.GrantItem(sid, 200, 1, cat).Value() == 1);
     MYE_EXPECT(gameplay::CountItem(gs.Get(sid)->inv, 100) == 10);
     MYE_EXPECT(p.Ledger().ItemBalance(cid, 100) == 10);
     MYE_EXPECT(p.Ledger().ItemBalance(cid, 200) == 1);
 
     // 소모: 함께 감소.
-    MYE_EXPECT(gs.ConsumeItem(sid, 100, 4) == 4);
+    MYE_EXPECT(gs.ConsumeItem(sid, 100, 4).Value() == 4);
     MYE_EXPECT(gameplay::CountItem(gs.Get(sid)->inv, 100) == 6);
     MYE_EXPECT(p.Ledger().ItemBalance(cid, 100) == 6);
 
@@ -96,7 +97,7 @@ MYE_TEST(GameServerRoundtripPersistsProgress) {
         const SessionId sid = gs.Join(acc, cid).Value();
         gs.ApplyMove(sid, 10.0f, -3.0f);
         gs.GainXp(sid, 5000);                      // 레벨업
-        gs.GrantItem(sid, 100, 25, cat);
+        MYE_EXPECT(gs.GrantItem(sid, 100, 25, cat));
         gs.AddGold(sid, 1234);
         MYE_EXPECT(static_cast<bool>(gs.Leave(sid)));
     }
@@ -119,4 +120,30 @@ MYE_TEST(GameServerRoundtripPersistsProgress) {
         MYE_EXPECT(s->inv.gold == 1234);
         MYE_EXPECT(p.Reconcile(cid).matches);
     }
+}
+
+MYE_TEST(GameServerRejectsConsumeWithoutLedgerBalance) {
+    persist::PersistenceService p;
+    const auto acc = p.Accounts().Register("inconsistent", "pw").Value();
+    const auto cid = p.Characters().Create(acc, "InventoryOnly").Value();
+    p.Characters().GetMutable(cid)->items = {{100, 5}};
+    GameServer gs(p);
+    const auto sid = gs.Join(acc, cid).Value();
+
+    MYE_EXPECT(!gs.ConsumeItem(sid, 100, 3));
+    MYE_EXPECT(gameplay::CountItem(gs.Get(sid)->inv, 100) == 5);
+    MYE_EXPECT(p.Ledger().Count() == 0);
+}
+
+MYE_TEST(GameServerRejectsGoldOverflow) {
+    persist::PersistenceService p;
+    const auto acc = p.Accounts().Register("overflow", "pw").Value();
+    const auto cid = p.Characters().Create(acc, "Treasury").Value();
+    GameServer gs(p);
+    const auto sid = gs.Join(acc, cid).Value();
+    constexpr auto maximum = std::numeric_limits<int64_t>::max();
+    MYE_EXPECT(gs.AddGold(sid, maximum));
+    MYE_EXPECT(!gs.AddGold(sid, 1));
+    MYE_EXPECT(gs.Get(sid)->inv.gold == maximum);
+    MYE_EXPECT(p.Ledger().GoldBalance(cid) == maximum);
 }

@@ -1,5 +1,7 @@
 # 05. 픽셀 에셋 파이프라인 & AI 에셋 생성 (Pixel Asset Pipeline & AI Asset Generation)
 
+> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
 > 소유 주제: **도트(픽셀아트) 생성·검수·임포트 파이프라인** · **AI 이미지/스프라이트 생성 연동** · **8방향 애니·페이퍼돌·오토타일·아틀라스** · **배치 생성(도감·아이템 세트)** · **에셋 메타·시드·버전관리·저작권**
 > 레이어: L2(engine/asset) 위 확장 + 에디터(engine/editor) + 개발도구(tools/mcp) + (신규) 생성 서비스(tools/genserver)
 > 네임스페이스: `mye::asset`(확장), `mye::gen`(신규 생성 파이프라인 코어), MCP 툴은 TypeScript

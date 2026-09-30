@@ -9,6 +9,21 @@
 using namespace mye;
 using namespace mye::persist;
 
+MYE_TEST(CharacterRejectsMalformedPositionAndInventoryWithoutReplacingState) {
+    CharacterStore store;
+    MYE_EXPECT(store.Create(1, "Kept"));
+    auto root = json::Parse(R"({"nextId":2,"characters":[{"id":1,"accountId":1,"name":"Replaced","posX":1e100}]})");
+    MYE_EXPECT(root);
+    if (!root) return;
+    MYE_EXPECT(!store.LoadJson(root.Value()));
+    MYE_EXPECT(store.FindByName("Kept") != nullptr);
+    root = json::Parse(R"({"nextId":2,"characters":[{"id":1,"accountId":1,"name":"Replaced","items":"invalid"}]})");
+    MYE_EXPECT(root);
+    if (!root) return;
+    MYE_EXPECT(!store.LoadJson(root.Value()));
+    MYE_EXPECT(store.FindByName("Kept") != nullptr);
+}
+
 MYE_TEST(CharacterCreateAndAccountIndex) {
     CharacterStore store;
 

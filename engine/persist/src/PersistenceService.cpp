@@ -1,148 +1,173 @@
-// mye/persist/PersistenceService.cpp — 영속 파사드 구현 (PersistenceService.h 참조)
+// Account, character and ledger data share one atomic snapshot.
 #include "mye/persist/PersistenceService.h"
+#include "JsonFile.h"
 
 #include <algorithm>
+#include <charconv>
 #include <filesystem>
 #include <format>
-#include <system_error>
+#include <map>
 
 namespace mye::persist {
-
 namespace {
-const char* kFiles[] = { "accounts.json", "characters.json", "ledger.json" };
+namespace fs = std::filesystem;
+constexpr const char* kSnapshot = "state.json";
+constexpr const char* kLegacyFiles[] = {"accounts.json", "characters.json", "ledger.json"};
 
-std::string Join(std::string_view dir, const char* file) {
-    std::filesystem::path p(dir);
-    p /= file;
-    return p.string();
-}
-
-std::filesystem::path BackupsRoot(std::string_view dir) {
-    return std::filesystem::path(dir) / "backups";
-}
-std::filesystem::path BackupDir(std::string_view dir, int index) {
-    return BackupsRoot(dir) / std::format("backup_{:04d}", index);
+fs::path BackupDir(std::string_view dir, int index) {
+    return detail::Utf8Path(dir) / "backups" / std::format("backup_{:04d}", index);
 }
 } // namespace
 
 Expected<void, Error> PersistenceService::LoadAll(std::string_view dir) {
-    namespace fs = std::filesystem;
-    const std::string accPath = Join(dir, "accounts.json");
-    const std::string chrPath = Join(dir, "characters.json");
-    const std::string ledPath = Join(dir, "ledger.json");
-
-    // 파일이 없으면 빈 상태 유지(첫 부팅). 존재하는데 파싱 실패면 오류 전파.
-    if (fs::exists(accPath)) { auto r = m_accounts.LoadFromFile(accPath);   if (!r) return r.GetError(); }
-    if (fs::exists(chrPath)) { auto r = m_characters.LoadFromFile(chrPath); if (!r) return r.GetError(); }
-    if (fs::exists(ledPath)) { auto r = m_ledger.LoadFromFile(ledPath);     if (!r) return r.GetError(); }
+    PersistenceService candidate;
+    const fs::path root = detail::Utf8Path(dir);
+    std::error_code ec;
+    const bool snapshotExists = fs::exists(root / kSnapshot, ec);
+    if (ec) return Error{"LoadAll: snapshot access failed", 1};
+    if (snapshotExists) {
+        auto parsed = detail::ReadJsonFile(root / kSnapshot);
+        if (!parsed) return parsed.GetError();
+        const auto& value = parsed.Value();
+        const auto* accounts = value.Find("accounts");
+        const auto* characters = value.Find("characters");
+        const auto* ledger = value.Find("ledger");
+        if (!detail::IntegerInRange(value, "version", 1, 1) || !accounts || !characters || !ledger)
+            return Error{"LoadAll: invalid snapshot schema/version", 1};
+        if (auto r = candidate.m_accounts.LoadJson(*accounts); !r) return r.GetError();
+        if (auto r = candidate.m_characters.LoadJson(*characters); !r) return r.GetError();
+        if (auto r = candidate.m_ledger.LoadJson(*ledger); !r) return r.GetError();
+    } else {
+        int present = 0;
+        for (const char* file : kLegacyFiles) {
+            if (fs::exists(root / file, ec)) ++present;
+            if (ec) return Error{"LoadAll: legacy file access failed", 1};
+        }
+        if (present != 0 && present != 3)
+            return Error{"LoadAll: incomplete legacy save; restore a complete backup", 1};
+        if (present == 3) {
+            if (auto r = candidate.m_accounts.LoadFromFile(detail::Utf8String((root / kLegacyFiles[0]))); !r) return r.GetError();
+            if (auto r = candidate.m_characters.LoadFromFile(detail::Utf8String((root / kLegacyFiles[1]))); !r) return r.GetError();
+            if (auto r = candidate.m_ledger.LoadFromFile(detail::Utf8String((root / kLegacyFiles[2]))); !r) return r.GetError();
+        }
+    }
+    for (const auto& entry : candidate.m_ledger.Entries())
+        if (!candidate.m_characters.Get(entry.character))
+            return Error{"LoadAll: ledger references missing character", 1};
+    *this = std::move(candidate);
     return {};
 }
 
 Expected<void, Error> PersistenceService::SaveAll(std::string_view dir) const {
-    namespace fs = std::filesystem;
     std::error_code ec;
-    fs::create_directories(dir, ec);
-    if (ec) return Error{"SaveAll: 디렉터리 생성 실패 '" + std::string(dir) + "'", 1};
-
-    if (auto r = m_accounts.SaveToFile(Join(dir, "accounts.json"));   !r) return r.GetError();
-    if (auto r = m_characters.SaveToFile(Join(dir, "characters.json")); !r) return r.GetError();
-    if (auto r = m_ledger.SaveToFile(Join(dir, "ledger.json"));       !r) return r.GetError();
-    return {};
+    const fs::path root = detail::Utf8Path(dir);
+    fs::create_directories(root, ec);
+    if (ec) return Error{"SaveAll: directory creation failed '" + std::string(dir) + "'", 1};
+    json::Value::Object snapshot;
+    snapshot["version"] = json::Value(int64_t{1});
+    snapshot["accounts"] = m_accounts.ToJson();
+    snapshot["characters"] = m_characters.ToJson();
+    snapshot["ledger"] = m_ledger.ToJson();
+    return detail::WriteJsonFile(root / kSnapshot, json::Value(std::move(snapshot)));
 }
 
 std::vector<int> PersistenceService::ListBackups(std::string_view dir) const {
     std::vector<int> out;
-    namespace fs = std::filesystem;
-    const fs::path root = BackupsRoot(dir);
+    const fs::path root = detail::Utf8Path(dir) / "backups";
     std::error_code ec;
-    if (!fs::exists(root, ec)) return out;
-    for (const auto& e : fs::directory_iterator(root, ec)) {
-        if (!e.is_directory()) continue;
-        const std::string name = e.path().filename().string();
-        if (name.rfind("backup_", 0) != 0) continue;
-        int idx = 0;
-        auto tail = name.substr(7);
-        if (!tail.empty() && std::all_of(tail.begin(), tail.end(), [](char c){ return c >= '0' && c <= '9'; }))
-            idx = std::atoi(tail.c_str());
-        if (idx > 0) out.push_back(idx);
+    fs::directory_iterator it(root, ec), end;
+    while (!ec && it != end) {
+        if (it->is_directory(ec)) {
+            const std::string name = it->path().filename().string();
+            if (name.starts_with("backup_")) {
+                int index = 0;
+                const auto tail = std::string_view(name).substr(7);
+                const auto result = std::from_chars(tail.data(), tail.data() + tail.size(), index);
+                if (result.ec == std::errc{} && result.ptr == tail.data() + tail.size() && index > 0)
+                    out.push_back(index);
+            }
+        }
+        it.increment(ec);
     }
     std::sort(out.begin(), out.end());
     return out;
 }
 
 Expected<void, Error> PersistenceService::SaveAllWithBackup(std::string_view dir, int maxBackups) const {
-    namespace fs = std::filesystem;
     std::error_code ec;
-
-    // 현재 디스크 상태(이전 저장)가 있으면 백업으로 회전.
-    bool hasPrior = false;
-    for (const char* f : kFiles) if (fs::exists(Join(dir, f), ec)) { hasPrior = true; break; }
-    if (hasPrior) {
-        const std::vector<int> existing = ListBackups(dir);
-        const int nextIdx = existing.empty() ? 1 : existing.back() + 1;
-        const fs::path bdir = BackupDir(dir, nextIdx);
-        fs::create_directories(bdir, ec);
-        if (ec) return Error{"SaveAllWithBackup: 백업 디렉터리 생성 실패", 1};
-        for (const char* f : kFiles) {
-            const std::string src = Join(dir, f);
-            if (fs::exists(src, ec))
-                fs::copy_file(src, bdir / f, fs::copy_options::overwrite_existing, ec);
-        }
-        // 오래된 백업 정리(최근 maxBackups 개만 유지).
-        if (maxBackups > 0) {
-            std::vector<int> all = ListBackups(dir);
-            if (static_cast<int>(all.size()) > maxBackups) {
-                const size_t remove = all.size() - static_cast<size_t>(maxBackups);
-                for (size_t i = 0; i < remove; ++i)
-                    fs::remove_all(BackupDir(dir, all[i]), ec);
-            }
+    const fs::path root = detail::Utf8Path(dir);
+    bool hasPrior = fs::exists(root / kSnapshot, ec);
+    if (ec) return Error{"SaveAllWithBackup: snapshot access failed", 1};
+    if (!hasPrior) {
+        for (const char* file : kLegacyFiles) {
+            if (fs::exists(root / file, ec)) hasPrior = true;
+            if (ec) return Error{"SaveAllWithBackup: legacy file access failed", 1};
         }
     }
-
-    return SaveAll(dir);
+    if (hasPrior) {
+        PersistenceService prior;
+        if (auto r = prior.LoadAll(dir); !r) return r.GetError();
+        const auto existing = ListBackups(dir);
+        if (!existing.empty() && existing.back() == INT_MAX)
+            return Error{"SaveAllWithBackup: backup index exhausted", 1};
+        const int next = existing.empty() ? 1 : existing.back() + 1;
+        if (auto r = prior.SaveAll(detail::Utf8String(BackupDir(dir, next))); !r) return r.GetError();
+    }
+    if (auto r = SaveAll(dir); !r) return r.GetError();
+    // Old backups are pruned only after the replacement has been published.
+    const auto all = ListBackups(dir);
+    if (maxBackups > 0 && all.size() > static_cast<size_t>(maxBackups)) {
+        for (size_t i = 0; i < all.size() - static_cast<size_t>(maxBackups); ++i) {
+            fs::remove_all(BackupDir(dir, all[i]), ec);
+            if (ec) return Error{"SaveAllWithBackup: backup pruning failed", 1};
+        }
+    }
+    return {};
 }
 
 Expected<void, Error> PersistenceService::RestoreFromBackup(std::string_view dir, int backupIndex) {
-    namespace fs = std::filesystem;
+    if (backupIndex < 1) return Error{"RestoreFromBackup: invalid index", 1};
+    const fs::path backup = BackupDir(dir, backupIndex);
     std::error_code ec;
-    const fs::path bdir = BackupDir(dir, backupIndex);
-    if (!fs::exists(bdir, ec)) return Error{"RestoreFromBackup: 백업 없음 index=" + std::to_string(backupIndex), 1};
-
-    for (const char* f : kFiles) {
-        const fs::path src = bdir / f;
-        if (fs::exists(src, ec)) {
-            fs::copy_file(src, Join(dir, f), fs::copy_options::overwrite_existing, ec);
-            if (ec) return Error{std::string("RestoreFromBackup: 복사 실패 ") + f, 2};
+    if (!fs::exists(backup, ec) || ec) return Error{"RestoreFromBackup: backup not found", 1};
+    bool hasData = fs::exists(backup / kSnapshot, ec);
+    if (ec) return Error{"RestoreFromBackup: snapshot access failed", 1};
+    if (!hasData) {
+        for (const char* file : kLegacyFiles) {
+            if (fs::exists(backup / file, ec)) hasData = true;
+            if (ec) return Error{"RestoreFromBackup: legacy file access failed", 1};
         }
     }
-    return LoadAll(dir);
+    if (!hasData) return Error{"RestoreFromBackup: empty backup", 1};
+    PersistenceService candidate;
+    if (auto r = candidate.LoadAll(detail::Utf8String(backup)); !r) return r.GetError();
+    if (auto r = candidate.SaveAll(dir); !r) return r.GetError();
+    *this = std::move(candidate);
+    return {};
 }
 
 ReconcileReport PersistenceService::Reconcile(CharacterId charId) const {
     ReconcileReport rep;
     const CharacterRecord* c = m_characters.Get(charId);
     if (!c) { rep.matches = false; return rep; }
-
-    // 골드 대조.
+    const auto ledger = m_ledger.Balance(charId);
     rep.goldSnapshot = c->gold;
-    rep.goldLedger = m_ledger.GoldBalance(charId);
-    if (rep.goldSnapshot != rep.goldLedger) {
-        rep.matches = false;
-        return rep;   // 골드 불일치 우선 보고(firstMismatchItem=0)
-    }
+    rep.goldLedger = ledger.gold;
+    if (rep.goldSnapshot != rep.goldLedger) { rep.matches = false; return rep; }
 
-    // 아이템 대조: 스냅샷 각 스택 수량 == 원장 잔고.
-    for (const ItemStackRecord& s : c->items) {
-        const int64_t led = m_ledger.ItemBalance(charId, s.itemId);
-        if (led != s.count) {
-            rep.matches = false;
-            rep.firstMismatchItem = s.itemId;
-            rep.snapshotCount = s.count;
-            rep.ledgerCount = led;
-            return rep;
-        }
+    // Combine stacks and include items present only in the ledger. Ordered keys
+    // make the first discrepancy stable across runs; replay the ledger once.
+    std::map<uint32_t, std::pair<int64_t, int64_t>> counts;
+    for (const auto& stack : c->items) counts[stack.itemId].first += stack.count;
+    for (const auto& [item, count] : ledger.items) counts[item].second = count;
+    for (const auto& [item, count] : counts) {
+        if (count.first == count.second) continue;
+        rep.matches = false;
+        rep.firstMismatchItem = item;
+        rep.snapshotCount = count.first;
+        rep.ledgerCount = count.second;
+        break;
     }
     return rep;
 }
-
 } // namespace mye::persist

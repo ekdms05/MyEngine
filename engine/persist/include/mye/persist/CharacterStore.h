@@ -9,6 +9,7 @@
 #pragma once
 
 #include "mye/core/Base.h"
+#include "mye/core/Json.h"
 
 #include <cstdint>
 #include <string>
@@ -81,6 +82,8 @@ public:
     size_t Count() const { return m_chars.size(); }
 
     // ---- 영속화 ----
+    json::Value ToJson() const;
+    Expected<void, Error> LoadJson(const json::Value& root);
     Expected<void, Error> SaveToFile(std::string_view path) const;
     Expected<void, Error> LoadFromFile(std::string_view path);
 

@@ -71,11 +71,13 @@ uint64_t BitReader::ReadVarUint() {
     for (int i = 0; i < 10; ++i) {   // 최대 10그룹(64비트)
         const uint32_t byte = ReadBits(8);
         if (!m_ok) return 0;
+        if (i == 9 && (byte & 0xFE) != 0) { m_ok = false; return 0; }
         v |= static_cast<uint64_t>(byte & 0x7F) << shift;
-        if ((byte & 0x80) == 0) break;
+        if ((byte & 0x80) == 0) return v;
         shift += 7;
     }
-    return v;
+    m_ok = false;
+    return 0;
 }
 
 void BitReader::ReadBytes(void* out, size_t n) {

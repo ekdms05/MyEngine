@@ -1,7 +1,7 @@
 // mye/core/Config.h — 계층 설정 시스템 (docs/01)
 //
 // 스코프(뒤가 앞을 오버라이드): Engine < Project < User < RuntimeOverlay
-// M0 구현 범위: Engine + Project 2스코프 로드·병합 + Save(User는 선언만, 구현 M1+).
+// 파일 스코프를 로드·병합하며 User 설정은 앱 부팅에서 로드하고 Save로 보존한다.
 // 키는 "section.key" 경로 문자열. 값 타입은 bool/int64/double/string/배열 최소 집합.
 #pragma once
 

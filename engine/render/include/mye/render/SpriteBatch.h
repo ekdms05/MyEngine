@@ -41,6 +41,8 @@ struct SpriteDraw {
     float              flashAmount = 0.0f;      // 히트 플래시 강도 0~1 (화이트 블렌드)
     float              sortY = 0.0f;            // Y-sort 키(발밑 월드 Y; 오름차순으로 그림)
     Vec2               pivot{0.5f, 1.0f};       // 정규화 피벗(0..1). 기본=하단 중앙(발밑).
+    bool               yDown = false;          // UI 픽셀 좌표는 +Y 아래
+    bool               alphaMask = false;      // R8 글리프: R을 premultiplied 흰색/알파로 사용
 };
 
 // 배치별 통계(오버레이용).
@@ -81,12 +83,12 @@ public:
     bool IsInitialized() const { return m_initialized; }
 
 private:
-    struct Vertex {                   // POSITION(월드 xy) + TEXCOORD0(uv) + COLOR(틴트 rgba) + TEXCOORD1(flash,pad)
+    struct Vertex {                   // POSITION(xy) + TEXCOORD0(uv) + COLOR(틴트 rgba) + TEXCOORD1(flash,alphaMask)
         float x, y;
         float u, v;
         float r, g, b, a;
         float flash;
-        float flashPad = 0.0f;        // TEXCOORD1을 RG32Float로 읽을 때 오버런 방지 패딩
+        float alphaMask = 0.0f;
     };
 
     void EnsureCapacity(uint32_t spriteCount);

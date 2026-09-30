@@ -389,6 +389,15 @@ MYE_TEST(MusicPlayerCrossfade) {
     // 새 트랙 B 는 여전히 활성(루프).
     MYE_EXPECT(engine.Mixer().IsVoiceActive(vb));
 
+    // 클립 소유자가 해제되기 전에 즉시 정지하면 믹서가 소스를 더 읽지 않는다.
+    engine.Music().Stop();
+    MYE_EXPECT(!engine.Music().IsPlaying());
+    MYE_EXPECT(engine.Mixer().ActiveVoiceCount() == 0);
+    trackA = {};
+    trackB = {};
+    engine.RenderOffline(out.data(), 512);
+    for (float sample : out) MYE_EXPECT(sample == 0.0f);
+
     engine.Shutdown();
 }
 

@@ -24,7 +24,7 @@ public:
     Value() = default;
     Value(bool b) : m_type(Type::Bool), m_bool(b) {}
     Value(double n) : m_type(Type::Number), m_number(n) {}
-    Value(int64_t n) : m_type(Type::Number), m_number(static_cast<double>(n)) {}
+    Value(int64_t n) : m_type(Type::Number), m_isInteger(true), m_integer(n) {}
     Value(std::string s) : m_type(Type::String), m_string(std::move(s)) {}
     Value(Array a) : m_type(Type::Array), m_array(std::move(a)) {}
     Value(Object o) : m_type(Type::Object), m_object(std::move(o)) {}
@@ -33,16 +33,17 @@ public:
     bool IsNull()   const { return m_type == Type::Null; }
     bool IsBool()   const { return m_type == Type::Bool; }
     bool IsNumber() const { return m_type == Type::Number; }
+    bool IsInteger() const { return IsNumber() && m_isInteger; }
     bool IsString() const { return m_type == Type::String; }
     bool IsArray()  const { return m_type == Type::Array; }
     bool IsObject() const { return m_type == Type::Object; }
 
     // 타입 불일치 시 fallback 반환 (관용적 소비 — 설정 로드 용도)
     bool        AsBool(bool fallback = false) const { return IsBool() ? m_bool : fallback; }
-    double      AsDouble(double fallback = 0.0) const { return IsNumber() ? m_number : fallback; }
-    int64_t     AsInt(int64_t fallback = 0) const {
-        return IsNumber() ? static_cast<int64_t>(m_number) : fallback;
+    double      AsDouble(double fallback = 0.0) const {
+        return IsNumber() ? (m_isInteger ? static_cast<double>(m_integer) : m_number) : fallback;
     }
+    int64_t     AsInt(int64_t fallback = 0) const;
     std::string_view AsString(std::string_view fallback = {}) const {
         return IsString() ? std::string_view(m_string) : fallback;
     }
@@ -56,7 +57,11 @@ public:
 private:
     Type        m_type = Type::Null;
     bool        m_bool = false;
-    double      m_number = 0.0;
+    bool        m_isInteger = false;
+    union {
+        double  m_number = 0.0;
+        int64_t m_integer;
+    };
     std::string m_string;
     Array       m_array;
     Object      m_object;

@@ -10,6 +10,7 @@ namespace mye::audio {
 
 // ---- MusicPlayer ----
 void MusicPlayer::Play(const asset::AudioClip& clip, float fadeSec, float volume) {
+    std::lock_guard lock(m_mutex);
     auto source = MakeClipSource(clip);
     if (!source) return;
 
@@ -44,6 +45,7 @@ void MusicPlayer::Play(const asset::AudioClip& clip, float fadeSec, float volume
 }
 
 void MusicPlayer::Stop(float fadeSec) {
+    std::lock_guard lock(m_mutex);
     const uint32_t sr = m_mixer->OutputSampleRate();
     const uint64_t fadeFrames = fadeSec > 0.0f
         ? static_cast<uint64_t>(static_cast<double>(fadeSec) * sr) : 0;
@@ -73,7 +75,7 @@ AudioEngine::~AudioEngine() { Shutdown(); }
 Expected<void, Error> AudioEngine::Initialize(std::unique_ptr<IAudioBackend> backend,
                                               uint32_t sampleRate) {
     m_mixer = std::make_unique<SoftwareMixer>(sampleRate);
-    m_music = std::make_unique<MusicPlayer>(*m_mixer);
+    m_music = std::make_unique<MusicPlayer>(*m_mixer, m_mixerMutex);
     m_pull = std::make_unique<PullAdapter>(*m_mixer, m_mixerMutex);
 
     if (!backend) {

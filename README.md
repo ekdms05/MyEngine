@@ -1,16 +1,19 @@
 # MyEngine
 
-A 2.5D pixel-art game engine for **Tales Weaver–style games** — 2D dot/pixel
-characters living in a world that mixes 2D layers and 3D geometry, sorted
-together in a **single depth buffer**. Built in C++20 on DirectX 11, with a
-Dear ImGui editor, Lua scripting, and extensibility as its top design goal.
+A C++20 / DirectX 11 engine for 2.5D pixel-art games. Sprites, layered
+maps and 3D props share one depth buffer. The repository includes a Dear
+ImGui editor, Lua content tools and a local multiplayer server foundation.
+The design favors clear ownership, small modules and measured performance.
 
-> 한국어 설계 문서는 [`docs/`](docs/) 아래에 있습니다 (기능·UI·MCP 설계 + 아키텍처 개요).
+> 한국어 문서: [문서 안내](docs/README.md) · [현재 구조와 기능](docs/13-architecture-and-features.md) · [개선·개발 우선순위](docs/14-development-priorities.md) · [스킬·에이전트 조사](docs/15-skills-and-agents.md).
 
 ## Status
 
-The engine is being built milestone by milestone. Each milestone is gated on a
-**visible, pixel-verified demo**, not just "code compiles".
+The table below records the original M0–M6 milestones. The repository now also
+contains game/server apps, gameplay, networking, persistence and social libraries.
+See the [current implementation report](docs/13-architecture-and-features.md)
+for the distinction between library tests, sample coverage and app integration,
+and the [prioritized backlog](docs/14-development-priorities.md) for remaining work.
 
 | Milestone | Goal | State |
 |-----------|------|-------|
@@ -20,15 +23,15 @@ The engine is being built milestone by milestone. Each milestone is gated on a
 | **M3** | 8-direction animation, audio, **Lua scripting**, hot reload | ✅ Done |
 | **M4** | Reflection-driven ImGui editor — inspector, scene save, undo, play mode | ✅ Done |
 | **M5** | Content tools — tilemap/animation editors, Korean text, in-game UI, pathfinding | ✅ Done |
-| **M6** | Vertical slice — dialogue, cutscenes, NPCs → a Tales Weaver-style demo | ✅ Done |
+| **M6** | Vertical slice — dialogue, cutscenes, NPCs → a 2.5D village demo | ✅ Done |
 
 The M2 demo already proves the hardest technical risk: a character can walk
 **over a bridge while another walks under it**, and step **behind a 3D statue**
 with correct per-pixel occlusion — all 2D sprites and 3D meshes sharing one
 depth buffer.
 
-The **M6 vertical slice** (`samples/village_demo`) is the roadmap's final
-deliverable: a dot character walks a Tales-Weaver-style village — sloped hill,
+The **M6 vertical slice** (`samples/village_demo`) demonstrates the existing content
+stack: a dot character walks a layered village — sloped hill,
 a one-way bridge over a creek, 3D fountain/statue props — and talks with three
 NPCs (chief, merchant, guard) in **Korean**, complete with branching choices, an
 opening cutscene, wandering NPCs, footsteps and BGM. Map, dialogue (localization
@@ -43,7 +46,7 @@ engine** (editor + Lua hot reload).
 - **Pixel-perfect pipeline** — 960×540 internal render target, integer upscale
   with letterbox, pixel-snapped camera with sub-pixel scroll (PPU 48).
 - **Own RHI over DirectX 11** — opaque handles, bind groups, monolithic PSOs;
-  abstracted so DX12/Vulkan backends can be added later.
+  the implemented backend is DX11.
 - **Sparse-set ECS** — 64-bit entity handles, 5-phase scheduler, command buffer,
   transform hierarchy; runtime component registration for scripts/plugins.
 - **Tilemap** — 32×32 chunks, multi-column cells for bridges, integer height +
@@ -59,11 +62,28 @@ engine** (editor + Lua hot reload).
   animation events (footsteps, hit frames).
 - **Audio** — miniaudio backend, buses, cues with polyphony, BGM crossfade,
   positional panning.
-- **Lua scripting** (in progress) — single sol2 VM, per-entity script
+- **Lua scripting** — single sol2 VM, per-entity script
   components, error isolation, hot reload with state survival, coroutines.
 - **MCP dev-tools server** — a Model Context Protocol server (`tools/mcp`) that
-  lets AI agents build, test, run the engine and **see rendered frames as
-  images**.
+  provides build, test, run, log and frame-capture commands.
+
+## Current foundation
+
+- MyGame: title/settings, pixel UI text, fixed-tick local movement, AudioModule
+  output, scene rendering and loopback multiplayer movement.
+- MyServer: validated input protocol v1, at most 64 local clients, active-session
+  snapshots, backup/restore and PBKDF2-SHA256 password storage through Windows CNG.
+- Save format: versioned `state.json`; complete legacy three-file saves are read
+  and converted on the next save. One writer per directory, 64 MiB ceiling.
+- Online combat/social integration, complete editor file-open workflow, encrypted
+  transport and production operations remain in the [backlog](docs/14-development-priorities.md).
+  The current UDP server binds to loopback because its credentials are unencrypted.
+
+The [change record](docs/16-foundation-worklog.md) records evidence, verification,
+measured reconciliation performance and known limits. Local development skill
+installation and runtime prerequisites are documented [here](docs/15-skills-and-agents.md).
+
+![MyGame title screen captured at the 960×540 internal resolution](docs/images/foundation-title.png)
 
 ## Building
 
@@ -86,7 +106,7 @@ build/dev/samples/village_demo/Debug/village_demo.exe    # M6: full vertical sli
 
 ### village_demo — the M6 vertical slice
 
-`village_demo` is the roadmap's final demo: one executable that walks the whole
+`village_demo` is an integration demo: one executable that walks the whole
 engine stack (RHI, ECS/scene, tilemap, physics, animation, audio, Lua scripting,
 runtime dialogue/cutscene/NPC systems, Korean text, pixel-perfect hybrid render).
 
@@ -107,17 +127,19 @@ last frame, no overlay), `--dump-ui path.bmp` (dump including the dialogue box),
 `--scenario <name>`, `--headless`. Assets (map, character/tile PNGs, glTF props,
 audio) are regenerated deterministically by
 `samples/village_demo/tools/make_all.ps1`; map/dialogue/localization JSON and the
-Lua scripts under `samples/village_demo/assets/` are hand-authored and
+Lua scripts under `samples/village_demo/assets/` are editable and
 hot-reloadable.
 
 Run the tests:
 
 ```sh
-build/dev/tests/Debug/mye_tests.exe
+ctest --test-dir build/dev -C Debug --output-on-failure
+powershell -File tools/verify-foundation.ps1 -Configuration Debug
 ```
 
 > Use the `Visual Studio 17 2022` generator instead if that's what you have
-> installed. Everything is static-linked; no runtime dependencies to install.
+> installed. Engine modules are static libraries; Windows, DirectX 11 and the
+> matching MSVC runtime remain platform requirements.
 
 ## Repository layout
 
@@ -134,7 +156,17 @@ engine/
   script/    mye_script — Lua (sol2) runtime + bindings
   ui/        mye_ui     — in-game UI widgets + Korean text (FreeType) stack
   runtime/   mye_runtime— dialogue, cutscene, NPC, save, localization, scene transition
-samples/     runnable demos (hello_triangle, sprite_demo, bridge_demo,
+  editor/    mye_editor — documents, panels, inspector, undo, play-world support
+  plugin/    mye_plugin — static and DLL plugin hosting
+  ddc/       mye_ddc    — runtime schemas and dynamic components
+  gameplay/  mye_gameplay — reusable RPG rules
+  net/       mye_net    — UDP protocol, prediction, reconciliation, interpolation
+  persist/   mye_persist— accounts, characters, ledger, JSON snapshots
+  liveops/   mye_liveops— server settings, feature flags, metrics
+  gameserver/ mye_gameserver — network/gameplay/persistence integration
+game/        social and MMO content libraries
+apps/        MyEditor, MyGame, MyServer, paktool
+samples/     runnable demos (hello_triangle, asset_smoke, sprite_demo, bridge_demo,
              character_demo, village_demo)
 tests/       mye_tests  — unit + integration tests
 tools/mcp/   Model Context Protocol dev-tools server (TypeScript)
@@ -149,7 +181,9 @@ spec.
 
 ## Design docs
 
-The `docs/` directory contains the full design (in Korean):
+Start with the [documentation index](docs/README.md) and follow the
+[repository working rules](AGENTS.md) when making changes.
+The `docs/` directory also preserves the original design (in Korean):
 `00-overview.md` (architecture, layers, roadmap), then one document per
 subsystem (`01` core, `02` rendering, `03` scene/ECS, `04` assets, `05`
 scripting/plugins, `06` runtime systems, `07` editor/UI, `08` MCP).
@@ -169,7 +203,3 @@ Vendored under `third_party/`, each under its own license:
 ## License
 
 [MIT](LICENSE). Do what you like with it, keep the copyright notice.
-
----
-
-*This engine is being developed with [Claude Code](https://claude.com/claude-code).*

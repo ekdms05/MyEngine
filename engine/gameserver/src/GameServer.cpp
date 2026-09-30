@@ -70,8 +70,9 @@ Expected<SessionId, Error> GameServer::Join(persist::AccountId account, persist:
 Expected<void, Error> GameServer::Leave(SessionId id) {
     PlayerSession* s = Find(id);
     if (!s) return Error{"Leave: 세션 없음", 1};
-    if (persist::CharacterRecord* rec = m_persist.Characters().GetMutable(s->characterId))
-        WriteSessionInto(*s, *rec);
+    auto* rec = m_persist.Characters().GetMutable(s->characterId);
+    if (!rec) return Error{"Leave: character record missing; session retained", 2};
+    WriteSessionInto(*s, *rec);
     for (auto it = m_sessions.begin(); it != m_sessions.end(); ++it)
         if (it->sessionId == id) { m_sessions.erase(it); break; }
     return {};
@@ -93,27 +94,49 @@ SessionId GameServer::FindByCharacter(persist::CharacterId charId) const {
     return 0;
 }
 
-int32_t GameServer::GrantItem(SessionId id, gameplay::ItemId itemId, int32_t count, const gameplay::ItemCatalog& cat) {
+Expected<void, Error> GameServer::FlushSessions() {
+    for (const auto& session : m_sessions)
+        if (!m_persist.Characters().Get(session.characterId))
+            return Error{"FlushSessions: character record missing", 1};
+    for (const auto& session : m_sessions)
+        WriteSessionInto(session, *m_persist.Characters().GetMutable(session.characterId));
+    return {};
+}
+
+Expected<void, Error> GameServer::Save(std::string_view dir, int maxBackups) {
+    if (auto r = FlushSessions(); !r) return r.GetError();
+    return m_persist.SaveAllWithBackup(dir, maxBackups);
+}
+
+Expected<int32_t, Error> GameServer::GrantItem(SessionId id, gameplay::ItemId itemId, int32_t count, const gameplay::ItemCatalog& cat) {
     PlayerSession* s = Find(id);
-    if (!s || count <= 0) return 0;
-    const int32_t leftover = gameplay::AddItem(s->inv, cat, itemId, count);
+    if (!s || count <= 0) return Error{"GrantItem: invalid session/count", 1};
+    auto inventory = s->inv;
+    const int32_t leftover = gameplay::AddItem(inventory, cat, itemId, count);
     const int32_t added = count - leftover;
-    if (added > 0) (void)m_persist.Ledger().Grant(s->characterId, itemId, added, "grant");
+    if (added > 0) {
+        if (auto r = m_persist.Ledger().Grant(s->characterId, itemId, added, "grant"); !r) return r.GetError();
+        s->inv = std::move(inventory);
+    }
     return added;
 }
 
-int32_t GameServer::ConsumeItem(SessionId id, gameplay::ItemId itemId, int32_t count) {
+Expected<int32_t, Error> GameServer::ConsumeItem(SessionId id, gameplay::ItemId itemId, int32_t count) {
     PlayerSession* s = Find(id);
-    if (!s || count <= 0) return 0;
-    const int32_t removed = gameplay::RemoveItem(s->inv, itemId, count);
-    if (removed > 0) (void)m_persist.Ledger().Consume(s->characterId, itemId, removed, "consume");
+    if (!s || count <= 0) return Error{"ConsumeItem: invalid session/count", 1};
+    auto inventory = s->inv;
+    const int32_t removed = gameplay::RemoveItem(inventory, itemId, count);
+    if (removed > 0) {
+        if (auto r = m_persist.Ledger().Consume(s->characterId, itemId, removed, "consume"); !r) return r.GetError();
+        s->inv = std::move(inventory);
+    }
     return removed;
 }
 
 bool GameServer::AddGold(SessionId id, int64_t delta) {
     PlayerSession* s = Find(id);
     if (!s || delta == 0) return false;
-    if (delta < 0 && s->inv.gold + delta < 0) return false;
+    if (s->inv.gold < 0 || (delta < 0 ? delta < -s->inv.gold : delta > INT64_MAX - s->inv.gold)) return false;
     if (auto r = m_persist.Ledger().AdjustGold(s->characterId, delta, "gold"); !r) return false;
     s->inv.gold += delta;
     return true;

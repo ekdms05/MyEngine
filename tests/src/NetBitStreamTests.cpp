@@ -68,3 +68,10 @@ MYE_TEST(BitStreamReadPastEndFails) {
     (void)r.ReadBits(8);       // 데이터 초과
     MYE_EXPECT(!r.Ok());
 }
+
+MYE_TEST(BitStreamRejectsOverflowingVarUint) {
+    const std::vector<uint8_t> bytes(10, 0xff);
+    BitReader reader(bytes);
+    reader.ReadVarUint();
+    MYE_EXPECT(!reader.Ok());
+}

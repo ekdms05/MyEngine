@@ -476,7 +476,7 @@ Result<void> SerializeDynamic(IArchive& ar, const refl::TypeInfo& type, void* ob
 - 비동기 로딩(01 잡 시스템 연동, Parse/Finalize 분리), 하드 의존성 로딩, 폴백 에셋
 - 파일 워처 → 리임포트 → 핸들 스왑 → `AssetReloadedEvent` (텍스처 핫 리로드 데모)
 
-**M2 — 2D 콘텐츠 파이프라인 (테일즈위버류 핵심)**
+**M2 — 2D 콘텐츠 파이프라인 (2.5D 픽셀아트 RPG류 핵심)**
 - AsepriteImporter(**Aseprite CLI 호출 기반**: 시트 PNG+JSON 파싱, 태그→클립·슬라이스→pivot 매핑), AtlasPacker(그룹 패킹·부분 재패킹)
 - 페이퍼돌 파츠 규약 검증(바디 템플릿 `AssetRef` 대조: 프레임 수·태그 집합·캔버스·duration → 임포트 에러/경고)
 - AudioImporter(WAV/OGG), FontImporter(블롭 전달)
@@ -510,5 +510,5 @@ Result<void> SerializeDynamic(IArchive& ar, const refl::TypeInfo& type, void* ob
 4. **서브 에셋 주소 표기**: `guid#anim/idle` 경로 문법을 공식 API로 승격할지(가독성·Lua 편의) vs GUID 직접 참조만 허용할지(리네임 안전성).
 5. **아틀라스 그룹의 소유 위치**: `.meta` 개별 지정(현안) vs 별도 아틀라스 정의 에셋(.myeatlas)로 중앙 관리 — 페이지 예산·플랫폼별 크기 제한을 고려하면 후자가 커질 수 있음.
 6. **pak 암호화·서명**: 모드 지원과 상충(모드는 열린 포맷이 유리). 배포 정책 결정 필요.
-7. **glTF 머티리얼 → 02 머티리얼 매핑 규약**: PBR 파라미터를 어느 수준까지 보존할지 — HD-2D식 라이팅 범위가 02에서 확정된 후 정렬 필요.
+7. **glTF 머티리얼 → 02 머티리얼 매핑 규약**: PBR 파라미터를 어느 수준까지 보존할지 — Billboard3D식 라이팅 범위가 02에서 확정된 후 정렬 필요.
 8. **코드젠 도입 시점**: 리플렉션 등록 타이핑이 병목이 되는 시점(대략 타입 100개+)에 libclang 툴을 붙일지, 그 전까지 수동 유지할지.

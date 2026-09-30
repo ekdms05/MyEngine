@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mye/core/Base.h"
+#include "mye/core/Json.h"
 
 #include <cstdint>
 #include <string>
@@ -79,6 +80,8 @@ public:
     const std::vector<LedgerEntry>& Entries() const { return m_entries; }
 
     // ---- 영속화(추가-전용 로그) ----
+    json::Value ToJson() const;
+    Expected<void, Error> LoadJson(const json::Value& root);
     Expected<void, Error> SaveToFile(std::string_view path) const;
     Expected<void, Error> LoadFromFile(std::string_view path);
 

@@ -1,5 +1,6 @@
 // mye/gameserver/NetGameServer.cpp — 넷↔게임 통합 어댑터 구현 (NetGameServer.h 참조)
 #include "mye/gameserver/NetGameServer.h"
+#include "mye/core/Log.h"
 
 #include <algorithm>
 
@@ -17,6 +18,16 @@ NetGameServer::NetGameServer(persist::PersistenceService& persist)
 bool NetGameServer::Start(uint16_t port) {
     m_net.SetMoveSpeed(m_speed);
     return m_net.Start(port);
+}
+
+Expected<void, Error> NetGameServer::Stop() {
+    if (auto r = m_game.FlushSessions(); !r) return r.GetError();
+    for (const auto& [netId, session] : m_netToSession) {
+        if (auto r = m_game.Leave(session); !r) return r.GetError();
+    }
+    m_net.Stop();
+    m_netToSession.clear();
+    return {};
 }
 
 SessionId NetGameServer::SessionOf(uint32_t netId) const {
@@ -46,8 +57,11 @@ void NetGameServer::Tick(float dt) {
     // 퇴장(넷에서 사라진 매핑) → 세션 저장 후 제거.
     for (auto it = m_netToSession.begin(); it != m_netToSession.end();) {
         if (std::find(ids.begin(), ids.end(), it->first) == ids.end()) {
-            (void)m_game.Leave(it->second);
-            it = m_netToSession.erase(it);
+            if (auto r = m_game.Leave(it->second); r) it = m_netToSession.erase(it);
+            else {
+                MYE_LOG_ERROR("GameServer", "session flush failed: {}", r.GetError().message);
+                ++it;
+            }
         } else {
             ++it;
         }

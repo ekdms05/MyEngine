@@ -2,7 +2,7 @@
 //
 // 06 API 표면(docs/06 §핵심 타입 AudioSystem)의 구현체. 소유:
 //   - SoftwareMixer(믹싱 정본) + IAudioBackend(장치 출력, 없으면 무음 모드).
-//   - 커맨드 큐: 메인 스레드가 큐잉, 오디오 스레드가 PullAudio 시점에 적용(락 최소, 오픈이슈 #4).
+//   - 메인 스레드 커맨드와 오디오 콜백을 같은 믹서 mutex로 직렬화.
 //   - AudioCue 재생(PostCue), 정지, 폴리포니 제한.
 //   - MusicPlayer(2 보이스 BGM 크로스페이드).
 //   - 리스너·거리 감쇠·패닝(worldPos 주어진 재생).
@@ -29,18 +29,19 @@ namespace mye::audio {
 // BGM 2 보이스 크로스페이드 재생기. AudioEngine 내부 소유, music() 로 노출.
 class MusicPlayer {
 public:
-    explicit MusicPlayer(SoftwareMixer& mixer) : m_mixer(&mixer) {}
+    MusicPlayer(SoftwareMixer& mixer, std::mutex& mutex) : m_mixer(&mixer), m_mutex(mutex) {}
 
     // 새 트랙으로 fadeSec 에 걸쳐 크로스페이드. 이전 트랙은 페이드아웃 후 자동 정지.
     // fadeSec<=0 이면 즉시 전환. clip 수명은 호출자가 보장(핸들 유지 등).
     void Play(const asset::AudioClip& clip, float fadeSec, float volume = 1.0f);
     void Stop(float fadeSec = 0.0f);   // 현재 트랙 페이드아웃
 
-    bool IsPlaying() const { return m_active.IsValid(); }
-    VoiceHandle ActiveVoice() const { return m_active; }
+    bool IsPlaying() const { std::lock_guard lock(m_mutex); return m_active.IsValid(); }
+    VoiceHandle ActiveVoice() const { std::lock_guard lock(m_mutex); return m_active; }
 
 private:
     SoftwareMixer* m_mixer;
+    std::mutex& m_mutex;           // AudioEngine의 콜백·커맨드와 같은 경계
     VoiceHandle    m_active{};      // 현재(페이드 인 중이거나 재생 중)
     VoiceHandle    m_previous{};    // 페이드 아웃 중인 이전 트랙
 };

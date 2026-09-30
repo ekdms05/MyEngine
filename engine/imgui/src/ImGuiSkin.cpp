@@ -20,12 +20,15 @@ void ApplySkin() {
 
     ImGuiStyle& st = ImGui::GetStyle();
 
-    // 2) 라운딩/스크롤바 — devTool main.hpp initialize()와 동일값.
-    st.WindowRounding    = 8.0f;
-    st.ChildRounding     = 8.0f;
-    st.FrameRounding     = 5.0f;
-    st.PopupRounding     = 6.0f;
-    st.GrabRounding      = 4.0f;
+    // 2) 짧은 라운딩과 일정한 간격으로 밀도 높은 편집 패널을 구분한다.
+    st.WindowRounding    = 3.0f;
+    st.ChildRounding     = 3.0f;
+    st.FrameRounding     = 3.0f;
+    st.PopupRounding     = 3.0f;
+    st.GrabRounding      = 2.0f;
+    st.WindowPadding    = ImVec2(10, 10);
+    st.FramePadding     = ImVec2(7, 4);
+    st.ItemSpacing      = ImVec2(8, 6);
     st.ScrollbarSize     = 16.0f;   // 로그/목록 스크롤바를 굵게 — 빠르게 드래그
     st.ScrollbarRounding = 8.0f;
     st.TabRounding       = 6.0f;
@@ -33,6 +36,12 @@ void ApplySkin() {
     // 3) 주황 액센트 매핑 — 스톡 ImGui엔 ImGuiCol_Scheme이 없으므로 표준 상호작용
     //    색에 액센트를 입혀 동일한 시각 아이덴티티를 재현한다.
     ImVec4* c = st.Colors;
+    c[ImGuiCol_Text] = ImVec4(0.90f, 0.91f, 0.94f, 1.00f);
+    c[ImGuiCol_TextDisabled] = ImVec4(0.55f, 0.58f, 0.64f, 1.00f);
+    c[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.09f, 0.12f, 1.00f);
+    c[ImGuiCol_ChildBg] = ImVec4(0.07f, 0.08f, 0.10f, 1.00f);
+    c[ImGuiCol_PopupBg] = ImVec4(0.10f, 0.11f, 0.14f, 1.00f);
+    c[ImGuiCol_FrameBg] = ImVec4(0.14f, 0.16f, 0.20f, 1.00f);
 
     // 상호작용 프레임(체크박스/슬라이더/입력창 배경) — 눌림/hover 시 주황.
     c[ImGuiCol_FrameBgHovered]      = WithAlpha(kAccent, 0.35f);
@@ -43,8 +52,8 @@ void ApplySkin() {
     c[ImGuiCol_SliderGrab]          = kAccent;
     c[ImGuiCol_SliderGrabActive]    = kAccentHi;
 
-    // 버튼 — 은은한 주황(기본은 낮은 알파, hover/active로 강조).
-    c[ImGuiCol_Button]              = WithAlpha(kAccent, 0.28f);
+    // 버튼 — 기본은 중립색, hover/active는 액센트로 강조한다.
+    c[ImGuiCol_Button]              = ImVec4(0.16f, 0.18f, 0.23f, 1.00f);
     c[ImGuiCol_ButtonHovered]       = WithAlpha(kAccent, 0.70f);
     c[ImGuiCol_ButtonActive]        = kAccentLo;
 

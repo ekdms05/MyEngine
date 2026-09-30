@@ -17,6 +17,10 @@ dist/
 # Claude Code local settings
 .claude/settings.local.json
 
+# Downloaded development skills; sources and install commands are documented.
+.agents/skills/
+.claude/skills/
+
 # Editor state (per docs/07 — VCS ignore)
 .myeditor/
 

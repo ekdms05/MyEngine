@@ -230,7 +230,7 @@ int GuardedMain(const LaunchArgs& args) {
     ctx.RegisterServiceRaw(JobSystem::kServiceId, &jobs);
     ctx.RegisterServiceRaw(FrameAllocator::kServiceId, &frameAllocator);
 
-    // ---- 설정 로드: Engine → Project 순 병합. 파일 없음은 성공(빈 스코프) ----
+    // ---- 설정 로드: Engine → Project → User 순 병합 ----
     config.RegisterSection("time", ConfigScope::Project);
     if (auto loaded = config.LoadScopeFromFile(ConfigScope::Engine,
                                                ctx.m_paths.engineDir + "/engine.json"); !loaded) {
@@ -244,6 +244,11 @@ int GuardedMain(const LaunchArgs& args) {
         }
     }
 
+    if (!ctx.m_paths.userDir.empty()) {
+        if (auto loaded = config.LoadScopeFromFile(ConfigScope::User,
+                                                   ctx.m_paths.userDir + "/config/user.json"); !loaded)
+            MYE_LOG_WARN("Core", "user.json load failed: {}", loaded.GetError().message);
+    }
     app->OnConfigure(config);
     app->OnRegisterModules(modules);
 

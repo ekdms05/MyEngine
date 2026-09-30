@@ -1,6 +1,6 @@
 // mye/runtime/NpcSystem.h — NPC 배회·상호작용 시스템 (docs/06 §7, M6-B)
 //
-// 소유: 06 (M6-B). 테일즈위버풍 데모의 NPC 행동을 담당한다:
+// 소유: 06 (M6-B). 2.5D 픽셀아트 RPG풍 데모의 NPC 행동을 담당한다:
 //   - 배회(wander): 웨이포인트 순회(patrol) 또는 랜덤 순회(random). 대기(Idle)↔이동(Moving)
 //     상태를 오가며, MoveController 로 목표까지 전진하고 SpriteAnimator 로 8방향 애니를 구동한다.
 //   - 플레이어 접근 감지: 플레이어가 alertRadius 안에 들어오면 배회를 멈추고 플레이어를 바라본다.

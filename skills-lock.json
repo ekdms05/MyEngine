@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "skills": {
+    "Pixel Art Animator": {
+      "source": "willibrandon/pixel-plugin",
+      "sourceType": "github",
+      "skillPath": "skills/pixel-art-animator/SKILL.md",
+      "computedHash": "4823747009715bf66bed4befbd6ff6645bbcde588c25f958febf7a7fc073f9e6"
+    },
+    "Pixel Art Exporter": {
+      "source": "willibrandon/pixel-plugin",
+      "sourceType": "github",
+      "skillPath": "skills/pixel-art-exporter/SKILL.md",
+      "computedHash": "c198e25e601866cc4c43bea0e8cca61e09e05b9dc7e31c35a59095dbc32dea0a"
+    },
+    "Pixel Art Professional": {
+      "source": "willibrandon/pixel-plugin",
+      "sourceType": "github",
+      "skillPath": "skills/pixel-art-professional/SKILL.md",
+      "computedHash": "35f44f01cf688f7f5a6223aa2c6cdd1dfb4278668cb7037db32a350f3951c2e9"
+    },
+    "cmake": {
+      "source": "mohitmishra786/low-level-dev-skills",
+      "sourceType": "github",
+      "skillPath": "skills/build-systems/cmake/SKILL.md",
+      "computedHash": "934820a54d2e3a0be75b3b5cd219ff55a4f4e48904a324014e5c1cd6186844c2"
+    },
+    "cpp-coding-standards": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/cpp-coding-standards/SKILL.md",
+      "computedHash": "e8c59d13fe23b088e24dcf6b77845823c5b5636b5c52434550f9b1837bc44ac3"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "computedHash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf"
+    },
+    "game-ui-ux": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/game-ui-ux/SKILL.md",
+      "computedHash": "4aeb677be89029728154d40bb1d98e07d809f019ff8cd0e9188fb4a1f9d51255"
+    },
+    "imgui-ui-ux-engineering": {
+      "source": "muhosekerci/imgui-ui-ux-engineering",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "79acfd5dbb823d2b979227c4cfbe414f968237473c816429ba0089165f08e831"
+    },
+    "performance-optimization": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/performance-optimization/SKILL.md",
+      "computedHash": "9788da8674ddd2c5a895dad3a1ba54e815d3843060ad01366a5354c39f0ecde4"
+    },
+    "shader-programming": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/shader-programming/SKILL.md",
+      "computedHash": "19fbb1bc4715179388a9c8fcf92f2534cb821f655ca76120c19f3c6bb86de4bf"
+    }
+  }
+}

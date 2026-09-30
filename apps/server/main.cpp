@@ -31,7 +31,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <cstdlib>
+#include <charconv>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -66,6 +67,8 @@ struct ServerBot {
 };
 
 int main(int argc, char** argv) {
+    Log::Init({});
+    struct LogLifetime { ~LogLifetime() { Log::Shutdown(); } } logLifetime;
     uint16_t port = 27015;
     int tickrate = 20;
     long long maxTicks = -1;   // -1 = 무한
@@ -78,25 +81,48 @@ int main(int argc, char** argv) {
     bool doMakeChar = false;
     int botCount = 0;
 
+    auto parseInteger = [](std::string_view text, long long min, long long max, long long& value) {
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+        return result.ec == std::errc{} && result.ptr == text.data() + text.size() &&
+               value >= min && value <= max;
+    };
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--port" && i + 1 < argc) port = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 10));
-        else if (a == "--tickrate" && i + 1 < argc) tickrate = std::atoi(argv[++i]);
-        else if (a == "--ticks" && i + 1 < argc) maxTicks = std::atoll(argv[++i]);
+        if (a == "--port" || a == "--tickrate" || a == "--ticks" || a == "--autosave" || a == "--bots") {
+            long long value = 0;
+            const long long min = a == "--ticks" ? -1 : (a == "--tickrate" ? 1 : 0);
+            const long long max = a == "--port" ? 65535 : a == "--tickrate" ? 120 :
+                                 a == "--bots" ? net::kMaxSnapshotEntities :
+                                 a == "--autosave" ? 86400 : std::numeric_limits<long long>::max();
+            if (i + 1 >= argc || !parseInteger(argv[++i], min, max, value)) {
+                MYE_LOG_ERROR("Server", "Invalid value for {}", a);
+                return 64;
+            }
+            if (a == "--port") port = static_cast<uint16_t>(value);
+            else if (a == "--tickrate") tickrate = static_cast<int>(value);
+            else if (a == "--ticks") maxTicks = value;
+            else if (a == "--autosave") autosaveSec = static_cast<int>(value);
+            else botCount = static_cast<int>(value);
+        }
         else if (a == "--data" && i + 1 < argc) dataDir = argv[++i];
-        else if (a == "--autosave" && i + 1 < argc) autosaveSec = std::atoi(argv[++i]);
-        else if (a == "--bots" && i + 1 < argc) botCount = std::atoi(argv[++i]);
         else if (a == "--register" && i + 2 < argc) { regUser = argv[++i]; regPass = argv[++i]; doRegister = true; }
         else if (a == "--make-char" && i + 2 < argc) { charUser = argv[++i]; charName = argv[++i]; doMakeChar = true; }
         else if (a == "--ban" && i + 1 < argc) { banUser = argv[++i]; if (i + 1 < argc && argv[i+1][0] != '-') banReason = argv[++i]; }
         else if (a == "--unban" && i + 1 < argc) unbanUser = argv[++i];
+        else { MYE_LOG_ERROR("Server", "Unknown or incomplete option: {}", a); return 64; }
     }
-    if (tickrate < 1) tickrate = 20;
+    if (dataDir.empty() || static_cast<int>(doRegister) + static_cast<int>(doMakeChar) +
+        static_cast<int>(!banUser.empty()) + static_cast<int>(!unbanUser.empty()) > 1) {
+        MYE_LOG_ERROR("Server", "Invalid data path or conflicting administration commands");
+        return 64;
+    }
 
     // ---- 영속 로드(첫 부팅이면 빈 상태) ----
     persist::PersistenceService persistence;
-    if (auto r = persistence.LoadAll(dataDir); !r)
-        MYE_LOG_WARN("Server", "영속 로드 경고: {}", r.GetError().message);
+    if (auto r = persistence.LoadAll(dataDir); !r) {
+        MYE_LOG_ERROR("Server", "영속 로드 실패: {}", r.GetError().message);
+        return 4;
+    }
 
     // ---- 관리: 계정 등록 후 종료 ----
     if (doRegister) {
@@ -138,9 +164,17 @@ int main(int argc, char** argv) {
         if (auto r = config.LoadFromFile(configPath); !r) MYE_LOG_WARN("Server", "config 로드 경고: {}", r.GetError().message);
     }
     // CLI 기본을 CVar 로 오버라이드(있으면).
-    if (config.Has("tickrate")) tickrate = static_cast<int>(config.GetInt("tickrate", tickrate));
-    if (tickrate < 1) tickrate = 20;
+    const int64_t configuredTickrate = config.GetInt("tickrate", tickrate);
+    if (configuredTickrate < 1 || configuredTickrate > 120) {
+        MYE_LOG_ERROR("Server", "config tickrate must be in [1, 120]");
+        return 64;
+    }
+    tickrate = static_cast<int>(configuredTickrate);
     const float moveSpeed = static_cast<float>(config.GetFloat("move_speed", 6.0));
+    if (!std::isfinite(moveSpeed) || moveSpeed < 0 || moveSpeed > 100) {
+        MYE_LOG_ERROR("Server", "config move_speed must be in [0, 100]");
+        return 64;
+    }
 
     net::NetSubsystem sys;
     if (!sys.ok) { MYE_LOG_ERROR("Server", "Winsock 초기화 실패"); return 1; }
@@ -174,12 +208,18 @@ int main(int argc, char** argv) {
             bot->pass = "botpass";
             bot->phase = i * 1.7;   // 봇마다 다른 위상 → 경로 분산
             if (!persistence.Accounts().FindByName(bot->user)) {
-                (void)persistence.Accounts().Register(bot->user, bot->pass);   // 중복(동시 부팅)은 무시
+                if (auto r = persistence.Accounts().Register(bot->user, bot->pass); !r) {
+                    MYE_LOG_ERROR("Server", "봇 계정 등록 실패: {}", r.GetError().message);
+                    return 3;
+                }
                 touched = true;
             }
             if (const persist::Account* acc = persistence.Accounts().FindByName(bot->user)) {
                 if (persistence.Characters().ListByAccount(acc->id).empty()) {
-                    (void)persistence.Characters().Create(acc->id, bot->user);
+                    if (auto r = persistence.Characters().Create(acc->id, bot->user); !r) {
+                        MYE_LOG_ERROR("Server", "봇 캐릭터 생성 실패: {}", r.GetError().message);
+                        return 7;
+                    }
                     touched = true;
                 }
             }
@@ -188,7 +228,12 @@ int main(int argc, char** argv) {
                 bots.push_back(std::move(bot));
             }
         }
-        if (touched) (void)persistence.SaveAll(dataDir);   // 봇 계정 영속(재부팅 시 재등록 방지)
+        if (touched) {
+            if (auto r = persistence.SaveAll(dataDir); !r) {
+                MYE_LOG_ERROR("Server", "봇 계정 저장 실패: {}", r.GetError().message);
+                return 4;
+            }
+        }
         MYE_LOG_INFO("Server", "봇 {}개 기동(배회 시작)", bots.size());
     }
 
@@ -205,6 +250,7 @@ int main(int argc, char** argv) {
         const std::string json = metrics.SnapshotJson();
         std::ofstream os(metricsPath, std::ios::binary | std::ios::trunc);
         if (os) os.write(json.data(), static_cast<std::streamsize>(json.size()));
+        if (!os) MYE_LOG_WARN("Server", "metrics write failed: {}", metricsPath);
     };
 
     long long tick = 0;
@@ -241,16 +287,18 @@ int main(int argc, char** argv) {
         if (tick % reloadTicks == 0) {
             if (std::filesystem::exists(configPath)) {
                 if (auto r = config.LoadFromFile(configPath); r) {
-                    server.SetMoveSpeed(static_cast<float>(config.GetFloat("move_speed", 6.0)));
+                    const float speed = static_cast<float>(config.GetFloat("move_speed", 6.0));
+                    if (std::isfinite(speed) && speed >= 0 && speed <= 100) server.SetMoveSpeed(speed);
+                    else MYE_LOG_WARN("Server", "Ignored invalid move_speed");
                     if (config.Has("max_violations")) server.Net().SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));
-                }
+                } else MYE_LOG_WARN("Server", "config reload failed: {}", r.GetError().message);
             }
             writeMetrics();
         }
 
         if (autosaveTicks > 0 && tick % autosaveTicks == 0) {
             const int maxBk = static_cast<int>(config.GetInt("max_backups", 10));
-            if (auto s = persistence.SaveAllWithBackup(dataDir, maxBk); !s) MYE_LOG_WARN("Server", "자동저장 실패: {}", s.GetError().message);
+            if (auto s = server.Game().Save(dataDir, maxBk); !s) MYE_LOG_WARN("Server", "자동저장 실패: {}", s.GetError().message);
             else MYE_LOG_INFO("Server", "자동저장(백업 회전) 완료 (tick {})", tick);
         }
 
@@ -260,10 +308,15 @@ int main(int argc, char** argv) {
 
     // ---- 종료 시 저장(백업 회전) + 메트릭 스냅샷 ----
     for (auto& b : bots) b->cli.Disconnect();
-    if (auto s = persistence.SaveAllWithBackup(dataDir, static_cast<int>(config.GetInt("max_backups", 10))); !s)
-        MYE_LOG_WARN("Server", "종료 저장 실패: {}", s.GetError().message);
+    if (auto r = server.Stop(); !r) {
+        MYE_LOG_ERROR("Server", "세션 종료 실패: {}", r.GetError().message);
+        return 4;
+    }
+    if (auto s = server.Game().Save(dataDir, static_cast<int>(config.GetInt("max_backups", 10))); !s) {
+        MYE_LOG_ERROR("Server", "종료 저장 실패: {}", s.GetError().message);
+        return 4;
+    }
     writeMetrics();
     MYE_LOG_INFO("Server", "종료{} (총 {} tick, data '{}')", g_stop.load() ? "(우아한 종료)" : "", tick, dataDir);
-    server.Stop();
     return 0;
 }

@@ -43,7 +43,7 @@ public:
     UdpSocket& operator=(UdpSocket&& o) noexcept;
 
     // 소켓 생성 + 바인드(port 0 = 임시 포트) + 논블로킹. 성공 true.
-    bool Open(uint16_t port = 0);
+    bool Open(uint16_t port = 0, uint32_t bindAddress = 0);
     void Close();
     bool IsOpen() const { return m_handle != kInvalid; }
 

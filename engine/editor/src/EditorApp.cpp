@@ -27,7 +27,7 @@
 
 namespace mye::editor {
 
-// ViewportPanel.cpp 정의(다른 에이전트 소유). 나머지 내장 패널 팩토리는 BuiltinPanels.h.
+// ViewportPanel.cpp 정의. 나머지 내장 패널 팩토리는 BuiltinPanels.h.
 std::unique_ptr<IEditorPanelFactory> MakeViewportPanelFactory();
 
 EditorApp::EditorApp() = default;
@@ -333,14 +333,18 @@ void EditorApp::DrawToolbar() {
     ImGui::Dummy(ImVec2(0, 2));   // 상단 여백
     ImGui::Indent(6.0f);
 
+    const bool playing = m_playMode && m_playMode->IsPlaying();
+    ImGui::BeginDisabled(playing);
     if (ImGui::Button(T("toolbar.newscene"))) NewScene();
     ImGui::SameLine();
+    ImGui::BeginDisabled(!m_project || !m_project->Active() || !m_ctx.activeWorld());
     if (ImGui::Button(T("toolbar.save"))) SaveActive();
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
 
-    const bool playing = m_playMode && m_playMode->IsPlaying();
     const std::string playLabel = std::string(playing ? "■ " : "▶ ") + T(playing ? "toolbar.stop" : "toolbar.play");
     if (ImGui::Button(playLabel.c_str()))
         TogglePlay();
@@ -359,13 +363,16 @@ void EditorApp::DrawToolbar() {
 
     // 확장 툴바 버튼.
     if (m_extensions) {
+        int toolbarIndex = 0;
         for (const auto& t : m_extensions->ToolbarEntries()) {
+            ImGui::PushID(toolbarIndex++);
             ImGui::SameLine();
             bool enabled = !t.desc.isEnabled || t.desc.isEnabled();
             ImGui::BeginDisabled(!enabled);
             std::string caption = t.desc.icon.empty() ? t.desc.tooltip : t.desc.icon;
             if (ImGui::Button(caption.c_str()) && t.onClick) t.onClick(m_ctx);
             ImGui::EndDisabled();
+            ImGui::PopID();
         }
     }
 
@@ -414,7 +421,7 @@ void EditorApp::HandleShortcuts() {
 }
 
 void EditorApp::NewScene() {
-    if (!m_project) return;
+    if (!m_project || (m_playMode && m_playMode->IsPlaying())) return;
     Document* doc = m_project->NewScene();
     (void)doc;
 }

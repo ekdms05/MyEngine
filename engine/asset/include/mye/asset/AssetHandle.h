@@ -45,9 +45,6 @@ public:
     bool       IsLoaded() const { return State() == AssetState::Loaded; }
     bool       IsValid() const { return m_manager != nullptr; }
 
-    void Pin();                         // 지연 GC 면제(상주) — M1
-    void Unpin();
-
 private:
     void Retain();
     void Release();

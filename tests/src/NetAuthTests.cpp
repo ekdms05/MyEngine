@@ -10,6 +10,7 @@
 #include "mye/persist/AccountStore.h"
 
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 using namespace mye;
@@ -113,4 +114,44 @@ MYE_TEST(NetAntiCheatWorldBoundsClamp) {
     MYE_EXPECT(server.ViolationsOf(client.Id()) == 0);
     MYE_EXPECT(server.KickedCount() == 0);
     MYE_EXPECT(server.ClientCount() == 1);
+}
+
+MYE_TEST(NetRejectsTruncatedAndStaleInputAndLimitsDiagonalSpeed) {
+    NetSubsystem subsystem;
+    NetServer server;
+    UdpSocket client;
+    const bool ready = subsystem.ok && server.Start(0) && client.Open(0);
+    MYE_EXPECT(ready);
+    if (!ready) return;
+    const auto endpoint = Endpoint::Loopback(server.Port());
+    auto send = [&](BitWriter& writer) {
+        const auto& bytes = writer.Finish();
+        MYE_EXPECT(client.SendTo(endpoint, bytes.data(), bytes.size()) == static_cast<int>(bytes.size()));
+        SleepMs(2);
+        server.Receive();
+    };
+    BitWriter connect;
+    WriteConnect(connect, {}, {});
+    send(connect);
+    MYE_EXPECT(server.ClientCount() == 1);
+    if (server.ClientCount() != 1) return;
+    const auto id = server.ClientIds().front();
+    BitWriter valid;
+    WriteInput(valid, 10, 1, 1);
+    send(valid);
+    server.Tick(1);
+    float x = 0, y = 0;
+    MYE_EXPECT(server.GetEntity(id, x, y));
+    MYE_EXPECT(std::hypot(x, y) <= 6.001f);
+    const float firstX = x, firstY = y;
+    BitWriter old;
+    WriteInput(old, 9, -1, -1);
+    send(old);
+    BitWriter cut;
+    WriteHeader(cut, MsgType::Input);
+    cut.WriteVarUint(11);
+    send(cut);
+    server.Tick(1);
+    MYE_EXPECT(server.GetEntity(id, x, y));
+    MYE_EXPECT(x > firstX && y > firstY);
 }

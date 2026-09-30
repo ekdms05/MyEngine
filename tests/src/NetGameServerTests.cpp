@@ -92,3 +92,37 @@ MYE_TEST(NetGameServerRejectsBadCredentials) {
     MYE_EXPECT(!bad.Connected());
     MYE_EXPECT(server.PlayerCount() == 0);   // 세션 없음
 }
+
+MYE_TEST(NetGameServerStopPreservesActiveSession) {
+    net::NetSubsystem sys;
+    MYE_EXPECT(sys.ok);
+    if (!sys.ok) return;
+    persist::PersistenceService p;
+    const auto acc = p.Accounts().Register("active", "pw").Value();
+    const auto cid = p.Characters().Create(acc, "ActivePlayer").Value();
+    NetGameServer server(p);
+    net::NetClient client;
+    const bool ready = server.Start(0) && client.Open(0);
+    MYE_EXPECT(ready);
+    if (!ready) return;
+    client.Connect(net::Endpoint::Loopback(server.Port()), "active", "pw");
+    for (int i = 0; i < 500 && !client.Connected(); ++i) {
+        server.Tick(1.0f / 60.0f);
+        client.Receive();
+        SleepMs(1);
+    }
+    MYE_EXPECT(client.Connected());
+    const auto sid = server.SessionOf(client.Id());
+    auto* session = server.Game().Get(sid);
+    MYE_EXPECT(session != nullptr);
+    if (!session) return;
+    session->x = 12.0f;
+    session->y = -3.0f;
+    session->stats.hp = 7;
+    session->prog.xp = 123;
+    MYE_EXPECT(server.Stop());
+    const auto* record = p.Characters().Get(cid);
+    MYE_EXPECT(record->posX == 12.0f && record->posY == -3.0f);
+    MYE_EXPECT(record->hp == 7 && record->xp == 123);
+    MYE_EXPECT(server.Game().SessionCount() == 0);
+}

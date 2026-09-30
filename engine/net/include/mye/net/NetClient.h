@@ -1,7 +1,7 @@
 // mye/net/NetClient.h — 최소 클라이언트(UDP) (docs/mmorpg/02, M9)
 //
 // 서버에 접속(Connect→Accept로 clientId 수신)하고, 입력을 보내며, 스냅샷을 받아 원격 엔티티
-// 상태를 보관한다. (클라 예측/보간은 후속 — 여기선 권위 스냅샷 수신·적용까지.)
+// 상태를 보관하고 미확인 입력을 재적용해 클라이언트 예측을 보정한다.
 #pragma once
 
 #include "mye/net/UdpSocket.h"
@@ -57,6 +57,7 @@ private:
     bool                    m_connected = false;
     std::vector<EntitySnap> m_snapshot;
     uint32_t                m_tick = 0;
+    bool                    m_hasSnapshot = false;
 
     // 예측 상태.
     float  m_speed = 6.0f;

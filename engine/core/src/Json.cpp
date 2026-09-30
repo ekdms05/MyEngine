@@ -10,6 +10,15 @@
 
 namespace mye::json {
 
+int64_t Value::AsInt(int64_t fallback) const {
+    if (!IsNumber()) return fallback;
+    if (m_isInteger) return m_integer;
+    // The positive bound is exclusive: double(INT64_MAX) rounds to 2^63.
+    if (!std::isfinite(m_number) || m_number < -0x1p63 || m_number >= 0x1p63)
+        return fallback;
+    return static_cast<int64_t>(m_number);
+}
+
 const Value* Value::Find(std::string_view key) const {
     if (!IsObject()) return nullptr;
     const auto it = m_object.find(key);
@@ -270,6 +279,7 @@ private:
 
     bool ParseNumber(Value& out) {
         const char* start = m_cur;
+        bool integer = true;
         if (!AtEnd() && Peek() == '-') ++m_cur;
         if (AtEnd() || !IsDigit(Peek())) return SetError("invalid number, expected digit");
         if (Peek() == '0') {
@@ -280,17 +290,29 @@ private:
             while (!AtEnd() && IsDigit(Peek())) ++m_cur;
         }
         if (!AtEnd() && Peek() == '.') {
+            integer = false;
             ++m_cur;
             if (AtEnd() || !IsDigit(Peek()))
                 return SetError("expected digits after decimal point");
             while (!AtEnd() && IsDigit(Peek())) ++m_cur;
         }
         if (!AtEnd() && (Peek() == 'e' || Peek() == 'E')) {
+            integer = false;
             ++m_cur;
             if (!AtEnd() && (Peek() == '+' || Peek() == '-')) ++m_cur;
             if (AtEnd() || !IsDigit(Peek()))
                 return SetError("expected digits in exponent");
             while (!AtEnd() && IsDigit(Peek())) ++m_cur;
+        }
+        if (integer) {
+            int64_t n = 0;
+            const auto result = std::from_chars(start, m_cur, n);
+            if (result.ec != std::errc{} || result.ptr != m_cur) {
+                m_cur = start;
+                return SetError("integer out of signed 64-bit range");
+            }
+            out = Value(n);
+            return true;
         }
         double d = 0.0;
         const auto result = std::from_chars(start, m_cur, d);
@@ -363,7 +385,10 @@ void StringifyInto(std::string& out, const Value& v, int indent, int level) {
     switch (v.GetType()) {
         case Type::Null:   out += "null"; break;
         case Type::Bool:   out += v.AsBool() ? "true" : "false"; break;
-        case Type::Number: AppendNumber(out, v.AsDouble()); break;
+        case Type::Number:
+            if (v.IsInteger()) out += std::to_string(v.AsInt());
+            else AppendNumber(out, v.AsDouble());
+            break;
         case Type::String: AppendEscaped(out, v.AsString()); break;
         case Type::Array: {
             const auto& arr = v.AsArray();

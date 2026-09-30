@@ -19,6 +19,9 @@
 #include "mye/text/TextRenderer.h"
 
 #include "mye/rhi/Rhi.h"
+#include "mye/render/SpriteBatch.h"
+#include <filesystem>
+#include <fstream>
 
 #include <cstdio>
 #include <cstring>
@@ -475,4 +478,70 @@ MYE_TEST(TextLayoutLinkRegions) {
         MYE_EXPECT(layout.links()[0].rect.w > 0.0f);
     }
     atlas.Shutdown();
+}
+
+MYE_TEST(TextSpriteBatchR8CoverageAndScreenOrientation) {
+    auto created = rhi::CreateDevice(rhi::Backend::DX11, {});
+    MYE_EXPECT(created);
+    if (!created) return;
+    auto device = std::move(created).Value();
+    rhi::TextureDesc targetDesc{};
+    targetDesc.width = targetDesc.height = 32;
+    targetDesc.format = rhi::Format::RGBA8Unorm;
+    targetDesc.usage = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::CopySrc;
+    auto target = device->CreateTexture(targetDesc);
+    rhi::TextureDesc maskDesc{};
+    maskDesc.width = maskDesc.height = 2;
+    maskDesc.format = rhi::Format::R8Unorm;
+    maskDesc.usage = rhi::TextureUsage::Sampled;
+    const uint8_t coverage[] = {0, 255, 128, 0};
+    rhi::TextureInitData init{};
+    init.data = coverage;
+    init.rowPitch = 2;
+    auto mask = device->CreateTexture(maskDesc, &init);
+    render::SpriteBatch batch;
+    batch.Init(*device, targetDesc.format, false);
+    MYE_EXPECT(target.IsValid() && mask.IsValid() && batch.IsInitialized());
+    device->BeginFrame();
+    auto& context = device->GetImmediateContext();
+    rhi::RenderPassColorAttachment color{};
+    color.texture = target;
+    color.loadOp = rhi::LoadOp::Clear;
+    color.clearColor = Color::Black();
+    rhi::RenderPassBeginDesc pass{};
+    pass.colorAttachments = {&color, 1};
+    context.BeginRenderPass(pass);
+    context.SetViewport(rhi::Viewport{0, 0, 32, 32, 0, 1});
+    batch.Begin(Mat4::OrthoOffCenterLH(0, 32, 32, 0, 0, 1));
+    render::SpriteDraw quad{};
+    quad.position = {8, 8};
+    quad.size = {16, 16};
+    quad.pivot = {0, 0};
+    quad.texture = mask;
+    quad.yDown = true;
+    quad.alphaMask = true;
+    batch.Submit(quad);
+    batch.End(context);
+    context.EndRenderPass();
+    const auto path = std::filesystem::temp_directory_path() / "mye_text_coverage.bmp";
+    MYE_EXPECT(rhi::CaptureBackbuffer(*device, target, path.string()));
+    device->EndFrame();
+    std::ifstream file(path, std::ios::binary);
+    std::vector<uint8_t> bmp((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    MYE_EXPECT(bmp.size() >= 54 + 32 * 32 * 4);
+    if (bmp.size() >= 54 + 32 * 32 * 4) {
+        auto pixel = [&](int x, int y) { return &bmp[54 + (y * 32 + x) * 4]; };
+        const auto* opaque = pixel(20, 12);
+        const auto* half = pixel(12, 20);
+        const auto* clear = pixel(12, 12);
+        MYE_EXPECT(opaque[0] >= 250 && opaque[1] >= 250 && opaque[2] >= 250);
+        MYE_EXPECT(half[0] >= 125 && half[0] <= 131 && half[1] == half[0] && half[2] == half[0]);
+        MYE_EXPECT(clear[0] == 0 && clear[1] == 0 && clear[2] == 0);
+    }
+    file.close();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    batch.Shutdown();
+    device->Destroy(mask);
+    device->Destroy(target);
 }

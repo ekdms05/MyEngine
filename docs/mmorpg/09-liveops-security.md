@@ -1,10 +1,12 @@
 # 09. 라이브옵스 · 배포 · 확장 · 보안 (LiveOps / Deploy / Ops / Security)
 
+> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
 > 소유 범위: 게임을 "**출시하고 운영하고 지키는**" 모든 배관 — 빌드/익스포트(스탠드얼론 게임 exe + `.pak` 쿡),
 > 클라 패치·CDN·런처, 서버 배포·오케스트레이션·오토스케일, 텔레메트리/분석/AB, 안티치트(서버권위·무결성·행동탐지),
 > 채팅·이름 필터·신고·제재·GM 도구, 결제·확률공개, 모니터링·SLO·장애복구·백업/DR, 법규(GDPR·청소년보호·게임법)·연령등급.
 > **"만드는 도구"(00~08)를 "돌아가는 라이브 서비스"로 승격**하는 계층이며, 픽셀 2.5D MMORPG의 수백~수천 동접·지연·복제·치트를 전제로 한다.
-> 이 문서는 [06-netcode.md](06-netcode.md)·[07-server-world.md](07-server-world.md)·[08-persistence-account.md](08-persistence-account.md)가 정의하는
+> 이 문서는 [06-netcode.md](02-netcode-server.md)·07-server-world.md (별도 문서 미작성)·[08-persistence-account.md](03-persistence-accounts.md)가 정의하는
 > 넷코드/서버권위/영속화 위에 **운영·보안·상용화 표면**을 얹는다.
 
 ---
@@ -16,7 +18,7 @@
 - **원버튼 배포본.** 프로젝트(`.myeproj` + 씬 + 스크립트 + 에셋)를 단일 클라이언트 exe + 서명된 `.mpak` 번들 + 서버 컨테이너 이미지로 굽는 재현 가능한 파이프라인.
   MyEngine은 이미 `PakWriter`/`PakFileSystem`/`paktool`([04-asset-pipeline.md](../04-asset-pipeline.md))을 갖췄으므로 **`.pak`을 확장(압축·서명·버전·델타)** 해 배포 매체로 승격한다.
 - **끊김 없는 운영.** 점검(maintenance)·롤아웃·롤백을 다운타임 최소로 수행. 블루그린·카나리·버전게이트로 "구클라 접속 거부/신클라 강제 업데이트"를 게이트한다.
-- **서버 권위 + 무결성.** 클라이언트는 **신뢰하지 않는 입력 소스**다. 이동·전투·경제의 진실은 서버([07-server-world.md](07-server-world.md))가 쥐고,
+- **서버 권위 + 무결성.** 클라이언트는 **신뢰하지 않는 입력 소스**다. 이동·전투·경제의 진실은 서버(07-server-world.md (별도 문서 미작성))가 쥐고,
   이 문서는 그 위에서 **탐지·속도제한·제재·감사(audit)** 를 정의한다.
 - **관찰 가능성(observability).** 모든 프로세스(클라·게이트웨이·존서버·DB)가 구조화 로그·메트릭·트레이스를 낸다.
   MyEngine의 `Log`(카테고리×심각도, `ILogSink` 플러그인)·`Config`(계층 오버라이드)를 원격 싱크·원격 CVar로 확장한다.
@@ -27,11 +29,11 @@
 | In (이 문서 소유) | Out (다른 문서 소유) |
 |---|---|
 | 익스포트/쿡 파이프라인, 스탠드얼론 게임 exe 앱, 런처, 패치/델타/CDN | RHI·렌더 파이프라인 → [02-rendering.md](../02-rendering.md) |
-| 서버 배포·오케스트레이션·오토스케일·리전, 블루그린·카나리 | 씬/ECS/복제 데이터모델 → [03-scene-world.md](../03-scene-world.md), [07-server-world.md](07-server-world.md) |
-| 텔레메트리·분석·대시보드·AB·SLO·알림 | 넷코드 전송·스냅샷·예측/보정 → [06-netcode.md](06-netcode.md) |
-| 안티치트(탐지·속도제한·무결성·제재 실행) | **권위 시뮬레이션 규칙 자체**(이동/전투 판정) → [07-server-world.md](07-server-world.md) |
-| 채팅/이름 필터·신고·밴·GM 도구·콘솔 | 계정 인증·세션토큰·DB 스키마 → [08-persistence-account.md](08-persistence-account.md) |
-| 결제·캐시샵·구독·환불·확률공개, 법규·연령등급 | 게임플레이 프레임워크(스탯/인벤/퀘) → [05-gameplay-framework.md](05-gameplay-framework.md) |
+| 서버 배포·오케스트레이션·오토스케일·리전, 블루그린·카나리 | 씬/ECS/복제 데이터모델 → [03-scene-world.md](../03-scene-world.md), 07-server-world.md (별도 문서 미작성) |
+| 텔레메트리·분석·대시보드·AB·SLO·알림 | 넷코드 전송·스냅샷·예측/보정 → [06-netcode.md](02-netcode-server.md) |
+| 안티치트(탐지·속도제한·무결성·제재 실행) | **권위 시뮬레이션 규칙 자체**(이동/전투 판정) → 07-server-world.md (별도 문서 미작성) |
+| 채팅/이름 필터·신고·밴·GM 도구·콘솔 | 계정 인증·세션토큰·DB 스키마 → [08-persistence-account.md](03-persistence-accounts.md) |
+| 결제·캐시샵·구독·환불·확률공개, 법규·연령등급 | 게임플레이 프레임워크(스탯/인벤/퀘) → [05-gameplay-framework.md](04-gameplay-systems.md) |
 | 백업/DR·카오스·부하테스트 | 에디터 원격 제어 프로토콜 → [08-mcp.md](../08-mcp.md) |
 
 ---
@@ -435,12 +437,12 @@ server/
 
 | 대상 | 무엇을 | 문서 |
 |---|---|---|
-| Core/Platform | `App`/`GuardedMain`(게임 exe), `Log`/`ILogSink`(원격싱크), `Config`/`RuntimeOverlay`(CVar), `CrashHandler`(크래시업로드), `JobSystem`(배치/레이트), `--headless`(서버·부하) | [mmorpg/01-core-platform.md](01-core-platform.md), [../01-core-platform.md](../01-core-platform.md) |
-| Netcode | 버전게이트할 `protocolVersion`, 레이트리밋 대상 패킷, 서버 권위 시각·시간동기 | [06-netcode.md](06-netcode.md) |
-| Server/World | 안티치트가 후킹하는 권위 이동/전투 검증, 존/샤딩/채널, 드레인 | [07-server-world.md](07-server-world.md) |
-| Persistence/Account | 세션 토큰·계정 age, DB 스냅샷(백업/롤백), 거래로그(RMT), GDPR 삭제, 결제 지급 | [08-persistence-account.md](08-persistence-account.md) |
+| Core/Platform | `App`/`GuardedMain`(게임 exe), `Log`/`ILogSink`(원격싱크), `Config`/`RuntimeOverlay`(CVar), `CrashHandler`(크래시업로드), `JobSystem`(배치/레이트), `--headless`(서버·부하) | [mmorpg/01-core-platform.md](../01-core-platform.md), [../01-core-platform.md](../01-core-platform.md) |
+| Netcode | 버전게이트할 `protocolVersion`, 레이트리밋 대상 패킷, 서버 권위 시각·시간동기 | [06-netcode.md](02-netcode-server.md) |
+| Server/World | 안티치트가 후킹하는 권위 이동/전투 검증, 존/샤딩/채널, 드레인 | 07-server-world.md (별도 문서 미작성) |
+| Persistence/Account | 세션 토큰·계정 age, DB 스냅샷(백업/롤백), 거래로그(RMT), GDPR 삭제, 결제 지급 | [08-persistence-account.md](03-persistence-accounts.md) |
 | Asset Pipeline | `PakWriter`/`PakFileSystem`/`paktool`(→.mpak v2), 임포터(쿡), 결정적 packer | [../04-asset-pipeline.md](../04-asset-pipeline.md) |
-| Gameplay | 결제 지급 대상(인벤/스탯), 확률형아이템 롤 대상 | [05-gameplay-framework.md](05-gameplay-framework.md) |
+| Gameplay | 결제 지급 대상(인벤/스탯), 확률형아이템 롤 대상 | [05-gameplay-framework.md](04-gameplay-systems.md) |
 | MCP | GM 도구/원격 콘솔의 프로토콜·권한 패턴(`RemoteControl`) 재사용 | [../08-mcp.md](../08-mcp.md) |
 
 ### 8.2 이 문서가 제공하는 것(다른 도메인이 소비)
@@ -452,7 +454,7 @@ server/
 
 ### 8.3 상호참조 인덱스
 
-- 도메인 시리즈: [00-overview 계열은 기존 docs](../00-overview.md) · [01](01-core-platform.md) · [02](02-rendering.md) · [03](03-scene-world.md) · [04](04-assets.md) · [05](05-gameplay-framework.md) · [06](06-netcode.md) · [07](07-server-world.md) · [08](08-persistence-account.md) · **09(본 문서)**
+- 도메인 시리즈: [00-overview 계열은 기존 docs](../00-overview.md) · [01](../01-core-platform.md) · [02](../02-rendering.md) · [03](../03-scene-world.md) · [04](../04-asset-pipeline.md) · [05](04-gameplay-systems.md) · [06](02-netcode-server.md) · 07 (별도 문서 미작성) · [08](03-persistence-accounts.md) · **09(본 문서)**
 - 기존 엔진 docs: [00-overview](../00-overview.md) · [01-core-platform](../01-core-platform.md) · [02-rendering](../02-rendering.md) · [03-scene-world](../03-scene-world.md) · [04-asset-pipeline](../04-asset-pipeline.md) · [05-scripting-plugins](../05-scripting-plugins.md) · [06-runtime-systems](../06-runtime-systems.md) · [07-editor-ui](../07-editor-ui.md) · [08-mcp](../08-mcp.md)
 
 > 주: `docs/mmorpg/*`의 01~08은 병행 설계 중이므로 파일명은 도메인 논리명으로 링크한다(파일 미생성 시 상위 `docs/`의 대응 문서를 우선 참조).

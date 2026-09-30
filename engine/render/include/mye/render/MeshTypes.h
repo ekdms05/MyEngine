@@ -16,7 +16,7 @@ namespace mye::render {
 enum class DepthMode : uint8_t {
     AnchorFlat    = 0,   // 오브젝트 전체를 앵커 지면Y flat depth(스프라이트와 동일 취급). 소형.
     AnchorBiased  = 1,   // 앵커 flat depth + 지오메트리 깊이 축소본(ε). 대형(석상·풍차) 기본.
-    Geometry      = 2,   // 실제 카메라 깊이(HD2D/배경 구조물).
+    Geometry      = 2,   // 실제 카메라 깊이(Billboard3D/배경 구조물).
 };
 
 } // namespace mye::render

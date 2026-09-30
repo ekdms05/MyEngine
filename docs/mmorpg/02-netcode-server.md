@@ -1,13 +1,15 @@
 # 02. 넷코드 & 권위 서버 아키텍처 (Netcode & Authoritative Server)
 
+> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
 > 픽셀 2.5D MMORPG의 **서버 권위(server-authoritative) 시뮬레이션**과 **클라이언트 넷코드**를 정의한다.
 > 목표 스케일: **존(zone)당 수백~수천 동접**, 왕복 지연(RTT) 30~250ms, 패킷 손실 0~5%, 라이브 운영(24/7).
 > 설계 제1원칙(확장성)에 따라, 서버는 **헤드리스 `mye_scene` ECS를 그대로 공유**하고, 넷코드는 새 `engine/net`
 > 서브시스템 + `server/` 실행 스택으로 붙인다. 클라이언트 예측/서버 재조정/지연보상/AoI/복제/전송/치트방지의
 > 모든 경우의 수를 다룬다.
 > 관련: [00-overview](../00-overview.md) · [01-core-platform](../01-core-platform.md) · [03-scene-world](../03-scene-world.md) ·
-> [mmorpg/01-server-topology](01-server-topology.md) · [mmorpg/03-replication-state](03-replication-state.md) ·
-> [mmorpg/04-gameplay-combat](04-gameplay-combat.md) · [mmorpg/09-liveops-anticheat](09-liveops-anticheat.md)
+> mmorpg/01-server-topology (별도 문서 미작성) · [mmorpg/03-replication-state](02-netcode-server.md) ·
+> [mmorpg/04-gameplay-combat](04-gameplay-systems.md) · [mmorpg/09-liveops-anticheat](09-liveops-security.md)
 
 ---
 
@@ -32,12 +34,12 @@
 
 ### 1.2 이 문서가 다루지 **않는** 것 (타 도메인 위임)
 
-- 서버 프로세스 토폴로지(게이트웨이/로그인/월드/채팅 분리·오케스트레이션) → [01-server-topology](01-server-topology.md) (본 문서는 넷코드 관점만)
-- 복제 스키마의 **게임플레이 필드 정의**(어떤 컴포넌트를 복제하는가) → [03-replication-state](03-replication-state.md)
-- 전투/스탯/스킬 **규칙** → [04-gameplay-combat](04-gameplay-combat.md) (본 문서는 판정 타이밍/rewind만)
-- 계정 DB·영속화 → [05-persistence-db](05-persistence-db.md)
-- 채팅/소셜 서버 → [06-social-chat](06-social-chat.md)
-- 라이브 운영·안티치트 정책·밴 → [09-liveops-anticheat](09-liveops-anticheat.md) (본 문서는 서버측 판정 훅만)
+- 서버 프로세스 토폴로지(게이트웨이/로그인/월드/채팅 분리·오케스트레이션) → 01-server-topology (별도 문서 미작성) (본 문서는 넷코드 관점만)
+- 복제 스키마의 **게임플레이 필드 정의**(어떤 컴포넌트를 복제하는가) → [03-replication-state](02-netcode-server.md)
+- 전투/스탯/스킬 **규칙** → [04-gameplay-combat](04-gameplay-systems.md) (본 문서는 판정 타이밍/rewind만)
+- 계정 DB·영속화 → [05-persistence-db](03-persistence-accounts.md)
+- 채팅/소셜 서버 → [06-social-chat](04-gameplay-systems.md)
+- 라이브 운영·안티치트 정책·밴 → [09-liveops-anticheat](09-liveops-security.md) (본 문서는 서버측 판정 훅만)
 
 ### 1.3 설계 원칙 (MyEngine 규약 계승)
 
@@ -154,7 +156,7 @@ class NetIdAllocator { public: NetId Next(uint16_t zoneId); /* ... */ };
 | ack/재전송/혼잡·흐름 제어 | P1 | 신규 | 신규 `net/Channel`·`CongestionControl`(RTT·손실 기반 송신율) |
 | RTT/clock offset 추정·시간동기 | P1 | 부분 | 재사용: `Clock`(QPC ns). 신규 `net/ClientClock`·`ServerClock` |
 | 재접속·세션 복구(grace·full resync) | P1 | 신규 | 신규 `net/Session`·서버 세션 테이블. 재사용: `Config`(타임아웃) |
-| 이중 로그인/세션 선점 처리 | P1 | 신규 | 신규 세션 정책(신규 접속이 기존 킥 or 거부). [05-persistence](05-persistence-db.md) 연계 |
+| 이중 로그인/세션 선점 처리 | P1 | 신규 | 신규 세션 정책(신규 접속이 기존 킥 or 거부). [05-persistence](03-persistence-accounts.md) 연계 |
 | 서버측 이동 검증(속도/좌표 sanity) | P1 | 신규 | 신규 server `MovementValidation`. 재사용: 03 타일 walkability, move&slide 재판정 |
 | 지연보상(rewind/히트 판정 되감기) | P2 | 신규 | 신규 server `LagCompensation`(엔티티 위치 히스토리 링버퍼). 재사용: `SpatialHash` 재구축 |
 | 채널(혼잡 분산)·인스턴스(던전) | P2 | 신규 | 신규 `server/ZoneManager`가 동일 존을 다중 World 인스턴스로 |
@@ -162,7 +164,7 @@ class NetIdAllocator { public: NetId Next(uint16_t zoneId); /* ... */ };
 | 스냅샷 우선순위·대역 예산(priority) | P2 | 신규 | 신규 `net/PriorityAccumulator`(거리·중요도 가중, 프레임 바이트 예산) |
 | 부하/봇 테스트 하니스 | P2 | 신규 | 신규 `tools/loadtest`(헤드리스 봇 클라, N개 커넥션). 재사용: `net`, `--headless` |
 | WebSocket/KCP/ENet 백엔드 | P3 | 신규 | `ITransport` 구현 추가(웹클라·모바일). 백엔드 인터페이스화(00 원칙) |
-| 존 간 로드밸런싱·수평확장 | P3 | 신규 | [01-server-topology](01-server-topology.md) 소유. 본 문서는 핸드오프 프로토콜만 |
+| 존 간 로드밸런싱·수평확장 | P3 | 신규 | 01-server-topology (별도 문서 미작성) 소유. 본 문서는 핸드오프 프로토콜만 |
 | 롤백(rollback) 결정론 재시뮬 | P4 | 신규 | 선택(격투/PvP 인스턴스 한정). `fixedStepIndex` 기반 상태 스냅샷 저장 |
 | 스냅샷 압축(zstd/lz4) 스트림 | P4 | 신규 | 델타 후단 엔트로피 압축(대형 존 초기 스냅샷). `third_party` 추가 |
 
@@ -344,7 +346,7 @@ struct Session {
 | **크로스존 이동(월드 경계)** | `Handoff`: 출발 존이 아바타 상태(위치·스탯·인벤 스냅) 직렬화 → 대상 존으로 전달(또는 05 DB 경유) → 대상 존이 스폰 → 클라에 새 존 접속 지시. 원자성: 대상 스폰 성공 확인 후 출발 despawn(양쪽 존재/유령 방지). |
 | **핸드오프 중 연결 끊김** | 세션이 "in-transit" 상태 → 재접속 시 마지막 확정 존으로 복구(§5.9). 이중 스폰 방지 토큰. |
 | **인스턴스 정리(빈 던전)** | 마지막 세션 leave 후 유예(reset 창) → World 파괴, 리소스 회수. 진행 중 재접속 유예와 조율. |
-| **존 서버 크래시** | 세션은 게이트웨이가 재라우팅([01-server-topology](01-server-topology.md)). 마지막 DB 체크포인트 이후 상태 손실 최소화(주기 저장, 05). |
+| **존 서버 크래시** | 세션은 게이트웨이가 재라우팅(01-server-topology (별도 문서 미작성)). 마지막 DB 체크포인트 이후 상태 손실 최소화(주기 저장, 05). |
 
 ### 5.6 재접속 · 세션 · 이중 로그인
 
@@ -354,7 +356,7 @@ struct Session {
 | **grace 만료 후 접속** | 정상 신규 로그인 경로(로그인 서버·존 배정). 캐릭터는 마지막 저장 상태(05). |
 | **이중 로그인(같은 계정 두 번)** | 정책: 신규 접속이 기존 세션 강제 종료("다른 위치 로그인") — 기본. 또는 신규 거부. `Config` `net.duplicateLogin=kick|reject`. 원자적 세션 교체(레이스 방지 락). |
 | **좀비 세션(끊겼는데 서버가 모름)** | keep-alive 타임아웃으로 정리. 그 전에 재접속 오면 좀비 대체. |
-| **재접속 폭풍(서버 재시작 후)** | 로그인 서버 레이트리밋·큐잉([01](01-server-topology.md)). 존 서버는 스폰을 스로틀. |
+| **재접속 폭풍(서버 재시작 후)** | 로그인 서버 레이트리밋·큐잉(01 (별도 문서 미작성)). 존 서버는 스폰을 스로틀. |
 | **클라 상태 불일치(구버전)** | `ResyncRequest`/버전 불일치 → full resync 또는 강제 재접속·클라 업데이트 안내. |
 | **입력 ack 유실로 무한 재조정** | ackedInputSeq는 스냅샷마다 포함 → 스냅샷만 오면 자동 진전. 스냅샷도 끊기면 keep-alive→타임아웃. |
 
@@ -377,10 +379,10 @@ struct Session {
 | **월핵(벽 통과)** | 서버 타일 collision(03) 최종 판정. 통과 감지 시 스냅백. |
 | **월핵(정보 노출, 시야 밖 적)** | AoI relevance로 애초에 복제 안 함(스텔스·시야 밖 = 클라에 데이터 없음). |
 | **공격 속도·쿨다운 핵** | 쿨다운·자원(마나·화살) **서버 소유**. 클라 요청은 검증 후만. |
-| **패킷 리플레이/위조** | protocolId·시퀀스·연결 토큰(핸드셰이크 시 발급 nonce) 검증. HMAC 서명(선택, [09](09-liveops-anticheat.md)). |
+| **패킷 리플레이/위조** | protocolId·시퀀스·연결 토큰(핸드셰이크 시 발급 nonce) 검증. HMAC 서명(선택, [09](09-liveops-security.md)). |
 | **입력 스팸(DoS)** | 연결당 입력 레이트리밋. 과도 시 폐기·경고·차단. |
 | **미검증 필드 오버플로** | 모든 역직렬화는 길이·범위 검증(BitStream 경계 체크). 실패 → 연결 종료(신뢰 경계). |
-| **에임봇·매크로** | 서버측 통계 이상 탐지 훅([09](09-liveops-anticheat.md))으로 위임. 넷 계층은 원시 입력 로깅 제공. |
+| **에임봇·매크로** | 서버측 통계 이상 탐지 훅([09](09-liveops-security.md))으로 위임. 넷 계층은 원시 입력 로깅 제공. |
 
 ### 5.9 동시성 · 서버 내부
 
@@ -401,7 +403,7 @@ struct Session {
 | **롤링 배포(서버만 갱신)** | 하위호환 프로토콜(필드 추가는 changeMask 확장, 제거는 예약). 메이저 변경은 강제 클라 업데이트. |
 | **메시지 타입 미지원** | 알 수 없는 MessageType → 무시(로그) 또는 연결 종료(엄격 모드). 관대/엄격 `Config`. |
 | **부하 테스트(봇)** | `tools/loadtest` 헤드리스 봇이 실제 프로토콜로 접속·랜덤 입력. 틱 예산·대역·메모리 회귀 측정. |
-| **메트릭·관측성** | 연결 수·RTT 분포·손실률·tick time·대역/세션을 이벤트/카운터로. [09](09-liveops-anticheat.md)·[08-mcp](../08-mcp.md) 대시보드 연계. |
+| **메트릭·관측성** | 연결 수·RTT 분포·손실률·tick time·대역/세션을 이벤트/카운터로. [09](09-liveops-security.md)·[08-mcp](../08-mcp.md) 대시보드 연계. |
 
 ---
 
@@ -434,7 +436,7 @@ engine/net/
 - `mye_net`은 **scene에 의존하지 않는다**(순수 바이트·전송). NetId↔Entity 매핑은 소비 측이 소유.
 - 소켓 IO는 `JobSystem` IO 큐 또는 전용 스레드; 데이터는 `EventBus::Enqueue`로 틱 스레드에 전달.
 
-### 6.2 `apps/game` — 데이터드리븐 게임 클라이언트 (신규, [06-game-runtime](06-game-runtime.md) 소유·본 문서 소비)
+### 6.2 `apps/game` — 데이터드리븐 게임 클라이언트 (신규, [06-game-runtime](../06-runtime-systems.md) 소유·본 문서 소비)
 
 ```
 apps/game/                            # 프로젝트를 로드해 실행하는 exe (현재 부재 — 핵심 갭)
@@ -446,7 +448,7 @@ apps/game/                            # 프로젝트를 로드해 실행하는 e
     ClientNet.cpp                     # NetClient 배선(연결·입력 송신·상태 이벤트)
 ```
 
-> 클라 앱 자체의 부트스트랩·씬 로딩은 [06-game-runtime](06-game-runtime.md) 소유. 본 문서는 넷 시스템만 규정.
+> 클라 앱 자체의 부트스트랩·씬 로딩은 [06-game-runtime](../06-runtime-systems.md) 소유. 본 문서는 넷 시스템만 규정.
 
 ### 6.3 `server/` — 헤드리스 존 서버 스택 (신규 최상위 디렉터리)
 
@@ -466,7 +468,7 @@ server/                               # CMake add_subdirectory(server) 추가
   CMakeLists.txt                      # mye_core + mye_scene(+ mye_net) 링크. render/rhi/ui/audio 미링크
 ```
 
-- 게이트웨이/로그인/채팅 서버 프로세스 분리는 [01-server-topology](01-server-topology.md)에서 정의(본 문서는 `world_server`의 넷/시뮬만).
+- 게이트웨이/로그인/채팅 서버 프로세스 분리는 01-server-topology (별도 문서 미작성)에서 정의(본 문서는 `world_server`의 넷/시뮬만).
 - 서버는 **동일 `mye_scene`** 링크로 클라와 물리·이동·A* 결정론 공유(코드 공유 트레이드오프의 승리 지점).
 
 ### 6.4 `tools/loadtest` — 부하/봇 테스트 (신규)
@@ -517,12 +519,12 @@ tools/loadtest/                       # 헤드리스 봇 클라이언트 N개, �
 
 ### 8.2 MMORPG 도메인 문서(형제) 상호참조
 
-- [01-server-topology](01-server-topology.md) — 게이트웨이/로그인/월드/채팅 프로세스 분리·오케스트레이션·수평확장. 본 문서는 `world_server`의 넷/시뮬만 담당하고, 프로세스 토폴로지·로드밸런싱을 위임.
-- [03-replication-state](03-replication-state.md) — **어떤 컴포넌트를 복제하는가**(복제 스키마·필드 정의·권한 규칙). 본 문서의 스냅샷/델타 코덱이 이를 소비.
-- [04-gameplay-combat](04-gameplay-combat.md) — 전투/스킬 규칙·데미지. 본 문서는 판정 타이밍(예측·서버 확정·lag comp rewind)만.
-- [05-persistence-db](05-persistence-db.md) — 계정/세션/캐릭터 영속화. 재접속·핸드오프·이중 로그인이 계정 ID·저장 상태를 소비.
-- [06-game-runtime](06-game-runtime.md) — 데이터드리븐 클라 부트스트랩·씬 로딩. 넷 클라 시스템이 여기에 배선.
-- [09-liveops-anticheat](09-liveops-anticheat.md) — 안티치트 정책·이상탐지·밴·메트릭. 본 문서는 서버측 검증 훅·원시 입력 로깅 제공.
+- 01-server-topology (별도 문서 미작성) — 게이트웨이/로그인/월드/채팅 프로세스 분리·오케스트레이션·수평확장. 본 문서는 `world_server`의 넷/시뮬만 담당하고, 프로세스 토폴로지·로드밸런싱을 위임.
+- [03-replication-state](02-netcode-server.md) — **어떤 컴포넌트를 복제하는가**(복제 스키마·필드 정의·권한 규칙). 본 문서의 스냅샷/델타 코덱이 이를 소비.
+- [04-gameplay-combat](04-gameplay-systems.md) — 전투/스킬 규칙·데미지. 본 문서는 판정 타이밍(예측·서버 확정·lag comp rewind)만.
+- [05-persistence-db](03-persistence-accounts.md) — 계정/세션/캐릭터 영속화. 재접속·핸드오프·이중 로그인이 계정 ID·저장 상태를 소비.
+- [06-game-runtime](../06-runtime-systems.md) — 데이터드리븐 클라 부트스트랩·씬 로딩. 넷 클라 시스템이 여기에 배선.
+- [09-liveops-anticheat](09-liveops-security.md) — 안티치트 정책·이상탐지·밴·메트릭. 본 문서는 서버측 검증 훅·원시 입력 로깅 제공.
 
 ### 8.3 의존 방향 요약
 

@@ -1,5 +1,7 @@
 # 06. AI 오디오 생성 & 사운드 디자인 (AI Audio Generation & Sound Design)
 
+> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
 > 소유 범위: **텍스트→음악/SFX AI 생성**부터 **미리듣기·채택·임포트·`mye_audio` 배선**까지의 콘텐츠
 > 파이프라인, 그리고 그 위에 얹히는 **다이나믹 뮤직(전투 레이어드·스팅어)·2.5D 공간 사운드·리버브존·오클루전**
 > 런타임 정책이다. 픽셀 2.5D MMORPG(수백~수천 동접·지연·복제·치트·라이브운영)를 전제로 한다.
@@ -34,12 +36,12 @@
 
 | 구분 | 포함(In) | 제외(Out, 소유 문서) |
 |---|---|---|
-| 생성 | 텍스트→음악, 텍스트→SFX, 레퍼런스 오디오→변주, 배치 생성, 사운드팩 | 3D 메시/스프라이트 생성 → [AI 이미지](05-ai-image.md) |
+| 생성 | 텍스트→음악, 텍스트→SFX, 레퍼런스 오디오→변주, 배치 생성, 사운드팩 | 3D 메시/스프라이트 생성 → [AI 이미지](05-pixel-assets-ai.md) |
 | 파이프라인 | 미리듣기·채택·WAV/OGG 임포트·`.meta`/GUID·핫리로드 | 코어 임포터 골격 → [engine/asset](../04-asset-pipeline.md) |
 | 런타임 | 다이나믹 뮤직·스팅어·리버브존·오클루전·앰비언스 베드·발소리 | 믹서/버스/보이스 정본 → [engine/audio](../06-runtime-systems.md) |
 | 도구 | MCP `sound_*` 툴, 에디터 사운드 브라우저/미리듣기/채택 | MCP 서버 골격 → [08-mcp](../08-mcp.md) |
-| 네트워크 | 클라이언트 사이드 재생 결정론, 서버 사운드 이벤트 복제, CDN 스트리밍 | 넷코드 전송/복제 정본 → [넷코드](07-netcode.md) |
-| AI 제공자 | 오디오 생성 제공자 추상화(`IAudioGenProvider`) | 멀티 AI 제공자 공통 추상화 → [AI 이미지](05-ai-image.md) §제공자 |
+| 네트워크 | 클라이언트 사이드 재생 결정론, 서버 사운드 이벤트 복제, CDN 스트리밍 | 넷코드 전송/복제 정본 → [넷코드](02-netcode-server.md) |
+| AI 제공자 | 오디오 생성 제공자 추상화(`IAudioGenProvider`) | 멀티 AI 제공자 공통 추상화 → [AI 이미지](05-pixel-assets-ai.md) §제공자 |
 
 > 원칙: **오디오 재생은 클라이언트 로컬 이벤트**다. 서버는 "무슨 사운드 이벤트가 일어났는가"(스킬 시전,
 > 몹 사망)만 복제하고, 어떤 WAV가 어떻게 믹싱되는지는 클라이언트가 결정한다. 따라서 대역폭·치트 표면이 작다.
@@ -235,7 +237,7 @@ public:
 } // namespace mye::audio
 ```
 
-전투 강도 전이(intensity)는 [게임플레이 프레임워크](08-gameplay.md)의 전투 상태에서 밀어준다(예: 근처
+전투 강도 전이(intensity)는 [게임플레이 프레임워크](04-gameplay-systems.md)의 전투 상태에서 밀어준다(예: 근처
 적대 몹 수·보스 페이즈). 이 도메인은 **디렉터와 데이터 스키마**만 정의하고, 전투 판정은 소비하지 않는다.
 
 ### 4.4 SpatialAudioSystem · ReverbZone · AmbienceBed(신규)
@@ -373,7 +375,7 @@ engine/audiogen/
     AudioGenModule.h        // 서비스 등록(EngineContext), 제공자 선택(config)
   src/ ...
 ```
-- `IAudioGenProvider`는 [AI 이미지](05-ai-image.md)의 멀티 제공자 추상화와 **동일 패턴**(가능하면 공통
+- `IAudioGenProvider`는 [AI 이미지](05-pixel-assets-ai.md)의 멀티 제공자 추상화와 **동일 패턴**(가능하면 공통
   `IGenProvider` 상위 공유). `Expected<AudioGenResult,Error>` 반환(예외불사용 규약).
 - `LocalStubProvider`가 P0: 외부 의존 0, `sound_synthesize`/CI를 무키로 성립시킨다.
 
@@ -454,12 +456,12 @@ mye.audio.play_cue(name, x, y)     -- (기존 재사용)
 
 ### 8.2 타 MMORPG 도메인 문서(상호참조)
 
-- [05. AI 이미지 생성 & 픽셀 아트](05-ai-image.md) — 멀티 AI 제공자 추상화(`IGenProvider`) 공유, 생성→채택 UX 공통.
-- [07. 넷코드 & 서버](07-netcode.md) — 서버 사운드 이벤트 복제·관심관리·CDN 스트리밍·pak 서명.
-- [08. 게임플레이 프레임워크](08-gameplay.md) — 전투 강도(다이나믹 뮤직)·스킬 이벤트(타격 SFX)·레벨업(스팅어).
+- [05. AI 이미지 생성 & 픽셀 아트](05-pixel-assets-ai.md) — 멀티 AI 제공자 추상화(`IGenProvider`) 공유, 생성→채택 UX 공통.
+- [07. 넷코드 & 서버](02-netcode-server.md) — 서버 사운드 이벤트 복제·관심관리·CDN 스트리밍·pak 서명.
+- [08. 게임플레이 프레임워크](04-gameplay-systems.md) — 전투 강도(다이나믹 뮤직)·스킬 이벤트(타격 SFX)·레벨업(스팅어).
 - [02. 렌더링](../02-rendering.md) — 파티클/이펙트와 SFX 동기(타격 이펙트↔타격음)는 렌더 이벤트 타이밍 참조.
-- [게임 런타임 앱·데이터드리븐 부트스트랩](01-runtime-app.md) — 사운드 시스템의 실제 런타임 배선 진입점(현 갭).
-- [계정·영속화](09-persistence.md) — 사용자 오디오 설정(버스 볼륨) 저장은 Config/세이브([06] 세이브)와 공유.
+- [게임 런타임 앱·데이터드리븐 부트스트랩](../01-core-platform.md) — 사운드 시스템의 실제 런타임 배선 진입점(현 갭).
+- [계정·영속화](03-persistence-accounts.md) — 사용자 오디오 설정(버스 볼륨) 저장은 Config/세이브([06] 세이브)와 공유.
 
 > 문서 번호는 `docs/mmorpg/` 도메인 인덱스 규약을 따른다. 아직 미작성 문서는 링크만 예약(선행 도메인이
 > 채운다). 재생/에셋의 상세 규약이 충돌하면 **기존 `docs/06`·`docs/04`가 정본**이고, 본 문서는 그 위의

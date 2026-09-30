@@ -1,5 +1,7 @@
 # 07. 멀티 AI 제공자 오케스트레이션 (Multi-AI Provider Orchestration)
 
+> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+
 > 소유 범위: 제공자 무관 추상화 레이어(`IAiProvider`)와 각 어댑터(Anthropic Claude / OpenAI GPT·Codex / Google Gemini / Cursor / 로컬 Ollama),
 > 라우팅·폴백·앙상블·모델선택, 키/인증/레이트리밋/비용/캐시/재시도, 프롬프트 템플릿·버전·평가(품질게이트·스키마검증),
 > 안전/검열/저작권/PII, 에디터 AI 패널·명령팔레트·컨텍스트 주입, 에이전트 오케스트레이션(생성→검증→반영 파이프라인).
@@ -30,12 +32,12 @@
 
 ### 범위 밖(Out — 다른 문서 소유)
 
-- 넷코드·서버 권위·복제 → [04-netcode-server](./04-netcode-server.md) 소유. 본 문서의 게이트웨이는 그 서버 인프라 위에 얹힌다.
-- 계정/세션/DB 영속화 → [05-account-persistence](./05-account-persistence.md) 소유. AI 비용·감사 로그는 그 DB에 기록.
+- 넷코드·서버 권위·복제 → [04-netcode-server](02-netcode-server.md) 소유. 본 문서의 게이트웨이는 그 서버 인프라 위에 얹힌다.
+- 계정/세션/DB 영속화 → [05-account-persistence](03-persistence-accounts.md) 소유. AI 비용·감사 로그는 그 DB에 기록.
 - 에셋 임포트·핫리로드·GUID → [../04-asset-pipeline](../04-asset-pipeline.md) 소유. 본 문서는 생성 산출물을 **임포트 큐에 넣는** 생산자다.
 - 렌더·스프라이트 배칭 → [../02-rendering](../02-rendering.md). 본 문서는 스프라이트 PNG를 **만들 뿐** 렌더하지 않는다.
 - MCP 프로토콜·개발도구 6툴 → [08-mcp](../08-mcp.md) 소유. 본 문서는 그 서버에 콘텐츠 툴을 얹는 소비자/확장자.
-- 게임플레이 데이터 모델(스탯/퀘스트/인벤) → [06-gameplay-framework](./06-gameplay-framework.md). AI는 그 스키마에 맞는 데이터를 생성.
+- 게임플레이 데이터 모델(스탯/퀘스트/인벤) → [06-gameplay-framework](04-gameplay-systems.md). AI는 그 스키마에 맞는 데이터를 생성.
 
 ---
 
@@ -82,7 +84,7 @@ graph TB
 
 **핵심 규칙: 클라이언트는 제공자 API를 직접 호출하지 않는다.** 모든 요청은 `server/ai-gateway`를 경유한다. 이유:
 
-1. **키 보안** — 제공자 키가 클라 바이너리/메모리에 존재하면 리버싱으로 유출된다. MMO 클라는 신뢰 불가 환경(→ [09-anti-cheat](./09-anti-cheat.md)).
+1. **키 보안** — 제공자 키가 클라 바이너리/메모리에 존재하면 리버싱으로 유출된다. MMO 클라는 신뢰 불가 환경(→ [09-anti-cheat](09-liveops-security.md)).
 2. **비용·레이트리밋 집행** — 한 유저가 수천 요청을 쏘는 것을 서버가 막는다.
 3. **정책 일원화** — PII·저작권·검열을 한 곳에서.
 
@@ -231,19 +233,19 @@ Claude는 1차 지원 제공자다. 현행 규약(2026-07 기준)을 어댑터�
 | 1 | `IAiProvider` 추상화 + `ModelInfo`/역량 태그 | P0 | 신규 | `engine/ai/include/mye/ai/Provider.h` 신규. `Expected<T,Error>`·서비스 게이트웨이 규약 재사용([../01-core-platform](../01-core-platform.md)) |
 | 2 | `AiService` (EngineContext 서비스) + 잡 시스템 비동기 | P0 | 신규 | `engine/ai` 신규 모듈. `ServiceId`·`JobSystem`(IO 큐)·`RunOnMainThread` 재사용(01) |
 | 3 | AnthropicAdapter (claude-opus-4-8, adaptive thinking, effort, structured) | P0 | 신규 | `engine/ai/src/adapters/AnthropicAdapter.cpp`. HTTP는 게이트웨이 프록시 |
-| 4 | 서버측 AI 게이트웨이 (키·레이트리밋·비용·캐시·안전) | P0 | 신규 | `server/ai-gateway` 신규. 세션 토큰은 [05](./05-account-persistence.md), 전송은 [04](./04-netcode-server.md) 재사용 |
+| 4 | 서버측 AI 게이트웨이 (키·레이트리밋·비용·캐시·안전) | P0 | 신규 | `server/ai-gateway` 신규. 세션 토큰은 [05](03-persistence-accounts.md), 전송은 [04](02-netcode-server.md) 재사용 |
 | 5 | 키/인증 관리 (KeyVault, 클라 미노출) | P0 | 신규 | `server/ai-gateway/KeyVault`. 클라 Config엔 절대 원문 키 없음(01 Config) |
 | 6 | 라우터 (데이터 드리븐 policies.json) | P0 | 신규 | `engine/ai/src/Router.cpp` + `config/ai/routing.json`. `Config` RuntimeOverlay 재사용(01) |
 | 7 | 폴백 체인 (429/5xx/timeout/refusal → 다음 모델) | P0 | 신규 | `Router` 내. `AiResponse.servedModel`로 확정 |
 | 8 | 프롬프트 라이브러리·템플릿·버전 | P1 | 신규 | `assets/ai/prompts/*.md` + `PromptLibrary`. 핫리로드는 파일워처 재사용([../04-asset-pipeline](../04-asset-pipeline.md)) |
 | 9 | 구조화 출력 검증 (JSON Schema 게이트) | P1 | 부분 | `JsonArchive`/리플렉션([../04-asset-pipeline](../04-asset-pipeline.md)·05-scripting) 재사용 + `OutputValidator` 신규 |
-| 10 | 비용 추적·쿼터·예산상한 | P1 | 신규 | `server/ai-gateway/UsageMeter` → [05](./05-account-persistence.md) DB. `Usage` 집계 |
+| 10 | 비용 추적·쿼터·예산상한 | P1 | 신규 | `server/ai-gateway/UsageMeter` → [05](03-persistence-accounts.md) DB. `Usage` 집계 |
 | 11 | 응답 캐시 (프롬프트 해시) | P1 | 부분 | 게이트웨이 `ResponseCache`. FNV 해시(01) 재사용, 프롬프트 캐싱은 제공자 기능 |
 | 12 | 재시도·백오프 (지수+지터) | P1 | 신규 | 게이트웨이 + 어댑터. `JobSystem` 워커에서 |
 | 13 | 콘텐츠: 스프라이트/타일셋 생성 (dot 파이프라인 확장) | P1 | **있음/부분** | `tools/mcp` `dot_write_sprite`/`dot_from_photo` **있음** → `ai_generate_sprite`로 승격·애니시트/타일셋 확장 |
-| 14 | 콘텐츠: 대화/퀘스트 데이터 생성 (스키마 준수) | P1 | 신규 | `content.dialogue` task → [06](./06-gameplay-framework.md) 스키마. 생성물은 [../04](../04-asset-pipeline.md) 임포트 큐로 |
+| 14 | 콘텐츠: 대화/퀘스트 데이터 생성 (스키마 준수) | P1 | 신규 | `content.dialogue` task → [06](04-gameplay-systems.md) 스키마. 생성물은 [../04](../04-asset-pipeline.md) 임포트 큐로 |
 | 15 | 콘텐츠: 번역/로컬라이즈 (배치·다국어) | P1 | 부분 | `content.translate`. `LocalizationSystem`(있음, ko/en) 테이블을 ko/en/ja/zh로 확장([../06-runtime-systems](../06-runtime-systems.md)) |
-| 16 | 콘텐츠: 밸런싱 표 생성/검증 | P2 | 신규 | `content.balance` → [06](./06-gameplay-framework.md) 스탯 스키마 |
+| 16 | 콘텐츠: 밸런싱 표 생성/검증 | P2 | 신규 | `content.balance` → [06](04-gameplay-systems.md) 스탯 스키마 |
 | 17 | 콘텐츠: 오디오(효과음/BGM) 생성 | P2 | 신규 | `AudioGen` 역량 어댑터. WAV/OGG 임포터(있음)로 임포트([../04-asset-pipeline](../04-asset-pipeline.md)) |
 | 18 | 에디터 AI 패널·명령팔레트·컨텍스트 주입 | P1 | 부분 | `engine/editor` ExtensionRegistry(패널/메뉴 등록 골격 **있음**)에 `AiPanel` 추가([../07-editor-ui](../07-editor-ui.md)) |
 | 19 | 에디터 코드 어시스트 (리팩터/버그픽스/Lua·셰이더 생성) | P1 | 신규 | `AiPanel` + MCP 개발도구 6툴 재사용(빌드/테스트/실행/캡처 — 08). AI가 코드→빌드→검증 루프 |
@@ -256,7 +258,7 @@ Claude는 1차 지원 제공자다. 현행 규약(2026-07 기준)을 어댑터�
 | 26 | Lua 바인딩 `mye.ai` (콘텐츠 스크립트에서 호출) | P3 | 신규 | `engine/script` 바인딩모듈 추가(mye.input/audio 패턴, 05). 개발·툴 스크립트만 |
 | 27 | MCP 콘텐츠 툴군 `ai_generate_*` | P1 | 부분 | `tools/mcp/src/tools/aigen.ts` 신규(dot.ts 있음 확장). 파일1개=툴 컨벤션(08) |
 | 28 | 프롬프트 인젝션 방어 (mid-session system, 신뢰경계) | P2 | 신규 | 게이트웨이. Claude Opus 4.8 `role:"system"` mid-session 활용 |
-| 29 | 사용량 대시보드·감사 로그 | P3 | 신규 | 게이트웨이 → [05](./05-account-persistence.md) DB. `requestId` 추적 |
+| 29 | 사용량 대시보드·감사 로그 | P3 | 신규 | 게이트웨이 → [05](03-persistence-accounts.md) DB. `requestId` 추적 |
 | 30 | 결정론 캐시(콘텐츠 재현) + 시드 고정 | P3 | 신규 | 게이트웨이 `ResponseCache` 영속 + 프롬프트/시드 해시키 |
 
 ---
@@ -390,7 +392,7 @@ struct AiUsageRecord {
 | 스키마 불일치 JSON | `OutputValidator` 실패 → 오류 첨부 재프롬프트(최대 N회) → 폴백 모델 → 그래도 실패면 사람 검수 큐 |
 | `stop_reason==max_tokens` 절단 | `maxTokens` 상향 재시도 또는 continue 프롬프트. 구조화면 불완전 폐기 |
 | `stop_reason==refusal` (Claude) | `content` 읽기 전 확인. 정책상 정당 태스크면 서버측 `fallbacks`(Fable5)로 대체. 출력 전 거부는 미과금 |
-| 환각(존재하지 않는 아이템/맵 참조) | 품질게이트에서 게임 DB([06](./06-gameplay-framework.md)) 참조 무결성 검증. 미존재 ID면 실패 |
+| 환각(존재하지 않는 아이템/맵 참조) | 품질게이트에서 게임 DB([06](04-gameplay-systems.md)) 참조 무결성 검증. 미존재 ID면 실패 |
 | 폭주(과대 산출: 노드 999개) | 프롬프트 `max_nodes`/스키마 상한 + 게이트 거부 |
 | 앙상블 모델 불일치 | `merge` 규칙(코드리뷰=합집합, 번역=다수결/최고품질, 대화=1개 채택+검증) |
 | 비결정 재현 필요(회귀) | `ResponseCache` 영속 + 프롬프트/시드 해시키. 동일 입력 → 동일 산출 |
@@ -404,7 +406,7 @@ struct AiUsageRecord {
 | 저작권 침해 산출(실제 가사·브랜드) | 프롬프트 금칙 + 사후 필터. 생성물 `.meta`에 provenance·라이선스 태깅([../04-asset-pipeline](../04-asset-pipeline.md)) |
 | 프롬프트 인젝션(유저가 시스템 지시 탈취 시도) | 유저 입력은 **user 롤**로만. 운영 지시는 Claude Opus 4.8 mid-session `role:"system"`(비스푸핑 채널). 유저 텍스트를 시스템에 넣지 않음 |
 | 검열 우회 시도 | refusal 그대로 전달. 재시도 루프가 우회 수단이 되지 않도록 refusal은 폴백 대상에서 정책 분기 |
-| 유해/독성 콘텐츠(채팅용 AI 응답) | 게이트웨이 분류기 + 게임 내 신고([06](./06-gameplay-framework.md))와 연동 |
+| 유해/독성 콘텐츠(채팅용 AI 응답) | 게이트웨이 분류기 + 게임 내 신고([06](04-gameplay-systems.md))와 연동 |
 | 생성 산출물 데이터 유출 | 게이트웨이만 키 보유. 산출물 감사 로그(05 DB), requestId 추적 |
 
 ### 5.4 스케일·동시성·비용
@@ -499,7 +501,7 @@ assets/ai/schemas/                            # 출력 스키마
 | **A1 — Anthropic 실연결** | AnthropicAdapter+`GatewayTransport`. 최소 게이트웨이(키·프록시). 에디터에서 "이 함수 리팩터" → `claude-opus-4-8` 응답을 콘솔에 표시 | 04/05(토큰·전송) |
 | **A2 — 라우터·폴백·캐시** | `routing.json` 데이터 드리븐. 429 강제 → 폴백 모델 전환 확인. `ResponseCache` 적중 시 재호출 0 로그 | A1 |
 | **A3 — 콘텐츠 생성(스프라이트)** | 기존 `dot_write_sprite`(있음)를 `ai_generate_sprite`로 승격. 프롬프트→스프라이트 PNG→[../04](../04-asset-pipeline.md) 임포트→씬에 표시 | 08(MCP)·04(에셋) |
-| **A4 — 콘텐츠 생성(대화·번역)** | `content.dialogue`/`content.translate` 스키마 준수 생성. 대화 트리 JSON→[06](./06-gameplay-framework.md) 로드→NPC 대사 재생. ko→ja/zh 번역표 | 06·runtime loc |
+| **A4 — 콘텐츠 생성(대화·번역)** | `content.dialogue`/`content.translate` 스키마 준수 생성. 대화 트리 JSON→[06](04-gameplay-systems.md) 로드→NPC 대사 재생. ko→ja/zh 번역표 | 06·runtime loc |
 | **A5 — 에디터 AI 패널** | `AiPanel`(07 ExtensionRegistry). 명령팔레트·컨텍스트 주입. 코드 어시스트가 `engine_build`(MCP)로 자체 검증 루프 | 07·08 |
 | **A6 — 안전·비용 운영** | `SafetyFilter`(PII/저작권/인젝션)+`RateLimiter`+`CostBudget`+`UsageMeter`. 유저별 예산 상한·감사 로그(05 DB) | 05·04 |
 | **A7 — 멀티 제공자·앙상블·로컬** | OpenAI/Gemini/Cursor/Ollama 어댑터. 코드리뷰 앙상블(합집합), PII는 Ollama 오프라인 경로 | A2·A6 |
@@ -515,7 +517,7 @@ assets/ai/schemas/                            # 출력 스키마
 - [../06-runtime-systems.md](../06-runtime-systems.md) — `LocalizationSystem`(번역 대상)·대화/컷신 런타임(대화 데이터 소비).
 - [../07-editor-ui.md](../07-editor-ui.md) — ExtensionRegistry(AI 패널 등록)·`IEditorCommand`(AI 조작 Undo)·인스펙터.
 - [../08-mcp.md](../08-mcp.md) — MCP 서버(콘텐츠 툴 `ai_generate_*` 확장)·개발도구 6툴(에이전트 자체검증)·`dot` 파이프라인(있음).
-- (mmorpg 도메인) [./04-netcode-server.md](./04-netcode-server.md) — 게이트웨이 전송 인프라. [./05-account-persistence.md](./05-account-persistence.md) — 세션 토큰·비용/감사 DB. [./06-gameplay-framework.md](./06-gameplay-framework.md) — 대화/퀘/스탯 스키마(생성 대상·무결성 검증). [./09-anti-cheat.md](./09-anti-cheat.md) — 클라 신뢰경계(키 서버 보관 근거).
+- (mmorpg 도메인) [./04-netcode-server.md](02-netcode-server.md) — 게이트웨이 전송 인프라. [./05-account-persistence.md](03-persistence-accounts.md) — 세션 토큰·비용/감사 DB. [./06-gameplay-framework.md](04-gameplay-systems.md) — 대화/퀘/스탯 스키마(생성 대상·무결성 검증). [./09-anti-cheat.md](09-liveops-security.md) — 클라 신뢰경계(키 서버 보관 근거).
 
 ---
 

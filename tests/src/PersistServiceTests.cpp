@@ -4,6 +4,7 @@
 #include "mye/persist/PersistenceService.h"
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 using namespace mye;
@@ -149,4 +150,61 @@ MYE_TEST(ServiceReconcileDetectsMismatch) {
 
     // 존재하지 않는 캐릭터 → 불일치.
     MYE_EXPECT(!svc.Reconcile(9999).matches);
+}
+
+MYE_TEST(ServiceReconcileAggregatesStacksAndLedgerOnlyItems) {
+    PersistenceService svc;
+    const auto acc = svc.Accounts().Register("stacked", "pw").Value();
+    const auto cid = svc.Characters().Create(acc, "Stacked").Value();
+    auto* record = svc.Characters().GetMutable(cid);
+    record->items = {{100, 99}, {100, 21}};
+    MYE_EXPECT(static_cast<bool>(svc.Ledger().Grant(cid, 100, 120)));
+    MYE_EXPECT(svc.Reconcile(cid).matches);
+    record->items.clear();
+    const auto missing = svc.Reconcile(cid);
+    MYE_EXPECT(!missing.matches);
+    MYE_EXPECT(missing.firstMismatchItem == 100);
+    MYE_EXPECT(missing.snapshotCount == 0 && missing.ledgerCount == 120);
+}
+
+MYE_TEST(ServiceFailedLoadPreservesExistingState) {
+    const std::string dir = MakeTempDir("failed_load");
+    std::filesystem::create_directories(dir);
+    AccountStore disk;
+    MYE_EXPECT(static_cast<bool>(disk.Register("disk", "pw")));
+    MYE_EXPECT(static_cast<bool>(disk.SaveToFile(dir + "/accounts.json")));
+    MYE_EXPECT(ItemLedger{}.SaveToFile(dir + "/ledger.json"));
+    { std::ofstream out(dir + "/characters.json"); out << "broken"; }
+    PersistenceService svc;
+    MYE_EXPECT(static_cast<bool>(svc.Accounts().Register("memory", "pw")));
+    MYE_EXPECT(!svc.LoadAll(dir));
+    MYE_EXPECT(svc.Accounts().FindByName("memory") != nullptr);
+    MYE_EXPECT(svc.Accounts().FindByName("disk") == nullptr);
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+MYE_TEST(ServiceSnapshotRetainsExactGoldAndFailedSaveRetainsPrior) {
+    const std::string dir = MakeTempDir("atomic");
+    PersistenceService svc;
+    const auto account = svc.Accounts().Register("atomic", "pw").Value();
+    const auto character = svc.Characters().Create(account, "Atomic").Value();
+    svc.Characters().GetMutable(character)->gold = INT64_MAX;
+    MYE_EXPECT(svc.Ledger().AdjustGold(character, INT64_MAX));
+    MYE_EXPECT(svc.SaveAll(dir));
+    std::filesystem::create_directory(dir + "/state.json.tmp");
+    svc.Characters().GetMutable(character)->gold = 0;
+    MYE_EXPECT(!svc.SaveAll(dir));
+    PersistenceService disk;
+    MYE_EXPECT(disk.LoadAll(dir));
+    MYE_EXPECT(disk.Characters().Get(character)->gold == INT64_MAX);
+    MYE_EXPECT(disk.Reconcile(character).matches);
+    std::filesystem::create_directories(dir + "/backups/backup_0001");
+    MYE_EXPECT(!disk.RestoreFromBackup(dir, 1));
+    MYE_EXPECT(disk.Characters().Get(character)->gold == INT64_MAX);
+    { std::ofstream out(dir + "/state.json"); out << "{}"; }
+    MYE_EXPECT(!disk.LoadAll(dir));
+    MYE_EXPECT(disk.Characters().Get(character)->gold == INT64_MAX);
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
 }

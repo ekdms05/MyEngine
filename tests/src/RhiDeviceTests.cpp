@@ -1,6 +1,7 @@
 #include "TestFramework.h"
 #include "mye/core/Log.h"
 #include "mye/rhi/Rhi.h"
+#include "mye/rhi/ShaderCompiler.h"
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <wrl/client.h>
@@ -48,6 +49,41 @@ MYE_TEST(Dx11WarpRequiresExplicitSelectionAndRestoresHardwareDefault) {
     MYE_EXPECT(warp);
     MYE_EXPECT(selected->selection == "DX11 driver selected: WARP (MYE_DX11_WARP=1)");
     if (warp) {
+        // Opposite front-face states must not share a rasterizer cache entry.
+        mye::rhi::ShaderCompileDesc vsDesc{};
+        vsDesc.source = "float4 main(uint id : SV_VertexID) : SV_Position { return float4(0,0,0,1); }";
+        vsDesc.entryPoint = "main"; vsDesc.stage = mye::rhi::ShaderStage::Vertex;
+        auto vsCode = mye::rhi::CompileShaderFxc(vsDesc);
+        auto psDesc = vsDesc;
+        psDesc.source = "float4 main() : SV_Target { return float4(1,1,1,1); }";
+        psDesc.stage = mye::rhi::ShaderStage::Pixel;
+        auto psCode = mye::rhi::CompileShaderFxc(psDesc);
+        MYE_EXPECT(vsCode && psCode);
+        if (vsCode && psCode) {
+            auto& device = *warp.Value();
+            const auto vs = device.CreateShader(vsDesc.stage, vsCode.Value().data);
+            const auto ps = device.CreateShader(psDesc.stage, psCode.Value().data);
+            Microsoft::WRL::ComPtr<ID3D11DeviceContext> nativeContext;
+            static_cast<ID3D11Device*>(device.GetNativeDevice())->GetImmediateContext(&nativeContext);
+            for (const bool ccw : {false, true, false}) {
+                mye::rhi::GraphicsPipelineDesc pipelineDesc{};
+                pipelineDesc.vs = vs; pipelineDesc.ps = ps;
+                pipelineDesc.raster.cull = mye::rhi::CullMode::Back;
+                pipelineDesc.raster.frontCounterClockwise = ccw;
+                const auto pipeline = device.CreateGraphicsPipeline(pipelineDesc);
+                MYE_EXPECT(pipeline.IsValid());
+                device.GetImmediateContext().SetPipeline(pipeline);
+                Microsoft::WRL::ComPtr<ID3D11RasterizerState> state;
+                nativeContext->RSGetState(&state);
+                MYE_EXPECT(state);
+                if (state) {
+                    D3D11_RASTERIZER_DESC actual{}; state->GetDesc(&actual);
+                    MYE_EXPECT((actual.FrontCounterClockwise != FALSE) == ccw);
+                }
+                device.Destroy(pipeline);
+            }
+            device.Destroy(vs); device.Destroy(ps);
+        }
         // The public native debug boundary verifies the actual software adapter, not just a log string.
         using Microsoft::WRL::ComPtr;
         ComPtr<IDXGIDevice> dxgi;

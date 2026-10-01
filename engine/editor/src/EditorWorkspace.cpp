@@ -6,6 +6,8 @@
 #include "mye/editor/Viewport.h"
 #include "mye/ecs/World.h"
 #include "mye/scene/Renderable.h"
+#include "mye/scene/Transform.h"
+#include "mye/scene/Camera3D.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/phys/Collision.h"
 #include "mye/ser/JsonArchive.h"
@@ -31,6 +33,9 @@ constexpr std::array kElements{
     ElementDescription{Element::Interaction, "상호작용", "E 키 상호작용 대상과 이벤트 연결"},
     ElementDescription{Element::Spawn, "도착 지점", "맵 포털에서 이름으로 지정하는 도착 위치"},
     ElementDescription{Element::Lua, "Lua 오브젝트", "씬에 저장되는 오브젝트별 Lua 코드와 이벤트"},
+    ElementDescription{Element::Mesh, "3D 메시", "정적 GLB/glTF와 알베도 PNG를 지정하는 오브젝트"},
+    ElementDescription{Element::Billboard, "3D 빌보드", "카메라를 향하는 PNG/.anim. 충돌은 별도로 구성"},
+    ElementDescription{Element::Camera, "게임 카메라 3D", "Play/MyGame의 저장 가능한 원근 카메라"},
 };
 
 struct ComponentValue { const refl::TypeInfo* type; ValueBlob before, after; };
@@ -126,6 +131,16 @@ Expected<ecs::Entity, Error> EditorApp::CreateSceneElement(SceneElement element,
     std::vector<ComponentValue> components;
     auto prepared = PrepareComponent(*world, scene::ObjectName{name}, components);
     if (prepared && element == SceneElement::Sprite) prepared = PrepareComponent(*world, scene::SpriteRenderer{}, components);
+    if (prepared && element == SceneElement::Mesh) prepared = PrepareComponent(*world, scene::MeshRenderer{}, components);
+    if (prepared && element == SceneElement::Billboard) prepared = PrepareComponent(*world, scene::BillboardRenderer{}, components);
+    if (prepared && element == SceneElement::Camera) {
+        bool occupied = false;
+        world->Query<scene::Camera3D>().Each([&](ecs::Entity, const auto& c) { occupied |= c.current; });
+        scene::Camera3D camera; camera.current = !occupied;
+        prepared = PrepareComponent(*world, camera, components);
+        scene::LocalTransform transform; transform.position = {0, 3, -8};
+        if (prepared) prepared = PrepareComponent(*world, transform, components);
+    }
     if (prepared && (element == SceneElement::Collider || element == SceneElement::Trigger)) {
         phys::Collider2D collider;
         collider.shape = phys::Shape2D::MakeBox(.5f, .5f);

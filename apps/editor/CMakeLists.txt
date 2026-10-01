@@ -16,6 +16,11 @@ add_custom_target(MyEditorContent
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/docs"
         "$<TARGET_FILE_DIR:MyEditor>/docs"
-    COMMENT "Copying editor starter assets and offline guides"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MyEditor>/fonts"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/assets/fonts/NanumSquareRoundR.ttf"
+        "${CMAKE_SOURCE_DIR}/assets/fonts/NanumSquareRound-LICENSE.txt"
+        "$<TARGET_FILE_DIR:MyEditor>/fonts"
+    COMMENT "Copying editor starter assets, offline guides and licensed UI font"
 )
 add_dependencies(MyEditor MyEditorContent)

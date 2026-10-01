@@ -6,7 +6,7 @@
 #include "mye/render/PixelPerfectTarget.h"
 #include "mye/rhi/Rhi.h"
 
-namespace mye::render { class HybridRenderer; }
+namespace mye::render { class HybridRenderer; struct HybridViewInfo; }
 namespace mye::scene { struct RenderProxyList; }
 
 namespace mye::editor {
@@ -21,7 +21,7 @@ public:
     bool HasFocus() const;
     InputState& Input() { return m_input; }
     void Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
-                Vec2 center, bool paused, rhi::ICommandContext& command);
+                const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command);
     void Present();
     rhi::TextureHandle Backbuffer() const;
 

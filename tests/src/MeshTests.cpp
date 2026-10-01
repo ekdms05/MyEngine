@@ -1,6 +1,6 @@
 // MeshTests.cpp — MeshImporter(glTF) 검증 (04): cgltf 파싱·좌표 변환·바운딩·인덱스 정확성
 //
-// GPU 없는 단위 테스트만 둔다(MeshImporter::Upload는 실디바이스 필요 → M2-C 통합 데모).
+// 파싱 계약과 실제 DX11 정면/기본 재질 출력을 함께 확인한다.
 // .glb 바이너리를 테스트 내에서 최소 빌더로 조립해(임베드 BIN 청크) MeshImporter::ParseGltf가
 // 정점 수·바운딩·인덱스(와인딩 뒤집기)·왼손 z-반전을 정확히 산출하는지 대조한다.
 #include "TestFramework.h"
@@ -8,6 +8,11 @@
 #include "mye/asset/Mesh.h"
 #include "mye/asset/MeshImporter.h"
 #include "mye/core/Math.h"
+#include "mye/render/HybridRenderer.h"
+#include "mye/rhi/Rhi.h"
+#include "mye/scene/RenderExtract.h"
+#include <filesystem>
+#include <fstream>
 
 #include <cstdint>
 #include <cstring>
@@ -185,6 +190,60 @@ MYE_TEST(MeshGltfWindingFlip) {
     MYE_EXPECT(m.indices[2] == 1);
 }
 
+MYE_TEST(MeshGltfFrontFaceAndDefaultMaterialRender) {
+    auto created = rhi::CreateDevice(rhi::Backend::DX11, {});
+    MYE_EXPECT(created); if (!created) return;
+    auto device = std::move(created).Value();
+    const std::vector<Vtx> vertices{{-1,-1,0, 0,0,-1, 0,0}, {0,1,0, 0,0,-1, 0,0}, {1,-1,0, 0,0,-1, 0,0}};
+    auto parsed = MeshImporter::ParseGltf(BuildGlb(vertices, {0,1,2}), {});
+    MYE_EXPECT(parsed); if (!parsed) return;
+    auto uploaded = MeshImporter::Upload(*device, std::move(parsed).Value());
+    MYE_EXPECT(uploaded); if (!uploaded) return;
+    auto mesh = std::move(uploaded).Value();
+    rhi::TextureDesc targetDesc{};
+    targetDesc.width = targetDesc.height = 32;
+    targetDesc.format = rhi::Format::RGBA8Unorm;
+    targetDesc.usage = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::CopySrc;
+    const auto target = device->CreateTexture(targetDesc);
+    render::HybridRenderer renderer;
+    render::HybridRendererDesc description{};
+    description.colorFormat = targetDesc.format;
+    renderer.Init(*device, description);
+    renderer.SetMeshResolver([](void* data, AssetGuid) { return static_cast<const Mesh*>(data); }, &mesh);
+    MYE_EXPECT(target.IsValid() && renderer.IsInitialized());
+    render::HybridViewInfo view;
+    view.geometryDepth = true;
+    view.view = Mat4::LookAtLH({0,0,-3}, {0,0,0}, {0,1,0});
+    view.proj = Mat4::PerspectiveLH(1.0f, 1, .05f, 100);
+    view.viewProj = view.view * view.proj;
+    scene::RenderProxyList items;
+    auto& item = items.Push();
+    item.kind = scene::RenderItemKind::Mesh; item.mesh = AssetGuid::Generate();
+    device->BeginFrame();
+    auto& context = device->GetImmediateContext();
+    rhi::RenderPassColorAttachment color{};
+    color.texture = target; color.loadOp = rhi::LoadOp::Clear; color.clearColor = Color::Black();
+    rhi::RenderPassBeginDesc pass{}; pass.colorAttachments = {&color, 1};
+    context.BeginRenderPass(pass);
+    context.SetViewport({0,0,32,32,0,1});
+    renderer.Render(items, view, context);
+    context.EndRenderPass();
+    const auto path = std::filesystem::path(MYE_TEST_DATA_DIR) / "mesh-front.bmp";
+    std::filesystem::create_directories(path.parent_path());
+    MYE_EXPECT(rhi::CaptureBackbuffer(*device, target, path.string()));
+    device->EndFrame();
+    std::ifstream file(path, std::ios::binary);
+    std::vector<uint8_t> bmp((std::istreambuf_iterator<char>(file)), {});
+    MYE_EXPECT(bmp.size() >= 54 + 32 * 32 * 4);
+    if (bmp.size() >= 54 + 32 * 32 * 4) {
+        const auto* center = &bmp[54 + (16 * 32 + 16) * 4];
+        MYE_EXPECT(center[0] > 30 && center[0] == center[1] && center[1] == center[2]);
+    }
+    renderer.Shutdown();
+    device->Destroy(target);
+    device->Destroy(mesh.vertexBuffer); device->Destroy(mesh.indexBuffer);
+}
+
 // 바운딩: z-반전 후 min/max 재계산. glTF z[1,3] → 엔진 z[-3,-1].
 MYE_TEST(MeshGltfBounds) {
     auto glb = BuildTriangleGlb();
@@ -260,6 +319,8 @@ MYE_TEST(MeshGltfInvalidInput) {
     std::vector<std::byte> garbage(64, std::byte{0x7F});
     auto r2 = MeshImporter::ParseGltf(garbage, MeshImportSettings{});
     MYE_EXPECT(!r2);
+    const std::vector<Vtx> vertices{{0,0,0, 0,0,1, 0,0}, {1,0,0, 0,0,1, 0,0}, {0,1,0, 0,0,1, 0,0}};
+    MYE_EXPECT(!MeshImporter::ParseGltf(BuildGlb(vertices, {0,1,99}), {}));
 }
 
 // 정점 레이아웃 정합 — 02가 바인딩할 속성 서술.

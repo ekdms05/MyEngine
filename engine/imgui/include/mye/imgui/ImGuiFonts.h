@@ -1,4 +1,4 @@
-// ImGuiFonts.h — editor/tool system-font loader with CJK merging.
+// ImGuiFonts.h — bundled NanumSquareRound UI font with system CJK merging.
 // Windows language fonts are loaded in place and are not redistributed.
 #pragma once
 

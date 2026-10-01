@@ -22,7 +22,7 @@ export function readJson(file: string): unknown {
 }
 
 export function readProject(ctx: ServerContext, relative: string) {
-  const file = resolveExistingInRoot(ctx.root, relative);
+  const file = resolveExistingInRoot(ctx.projectRoot ?? ctx.root, relative);
   if (path.extname(file) !== ".myeproj") throw new Error(".myeproj 파일을 선택하세요");
   return { file, directory: path.dirname(file), metadata: projectSchema.parse(readJson(file)) };
 }
@@ -33,7 +33,7 @@ export function registerProjectTools(server: McpServer, ctx: ServerContext): voi
       "프로젝트·씬 버전과 계층을 검사하며, 컴포넌트 타입/값의 최종 검증은 엔진 로더가 수행한다. 에디터 메모리 편집은 하지 않는다.",
     annotations: { readOnlyHint: true, destructiveHint: false },
     inputSchema: {
-      project: z.string().min(1).describe("리포 루트 상대 .myeproj 경로"),
+      project: z.string().min(1).describe("MYE_PROJECT_ROOT 상대 .myeproj 경로(기본 MYE_ROOT)"),
       scene: z.string().optional().describe("프로젝트 상대 .scene 경로(생략하면 mainScene)"),
       section: z.enum(["scene", "assets"]).default("scene"),
       filter: z.string().max(128).default("").describe("오브젝트 이름 또는 에셋 경로 부분 검색"),

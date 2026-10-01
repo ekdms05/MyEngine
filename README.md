@@ -2,6 +2,8 @@
 
 A Windows C++20 game engine for 2.5D pixel art games. Build scenes from separate objects, connect collision and interaction components, write Lua behavior, and test in a separate game window.
 
+Static embedded GLB meshes, camera-facing sprites and saved 3D game cameras share the official editor/player path. Movement and collision remain 2D; 3D physics and an authenticated online player are still in development. See the [component guide](docs/20-components.md) for supported formats and limits.
+
 ## Get started
 
 Download the Windows x64 ZIP from [Releases](https://github.com/ekdms05/MyEngine/releases), extract it into a new folder and launch `MyEditor.exe`. The project window lets you create a blank project, create a project with the meadow village template, or open a `.myeproj` file. The [latest Microsoft Visual C++ v14 x64 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) and DirectX 11 are required.
@@ -59,4 +61,4 @@ build/dev/apps/game/Release/MyGame.exe --project game/starter/meadow_village/pro
 
 The renderer uses a left-handed coordinate system, +Y up, 48 pixels per world unit and a 960×540 pixel target. Sprites and inserted 3D geometry share depth and alpha cutout contracts. DX11 is the implemented graphics backend. Visual game UI editing, full 3D scene tooling, script autocomplete/debugging, process-isolated play and production online integration remain development work.
 
-Sol2 and the integrated pixel drawing/rigging tool have been removed. Lua 5.4.7, Dear ImGui, the currently used image/model/audio decoders and FreeType remain because they serve live loading, rendering and scripting paths. Third-party license notices are preserved; system fonts are loaded from Windows and are not redistributed.
+Sol2 and the integrated pixel drawing/rigging tool have been removed. Lua 5.4.7, Dear ImGui, the currently used image/model/audio decoders and FreeType remain because they serve live loading, rendering and scripting paths. Third-party license notices are preserved. The editor bundles NanumSquareRound Regular with its SIL OFL 1.1 notice; Windows language fonts supplement Japanese/Chinese coverage and are not redistributed.

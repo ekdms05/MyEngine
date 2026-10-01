@@ -96,6 +96,7 @@ return Object</code></pre>
         <ul><li>LocalTransform: 위치·회전·크기. 월드 1 단위는 기본 48px, +Y는 위쪽입니다.</li><li>SpriteRenderer: PNG·UV 영역·픽셀 피벗·표시.</li><li>Collider2D / KinematicBody2D: 충돌 모양·반폭·오프셋·이동 본체.</li><li>CharacterController2D: 입력·속도·대기/걷기 모션. 활성 조작 캐릭터는 최상위 한 명입니다.</li><li>InteractionTarget / ScenePortal / ObjectBehavior: E 상호작용·맵 이동·이벤트 연결·Lua.</li></ul>
       </section>
       <section id="viewport">
+        <p>게임용 3D 카메라는 <strong>+ 추가 → 게임 카메라 3D</strong>로 만들고 위치·target·FOV·near/far를 저장합니다. Play와 MyGame이 이 카메라를 사용합니다. 메시·빌보드의 설정과 미지원 3D 물리는 <a href="components.html#section-2">3D 컴포넌트 가이드</a>를 확인하세요.</p>
         <p class="eyebrow">결과 확인</p><h2>2D와 3D에서 같은 장면을 확인하세요.</h2>
         <p class="lead">2D/3D 전환은 같은 씬을 다른 카메라로 보여줍니다. Play는 별도 게임 창에서 편집 씬의 복제본을 실행합니다. 게임 창을 닫거나 Stop을 누르면 원본 편집으로 돌아갑니다.</p>
         <ol><li>상단 중앙에서 2D 또는 3D를 선택합니다. 캐릭터의 발 위치·건물 가림·충돌 범위를 확인합니다.</li><li>오른쪽 위 ▶로 이동·상호작용·출입구·모션 전환을 확인합니다. ⏸로 일시정지하고 ▶로 계속합니다. 프레임 진행은 플레이 메뉴의 Step을 사용합니다.</li><li>■로 중지한 뒤 필요한 변경을 편집 씬에 적용하고 저장합니다.</li></ol>

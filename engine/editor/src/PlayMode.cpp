@@ -89,6 +89,8 @@ Expected<void, Error> PlayModeController::Play() {
         if (!snap) return snap.GetError();
         auto restored = ser.Restore(*world, snap.Value());
         if (!restored) return restored.GetError();
+        auto valid = runtime::ValidateObjectComponents(*world);
+        if (!valid) return valid.GetError();
         // Play World 전용 월드-로컬 이벤트 버스(Stop 시 파기). 편집 World 버스를 공유하면
         //   플레이 중 publish가 편집-World 구독자로 새고, 스크립트/리스너 구독이 Stop 후
         //   dangling된다. 게임플레이 이벤트는 Play World 안에서 자족적으로 흐르게 한다

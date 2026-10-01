@@ -58,21 +58,11 @@ bool SameFile(std::string_view path, const fs::path& target) {
 Document::Document(DocumentId id, Kind kind, std::string path)
     : m_id(id), m_kind(kind), m_path(std::move(path)), m_commands(nullptr, 512),
       m_worldEvents(std::make_unique<EventBus>()), m_world(std::make_unique<ecs::World>()) {
-    scene::RegisterCoreComponentReflection();
+    scene::RegisterCoreComponents(*m_world);
     gameplay::RegisterProgressionReflection();
     runtime::RegisterObjectComponents(*m_world);
-    m_world->RegisterComponent<scene::ObjectName>("ObjectName");
-    m_world->RegisterComponent<phys::Collider2D>("Collider2D");
-    m_world->RegisterComponent<phys::KinematicBody2D>("KinematicBody2D");
-    m_world->SetEventBus(m_worldEvents.get());
-    m_world->RegisterComponent<scene::LocalTransform>("LocalTransform");
-    m_world->RegisterComponent<scene::WorldTransform>("WorldTransform");
-    m_world->RegisterComponent<scene::Parent>("Parent");
-    m_world->RegisterComponent<scene::Children>("Children");
-    m_world->RegisterComponent<scene::SpriteRenderer>("SpriteRenderer");
-    m_world->RegisterComponent<scene::FloorLevel>("FloorLevel");
-    m_world->RegisterComponent<anim::SpriteAnimator>("SpriteAnimator");
     m_world->RegisterComponent<gameplay::Progression>("Progression");
+    m_world->SetEventBus(m_worldEvents.get());
 }
 Document::~Document() = default;
 

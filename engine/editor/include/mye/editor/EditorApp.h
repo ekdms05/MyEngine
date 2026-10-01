@@ -30,7 +30,7 @@ namespace mye::editor {
 class EditorApp : private IWindowMessageHook {
 public:
     enum class Workspace : std::uint8_t { Scene2D = 0, Scene3D = 1, Lua = 4 };
-    enum class SceneElement : std::uint8_t { Object, Sprite, Character, Collider, Trigger, Interaction, Spawn, Lua };
+    enum class SceneElement : std::uint8_t { Object, Sprite, Character, Collider, Trigger, Interaction, Spawn, Lua, Mesh, Billboard, Camera };
     EditorApp();
     ~EditorApp() override;
     EditorApp(const EditorApp&) = delete;

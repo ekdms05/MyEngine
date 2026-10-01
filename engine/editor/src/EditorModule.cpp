@@ -31,6 +31,8 @@
 #include "mye/asset/AssetDatabase.h"
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/Importer.h"
+#include "mye/asset/MeshImporter.h"
+#include "mye/scene/Camera3D.h"
 #include "mye/core/JsonFile.h"
 #include <map>
 #include <filesystem>
@@ -94,12 +96,14 @@ struct EditorModule::Impl final : public IEditorViewport {
     std::unique_ptr<asset::AssetManager> assets;
     std::unique_ptr<asset::AssetDatabase> assetDb;
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Texture>> textures;
+    std::map<asset::AssetGuid, asset::AssetHandle<asset::Mesh>> meshes;
     std::map<asset::AssetGuid, asset::AnimationAsset> animations;
     std::string assetRoot;
 
     void ClearAssets() {
         if (engine) engine->UnregisterServiceRaw(asset::AssetDatabase::kServiceId);
         textures.clear();
+        meshes.clear();
         animations.clear();
         assetDb.reset();
         assets.reset();
@@ -115,6 +119,7 @@ struct EditorModule::Impl final : public IEditorViewport {
         vfs->Mount("assets", std::make_unique<asset::LooseFileSystem>(root), 0);
         assets = std::make_unique<asset::AssetManager>(*vfs, device.get());
         assets->RegisterImporter(std::make_unique<asset::TextureImporter>());
+        assets->RegisterImporter(std::make_unique<asset::MeshImporter>());
         assetDb = std::make_unique<asset::AssetDatabase>(*assets, nullptr);
         auto scanned = assetDb->ScanDirectory(root);
         if (!scanned) { ClearAssets(); assetRoot = root; return scanned.GetError(); }
@@ -146,6 +151,20 @@ struct EditorModule::Impl final : public IEditorViewport {
         if (!texture) return Error{"Texture could not be loaded; check its PNG and .meta", 1};
         return TexturePreview{device->GetImGuiTextureID(texture->gpuTexture), texture->width, texture->height};
     }
+    const asset::Mesh* ResolveMesh(asset::AssetGuid guid) {
+        if (!assetDb || !guid.IsValid()) return nullptr;
+        auto found = meshes.find(guid);
+        if (found == meshes.end()) {
+            const auto path = assetDb->PathFromGuid(guid);
+            const auto* importer = assets->FindImporterForPath(path);
+            if (!importer || importer->ProducedType() != asset::Mesh::kAssetTypeId) {
+                MYE_LOG_ERROR("Editor", "Mesh GUID has no registered mesh source: {}", guid.ToString()); return nullptr;
+            }
+            found = meshes.emplace(guid, assets->LoadSync<asset::Mesh>(path)).first;
+            if (!found->second.Get()) MYE_LOG_ERROR("Editor", "Mesh could not be loaded: {} GUID {}", path, guid.ToString());
+        }
+        return found->second.Get();
+    }
     const asset::AnimationAsset* ResolveAnimation(asset::AssetGuid guid) {
         if (!assetDb || !guid.IsValid()) return nullptr;
         const auto path = assetDb->PathFromGuid(guid);
@@ -166,8 +185,8 @@ struct EditorModule::Impl final : public IEditorViewport {
         return &found->second;
     }
     void BindAnimations(ecs::World& world) {
-        world.Query<anim::SpriteAnimator, scene::SpriteRenderer>().Each(
-            [&](ecs::Entity, anim::SpriteAnimator& animator, scene::SpriteRenderer& sprite) {
+        anim::ForEachAnimatedRenderer(world,
+            [&](ecs::Entity, anim::SpriteAnimator& animator, auto& sprite) {
                 if (!animator.animation.guid.IsValid()) { animator.sheet = nullptr; animator.directClip = nullptr; return; }
                 const auto* data = ResolveAnimation(animator.animation.guid);
                 if (data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
@@ -320,6 +339,9 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
         s.hybrid.SetTextureResolver([](void* user, asset::AssetGuid guid) {
             return static_cast<Impl*>(user)->ResolveTexture(guid);
         }, &s);
+        s.hybrid.SetMeshResolver([](void* user, asset::AssetGuid guid) {
+            return static_cast<Impl*>(user)->ResolveMesh(guid);
+        }, &s);
     }
 
     s.app = std::make_unique<EditorApp>();
@@ -420,7 +442,12 @@ void EditorModule::Frame(const TimeStep&) {
 
     // 3a) 오프스크린 뷰포트 RT 에 씬 렌더.
     if (s.rt.IsInitialized()) {
-        const auto view = BuildViewportView(s.vpCam, s.rt.Width(), s.rt.Height());
+        auto view = BuildViewportView(s.vpCam, s.rt.Width(), s.rt.Height());
+        if (s.headless && world && s.app->PlayMode().IsPlaying()) {
+            const auto gameView = scene::BuildGameView(*world, render::Camera2D{});
+            if (gameView) view = gameView.Value();
+            else MYE_LOG_ERROR("Editor", "{}", gameView.GetError().message);
+        }
         s.rt.BeginScenePass(cmd, kViewportClear);
         s.hybrid.Render(s.proxies, view, cmd);
         s.rt.EndScenePass(cmd);
@@ -474,7 +501,15 @@ void EditorModule::Frame(const TimeStep&) {
                     if (controller.enabled) center = {transform.position.x, transform.position.y};
                 });
         }
-        s.playWindow.Render(s.hybrid, s.proxies, center, s.app->PlayMode().State() == PlayState::Paused, cmd);
+        render::Camera2D fallback;
+        fallback.SetPosition(center);
+        auto view = scene::BuildGameView(*s.app->PlayMode().ActiveWorld(), fallback);
+        if (view) s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd);
+        else {
+            MYE_LOG_ERROR("Editor", "{}", view.GetError().message);
+            s.app->PlayMode().Stop();
+            s.playWindow.Close();
+        }
     }
 
     // 4) 덤프. 창이 있으면 ImGui 셸(스킨)까지 그려진 백버퍼를, 헤드리스면 오프스크린 RT 를 캡처.

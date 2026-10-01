@@ -27,6 +27,14 @@ export function resolveRepoRoot(): string {
   return path.resolve(mcpPackageDir(), "..", "..");
 }
 
+/** Authoring root is an explicit directory; build/reference tools retain the engine root. */
+export function resolveProjectRoot(engineRoot: string): string {
+  const configured = process.env["MYE_PROJECT_ROOT"]?.trim();
+  const root = fs.realpathSync(configured ? path.resolve(configured) : engineRoot);
+  if (!fs.statSync(root).isDirectory()) throw new Error("MYE_PROJECT_ROOT는 기존 프로젝트 디렉터리여야 합니다");
+  return root;
+}
+
 /** 빌드 디렉터리(루트 상대): MYE_BUILD_DIR 환경변수, 기본 "build/dev". */
 export function resolveBuildDirRel(root: string): string {
   const env = process.env["MYE_BUILD_DIR"];

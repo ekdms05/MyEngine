@@ -2,6 +2,7 @@
 #include "mye/ecs/World.h"
 #include "mye/core/JsonFile.h"
 #include "mye/scene/Renderable.h"
+#include "mye/scene/Camera3D.h"
 #include "mye/scene/Transform.h"
 #include "mye/phys/Collision.h"
 #include <cmath>
@@ -93,6 +94,17 @@ Expected<void, Error> ValidateObjectComponents(ecs::World& world) {
             if (c.action == ObjectAction::ChangeMap && (!pathValid(c.text) || c.target.empty())) error = "Map connection needs a scene path and spawn name";
         }
     });
-    return error.empty() ? Expected<void, Error>{} : Expected<void, Error>{Error{error, 1}};
+    world.Query<scene::MeshRenderer>().Each([&](ecs::Entity, const auto& mesh) {
+        if (mesh.depthMode > 2) error = "MeshRenderer depthMode must be 0, 1 or 2";
+    });
+    world.Query<scene::BillboardRenderer>().Each([&](ecs::Entity e, const auto& billboard) {
+        if (billboard.mode > scene::BillboardMode::None || world.Has<scene::SpriteRenderer>(e))
+            error = "BillboardRenderer needs a valid mode and cannot share an entity with SpriteRenderer";
+    });
+    if (!error.empty()) return Error{error, 1};
+    scene::UpdateWorldTransforms(world);
+    auto camera = scene::BuildGameView(world, render::Camera2D{});
+    if (!camera) return camera.GetError();
+    return {};
 }
 } // namespace mye::runtime

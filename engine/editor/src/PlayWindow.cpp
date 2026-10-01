@@ -60,16 +60,14 @@ bool PlayWindow::OnMessage(void*, uint32_t message, uint64_t wparam, int64_t lpa
     return false;
 }
 void PlayWindow::Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
-                        Vec2 center, bool paused, rhi::ICommandContext& command) {
+                        const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command) {
     if (!m_window || !m_swapChain || !m_target.IsInitialized()) return;
     if (paused != m_paused) {
         m_window->SetTitle(paused ? "MyEngine — Play · 일시정지" : "MyEngine — Play");
         m_paused = paused;
     }
-    ViewportCamera camera;
-    camera.center = center;
     m_target.BeginScenePass(command, {.09f, .10f, .13f, 1});
-    renderer.Render(proxies, BuildViewportView(camera, m_target.Width(), m_target.Height()), command);
+    renderer.Render(proxies, view, command);
     m_target.EndScenePass(command);
     const auto size = m_window->GetClientSize();
     if (size.x > 0 && size.y > 0) m_target.Blit(command, Backbuffer(), size, {});

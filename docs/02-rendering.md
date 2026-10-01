@@ -82,7 +82,7 @@ biasEps = band.width * 0.10
 depth = anchorDepth + (0.5 - n) * biasEps
 ```
 
-편차는 앵커 주변으로 제한된다. 월드 Z 두께를 그대로 곱하는 방식과 다르며, 메시 자체의 앞뒤를 유지하면서 2D 발밑 정렬에 참여한다. 3D 조명은 현재 방향광·ambient 기반 경로다. 다중 조명·그림자·노멀맵 2D 조명·완성된 Billboard3D 제작 워크플로는 확장 요구에 해당한다.
+편차는 앵커 주변으로 제한된다. 월드 Z 두께를 그대로 곱하는 방식과 다르며, 메시 자체의 앞뒤를 유지하면서 2D 발밑 정렬에 참여한다. 3D 조명은 현재 방향광·ambient 기반 경로다. 다중 조명·그림자·노멀맵 2D 조명·빌보드의 시점별 방향 모션 자동화는 확장 요구에 해당한다.
 
 ## 픽셀 타깃과 UI
 
@@ -99,6 +99,12 @@ depth = anchorDepth + (0.5 - n) * biasEps
 문서의 깊이 수식은 현재 코드 호출 경로에 맞춰 정정했다. 이번 문서 정리는 좌표·PPU·밴드 상수·실행 알고리즘을 변경하지 않았다.
 
 ## 에디터 3D 보기
+
+게임용 Camera3D도 LH 원근 view를 만들며 Play와 MyGame이 같은 BuildGameView를 소비한다. 이 경로는 geometryDepth를 켜서 실제 clip Z/W를 사용한다. 기본 2D 앵커 깊이·PPU48·960×540·cutout 0.5는 유지한다. 카메라 방향은 target, 확대는 FOV/위치로 지정한다. 에디터 orbit 상태가 자동으로 게임 카메라에 저장되지는 않는다.
+
+BillboardRenderer는 Full(카메라 right/up), YAxis(월드 +Y 유지), None(원래 TRS)을 선택한다. 모두 같은 발 피벗·UV·알파/깊이 경로를 사용한다. SpriteAnimator는 스프라이트 또는 빌보드 하나를 갱신하며 중복 renderer 구성은 거부한다. 카메라 기준 방향 모션 자동 선택·정밀 shear·3D 물리는 미지원이다.
+
+정적 glTF의 Z/와인딩 변환 결과는 메시 파이프라인의 counter-clockwise 정면 설정으로 그린다. 이전 DX11의 clockwise 강제값은 파싱 단위 검증만으로 발견되지 않았다. 정면 삼각형의 실제 DX11 픽셀 검증으로 임포터→GPU 계약을 확인한다. 빈 알베도는 매 draw마다 흰색 텍스처를 바인딩하므로 이전 재질이 남지 않는다.
 
 ViewportCamera는 같은 씬을 2D 또는 LH 원근 카메라로 표시한다. `BuildViewportView`와 투영/역투영을 렌더·그리드·팬·선택에서 공유하며 기준 편집 평면은 Z=0이다. SpriteCorners3D는 full TRS의 world XYZ를 유지한다. HybridViewInfo.geometryDepth가 켜지면 쿼드 VS는 clip Z/W, 메시 VS는 Geometry 깊이를 쓴다. 2D의 인코딩 깊이 경로는 그대로다.
 

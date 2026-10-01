@@ -9,6 +9,8 @@
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/AnimationAsset.h"
 #include "mye/asset/Importer.h"
+#include "mye/asset/MeshImporter.h"
+#include "mye/scene/Camera3D.h"
 #include "mye/render/Camera2D.h"
 #include "mye/render/HybridRenderer.h"
 #include "mye/render/PixelPerfectTarget.h"
@@ -73,19 +75,9 @@ struct GameScene {
     std::unique_ptr<runtime::ObjectSystem> objects;
     GameScene() {
         world.SetEventBus(&events);
-        scene::RegisterCoreComponentReflection();
+        scene::RegisterCoreComponents(world);
         gameplay::RegisterProgressionReflection();
         runtime::RegisterObjectComponents(world);
-        world.RegisterComponent<scene::ObjectName>("ObjectName");
-        world.RegisterComponent<scene::LocalTransform>("LocalTransform");
-        world.RegisterComponent<scene::WorldTransform>("WorldTransform");
-        world.RegisterComponent<scene::Parent>("Parent");
-        world.RegisterComponent<scene::Children>("Children");
-        world.RegisterComponent<scene::SpriteRenderer>("SpriteRenderer");
-        world.RegisterComponent<scene::FloorLevel>("FloorLevel");
-        world.RegisterComponent<phys::Collider2D>("Collider2D");
-        world.RegisterComponent<phys::KinematicBody2D>("KinematicBody2D");
-        world.RegisterComponent<anim::SpriteAnimator>("SpriteAnimator");
         world.RegisterComponent<gameplay::Progression>("Progression");
     }
 };
@@ -115,6 +107,7 @@ public:
         m_resize.Reset();
         m_scene.reset();
         m_textures.clear();
+        m_meshes.clear();
         m_animations.clear();
         m_assetDb.reset();
         m_assets.reset();
@@ -213,10 +206,12 @@ private:
         m_vfs->Mount("assets", std::make_unique<asset::LooseFileSystem>(Utf8String(m_root / "assets")), 0);
         m_assets = std::make_unique<asset::AssetManager>(*m_vfs, m_device.get());
         m_assets->RegisterImporter(std::make_unique<asset::TextureImporter>());
+        m_assets->RegisterImporter(std::make_unique<asset::MeshImporter>());
         m_assetDb = std::make_unique<asset::AssetDatabase>(*m_assets, nullptr);
         auto scanned = m_assetDb->ScanDirectory(Utf8String(m_root / "assets"));
         if (!scanned) return scanned.GetError();
         m_hybrid.SetTextureResolver([](void* user, asset::AssetGuid guid) { return static_cast<ProjectPlayer*>(user)->Texture(guid); }, this);
+        m_hybrid.SetMeshResolver([](void* user, asset::AssetGuid guid) { return static_cast<ProjectPlayer*>(user)->Mesh(guid); }, this);
         return LoadScene(m_cli.scene.empty() ? mainScene->AsString() : m_cli.scene);
     }
     const asset::Texture* Texture(asset::AssetGuid guid) {
@@ -228,6 +223,20 @@ private:
             if (!importer || importer->ProducedType() != asset::Texture::kAssetTypeId) return nullptr;
             found = m_textures.emplace(guid, m_assets->LoadSync<asset::Texture>(path)).first;
             if (!found->second.Get()) MYE_LOG_ERROR("Game", "Texture could not be loaded: {}", path);
+        }
+        return found->second.Get();
+    }
+    const asset::Mesh* Mesh(asset::AssetGuid guid) {
+        if (!guid.IsValid()) return nullptr;
+        auto found = m_meshes.find(guid);
+        if (found == m_meshes.end()) {
+            const auto path = m_assetDb->PathFromGuid(guid);
+            const auto* importer = m_assets->FindImporterForPath(path);
+            if (!importer || importer->ProducedType() != asset::Mesh::kAssetTypeId) {
+                Fail(Error{"Mesh GUID has no registered mesh source: " + guid.ToString(), 1}); return nullptr;
+            }
+            found = m_meshes.emplace(guid, m_assets->LoadSync<asset::Mesh>(path)).first;
+            if (!found->second.Get()) Fail(Error{"Mesh could not be loaded: " + path + " GUID " + guid.ToString(), 1});
         }
         return found->second.Get();
     }
@@ -244,7 +253,7 @@ private:
         return &m_animations.emplace(guid, std::move(animation).Value()).first->second;
     }
     void BindAnimations() {
-        m_scene->world.Query<anim::SpriteAnimator, scene::SpriteRenderer>().Each([&](ecs::Entity, auto& animator, auto& sprite) {
+        anim::ForEachAnimatedRenderer(m_scene->world, [&](ecs::Entity, auto& animator, auto& sprite) {
             const auto* data = Animation(animator.animation.guid);
             if (data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
                 if (const auto* next = Animation(data->nextAnimation.guid)) {
@@ -294,9 +303,11 @@ private:
         m_device->BeginFrame();
         auto& cmd = m_device->GetImmediateContext();
         m_target.BeginScenePass(cmd, Color{0.09f, 0.10f, 0.13f, 1.0f});
-        m_hybrid.Render(m_proxies, m_camera, cmd);
+        const auto view = scene::BuildGameView(m_scene->world, m_camera);
+        if (!view) { m_target.EndScenePass(cmd); m_device->EndFrame(); Fail(view.GetError()); return; }
+        m_hybrid.Render(m_proxies, view.Value(), cmd);
         m_target.EndScenePass(cmd);
-        if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), m_camera.SubpixelResidual());
+        if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), view.Value().geometryDepth ? Vec2{} : m_camera.SubpixelResidual());
         ++m_frame;
         if (!m_cli.dump.empty() && m_frame == (m_cli.frames ? m_cli.frames : 3)) {
             auto captured = rhi::CaptureBackbuffer(*m_device, m_target.ColorTarget(), m_cli.dump);
@@ -325,6 +336,7 @@ private:
     std::unique_ptr<asset::AssetManager> m_assets;
     std::unique_ptr<asset::AssetDatabase> m_assetDb;
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Texture>> m_textures;
+    std::map<asset::AssetGuid, asset::AssetHandle<asset::Mesh>> m_meshes;
     std::map<asset::AssetGuid, asset::AnimationAsset> m_animations;
     std::string m_title, m_currentTitle;
     uint64_t m_frame = 0;

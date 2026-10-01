@@ -1,4 +1,4 @@
-// ImGuiFonts.cpp — system CJK fonts and optional executable-local overrides.
+// ImGuiFonts.cpp — bundled UI font with installed Windows CJK fallbacks.
 #include "mye/imgui/ImGuiFonts.h"
 
 #include "imgui.h"
@@ -35,7 +35,7 @@ std::wstring ExeDir() {
     return sl == std::wstring::npos ? std::wstring{} : s.substr(0, sl + 1);
 }
 
-// Optional application-local fonts remain user-owned; system fonts are never copied.
+// Bundled fonts live beside the executable; system fonts are never copied.
 std::wstring ResolveFont(const wchar_t* file) {
     const std::wstring base = ExeDir();
     const std::wstring rels[] = {
@@ -61,12 +61,12 @@ std::wstring ResolveSystemFont(const wchar_t* file) {
 bool LoadEditorFonts(float sizePx) {
     ImGuiIO& io = ImGui::GetIO();
 
-    auto basePath = ResolveSystemFont(L"malgun.ttf");
-    if (basePath.empty()) basePath = ResolveFont(L"HaFont.ttf");
+    auto basePath = ResolveFont(L"NanumSquareRoundR.ttf");
+    if (basePath.empty()) basePath = ResolveSystemFont(L"malgun.ttf");
     if (basePath.empty())
         return false;   // 폰트 없음 → 기본 폰트 유지(호출부 계속 진행)
 
-    // Windows Korean font supplies Latin/Hangul without bundling an unlicensed font.
+    // The official Regular font covers all 11,172 modern Hangul syllables.
     static ImVector<ImWchar> baseRanges;
     if (baseRanges.empty()) {
         ImFontGlyphRangesBuilder b;
@@ -80,8 +80,8 @@ bool LoadEditorFonts(float sizePx) {
     cfg.OversampleV = 1;
     cfg.PixelSnapH  = true;
 
-    const std::string haUtf8 = Utf8(basePath);
-    ImFont* f = io.Fonts->AddFontFromFileTTF(haUtf8.c_str(), sizePx, &cfg, baseRanges.Data);
+    const std::string baseUtf8 = Utf8(basePath);
+    ImFont* f = io.Fonts->AddFontFromFileTTF(baseUtf8.c_str(), sizePx, &cfg, baseRanges.Data);
     if (f == nullptr)
         return false;
 

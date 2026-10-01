@@ -11,11 +11,12 @@ import { type ServerContext, textResult, errorResult, caughtResult } from "../st
 export function registerAssetImportTool(server: McpServer, ctx: ServerContext): void {
   server.registerTool("asset_import", {
     description: "MyEditor의 기존 에셋 임포트 경계로 외부 제작 파일을 프로젝트 assets/에 복사·등록한다. " +
-      "리포 내부 파일만 허용하며 기존 파일 덮어쓰기와 GUI 메모리 원격 편집은 지원하지 않는다. GUID/.meta는 엔진이 생성한다.",
+      "설정된 엔진/프로젝트 루트의 파일만 허용하며 기존 파일 덮어쓰기와 GUI 메모리 원격 편집은 지원하지 않는다. GUID/.meta는 엔진이 생성한다.",
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     inputSchema: {
-      project: z.string().min(1).describe("리포 상대 .myeproj"),
-      source: z.string().min(1).describe("리포 상대 원본 파일"),
+      project: z.string().min(1).describe("MYE_PROJECT_ROOT 상대 .myeproj(기본 MYE_ROOT)"),
+      source: z.string().min(1).describe("sourceScope 루트 상대 원본 파일"),
+      sourceScope: z.enum(["engine", "project"]).default("engine").describe("원본의 허용 루트. 외부 프로젝트 제작 파일은 project"),
       destination: z.string().min(1).describe("프로젝트 assets/ 상대 경로. 대상 폴더는 미리 생성(예: sprites/player.png)"),
       config: z.enum(["Debug", "Release"]).default("Debug"),
     },
@@ -23,7 +24,7 @@ export function registerAssetImportTool(server: McpServer, ctx: ServerContext): 
     try {
       return await ctx.gate.run("asset_import", async () => {
         const project = readProject(ctx, p.project);
-        const source = resolveExistingInRoot(ctx.root, p.source);
+        const source = resolveExistingInRoot(p.sourceScope === "project" ? ctx.projectRoot ?? ctx.root : ctx.root, p.source);
         if (!fs.statSync(source).isFile()) throw new Error("원본은 일반 파일이어야 합니다");
         const assets = resolveExistingInRoot(project.directory, "assets");
         const destination = resolveInRoot(assets, p.destination);

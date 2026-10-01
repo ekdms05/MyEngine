@@ -1077,13 +1077,14 @@ ID3D11DepthStencilState* Dx11Device::GetOrCreateDepthStencilState(const DepthSte
 ID3D11RasterizerState* Dx11Device::GetOrCreateRasterizerState(const RasterizerStateDesc& d) {
     FnvHasher key;
     key.Value(d.cull); key.Value(d.fill); key.Value(d.scissorEnable); key.Value(d.depthBias);
+    key.Value(d.frontCounterClockwise);
     if (auto it = m_rasterizerCache.find(key.hash); it != m_rasterizerCache.end())
         return it->second.Get();
 
     D3D11_RASTERIZER_DESC rd{};
     rd.FillMode = ToD3DFill(d.fill);
     rd.CullMode = ToD3DCull(d.cull);
-    rd.FrontCounterClockwise = FALSE;
+    rd.FrontCounterClockwise = d.frontCounterClockwise ? TRUE : FALSE;
     rd.DepthBias = d.depthBias;
     rd.DepthClipEnable = TRUE;
     rd.ScissorEnable = d.scissorEnable ? TRUE : FALSE;

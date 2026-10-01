@@ -83,8 +83,7 @@ bool StepTransitions(SpriteAnimator& a, bool keepPhase) {
 // ---------------------------------------------------------------------------
 void RunAnimationSystem(ecs::World& world, float dt) {
     EventBus* bus = world.Events();
-    auto view = world.Query<SpriteAnimator, scene::SpriteRenderer>();
-    view.Each([&](ecs::Entity e, SpriteAnimator& a, scene::SpriteRenderer& r) {
+    ForEachAnimatedRenderer(world, [&](ecs::Entity e, SpriteAnimator& a, auto& r) {
         UpdateAnimator(a, dt, &r, [&](const AnimEventMarker& m) {
             if (!bus) return;
             AnimationEvent ev;

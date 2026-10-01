@@ -38,6 +38,7 @@ npm run build     # tsc → dist/
 | 변수 | 기본값 | 의미 |
 |---|---|---|
 | `MYE_ROOT` | `tools/mcp/../..` (리포 루트) | 엔진 리포 루트. 모든 자식 프로세스의 cwd |
+| `MYE_PROJECT_ROOT` | `MYE_ROOT` | 기존 제작 폴더의 명시적 허용 루트. project_inspect/asset_import의 project 경로 기준 |
 | `MYE_BUILD_DIR` | `build/dev` | CMake 빌드 디렉터리(루트 상대). 프로젝트 preset·README 실행 경로와 동일하며 필요하면 다른 경로로 지정 |
 
 ## 툴 목록
@@ -67,6 +68,8 @@ npm run build     # tsc → dist/
 | `--dump <path.bmp>` | 마지막 프레임 백버퍼를 BMP(24/32bpp)로 저장 후 종료 |
 
 ## 상태 디렉터리 (`.state/`, gitignore)
+
+외부 제작 파일은 `asset_import.sourceScope="project"`로 MYE_PROJECT_ROOT 상대 경로를 사용한다. 기본 `engine`은 기존 MYE_ROOT 기준이다. 절대 입력·상위 탈출·연결 파일 탈출·기존 대상/.meta 덮어쓰기를 거부한다. 이 서버는 엔진 소스 개발용이며 독립 릴리즈 MCP 패키지는 아직 제공하지 않는다.
 
 ```
 .state/

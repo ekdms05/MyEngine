@@ -12,6 +12,8 @@
 
 Inspector는 컴포넌트 설명과 필드별 툴팁을 제공한다. 기본 위치·이미지·조작은 열어 두고 다른 컴포넌트는 펼쳐 확인한다. 헤더 우클릭으로 제거하고 Undo로 복원한다. [컴포넌트 사용법](20-components.md)을 참고한다.
 
+에디터의 기본 글꼴은 **나눔스퀘어라운드 Regular**다. 한글 11,172자를 지원하는 공식 TTF와 SIL OFL 1.1 전문을 함께 제공한다. 폰트가 없는 개발 실행에서는 설치된 맑은 고딕을 사용하며, 일본어·중국어는 설치된 Windows 언어 폰트로 보완한다. 게임 프로젝트의 런타임 텍스트 폰트 선택과는 별개다.
+
 ## 파일과 문서
 
 씬·모션 문서는 별도의 데이터·Undo 스택을 소유한다. Ctrl+S는 포커스한 문서, 프로젝트 저장은 이름이 정해진 모든 문서와 메타를 저장한다. 미저장 문서를 가진 프로젝트를 바꾸려면 명시적으로 폐기를 확인한다. 실패한 후보 열기는 기존 프로젝트를 유지한다.
@@ -44,10 +46,12 @@ build/dev/apps/editor/Release/MyEditor.exe --project <manifest> --import-asset <
 | 공식 자료 | 채택 | 차이·보류 |
 |---|---|---|
 | [First look at the editor](https://docs.godotengine.org/en/stable/getting_started/introduction/first_look_at_the_editor.html) | 프로젝트 선택 후 에디터, 중앙 작업대·도크·사용 설명 | 필요한 3개 작업대와 현재 ECS 유지; 온라인 라이브러리·최근 목록 미제공 |
-| [Create Dialog source](https://github.com/godotengine/godot/blob/4.5/editor/gui/create_dialog.cpp) | 검색 → 선택 → 설명 → 생성/취소 | 등록된 8개 요소만 표시; 노드 객체 모델을 복제하지 않음 |
+| [Create Dialog source](https://github.com/godotengine/godot/blob/4.5/editor/gui/create_dialog.cpp) | 검색 → 선택 → 설명 → 생성/취소 | 현재 등록된 요소만 표시; 노드 객체 모델을 복제하지 않음 |
 | [Game embedding](https://docs.godotengine.org/en/latest/tutorials/editor/game_embedding.html) | 별도 표시 창과 일시정지 중 렌더 유지 | latest 문서는 불안정 버전. Godot의 별도 프로세스 대신 기존 PlayWorld를 쓰는 동일 프로세스 창; 장애 격리 보류 |
 | [File paths](https://docs.godotengine.org/en/stable/tutorials/io/data_paths.html) | 프로젝트 데이터와 로컬 편집 상태 구분 | 기존 GUID/assets:// 유지 |
 | [File system](https://docs.godotengine.org/en/stable/tutorials/scripting/filesystem.html), [FileSystem dock source](https://github.com/godotengine/godot/blob/master/editor/docks/filesystem_dock.cpp) | 폴더·파일 우클릭과 삭제 의존성 확인 | 프로젝트 GUID와 메타 유지; 폴더 이동·이름 변경 보류 |
+| [Editor fonts source](https://github.com/godotengine/godot/blob/12c17c187e88efa23e6bbd6689630e256eca6523/editor/themes/editor_fonts.cpp) | 기본 UI 글꼴과 문자권별 보완 폰트 구분 | Godot의 Inter·Noto/Droid 조합 대신 사용자 요청의 나눔스퀘어라운드와 기존 ImGui 시스템 폰트 병합을 사용. 별도 폰트 엔진을 추가하지 않음 |
+| [Camera3D](https://docs.godotengine.org/en/stable/classes/class_camera3d.html), [SpriteBase3D](https://docs.godotengine.org/en/stable/classes/class_spritebase3d.html) | 저장 카메라의 current/FOV/near/far, 빌보드 모드·cutout | 2026-10-02 확인. 기존 ECS·LH·PPU48·depth 경로를 재사용. 카메라는 target/이름 추종 오프셋, current 중복 오류. Godot API·자동 카메라 선택·물리 구현을 복제하지 않음 |
 
 Windows 삭제는 [IFileOperation](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation)의 STA·휴지통·Undo·취소 결과를 사용한다. 무조건 재귀 삭제하는 경로를 만들지 않았다.
 

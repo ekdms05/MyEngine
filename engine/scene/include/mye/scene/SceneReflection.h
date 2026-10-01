@@ -9,9 +9,13 @@
 //   리플렉션도 비수식 이름("LocalTransform" 등)으로 등록한다(MYE_REFLECT_NAME).
 #pragma once
 
+namespace mye::ecs { class World; }
 namespace mye::scene {
 
 // 코어 씬 컴포넌트 리플렉션을 TypeRegistry에 등록(멱등). 씬 직렬화 이전에 1회 호출.
 void RegisterCoreComponentReflection();
+
+// Both authored-scene applications use the same pools and serialization metadata.
+void RegisterCoreComponents(ecs::World& world);
 
 } // namespace mye::scene

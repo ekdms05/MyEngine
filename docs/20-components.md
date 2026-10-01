@@ -8,6 +8,9 @@
 | LocalTransform | 부모 기준 position/rotation/scale | +Y 위; 1 unit=48px. 단위 회전 쿼터니언 0,0,0,1 |
 | WorldTransform / Parent / Children | 계층에서 파생되는 변환·연결 | 위치는 LocalTransform, 계층은 하이어라키에서 편집 |
 | SpriteRenderer | sprite에 PNG 드래그, srcUV로 영역 선택 | 전체 UV 0,0,1,1; pivotPx는 영역 좌상단 기준 픽셀. tint 흰색은 원본 색 |
+| BillboardRenderer | PNG·프레임 UV·발 피벗·mode 설정 | Full 카메라 축, YAxis 수직 유지, None 원래 회전. SpriteAnimator 지원. 같은 오브젝트의 SpriteRenderer와 함께 사용하지 않는다 |
+| MeshRenderer | mesh에 GLB/glTF, material에 PNG 드래그 | 정적 임베디드 메시. 빈 material은 흰색. glTF 노드 변환·재질·리깅·외부 .bin 자동 연결 미지원 |
+| Camera3D | current·target·followTarget·FOV·near/far 설정 | 활성 하나; 위치는 LocalTransform. Play/MyGame용이며 에디터 작업 카메라와 별개 |
 | FloorLevel | 높이 층 level | 지면 0; 렌더·충돌 층을 함께 확인 |
 | Collider2D | shape/half/offset·그룹/층 마스크 | 48px 전체 폭은 반폭 0.5. isTrigger면 이동을 막지 않고 이벤트 발생 |
 | KinematicBody2D | 충돌하며 이동하는 본체 | skin=충돌 간격, maxSlideIters=1~16. 바닥 스냅에는 바닥 서비스 필요 |
@@ -26,6 +29,18 @@
 4. 재생하여 게임 창에서 WASD/방향키로 걷고 E로 상호작용한다. Pause/Stop은 에디터에 있다.
 
 구성 버튼은 기존 값을 보존하며 누락된 스프라이트·충돌·본체·조작을 한 Undo 작업으로 추가한다. Lua로 별도 속도를 지정하려면 CharacterController2D를 제거하고 본체·충돌을 유지한다. 조작 컴포넌트가 있으면 Lua 이후 본체 속도를 다시 설정한다.
+
+## 3D 표시와 게임 카메라
+
+**+ 추가 → 3D 메시 / 빌보드 / 게임 카메라 3D**로 배치한다. 에셋 우클릭 가져오기로 PNG 또는 정적 GLB를 등록하고 Inspector의 에셋 필드에 드래그한다. 메시 파일은 모델 로컬 정점으로 취급한다. glTF의 노드 변환을 굽고 임베디드 GLB로 내보내며, 단일 알베도는 별도 PNG로 지정한다. 메시의 뷰포트 드롭·직접 선택·3D 기즈모는 아직 없다. 하이어라키 선택과 XYZ Inspector 편집·Undo·저장/재로드를 사용한다.
+
+게임 카메라는 기본 위치 `(0,3,-8)`, `target=(0,0,0)`, 세로 FOV 45도다. current가 켜진 카메라는 씬에 하나만 둔다. 없으면 기존 2D 카메라를 사용한다. near/far는 월드 단위이며 `0 < nearPlane < farPlane`, FOV는 1~179도다. eye와 target은 같은 점이나 +Y와 평행한 방향이 될 수 없다. 잘못된 설정은 씬 검증/Play에서 오류로 표시한다.
+
+followTarget이 비어 있으면 카메라의 **월드 위치**에서 월드 target을 본다. 고유 ObjectName을 지정하면 카메라 월드 위치와 target 모두 그 대상의 월드 위치에 더할 오프셋으로 취급한다. 대상은 월드 변환을 가진 오브젝트 하나여야 한다. 회전은 target으로 지정하며 LocalTransform.rotation은 게임 카메라 방향에 사용하지 않는다. 자동 회전 입력·카메라 충돌·추종 보간은 없다. 줌은 FOV나 위치로 편집한다.
+
+빌보드 피벗은 잘라낸 프레임의 좌상단 기준 픽셀이다. `(0,0)`은 기존 계약의 발밑 중앙 자동값이다. Full/YAxis는 발 앵커와 축별 크기를 유지하고 시각적인 방향만 바꾼다. 음수 배율의 반전은 X축으로 합성하며 부모 shear의 정확한 재현은 지원하지 않는다. 모션 편집기에서 `.anim`을 지정하면 기존 방향 클립·상태·프레임 이벤트 경로를 사용한다. 시점에 따른 방향 파라미터 자동 설정은 없으며 게임 동작에서 지정해야 한다.
+
+빌보드와 메시가 표시되어도 CharacterController2D·Collider2D는 XY 물리다. XYZ 충돌·XZ 지면/Y 높이 캐릭터·온라인 상태 동기화는 제공되지 않는다. 3D 표시 성공을 3D MMORPG 제작 완료로 판정하지 않는다.
 
 ## 코드 없이 연결
 

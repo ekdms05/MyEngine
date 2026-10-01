@@ -5,6 +5,7 @@
 #include "mye/asset/AnimationAsset.h"
 #include "mye/asset/AudioImporter.h"
 #include "mye/asset/Importer.h"
+#include "mye/asset/MeshImporter.h"
 #include "mye/core/JsonFile.h"
 
 #include <Windows.h>
@@ -159,6 +160,11 @@ Expected<std::string, Error> ValidateSource(const fs::path& source, const fs::pa
         if (!references) return references.GetError();
         return std::string("AnimationAsset");
     }
+    if (extension == ".glb" || extension == ".gltf") {
+        auto mesh = asset::MeshImporter::ParseGltf(bytes, {});
+        if (!mesh) return mesh.GetError();
+        return std::string("MeshImporter");
+    }
     if (extension == ".wav") {
         auto decoded = asset::AudioImporter::DecodeWav(bytes, {});
         if (!decoded) return decoded.GetError();
@@ -172,7 +178,7 @@ Expected<std::string, Error> ValidateSource(const fs::path& source, const fs::pa
             return Error{lua_tostring(state.get(), -1), 1};
         return std::string("ScriptImporter");
     }
-    return Error{"Supported imports: PNG images, .anim animations, Lua scripts and WAV audio", 1};
+    return Error{"Supported imports: PNG, .anim, Lua, WAV and embedded GLB/glTF", 1};
 }
 
 std::string LowerAscii(std::string text) {

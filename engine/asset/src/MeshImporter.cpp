@@ -96,6 +96,12 @@ MeshImporter::ParseGltf(std::span<const std::byte> gltfBytes, const MeshImportSe
                      3};
     }
 
+    res = cgltf_validate(data);
+    if (res != cgltf_result_success) {
+        cgltf_free(data);
+        return Error{std::string("MeshImporter::ParseGltf: invalid accessor/index data: ") + CgltfResultString(res), 4};
+    }
+
     MeshData out;
     out.bounds = EmptyAabb();
 

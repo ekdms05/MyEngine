@@ -42,7 +42,7 @@ Expected<std::string, Error> Browse(IWindow* window, FileDialog kind, std::strin
         const COMDLG_FILTERSPEC filter = kind == FileDialog::Project
             ? COMDLG_FILTERSPEC{L"MyEngine project", L"*.myeproj"}
             : kind == FileDialog::Image ? COMDLG_FILTERSPEC{L"PNG image", L"*.png"}
-            : kind == FileDialog::Asset ? COMDLG_FILTERSPEC{L"Game assets (PNG, animation, Lua, WAV)", L"*.png;*.anim;*.lua;*.wav"}
+            : kind == FileDialog::Asset ? COMDLG_FILTERSPEC{L"Game assets (PNG, animation, Lua, WAV, GLB, glTF)", L"*.png;*.anim;*.lua;*.wav;*.glb;*.gltf"}
             : COMDLG_FILTERSPEC{L"MyEngine scene", L"*.scene"};
         result = dialog->SetFileTypes(1, &filter);
         if (FAILED(result)) return Error{"Cannot set the file filter", static_cast<int32_t>(result)};

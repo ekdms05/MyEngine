@@ -43,6 +43,7 @@
 #include "mye/refl/TypeRegistry.h"
 #include "mye/scene/Transform.h"
 #include "mye/scene/Renderable.h"
+#include "mye/scene/Camera3D.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -1049,6 +1050,20 @@ MYE_TEST(EditorSceneElementsUndoRedoAndValidation) {
     MYE_EXPECT(!app.CreateSceneElement(EditorApp::SceneElement::Character, parent.Value()));
     MYE_EXPECT(!app.CreateSceneElement(static_cast<EditorApp::SceneElement>(255)));
     MYE_EXPECT(app.Commands().Position() == position);
+    const auto mesh = app.CreateSceneElement(EditorApp::SceneElement::Mesh);
+    const auto billboard = app.CreateSceneElement(EditorApp::SceneElement::Billboard);
+    const auto camera = app.CreateSceneElement(EditorApp::SceneElement::Camera);
+    MYE_EXPECT(mesh && world.Has<scene::MeshRenderer>(mesh.Value()));
+    MYE_EXPECT(billboard && world.Has<scene::BillboardRenderer>(billboard.Value()));
+    MYE_EXPECT(camera && world.Has<scene::Camera3D>(camera.Value()));
+    MYE_EXPECT(world.TryGet<scene::LocalTransform>(camera.Value())->position.z == -8);
+    app.Commands().Undo(); MYE_EXPECT(!world.Valid(camera.Value()));
+    app.Commands().Redo(); MYE_EXPECT(world.Has<scene::Camera3D>(camera.Value()));
+    MYE_EXPECT(app.PlayMode().Play());
+    auto view = scene::BuildGameView(*app.PlayMode().ActiveWorld(), render::Camera2D{});
+    MYE_EXPECT(view && view.Value().geometryDepth);
+    app.PlayMode().Pause(); app.PlayMode().Stop();
+    MYE_EXPECT(app.PlayMode().ActiveWorld() == &world);
     MYE_EXPECT(runtime::ValidateObjectComponents(world));
     const auto path = Utf8String(root / "project/assets/scenes/elements.scene");
     MYE_EXPECT(app.SaveScene(path));
@@ -1056,13 +1071,14 @@ MYE_TEST(EditorSceneElementsUndoRedoAndValidation) {
     EditorApp reopened;
     MYE_EXPECT(reopened.Initialize(engine, Utf8String(root / "project/project.myeproj")));
     MYE_EXPECT(reopened.OpenScene(path));
-    bool sprite = false, character = false;
+    bool sprite = false, character = false, cameraLoaded = false;
     auto& loaded = reopened.Project().Active()->World();
     loaded.Query<scene::ObjectName>().Each([&](ecs::Entity e, const auto& object) {
         if (object.value == name) sprite = loaded.Has<scene::SpriteRenderer>(e) && loaded.Has<scene::Parent>(e);
         if (object.value == "캐릭터") character = loaded.Has<runtime::CharacterController2D>(e);
+        if (object.value == "게임 카메라 3D") cameraLoaded = loaded.Has<scene::Camera3D>(e);
     });
-    MYE_EXPECT(sprite && character && runtime::ValidateObjectComponents(loaded));
+    MYE_EXPECT(sprite && character && cameraLoaded && runtime::ValidateObjectComponents(loaded));
     reopened.Shutdown();
 }
 

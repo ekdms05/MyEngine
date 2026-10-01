@@ -81,6 +81,8 @@ void ExtractRenderItems(ecs::World& world, RenderProxyList& out) {
         it.pivotPx = br.pivotPx;
         it.tint = br.tint;
         it.billboardMode = static_cast<uint8_t>(br.mode);
+        it.flipX = br.flipX;
+        it.flipY = br.flipY;
         it.worldTransform = wt ? wt->matrix : Mat4::Translation(pos);
         it.sortLayer = ResolveSortLayer(br.sort, floor);
         it.orderInLayer = br.sort.orderInLayer;

@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { mcpPackageDir, resolveRepoRoot, resolveBuildDirRel, resolveInRoot } from "./root.js";
+import { mcpPackageDir, resolveRepoRoot, resolveProjectRoot, resolveBuildDirRel, resolveInRoot } from "./root.js";
 import { StateManager, SerialGate, type ServerContext } from "./state.js";
 import { registerBuildTool } from "./tools/build.js";
 import { registerTestTool } from "./tools/test.js";
@@ -42,6 +42,7 @@ async function main(): Promise<void> {
 
   const ctx: ServerContext = {
     root,
+    projectRoot: resolveProjectRoot(root),
     mcpDir,
     buildDirRel,
     buildDir,

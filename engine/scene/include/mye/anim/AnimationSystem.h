@@ -11,12 +11,22 @@
 
 #include "mye/anim/SpriteAnimator.h"
 #include "mye/core/Time.h"
+#include "mye/ecs/World.h"
+#include "mye/scene/Renderable.h"
 
 namespace mye { class EventBus; }
 namespace mye::ecs { class World; class CommandBuffer; }
 namespace mye::scene { class SystemScheduler; }
 
 namespace mye::anim {
+
+// One playback cursor per entity, shared by 2D sprites and 3D billboards.
+template<class Fn> void ForEachAnimatedRenderer(ecs::World& world, Fn&& fn) {
+    world.Query<SpriteAnimator>().Each([&](ecs::Entity entity, SpriteAnimator& animator) {
+        if (auto* sprite = world.TryGet<scene::SpriteRenderer>(entity)) fn(entity, animator, *sprite);
+        else if (auto* billboard = world.TryGet<scene::BillboardRenderer>(entity)) fn(entity, animator, *billboard);
+    });
+}
 
 // 파라미터 조건 하나를 평가.
 bool EvaluateCondition(const SpriteAnimator& a, const AnimCondition& c);

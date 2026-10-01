@@ -39,6 +39,10 @@ assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/
 
 ## 공통 계약과 실제 한계
 
+씬의 공통 등록에는 SpriteRenderer·BillboardRenderer·MeshRenderer·Camera3D가 포함된다. 두 공식 앱이 같은 등록·직렬화 계약을 사용한다. GLB/임베디드 glTF는 기존 MeshImporter와 GUID resolver로 연결하며 노드 변환·glTF 재질·리깅·외부 .bin은 지원하지 않는다. billboard의 Full/YAxis/None, 발 피벗·반전과 기존 SpriteAnimator를 렌더에서 소비한다.
+
+저장한 Camera3D의 위치·target·FOV·near/far·고유 이름 추종 오프셋을 Play/MyGame이 사용한다. 에디터 작업 카메라는 별개이며 current가 없으면 기존 2D 카메라로 표시한다. [컴포넌트 사용법](20-components.md)에 설정·검증·제한을 정리했다. 3D 선택/기즈모와 XZ 지면·Y 높이의 3D 물리는 아직 없다.
+
 좌표·깊이의 정본은 [02](02-rendering.md): 왼손, +Y up, PPU 48, 내부 960×540, Y/높이 기반 깊이·alpha cutout. 시뮬레이션은 고정 틱, UI·렌더는 표현 단계다.
 
 에디터 오브젝트 Lua는 Math·ECS·log·co만 기본 연결된다. audio/input/events/reflect/DDC/대화·저장·NPC 모듈은 별도 앱 등록이 필요하다. 라이브러리 함수가 있다는 사실을 에디터 제공 API로 설명하지 않는다. [19](19-lua-api.md)에 각 API의 범위가 있다.

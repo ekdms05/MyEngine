@@ -47,6 +47,7 @@ struct BillboardRenderer {
     Vec2          pivotPx{0.0f, 0.0f};
     Color         tint = Color::White();
     BillboardMode mode = BillboardMode::YAxis;
+    bool          flipX = false, flipY = false;
     bool          visible = true;
     SortingRef    sort;
 };

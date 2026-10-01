@@ -84,7 +84,8 @@ Expected<void, Error> AssignCharacterMotion(EditorContext& ctx, ecs::Entity enti
 Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation) {
     auto* world = ctx.activeWorld();
     const auto* type = refl::TypeRegistry::Get().Find("SpriteAnimator");
-    if ((ctx.playMode && ctx.playMode->IsPlaying()) || !world || !world->Valid(entity) || !world->TryGet<scene::SpriteRenderer>(entity) ||
+    if ((ctx.playMode && ctx.playMode->IsPlaying()) || !world || !world->Valid(entity) ||
+        (!world->TryGet<scene::SpriteRenderer>(entity) && !world->TryGet<scene::BillboardRenderer>(entity)) ||
         !ctx.commands || !type || !world->IsRegistered(anim::SpriteAnimator::kComponentTypeId) || !animation.guid.IsValid())
         return Error{"Select a sprite in an editable scene and save its animation first", 1};
     const auto* current = world->TryGet<anim::SpriteAnimator>(entity);

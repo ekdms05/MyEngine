@@ -25,6 +25,7 @@ function doStatus(ctx: ServerContext): CallToolResult {
   const out: string[] = [];
   out.push(`MyEngine MCP 서버 v${ctx.version} (개발 도구)`);
   out.push(`리포 루트: ${ctx.root}`);
+  out.push(`제작 루트: ${ctx.projectRoot ?? ctx.root}`);
   out.push(`빌드 디렉터리: ${ctx.buildDirRel}${process.env["MYE_BUILD_DIR"] ? " (MYE_BUILD_DIR)" : " (기본)"}`);
   out.push("");
 

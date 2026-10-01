@@ -83,7 +83,7 @@ Expected<void, Error> DebugUi::Initialize(win32::Win32Window& window, rhi::IDevi
     io.IniFilename = nullptr;                              // imgui.ini 파일 미생성 (엔진이 레이아웃 관리)
     ApplySkin();                                           // devTool 스킨(다크+주황 액센트+라운드)
 
-    // CJK 폰트(HaFont) 로드 — 한글/중/일 렌더링. 못 찾으면 기본 폰트 유지(no-op).
+    // 나눔스퀘어라운드를 기본으로 로드하고 설치된 언어 폰트로 CJK를 보완한다.
     LoadEditorFonts(18.0f);
 
     if (!ImGui_ImplWin32_Init(hwnd)) {

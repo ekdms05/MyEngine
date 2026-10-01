@@ -1,7 +1,7 @@
 // mye/scene/SceneReflection.cpp — 코어 씬 컴포넌트 리플렉션 등록 (SceneReflection.h 참조)
 //
-// core Vec/Quat/Color/Rect는 비리플렉션이라, 각 컴포넌트를 CustomSerialize 훅으로 float를
-// 평탄화해 왕복시킨다(engine/ui AnchorRect와 동일 패턴). AssetRef는 IArchive가 1급 지원.
+// Vec/Quat/Color/Rect는 새 컴포넌트의 중첩 필드에 사용한다. 기존 컴포넌트의
+// CustomSerialize는 평탄화된 파일 계약을 보존한다. AssetRef는 IArchive가 1급 지원.
 // 런타임 파생 필드(dirty·flash 등)는 직렬화하지 않는다.
 #include "mye/scene/SceneReflection.h"
 
@@ -9,6 +9,8 @@
 #include "mye/phys/Collision.h"
 #include "mye/scene/Transform.h"      // LocalTransform
 #include "mye/scene/Renderable.h"     // SpriteRenderer
+#include "mye/scene/Camera3D.h"
+#include "mye/ecs/World.h"
 #include "mye/scene/RenderExtract.h"  // FloorLevel, SortingRef
 
 #include "mye/refl/TypeBuilder.h"
@@ -39,6 +41,19 @@ template <> void mye::refl::Reflect<mye::Color>(TypeBuilder<mye::Color>& b) {
 
 MYE_REFLECT_NAME(mye::scene::LocalTransform, "LocalTransform");
 MYE_REFLECT_NAME(mye::scene::SpriteRenderer, "SpriteRenderer");
+MYE_REFLECT_NAME(mye::scene::BillboardRenderer, "BillboardRenderer");
+MYE_REFLECT_NAME(mye::scene::MeshRenderer, "MeshRenderer");
+MYE_REFLECT_NAME(mye::scene::Camera3D, "Camera3D");
+MYE_REFLECT_NAME(mye::scene::SortingRef, "SortingRef");
+template<> void mye::refl::Reflect(TypeBuilder<mye::scene::SortingRef>& b) {
+    b.Field("sortLayer", &mye::scene::SortingRef::sortLayer)
+        .Field("orderInLayer", &mye::scene::SortingRef::orderInLayer);
+}
+MYE_REFLECT_ENUM(mye::scene::BillboardMode);
+template<> void mye::refl::Reflect(EnumBuilder<mye::scene::BillboardMode>& b) {
+    b.Value("Full", mye::scene::BillboardMode::Full)
+        .Value("YAxis", mye::scene::BillboardMode::YAxis).Value("None", mye::scene::BillboardMode::None);
+}
 MYE_REFLECT_NAME(mye::scene::FloorLevel, "FloorLevel");
 MYE_REFLECT_NAME(mye::anim::SpriteAnimator, "SpriteAnimator");
 
@@ -122,6 +137,29 @@ template <> void mye::refl::Reflect<mye::scene::FloorLevel>(TypeBuilder<mye::sce
     b.Version(1).CustomSerialize(&SerFloorLevel).Field("level", &mye::scene::FloorLevel::level).Attr(Attribute::MakeTooltip("높이 층 번호. 일반 지면은 0입니다."));
 }
 
+template <> void mye::refl::Reflect(TypeBuilder<mye::scene::BillboardRenderer>& b) {
+    using C = mye::scene::BillboardRenderer;
+    b.Version(1).Field("sprite", &C::sprite).Attr(Attribute::MakeTooltip("PNG 또는 .anim의 시트 텍스처. 3D 월드에서 PPU 48로 표시합니다."))
+        .Field("srcUV", &C::srcUV).Field("pivotPx", &C::pivotPx).Attr(Attribute::MakeTooltip("잘라낸 프레임 좌상단 기준 픽셀 피벗. 0,0은 발밑 중앙입니다."))
+        .Field("tint", &C::tint).Field("mode", &C::mode).Attr(Attribute::MakeTooltip("Full: 카메라의 수평/수직축. YAxis: +Y를 유지하며 카메라 방향으로 회전. None: 오브젝트 회전 유지. 물리 방향은 바꾸지 않습니다."))
+        .Field("flipX", &C::flipX).Field("flipY", &C::flipY).Field("visible", &C::visible).Field("sort", &C::sort);
+}
+template <> void mye::refl::Reflect(TypeBuilder<mye::scene::MeshRenderer>& b) {
+    using C = mye::scene::MeshRenderer;
+    b.Version(1).Field("mesh", &C::mesh).Attr(Attribute::MakeTooltip("정적 GLB 또는 임베디드 glTF 메시를 드래그하세요. 외부 .bin, 리깅, glTF 재질은 미지원입니다."))
+        .Field("material", &C::material).Attr(Attribute::MakeTooltip("단일 알베도 PNG 텍스처 GUID. 비어 있으면 흰색을 사용합니다."))
+        .Field("depthMode", &C::depthMode).Attr(Attribute::MakeTooltip("2D: 0 앵커 깊이, 1 앵커+기하 바이어스, 2 기하 깊이. 원근 카메라는 기하 깊이를 사용합니다."))
+        .Field("visible", &C::visible).Field("sort", &C::sort);
+}
+template <> void mye::refl::Reflect(TypeBuilder<mye::scene::Camera3D>& b) {
+    using C = mye::scene::Camera3D;
+    b.Version(1).Field("current", &C::current).Attr(Attribute::MakeTooltip("씬에 하나만 켜세요. Play와 MyGame이 이 카메라를 사용하며, 없으면 기존 2D 카메라를 사용합니다."))
+        .Field("target", &C::target).Attr(Attribute::MakeTooltip("바라보는 월드 XYZ. followTarget이 있으면 대상 위치에서의 오프셋입니다."))
+        .Field("followTarget", &C::followTarget).Attr(Attribute::MakeTooltip("추종할 고유 오브젝트 이름. 지정하면 카메라 위치와 target 모두 대상 월드 위치에서의 오프셋입니다."))
+        .Field("fovDegrees", &C::fovDegrees).Attr(Attribute::MakeTooltip("세로 시야각 1~179도. 줌은 시야각 또는 카메라 위치로 조정합니다."))
+        .Field("nearPlane", &C::nearPlane).Field("farPlane", &C::farPlane).Attr(Attribute::MakeTooltip("절두체 거리. 0 < nearPlane < farPlane, 월드 단위입니다."));
+}
+
 template <> void mye::refl::Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::anim::SpriteAnimator>& b) {
     b.Version(1).Field("animation", &mye::anim::SpriteAnimator::animation).Attr(Attribute::MakeTooltip(".anim 에셋을 드래그하세요. 원본 이미지는 애니메이션 에셋에서 지정합니다."))
         .Field("speed", &mye::anim::SpriteAnimator::speed).Attr(Attribute::MakeTooltip("모션 재생 배율. 1은 원래 속도입니다. 이동 speed와는 별개입니다."))
@@ -162,8 +200,28 @@ void RegisterCoreComponentReflection() {
     (void)refl::GetType<phys::KinematicBody2D>();
     (void)refl::GetType<LocalTransform>();
     (void)refl::GetType<SpriteRenderer>();
+    (void)refl::GetType<BillboardRenderer>();
+    (void)refl::GetType<MeshRenderer>();
+    (void)refl::GetType<Camera3D>();
     (void)refl::GetType<FloorLevel>();
     (void)refl::GetType<anim::SpriteAnimator>();
+}
+
+void RegisterCoreComponents(ecs::World& world) {
+    RegisterCoreComponentReflection();
+    world.RegisterComponent<ObjectName>("ObjectName");
+    world.RegisterComponent<LocalTransform>("LocalTransform");
+    world.RegisterComponent<WorldTransform>("WorldTransform");
+    world.RegisterComponent<Parent>("Parent");
+    world.RegisterComponent<Children>("Children");
+    world.RegisterComponent<SpriteRenderer>("SpriteRenderer");
+    world.RegisterComponent<BillboardRenderer>("BillboardRenderer");
+    world.RegisterComponent<MeshRenderer>("MeshRenderer");
+    world.RegisterComponent<Camera3D>("Camera3D");
+    world.RegisterComponent<FloorLevel>("FloorLevel");
+    world.RegisterComponent<phys::Collider2D>("Collider2D");
+    world.RegisterComponent<phys::KinematicBody2D>("KinematicBody2D");
+    world.RegisterComponent<anim::SpriteAnimator>("SpriteAnimator");
 }
 
 } // namespace mye::scene

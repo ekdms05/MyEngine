@@ -181,6 +181,7 @@ struct RasterizerStateDesc {
     FillMode fill = FillMode::Solid;
     bool     scissorEnable = false;
     int32_t  depthBias = 0;
+    bool     frontCounterClockwise = false;
 };
 
 struct RenderTargetFormats {

@@ -20,14 +20,34 @@
 | 배포 빌드의 Visual Studio 버전 강제 제거 | 실제 Windows 러너는 VS2026 이미지이며 VS2022 구성은 실패함 | 기존 MCP와 같은 CMake 기본 선택을 사용. 공개한 0.2.0 태그는 보존하고 수정본을 0.2.1로 구분 |
 | 파일 감시 등록의 루트 경로 통일 | 스캔의 정규 경로와 감시의 별칭 경로가 달라 WAV 변경이 기존 슬롯에 연결되지 않음 | 동일 폴더의 별칭으로 실패를 재현하고 공통 등록 경계를 수정; 다른 스캔 루트의 감시는 거부 |
 | 오래된 빌드 생성물 제거 | CMake 디렉터리 복사는 삭제된 소스를 대상에서 자동 제거하지 않음 | 구 samples/·Dot OBJ·템플릿 .dot·과거 문서 복사본만 제거; 사용자 에셋 보존 |
+| 나눔스퀘어라운드 기본 UI 글꼴 | 사용자 교체 요청, 네이버 공식 배포본·OFL 1.1 번들 허용, TTF의 현대 한글 11,172자 지원 확인 | Regular 원본 한 개와 저작권·라이선스 전문을 빌드/패키지에 제공. 기본 로딩 우선순위를 변경하고 맑은 고딕·일본어·중국어 보완 유지. 빙그레체는 재배포 제한 때문에 활성 에셋/검색 경로에서 제외하고 로컬 원본 보존 |
+| 내장 보완 폰트의 배포 고지 보완 | ImGui의 imgui_draw.cpp에 포함된 ProggyClean·ProggyForever의 저작권이 기존 ZIP의 고지에 빠짐 | 폰트 교체 후에도 내장 데이터는 실행 파일에 남으므로 해당 저작권과 MIT 전문을 패키지에 포함 |
 
-에디터 Lua 기본 바인딩은 Math/ECS/log/co다. 선택 모듈의 라이브러리 지원을 에디터 기본 지원으로 표기하지 않는다. 사용 중인 Lua VM·ImGui·디코더·FreeType는 실제 경로가 있어 유지했다. 시스템 폰트는 설치된 Windows에서 로드하며 패키지에 복사하지 않는다.
+에디터 Lua 기본 바인딩은 Math/ECS/log/co다. 선택 모듈의 라이브러리 지원을 에디터 기본 지원으로 표기하지 않는다. 사용 중인 Lua VM·ImGui·디코더·FreeType는 실제 경로가 있어 유지했다. 기본 UI 폰트인 나눔스퀘어라운드 Regular는 OFL 전문과 함께 제공하며 시스템 보완 폰트는 설치된 Windows에서만 로드한다.
 
 공식 벤치마킹 URL·채택 범위·차이는 [07](07-editor-ui.md), 남은 완료 조건은 [14](14-development-priorities.md), Lua 계약은 [19](19-lua-api.md)에 있다.
 
 배포 환경의 근거는 [실패한 구성 로그](https://github.com/ekdms05/MyEngine/actions/runs/36893191832)와 해당 실행의 [Windows 이미지 목록](https://github.com/actions/runner-images/blob/win25-vs2026/20260925.250/images/windows/Windows2025-VS2026-Readme.md)이다. CMake의 제너레이터 선택을 재구현하지 않고 설치된 도구의 기본 선택을 사용한다.
 
 ## 검증
+
+### 3D 제작 피드백 반영 — 2026-10-02
+
+공식 앱의 최소 BillboardRenderer·MeshRenderer 씬이 `unsupported component`로 거부되는 문제를 재현했다. 수정 전 같은 기준 프로젝트에서 SpriteRenderer는 두 앱 exit 0, 나머지는 exit 1이었다. 반영 범위는 공통 로딩·표시·카메라·제작 파일 경계다. 게임 사용자의 원문 피드백·답변·프로젝트·캡처는 해당 로컬 폴더에서 관리하며 public 저장소에 포함하지 않는다.
+
+| 수정 | 원인과 최소 경계 | 검증·남은 한계 |
+|---|---|---|
+| RegisterCoreComponents와 reflection | renderer 타입은 존재했지만 공식 앱의 풀/직렬화 등록에 빠졌음; 문서 World·MyGame을 한 경계로 통일 | GUID·sort·mode·카메라 직렬화 왕복, 두 앱의 같은 최소 씬 로딩. 등록만으로 물리/게임 제작 완료를 주장하지 않음 |
+| MeshImporter·GUID resolver 연결 | 기존 임포터가 공식 앱에서 사용되지 않았음 | CLI GLB 임포트와 실제 정적 삼각형 표시. cgltf_validate의 기존 범위/index 검사 재사용. glTF 노드/재질/리깅은 미지원 |
+| 메시 정면·기본 재질 | Z/와인딩 변환과 DX11 clockwise 강제값의 불일치로 정면이 사라짐; 빈 알베도는 이전 draw 상태를 남김 | mesh pipeline의 counter-clockwise 옵션과 1×1 흰색 바인딩. 실제 DX11 중심 픽셀 회귀로 파싱 테스트의 사각지대 확인 |
+| 빌보드 facing·모션 | 추출한 mode를 렌더에서 쓰지 않고 SpriteAnimator가 SpriteRenderer만 순회 | 기존 발 피벗·TRS·UpdateAnimator 재사용. Full/YAxis/None·커서·UV 회귀. 시점별 방향 자동 선택은 남음 |
+| Camera3D·Play 복원 검증 | 에디터 작업 카메라와 실제 게임 카메라의 계약이 달랐음; 복원 직후 파생 변환은 초기값 | 공통 BuildGameView, current/범위/대상 오류, Play clone 검증. Inspector 요소 Undo/Redo·Save/reopen·Pause/Stop 회귀. 입력 카메라/충돌/보간 미지원 |
+| MCP 외부 제작 루트 | 엔진 루트 안 파일만 받던 프로젝트 조회/임포트의 불필요한 제한 | 명시적 MYE_PROJECT_ROOT와 sourceScope, 기존 canonical/no-overwrite 검사 유지. 독립 릴리즈용 소비자 MCP는 미제공 |
+
+이 변경의 새 회귀 3개와 기존 워크플로 확장을 포함한 Debug·Release CTest는 각 544/544다. 기존 서버/로컬 플레이어 검증도 통과했다. 실제 두 앱에서 Full/YAxis/None의 저장 카메라 출력은 같은 960×540 픽셀이었고 잘못된 near 값은 두 앱 exit 1로 거부했다. MCP build·smoke, 패키지/공개 CI 결과는 배포 검증 후 기록한다. 키 입력 수동 플레이·별도 PC·인증된 온라인·3D 물리와 목표 아트 품질 승인은 이 캡처의 증거가 아니다.
+
+MCP build·smoke 19개 검사와 외부 제작 루트의 실제 에디터 GLB 임포트·조회·덮어쓰기/탈출 거부를 확인했다. 두 공식 앱에서 빌보드 `.anim`의 시작/후속 캡처가 달라 모션 진행을 확인했다. 원근 깊이 캡처에서는 뒤 메시 앞의 불투명 코어 1,659px, 앞 메시가 가리는 캐릭터 7,012px, 투명 빈 영역으로 보이는 메시 1,642px를 확인했다. 기존 아트의 부분 알파 5,826px는 블렌딩 영향이 남으며 하드 알파 픽셀 에셋 승인은 아니다. 실제 목표 에셋 검수를 대체하지 않는다.
+
 
 | 범위 | 실행·결과 | 확인한 경계 |
 |---|---|---|
@@ -43,3 +63,7 @@
 컴파일에는 기존 경고와 Lua의 C ABI 예외 해제를 위해 /EHc를 /EHc-로 덮어쓰는 D9025 경고가 남는다. 경고 없는 빌드나 MSVC 외 플랫폼 검증 완료로 표시하지 않는다. 파일 선택창·휴지통의 실제 사용자 조작, 다양한 DPI/언어 폰트, 실제 키보드 플레이·오디오 청취·별도 PC는 아직 수동 확인 범위다. 게임 창은 같은 프로세스이며 완성된 MMORPG·온라인 클라이언트·게임 내 UI 제작 기능으로 설명하지 않는다.
 
 패키징은 기존 파일을 지우지 않고 새 출력 폴더에서 수행한다. 버전·소스 커밋·파일별 SHA-256은 release-manifest.json에, ZIP 해시는 sidecar에 기록한다. 개인 설치 설정·상세 로그·구 문서 원본·정리한 빌드 경로는 공개 자료와 분리하여 로컬에 보관한다.
+
+나눔스퀘어라운드의 배포 근거는 [네이버 공식 글꼴 모음](https://hangeul.naver.com/font)과 [OFL 1.1 전문](https://help.naver.com/service/30016/contents/18088?lang=ko&osType=PC)이다. 2026-10-02 확인한 Regular TTF는 1,063,276 bytes이며 SHA-256은 `52862fdf05b55ba886ca21998222d9598ef84c975e68046b9a8d8f1af09228a0`이다. 폰트 내부 데이터를 변경하지 않았다.
+
+폰트 교체 후 Debug·Release 빌드와 CTest 각각 541/541, MCP build·smoke를 확인했다. 에디터 구현에 등장하는 한글 515종과 현대 한글 11,172자의 지원을 확인하고 실제 Release 화면 및 ZIP에서 꺼낸 에디터의 메뉴·탭·요소 추가 창을 캡처했다. 로컬 검토 패키지의 76개 파일·폰트/OFL/내장 보완 폰트 고지·ZIP 해시가 원본과 일치했다. 다양한 DPI·별도 PC·게임 프로젝트의 런타임 폰트 교체는 이 검증에 포함하지 않는다.

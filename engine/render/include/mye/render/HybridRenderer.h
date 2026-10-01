@@ -148,6 +148,7 @@ private:
     rhi::BufferHandle          m_quadVB{};              // 동적 링
     rhi::BufferHandle          m_frameCB{};             // b0: viewProj + cutoff
     rhi::SamplerHandle         m_sampler{};             // Point/Clamp
+    rhi::TextureHandle         m_whiteTexture{};
     rhi::BindGroupLayoutHandle m_frameLayout{};
     rhi::BindGroupLayoutHandle m_texLayout{};
     rhi::BindGroupHandle       m_frameBG{};

@@ -32,6 +32,8 @@ function Write-Utf8([string]$file, [string]$text) {
 
 $editor = Repo-File "$BuildDir/apps/editor/$Config/MyEditor.exe"
 $player = Repo-File "$BuildDir/apps/game/$Config/MyGame.exe"
+$uiFont = Repo-File 'assets/fonts/NanumSquareRoundR.ttf'
+$uiFontLicense = Repo-File 'assets/fonts/NanumSquareRound-LICENSE.txt'
 $outRoot = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $repo $OutDir }))
 $stageName = "MyEngine-$Version-windows-x64"
 $stage = Join-Path $outRoot $stageName
@@ -51,6 +53,8 @@ $null = Repo-File 'game/starter/meadow_village/project.myeproj'
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 Copy-Item -LiteralPath $editor -Destination (Join-Path $stage 'MyEditor.exe')
 Copy-Item -LiteralPath $player -Destination (Join-Path $stage 'MyGame.exe')
+New-Item -ItemType Directory -Path (Join-Path $stage 'fonts') | Out-Null
+Copy-Item -LiteralPath $uiFont -Destination (Join-Path $stage 'fonts/NanumSquareRoundR.ttf')
 New-Item -ItemType Directory -Path (Join-Path $stage 'templates') | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo 'game/starter/meadow_village') -Destination (Join-Path $stage 'templates/meadow_village') -Recurse
 $templateReadme = Join-Path $stage 'templates/meadow_village/README.md'
@@ -80,7 +84,9 @@ foreach ($file in $documentationFiles) {
 # License notices are read from the linked vendored sources, not vendor build trees.
 $licenseDir = Join-Path $stage 'licenses'
 New-Item -ItemType Directory -Path $licenseDir | Out-Null
+Copy-Item -LiteralPath $uiFontLicense -Destination (Join-Path $licenseDir 'NanumSquareRound-LICENSE.txt')
 Copy-Item -LiteralPath (Repo-File 'third_party/imgui/LICENSE.txt') -Destination (Join-Path $licenseDir 'imgui.txt')
+Copy-Item -LiteralPath (Repo-File 'tools/package/licenses/imgui-fonts.txt') -Destination (Join-Path $licenseDir 'imgui-fonts.txt')
 Copy-Item -LiteralPath (Repo-File 'third_party/freetype/LICENSE.TXT') -Destination (Join-Path $licenseDir 'freetype-license-selection.txt')
 Copy-Item -LiteralPath (Repo-File 'tools/package/licenses/FTL.TXT') -Destination (Join-Path $licenseDir 'FTL.TXT')
 function Copy-LicenseBlock([string]$source, [string]$marker, [string]$name) {
@@ -111,8 +117,10 @@ Write-Utf8 (Join-Path $licenseDir 'NOTICE.txt') @'
 This software is based in part on the work of the FreeType Team.
 Portions are copyright (C) 1996-2024 The FreeType Project (https://www.freetype.org).
 ImGui (including embedded stb), Lua, cgltf, stb and miniaudio notices are included beside this file.
+ImGui's embedded ProggyClean and ProggyForever font notices are retained in imgui-fonts.txt.
 FreeType's embedded zlib, X11 and Old MIT notices are retained with its selected FreeType License.
 Windows system fonts are loaded from the user's OS installation and are not redistributed.
+NanumSquareRound Regular is bundled under SIL OFL 1.1; its copyright and full license are included.
 Starter content source/provenance is retained with templates/meadow_village.
 '@
 
@@ -126,7 +134,8 @@ To play an existing project directly: MyGame.exe --project "path/to/project.myep
 
 Requirements: Windows 10/11 x64, DirectX 11 device/driver, latest Microsoft Visual C++ v14 x64 Redistributable.
 Official runtime download: https://aka.ms/vc14/vc_redist.x64.exe
-Korean/Japanese/Chinese text uses installed Windows language fonts. Install the language fonts if missing.
+Editor Latin/Korean text uses the bundled NanumSquareRound Regular font.
+Japanese/Chinese coverage uses installed Windows language fonts. Install the language fonts if missing.
 This package contains the editor, local project player and starter, not a finished MMORPG or a game export installer.
 License notices: LICENSE and licenses/. File integrity: release-manifest.json and the ZIP SHA256 sidecar.
 "@

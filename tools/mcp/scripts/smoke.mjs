@@ -28,7 +28,7 @@ if (!fs.existsSync(serverJs)) {
 
 const child = spawn(process.execPath, [serverJs], {
   cwd: mcpDir,
-  env: { ...process.env, MYE_ROOT: repoRoot, MYE_BUILD_DIR: "build/_smoke_mcp_none" },
+  env: { ...process.env, MYE_ROOT: repoRoot, MYE_PROJECT_ROOT: repoRoot, MYE_BUILD_DIR: "build/_smoke_mcp_none" },
   stdio: ["pipe", "pipe", "pipe"],
 });
 
@@ -210,6 +210,36 @@ async function main() {
     project: `${fixtureRel}/project.myeproj`, source: `${fixtureRel}/project.myeproj`, destination: "../escape.png",
   } });
   check("asset_import — assets 밖 쓰기 거부", asset.result?.isError === true && firstText(asset.result).includes("루트 밖"));
+
+  const { resolveProjectRoot } = await import("../dist/root.js");
+  const { readProject } = await import("../dist/tools/project.js");
+  const engineScope = path.join(fixture, "engine");
+  const projectScope = path.join(fixture, "external-game");
+  fs.mkdirSync(engineScope); fs.mkdirSync(projectScope);
+  fs.copyFileSync(path.join(fixture, "project.myeproj"), path.join(projectScope, "project.myeproj"));
+  const previousProjectRoot = process.env.MYE_PROJECT_ROOT;
+  try {
+    process.env.MYE_PROJECT_ROOT = projectScope;
+    const scoped = { root: engineScope, projectRoot: resolveProjectRoot(engineScope) };
+    check("외부 제작 루트 — 엔진 밖 프로젝트 조회", readProject(scoped, "project.myeproj").metadata.name === "Smoke");
+    let rejected = 0;
+    for (const input of ["../project.myeproj", path.join(projectScope, "project.myeproj")]) {
+      try { readProject(scoped, input); } catch { ++rejected; }
+    }
+    check("외부 제작 루트 — 상위 이동/절대 입력 거부", rejected === 2);
+    const link = path.join(projectScope, "escape");
+    fs.symlinkSync(fixture, link, process.platform === "win32" ? "junction" : "dir");
+    try {
+      let blocked = false;
+      try { readProject(scoped, "escape/project.myeproj"); } catch { blocked = true; }
+      check("외부 제작 루트 — junction/symlink 탈출 거부", blocked);
+    } finally { fs.unlinkSync(link); }
+    delete process.env.MYE_PROJECT_ROOT;
+    check("제작 루트 미설정 — 기존 엔진 루트 유지", resolveProjectRoot(engineScope) === fs.realpathSync(engineScope));
+  } finally {
+    if (previousProjectRoot === undefined) delete process.env.MYE_PROJECT_ROOT;
+    else process.env.MYE_PROJECT_ROOT = previousProjectRoot;
+  }
 
   // 종료
   child.kill();

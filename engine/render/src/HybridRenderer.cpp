@@ -192,6 +192,14 @@ void HybridRenderer::Init(rhi::IDevice& device, const HybridRendererDesc& desc) 
     smp.debugName = "hybrid.sampler";
     m_sampler = device.CreateSampler(smp);
 
+    const uint32_t white = 0xffffffffu;
+    rhi::TextureDesc whiteDesc{};
+    whiteDesc.width = whiteDesc.height = 1;
+    whiteDesc.format = rhi::Format::RGBA8Unorm;
+    whiteDesc.usage = rhi::TextureUsage::Sampled;
+    rhi::TextureInitData whiteData{&white, sizeof(white), 0};
+    m_whiteTexture = device.CreateTexture(whiteDesc, &whiteData);
+
     InitSpriteTilePipeline();
     InitMeshPipeline();
 
@@ -199,7 +207,7 @@ void HybridRenderer::Init(rhi::IDevice& device, const HybridRendererDesc& desc) 
     m_scratchQuads.reserve(kInitialQuads * kVertsPerQuad);
 
     m_initialized = m_quadPipeline.IsValid() && m_meshPipeline.IsValid() &&
-                    m_frameBG.IsValid() && m_meshCbBG.IsValid();
+                    m_frameBG.IsValid() && m_meshCbBG.IsValid() && m_whiteTexture.IsValid();
     if (!m_initialized) {
         MYE_LOG_ERROR(kLog, "HybridRenderer::Init failed (resource creation error)");
     }
@@ -321,6 +329,7 @@ void HybridRenderer::InitMeshPipeline() {
     p.topology = rhi::PrimitiveTopology::TriangleList;
     p.blend = rhi::BlendStateDesc::Opaque();        // 불투명 3D(cutout, 블렌드 없음)
     p.raster.cull = rhi::CullMode::Back;             // 3D 백페이스 컬
+    p.raster.frontCounterClockwise = true;          // glTF Z/와인딩 변환 후 정면 기준
     p.depthStencil.depthTest = true;
     p.depthStencil.depthWrite = true;
     p.depthStencil.depthFunc = rhi::CompareFunc::LessEqual;
@@ -350,6 +359,7 @@ void HybridRenderer::Shutdown() {
     DSh(m_quadVs); DSh(m_quadPs); DSh(m_meshVs); DSh(m_meshPs);
     DBuf(m_quadVB); DBuf(m_frameCB); DBuf(m_meshCB);
     if (m_sampler.IsValid()) { d.Destroy(m_sampler); m_sampler = {}; }
+    if (m_whiteTexture.IsValid()) { d.Destroy(m_whiteTexture); m_whiteTexture = {}; }
 
     m_quadCapacity = 0;
     m_scratchQuads.clear();
@@ -520,11 +530,10 @@ void HybridRenderer::DrawMeshes(const scene::RenderProxyList& items, const Hybri
         }
         ctx.SetBindGroup(rhi::kBindGroupSlotPerFrame, m_meshCbBG);
 
-        // 알베도 텍스처(머티리얼 GUID → asset::Texture). 없으면 화이트 폴백 불가 → 스킵 대신 그대로.
+        // No albedo still binds white; never inherit a previous draw's texture.
         const asset::Texture* tex = Resolve(it.material.IsValid() ? it.material : it.texture);
-        if (tex && tex->gpuTexture.IsValid()) {
-            ctx.SetBindGroup(rhi::kBindGroupSlotPerMaterial, GetOrCreateTextureBG(tex->gpuTexture));
-        }
+        ctx.SetBindGroup(rhi::kBindGroupSlotPerMaterial,
+            GetOrCreateTextureBG(tex && tex->gpuTexture.IsValid() ? tex->gpuTexture : m_whiteTexture));
 
         ctx.SetVertexBuffer(0, mesh->vertexBuffer, 0);
         if (mesh->indexBuffer.IsValid() && mesh->indexCount > 0) {
@@ -642,7 +651,9 @@ void HybridRenderer::BuildSpriteQuad(const scene::RenderItem& it, const HybridVi
 
     const Vec2 sourcePixels{it.srcUV.w * tex->width, it.srcUV.h * tex->height};
     if (sourcePixels.x <= 0 || sourcePixels.y <= 0) return;
-    const auto corners = scene::SpriteCorners3D(it.worldTransform, sourcePixels, it.pivotPx, kPixelsPerUnit);
+    const auto corners = it.kind == scene::RenderItemKind::Billboard
+        ? scene::BillboardCorners(it.worldTransform, view.view, static_cast<scene::BillboardMode>(it.billboardMode), sourcePixels, it.pivotPx, kPixelsPerUnit)
+        : scene::SpriteCorners3D(it.worldTransform, sourcePixels, it.pivotPx, kPixelsPerUnit);
 
     float u0 = it.srcUV.x, v0 = it.srcUV.y;
     float u1 = it.srcUV.x + it.srcUV.w, v1 = it.srcUV.y + it.srcUV.h;

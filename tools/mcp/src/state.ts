@@ -149,6 +149,8 @@ export class StateManager {
 export interface ServerContext {
   /** 리포 루트 절대 경로. */
   root: string;
+  /** Explicit authoring boundary, independent of the engine/build root. */
+  projectRoot?: string;
   /** tools/mcp 절대 경로. */
   mcpDir: string;
   /** 빌드 디렉터리(루트 상대, 기본 "build"). */

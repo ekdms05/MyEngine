@@ -373,7 +373,7 @@ MYE_TEST(HotReloadWavEmitsReloadedEventAndSwaps) {
     MYE_EXPECT(h.Get() && h.Get()->frameCount == 128);
 
     AssetDatabase db(mgr, &bus);
-    db.ScanDirectory(dir.string());
+    MYE_EXPECT(db.ScanDirectory(dir.string()));
 
     // AssetReloadedEvent 구독(Publish 는 즉시 디스패치라 Flush 불필요).
     bool reloaded = false;
@@ -382,8 +382,15 @@ MYE_TEST(HotReloadWavEmitsReloadedEventAndSwaps) {
         reloaded = true; reloadedType = e.type; return false;
     });
 
-    auto start = db.StartWatching(std::make_unique<Win32DirectoryWatcher>(), dir.string());
+    // The watcher must use the index's canonical root even when the caller supplies an alias.
+    auto start = db.StartWatching(std::make_unique<Win32DirectoryWatcher>(), (dir / ".").string());
     MYE_EXPECT(start);
+    const auto unrelatedRoot = dir / "unrelated-assets";
+    std::error_code createError;
+    std::filesystem::create_directory(unrelatedRoot, createError);
+    MYE_EXPECT(!createError);
+    const auto rejected = db.StartWatching(std::make_unique<Win32DirectoryWatcher>(), unrelatedRoot.string());
+    MYE_EXPECT(!rejected); // A rejected root must leave the existing watcher running.
 
     // 워처가 무장할 시간을 잠깐 준다.
     std::this_thread::sleep_for(std::chrono::milliseconds(120));

@@ -37,6 +37,10 @@ VFS 읽기 → 임포터 CPU 파싱 → AssetManager finalize → AssetHandle
 
 [FileWatcher](../engine/asset/include/mye/asset/FileWatcher.h)·AssetDatabase·AssetManager가 파일 변경과 재임포트 교체를 처리한다. 기존 핸들 소비자는 교체된 데이터를 읽는 경로를 사용한다. watcher 구현·테스트와 제품 앱의 watcher 시작·DB 연결은 별개다. 앱 전체 자동 핫 리로드는 실제 호출 경로가 확인된 범위로만 설명한다.
 
+감시 등록은 스캔과 동일한 정규 루트 경로를 사용한다. Windows의 짧은 경로·폴더 별칭·`.` 표기가 원래 경로와 섞이면 변경 이벤트의 가상 경로가 로드 캐시와 일치하지 않을 수 있기 때문이다. 이미 스캔한 루트와 다른 폴더의 감시 등록은 오류로 반환한다. 경로 해석은 표준 라이브러리의 [canonical](https://learn.microsoft.com/en-us/cpp/standard-library/filesystem-functions#canonical)을 재사용한다.
+
+첫 감시 요청은 작업 스레드에서 무장된다. 등록 함수 반환 직후의 변경과 감시 중 스캔 루트 교체는 아직 보장하지 않는다. 자동 감시를 앱에 연결할 때는 무장 완료 경계와 감시 정지·재스캔·재등록 순서를 검증해야 한다. 현재 에디터의 수동 새로 고침은 이전 DB를 파괴한 뒤 새로 구성한다.
+
 ## 리플렉션·JSON
 
 [TypeInfo](../engine/reflect/include/mye/refl/TypeInfo.h)·TypeBuilder·TypeRegistry는 타입·필드·속성을 등록한다. [PropertyPath](../engine/reflect/include/mye/refl/PropertyPath.h)는 필드 접근, [JsonArchive](../engine/reflect/include/mye/ser/JsonArchive.h)는 값의 JSON 왕복에 사용한다. 에디터 Inspector·Undo·씬 데이터의 공용 기반이다.

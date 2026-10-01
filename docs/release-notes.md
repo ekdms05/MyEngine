@@ -8,6 +8,7 @@
 - 도트 제작·리깅은 외부 제작 도구에서 수행하고 PNG·`.anim`을 가져오는 흐름으로 정리했습니다. 오래된 데모와 초기 연구 자료는 배포에서 제외했습니다.
 - MCP에 프로젝트 검사·API 참조·에셋 가져오기를 연결했습니다.
 - Windows 배포 빌드는 CMake가 설치된 Visual Studio를 선택합니다. 존재하지 않는 Visual Studio 2022를 강제하던 설정을 제거했습니다.
+- 같은 에셋 폴더를 다른 경로 표기로 감시할 때 변경된 파일을 찾지 못하던 문제를 수정했습니다.
 
 Windows x64, DirectX 11 환경용입니다. [최신 Microsoft Visual C++ v14 x64 런타임](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)이 필요합니다. ZIP을 새 폴더에 풀고 `MyEditor.exe`를 실행하세요. 기존 프로젝트는 새 버전에서 열기 전에 백업을 권장합니다.
 

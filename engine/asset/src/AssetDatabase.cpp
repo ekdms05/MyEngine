@@ -182,17 +182,24 @@ std::string AssetDatabase::PathFromGuid(AssetGuid guid) const {
 
 Expected<void, Error> AssetDatabase::StartWatching(std::unique_ptr<IFileWatcher> watcher,
                                                    std::string_view rootDir) {
-    m_impl->watcher = std::move(watcher);
-    if (!m_impl->watcher) return Error{"StartWatching: null watcher", -1};
-
-    // rootDir 기준을 세운다(ScanDirectory 를 별도로 안 불렀어도 매핑이 동작하도록).
-    if (m_impl->rootDir.empty()) {
-        m_impl->rootDir = NormalizeSlashesLower(std::string(rootDir));
-        while (!m_impl->rootDir.empty() && m_impl->rootDir.back() == '/') m_impl->rootDir.pop_back();
+    if (!watcher) return Error{"StartWatching: null watcher", -1};
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const auto root = fs::canonical(Utf8Path(rootDir), ec);
+    if (ec || !fs::is_directory(root, ec)) return Error{"Asset root is unavailable: " + ec.message(), 1};
+    if (!m_impl->rootDir.empty()) {
+        const bool sameRoot = fs::equivalent(Utf8Path(m_impl->rootDir), root, ec);
+        if (ec) return Error{"Asset root is unavailable: " + ec.message(), ec.value()};
+        if (!sameRoot) return Error{"StartWatching: root differs from the asset index", 1};
     }
 
+    // Stop callbacks before replacing their path basis. Both index and notifications need
+    // the same canonical spelling, including DOS short names and paths containing '.'.
+    if (m_impl->watcher) m_impl->watcher->StopAll();
+    m_impl->watcher = std::move(watcher);
+    m_impl->rootDir = Utf8String(root);
     Impl* impl = m_impl.get();
-    return m_impl->watcher->Watch(rootDir, [impl](const FileChange& ch) {
+    return m_impl->watcher->Watch(m_impl->rootDir, [impl](const FileChange& ch) {
         // 워커 스레드: 변경을 vpath 로 환원해 큐잉만 한다(리임포트는 메인 틱).
         if (ch.kind == FileChangeKind::Removed) return;   // 제거는 리임포트 대상 아님(M3-A).
         if (!IsImportableSource(ch.path)) return;

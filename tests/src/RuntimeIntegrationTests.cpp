@@ -411,15 +411,15 @@ MYE_TEST(RuntimeIntegrationCutsceneFlow) {
     const bool wrote = canvas.WriteBmp("runtime_integration_dialogue.bmp");
     MYE_EXPECT(wrote);
 
-    std::printf("[m6a-smoke] flow: say->advance ok, choose=%d(forest), move ticks=%d finalX=%.2f\n",
+    std::printf("[runtime-integration] flow: say->advance ok, choose=%d(forest), move ticks=%d finalX=%.2f\n",
                 luatest::Eval<int>(lua, "return _g[\"choice\"]"), ticks, finalX);
-    std::printf("[m6a-smoke] save: roundtrip chapter=%lld branch=%lld playerX=%.2f map=%s\n",
+    std::printf("[runtime-integration] save: roundtrip chapter=%lld branch=%lld playerX=%.2f map=%s\n",
                 static_cast<long long>(restored.chapter),
                 static_cast<long long>(restored.branchChoice),
                 restored.playerX, restored.mapName.c_str());
-    std::printf("[m6a-smoke] scene: polls=%d activate=%d changed=%d ok=%d midAlpha=%.2f\n",
+    std::printf("[runtime-integration] scene: polls=%d activate=%d changed=%d ok=%d midAlpha=%.2f\n",
                 pollCount, activateCount, sceneChanged, sceneOk ? 1 : 0, midAlpha);
-    std::printf("[m6a-smoke] bmp: hangul=%zu inkSpeaker=%d inkBody=%d inkC0=%d inkC1=%d total=%d -> runtime_integration_dialogue.bmp\n",
+    std::printf("[runtime-integration] bmp: hangul=%zu inkSpeaker=%d inkBody=%d inkC0=%d inkC1=%d total=%d -> runtime_integration_dialogue.bmp\n",
                 hangul.size(), inkSpeaker, inkBody, inkC0, inkC1, totalInk);
 
     rt.Shutdown();

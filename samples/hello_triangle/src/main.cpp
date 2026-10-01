@@ -1,4 +1,4 @@
-// hello_triangle — M0 완료 기준 데모 (docs/00 §7 M0)
+// hello_triangle — DX11 창·삼각형·프레임 캡처 데모
 //
 // 목표: 실행 → 클리어 컬러 위에 정점 컬러 보간 삼각형. 창 리사이즈·최소화·복원 크래시 없음.
 //       ESC 종료 시 릭 리포트 0건, 로그 파일 생성.
@@ -50,7 +50,7 @@ constexpr Vertex kVertices[3] = {
 
 constexpr mye::Color kClearColor{0.10f, 0.10f, 0.12f, 1.0f};
 
-// 앱과 렌더 모듈이 공유하는 M0 실행 제어 (CLI 검증 파라미터 + 종료 신호)
+// 앱과 렌더 모듈이 공유하는 실행 제어 (CLI 검증 파라미터 + 종료 신호)
 struct RunControl {
     mye::Application* app = nullptr;
     bool     frameLimit = false;
@@ -166,7 +166,7 @@ public:
                 return false;   // 미소비 — 다른 구독자에게도 전달
             })};
 
-        // ESC 종료 (M0 부트스트랩 키 이벤트)
+        // ESC 키로 종료
         m_onKey = mye::ScopedSubscription{
             *m_bus,
             m_bus->Subscribe<mye::KeyEvent>([this](const mye::KeyEvent& e) {
@@ -356,7 +356,7 @@ Application* CreateApplication(const LaunchArgs& args) {
 
 int main(int /*argc*/, char** /*argv*/) {
     // 커맨드라인 → LaunchArgs (UTF-8 변환은 GuardedMain의 int/char** 오버로드와 동일 경로).
-    // 여기서 직접 만드는 이유: M0 데모 창 기본값(960x540 리사이즈 가능)을 args.mainWindow에 심기 위함.
+    // 여기서 직접 만드는 이유: 데모 창 기본값(960x540 리사이즈 가능)을 args.mainWindow에 심기 위함.
     mye::LaunchArgs launch;
     int wideArgc = 0;
     if (LPWSTR* wideArgv = ::CommandLineToArgvW(::GetCommandLineW(), &wideArgc); wideArgv) {
@@ -369,7 +369,7 @@ int main(int /*argc*/, char** /*argv*/) {
         if (a.starts_with(prefix)) launch.projectPath = a.substr(prefix.size());
     }
 
-    launch.mainWindow.title = "MyEngine — hello_triangle (M0)";
+    launch.mainWindow.title = "MyEngine — hello_triangle";
     launch.mainWindow.clientSize = {960, 540};
     launch.mainWindow.resizable = true;
 

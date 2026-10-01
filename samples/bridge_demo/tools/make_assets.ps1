@@ -1,4 +1,4 @@
-# make_assets.ps1 — deterministic test assets for bridge_demo (M2-C hybrid depth demo).
+# make_assets.ps1 — deterministic test assets for bridge_demo (hybrid depth demo).
 #
 # Produces distinctly-colored PNGs so the pixel-verification pass can classify roles by color:
 #   hero_A.png    — character A (walks on bridge)      : bright CYAN body

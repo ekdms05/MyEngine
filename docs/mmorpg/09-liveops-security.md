@@ -1,6 +1,6 @@
 # 09. 라이브옵스 · 배포 · 확장 · 보안 (LiveOps / Deploy / Ops / Security)
 
-> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+> MMO 서비스 확장 요구사항이다. 본문의 신규/있음 표는 설계 제안 당시의 분류이며 현재 완료 상태가 아니다. 현재 앱·서버 설정, JSON 저장/백업, 서버 지표와 패키지 도구가 있다. 서명 런처·분산 운영·결제·준수·재해 복구는 검증되지 않은 서비스 요구다. 실제 연결은 [현재 구조](../13-architecture-and-features.md), 우선순위는 [개발 항목](../14-development-priorities.md)을 따른다.
 
 > 소유 범위: 게임을 "**출시하고 운영하고 지키는**" 모든 배관 — 빌드/익스포트(스탠드얼론 게임 exe + `.pak` 쿡),
 > 클라 패치·CDN·런처, 서버 배포·오케스트레이션·오토스케일, 텔레메트리/분석/AB, 안티치트(서버권위·무결성·행동탐지),
@@ -113,7 +113,7 @@ graph TB
 
 | 기능 | 우선순위 | 상태 | 엔진 매핑 |
 |---|---|---|---|
-| 스탠드얼론 게임 exe(`apps/game`, 데이터드리븐 부트) | P0 | 신규 | `App.h`/`GuardedMain` 재사용, `CreateApplication`을 프로젝트 로더로 구현. 현재 부재(갭). `RuntimeModule` 배선 재사용 |
+| 스탠드얼론 게임 exe(`apps/game`, 데이터드리븐 부트) | P0 | 신규 | `App.h`/`GuardedMain` 재사용, `CreateApplication`을 프로젝트 로더로 구현. MyGame 앱은 존재하나 `RuntimeModule`은 미연결. 기존 runtime 경로 재사용 |
 | `.pak` → `.mpak` 확장(압축·CRC·버전 헤더) | P0 | 부분 | `PakFile.h` v1 평문 → v2: `zstd` 블록압축 + per-entry CRC32 + `formatVersion`/`buildId`. `PakWriter`/`PakFileSystem` 확장 |
 | 쿡 파이프라인(임포트→굽기→검증) | P0 | 부분 | `tools/cook`. 임포터(04) 재사용, 결정적 출력. `paktool` 확장 |
 | `.mpak` 서명·무결성(Ed25519) | P1 | 신규 | `PakFileSystem::Open`에 서명검증 추가. 위변조 pak 마운트 거부 |
@@ -371,7 +371,7 @@ struct Sanction {
 ### 5.6 관찰 가능성 · DR
 
 - **텔레메트리 오프라인**: 디스크 링버퍼에 버퍼링, 재연결 시 배치 업로드. 링 오버플로우 시 오래된 것부터 드롭(우선순위 보존: crash/business > debug).
-- **로그 폭주**: 카테고리별 샘플링·레이트리밋([01] 카테고리 필터 Phase2 활용). Fatal은 항상 통과+즉시 플러시.
+- **로그 폭주**: 카테고리별 샘플링·레이트리밋([01] 카테고리별 로그 필터 활용). Fatal은 항상 통과+즉시 플러시.
 - **크래시 루프**: 동일 스택 크래시 반복 → 알림 억제(dedup) + 자동 롤백 트리거 후보.
 - **백업 복원 실패**: 정기 복원 리허설(DR drill)로 복원 가능성 사전 검증. 백업 무결성 해시.
 - **부하테스트 vs 실트래픽**: 가상 클라는 실동작과 다를 수 있음 → 카나리 실트래픽으로 보완.
@@ -383,7 +383,7 @@ struct Sanction {
 
 ```
 apps/
-  game/                         # ★ P0 데이터드리븐 스탠드얼론 게임 exe (현재 부재)
+  game/                         # ★ P0 데이터드리븐 스탠드얼론 게임 exe (MyGame 존재, runtime 콘텐츠 연결 필요)
     src/GameApp.cpp             #   CreateApplication → 프로젝트/씬 로더 부트(RuntimeModule 재사용)
   launcher/                     # ★ P1 패치·버전게이트·무결성 검사 경량 exe
     src/LauncherMain.cpp
@@ -415,21 +415,19 @@ server/
 
 ---
 
-## 7. 마일스톤 단계 (작고 검증 가능하게)
+## 7. 확장 기능과 검증 기준
 
-각 단계는 "눈으로 확인 가능한 산출물"을 게이트로 삼는다(00 §7 원칙 정렬). 로컬 단계 = **L0~L6**.
+현재 앱·서버 설정, JSON 저장/백업, 서버 지표와 패키지 도구가 있다. 서명 런처·분산 운영·결제·준수·재해 복구는 검증되지 않은 서비스 요구다. 다음 표는 확장 시 확인할 조건이며 현재 완료 상태는 [현재 구조](../13-architecture-and-features.md)를 따른다.
 
-| 단계 | 산출물(검증 게이트) | 핵심 항목 | 선행 의존 |
+| 기능 | 확장 요구(검증 게이트) | 핵심 항목 | 선행 의존 |
 |---|---|---|---|
-| **L0 스탠드얼론 부트** | `apps/game` exe가 프로젝트를 로드해 에디터 없이 실행(loose 에셋) | `GameApp`+프로젝트 로더, RuntimeModule 재사용 | 03 씬로딩·[07-server-world] 미의존(싱글) |
-| **L1 쿡·익스포트** | `tools/cook`→`.mpak` v2(압축+CRC), 게임이 pak만으로 실행. `manifest.json` 생성 | PakFile v2, 결정적 쿡, export | L0 |
-| **L2 무결성·런처** | Ed25519 서명 + `apps/launcher` 버전게이트·해시검증·강제업데이트 | 서명, 델타패치 청크, 런처 | L1 |
-| **L3 텔레메트리·크래시** | `TelemetryModule` 이벤트 업로드 + 미니덤프 업로드. 기본 대시보드 | Telemetry, CrashHandler Phase1, RemoteLogSink | L0, [01] |
-| **L4 서버 게이트·레이트리밋·CVar** | 게이트웨이 버전게이트+레이트리밋+점검모드, 서버 푸시 CVar 반영 | gateway, RuntimeOverlay 원격 배선 | [06],[07],[08] |
-| **L5 안티치트·제재·채팅** | 스피드/텔레포트 탐지→자동 시그널, 밴 실행, 채팅/이름 필터, 신고 큐, GM 콘솔 | anticheat, sanction, chat, GM | L4 |
-| **L6 상용화·컴플라이언스·DR** | 결제검증+캐시샵+확률공개, GDPR export/erase, 백업/DR 리허설, 부하/카오스 | pay, gacha 공개, backup, loadtest | L4, [08] |
-
----
+| 스탠드얼론 부트 | `apps/game` exe가 프로젝트를 로드해 에디터 없이 실행(loose 에셋) | `GameApp`+프로젝트 로더, RuntimeModule 재사용 | 03 씬로딩·[07-server-world] 미의존(싱글) |
+| 쿡·익스포트 | `tools/cook`→`.mpak` v2(압축+CRC), 게임이 pak만으로 실행. `manifest.json` 생성 | PakFile v2, 결정적 쿡, export | 스탠드얼론 부트 |
+| 무결성·런처 | Ed25519 서명 + `apps/launcher` 버전게이트·해시검증·강제업데이트 | 서명, 델타패치 청크, 런처 | 쿡·익스포트 |
+| 텔레메트리·크래시 | `TelemetryModule` 이벤트 업로드 + 미니덤프 업로드. 기본 대시보드 | Telemetry, 크래시 수집 확장, RemoteLogSink | 스탠드얼론 부트, [01] |
+| 서버 게이트·레이트리밋·CVar | 게이트웨이 버전게이트+레이트리밋+점검모드, 서버 푸시 CVar 반영 | gateway, RuntimeOverlay 원격 배선 | [06],[07],[08] |
+| 안티치트·제재·채팅 | 스피드/텔레포트 탐지→자동 시그널, 밴 실행, 채팅/이름 필터, 신고 큐, GM 콘솔 | anticheat, sanction, chat, GM | 서버 게이트·레이트리밋·CVar |
+| 상용화·컴플라이언스·DR | 결제검증+캐시샵+확률공개, GDPR export/erase, 백업/DR 리허설, 부하/카오스 | pay, gacha 공개, backup, loadtest | 서버 게이트·레이트리밋·CVar, [08] |
 
 ## 8. 의존성 · 타 도메인 문서 참조
 

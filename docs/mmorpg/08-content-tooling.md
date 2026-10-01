@@ -1,6 +1,6 @@
 # 08. 콘텐츠 제작 도구 & 에디터 확장 (Content Tooling)
 
-> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+> MMO 서비스 확장 요구사항이다. 본문의 신규/있음 표는 설계 제안 당시의 분류이며 현재 완료 상태가 아니다. 현재 Inspector·CommandStack·타일/애니메이션 편집·SceneSerializer가 있다. ContentDB·종합 검증기·노드 그래프·원격 제어는 확장 요구다. 실제 연결은 [현재 구조](../13-architecture-and-features.md), 우선순위는 [개발 항목](../14-development-priorities.md)을 따른다.
 
 > 소유 범위: 픽셀 2.5D MMORPG의 **데이터 드리븐 콘텐츠 저작 파이프라인** — 맵/스폰/퀘스트/대화/루트·드랍/상점·제작·강화/스킬·스탯·밸런스/NPC·AI 행동/프리팹·프리셋을 에디터에서 만들고, **스키마·검증·GUID 참조무결성·마이그레이션·로컬라이즈·라이브옵스·협업(VCS)** 을 보장하며, 이를 위한 **에디터 확장 API(패널/기즈모/드로어/AI 어시스트)** 를 제공한다.
 > 비소유: 인게임 UI 렌더링([mmorpg/06]), 넷코드·복제·서버 권위([mmorpg/03]·[mmorpg/04]), 게임플레이 런타임 시스템(전투·인벤 틱 로직 — [mmorpg/05]), 리플렉션/직렬화 프레임워크 정본([../04-asset-pipeline.md]), 좌표계·PPU([../02-rendering.md]), 에디터 셸·Undo·플레이모드 골격([../07-editor-ui.md]).
@@ -208,7 +208,7 @@ graph LR
 | 라이브옵스 콘텐츠 번들(이벤트·시즌·핫픽스) | P2 | 신규 | 신규 `ContentBundle` + 롤아웃·롤백. [mmorpg/09] 라이브옵스와 짝 |
 | VCS 친화 텍스트 직렬화·안정 diff | P0 | 있음 | 재사용: JSON 텍스트·안정 정렬(SceneSerializer 이름정렬 패턴) |
 | 콘텐츠 락·리뷰·머지 도구 | P2 | 신규 | 신규: 파일 단위 락 힌트 + 3-way 머지 헬퍼 |
-| AI 어시스트(스폰·드랍·대화 초안 생성) | P2 | 부분 | 확장: 08 MCP(dot 툴 있음) + 신규 `content_*` MCP 툴, RemoteControl(07/08 Stage B) |
+| AI 어시스트(스폰·드랍·대화 초안 생성) | P2 | 부분 | 확장: 08 MCP(dot 툴 있음) + 신규 `content_*` MCP 툴, RemoteControl(에디터 원격 제어 요구) |
 | AI 생성 변경의 Undo·검증 통합 | P2 | 신규 | 신규: AI 변경도 `RecordEditCommand` 경유 |
 
 ---
@@ -464,7 +464,7 @@ struct MigrationStep {
 - **플러그인 콘텐츠 타입 미등록**: 플러그인 언로드 후 그 타입 레코드 로드. → 미지 컴포넌트 스킵 경고(SceneSerializer 패턴) — 데이터 손실 방지 위해 라운드트립 보존.
 - **플레이모드 중 콘텐츠 편집**: Play World가 ContentDB 스냅샷 사용 중 소스 변경. → 편집은 소스에, Play는 스냅샷 유지(07 이중 World 격리 규약 확장). Stop 후 재로드.
 - **핫리로드 중 참조 무효화**: 콘텐츠 파일 저장 → 참조하던 레코드 사라짐. → 04 AssetReloadedEvent → 검증 재실행 → 인스펙터 갱신.
-- **AI 원격 조작 충돌**: MCP RemoteControl(07/08 Stage B)가 사람 편집 중 레코드 변경. → 모든 변경 `RunOnMainThread` + CommandStack 직렬화, 동시 편집 감지.
+- **AI 원격 조작 충돌**: MCP RemoteControl(에디터 원격 제어 요구)가 사람 편집 중 레코드 변경. → 모든 변경 `RunOnMainThread` + CommandStack 직렬화, 동시 편집 감지.
 
 ---
 
@@ -526,7 +526,7 @@ apps/content_tool/          # 헤드리스 콘텐츠 CLI (CreateApplication --he
   bundle build/rollout/rollback
 ```
 
-### 6.4 MCP 확장 — `tools/mcp/src/tools/content_*.ts` (08 Stage A/B)
+### 6.4 MCP 확장 — `tools/mcp/src/tools/content_*.ts` (MCP 개발 도구와 원격 제어 요구)
 
 ```
 content_validate   # apps/content_tool validate 래핑 → 에러 요약(토큰 절약)
@@ -535,7 +535,7 @@ content_draft      # AI 초안 생성(스폰·드랍·대화) → RecordEditComm
 content_sheet_sync # 시트 왕복
 ```
 
-MCP 원격 편집은 07/08 Stage B `RemoteControl`(TCP+NDJSON+토큰, `RunOnMainThread` 마샬링, `IEditorCommand` 경유) 위에 얹는다 — AI 조작도 Undo·검증된다.
+MCP 원격 편집은 에디터 원격 제어 요구 `RemoteControl`(TCP+NDJSON+토큰, `RunOnMainThread` 마샬링, `IEditorCommand` 경유) 위에 얹는다 — AI 조작도 Undo·검증된다.
 
 ### 6.5 서버 소비(참고 배선)
 
@@ -543,24 +543,22 @@ MCP 원격 편집은 07/08 Stage B `RemoteControl`(TCP+NDJSON+토큰, `RunOnMain
 
 ---
 
-## 7. 마일스톤 단계 (작고 검증 가능한 단위)
+## 7. 확장 기능과 검증 기준
 
-전역 로드맵(00 §7)의 M4~M6 이후 라이브 서비스 준비 구간에 대응. 각 단계는 "눈으로/CI로 확인 가능한 산출"을 게이트로 한다.
+현재 Inspector·CommandStack·타일/애니메이션 편집·SceneSerializer가 있다. ContentDB·종합 검증기·노드 그래프·원격 제어는 확장 요구다. 다음 표는 확장 시 확인할 조건이며 현재 완료 상태는 [현재 구조](../13-architecture-and-features.md)를 따른다.
 
-| 단계 | 목표 | 산출·검증 게이트 | 선행 |
+| 기능 | 확장 요구 | 검증 기준 | 선행 |
 |---|---|---|---|
-| **C0** 스키마 토대 | `AssetRef`/`RecordRef`/`ContentRecordBase` + ContentDB 최소 로드 | `ItemDef` 1테이블을 JSON 왕복·인스펙터 자동 UI 표시. 자체 테스트 통과 | 04 GUID 영속·리플렉션 v1 |
-| **C1** 검증 게이트 | ContentValidator + RefGraph + `content_tool validate` | 끊긴/순환 참조·범위위반을 CI가 non-zero exit로 잡음. 정상 데이터는 통과 | C0 |
-| **C2** 첫 콘텐츠 루프 | ItemDef·DropTable·SpawnTable + 스폰 배치(뷰포트)·드랍 시뮬레이터 | 에디터에서 몹 배치→드랍 정의→플레이모드서 처치→드랍 확인 | C1, 07 뷰포트 |
-| **C3** 대화·퀘스트 | NodeGraph 인프라 + 대화/퀘스트 그래프 패널(데이터는 기존 DialogueScript 재사용) | 대화 트리·퀘스트(목표·보상) 저작→플레이 검증. 로컬라이즈 키 추출 | C2, imgui-node-editor |
-| **C4** 밸런스·경제 | SkillDef·StatCurve·Recipe·Shop·Enhance + 시트 임포트/익스포트 | 밸런스 시트 CSV 왕복 무손실, 이상치 검증. 곡선 드로어 | C1 |
-| **C5** 로컬라이즈·마이그레이션 | LocaleEditor + 누락/과잉 검증 + ContentMigrator v1→v2 | 누락 키 CI 검출, 스키마 v→v+1 마이그레이션 통과 | C1 |
-| **C6** 서버/클라 쿡 | Cook(권위 추출·서명 / 표현·pak) + 좌표·워크메시 익스포트 | 클라 쿡에 확률 없음 확인, 서버가 쿡 번들 로드 | C1, [mmorpg/03·04] |
-| **C7** 협업·머지 | 안정 정렬·3-way 머지 헬퍼·리네임 커맨드·락 힌트 | 두 브랜치 동시 편집 자동 머지, 리네임 후 참조 무결 | C1 |
-| **C8** 라이브옵스 | ContentBundle 롤아웃/롤백(참조 폐포)·버전 협상 | 핫픽스 번들 서버 푸시→반영→롤백 무결. [mmorpg/09] | C6 |
-| **C9** AI 어시스트·확장 | content_* MCP 툴·RemoteControl 위 초안 생성·기즈모/오버레이 확장 구현 | AI가 스폰/드랍 초안 생성→검증→Undo. 07 IViewportTool 실동작 | C1, 07/08 Stage B |
-
----
+| 스키마 토대 | `AssetRef`/`RecordRef`/`ContentRecordBase` + ContentDB 최소 로드 | `ItemDef` 1테이블을 JSON 왕복·인스펙터 자동 UI 표시. 자체 테스트 통과 | 04 GUID 영속·리플렉션 v1 |
+| 검증 게이트 | ContentValidator + RefGraph + `content_tool validate` | 끊긴/순환 참조·범위위반을 CI가 non-zero exit로 잡음. 정상 데이터는 통과 | 스키마 토대 |
+| 첫 콘텐츠 루프 | ItemDef·DropTable·SpawnTable + 스폰 배치(뷰포트)·드랍 시뮬레이터 | 에디터에서 몹 배치→드랍 정의→플레이모드서 처치→드랍 확인 | 검증 게이트, 07 뷰포트 |
+| 대화·퀘스트 | NodeGraph 인프라 + 대화/퀘스트 그래프 패널(데이터는 기존 DialogueScript 재사용) | 대화 트리·퀘스트(목표·보상) 저작→플레이 검증. 로컬라이즈 키 추출 | 첫 콘텐츠 루프, imgui-node-editor |
+| 밸런스·경제 | SkillDef·StatCurve·Recipe·Shop·Enhance + 시트 임포트/익스포트 | 밸런스 시트 CSV 왕복 무손실, 이상치 검증. 곡선 드로어 | 검증 게이트 |
+| 로컬라이즈·마이그레이션 | LocaleEditor + 누락/과잉 검증 + ContentMigrator v1→v2 | 누락 키 CI 검출, 스키마 v→v+1 마이그레이션 통과 | 검증 게이트 |
+| 서버/클라 쿡 | Cook(권위 추출·서명 / 표현·pak) + 좌표·워크메시 익스포트 | 클라 쿡에 확률 없음 확인, 서버가 쿡 번들 로드 | 검증 게이트, [mmorpg/03·04] |
+| 협업·머지 | 안정 정렬·3-way 머지 헬퍼·리네임 커맨드·락 힌트 | 두 브랜치 동시 편집 자동 머지, 리네임 후 참조 무결 | 검증 게이트 |
+| 라이브옵스 | ContentBundle 롤아웃/롤백(참조 폐포)·버전 협상 | 핫픽스 번들 서버 푸시→반영→롤백 무결. [mmorpg/09] | 서버/클라 쿡 |
+| AI 어시스트·확장 | content_* MCP 툴·RemoteControl 위 초안 생성·기즈모/오버레이 확장 구현 | AI가 스폰/드랍 초안 생성→검증→Undo. 07 IViewportTool 실동작 | 검증 게이트, 에디터 원격 제어 요구 |
 
 ## 8. 의존성·타 도메인 문서 참조
 
@@ -573,7 +571,7 @@ MCP 원격 편집은 07/08 Stage B `RemoteControl`(TCP+NDJSON+토큰, `RunOnMain
 - [05-scripting-plugins.md](../05-scripting-plugins.md) — Lua 조건식 평가·플러그인 콘텐츠 타입 등록.
 - [06-runtime-systems.md](../06-runtime-systems.md) — 인게임 UI·로컬라이즈 런타임·`DialogueScript`·세이브. 대화/로컬라이즈 데이터 재사용.
 - [07-editor-ui.md](../07-editor-ui.md) — **에디터 셸·CommandStack·Selection·PlayMode·EditorExtensionRegistry·PrefabAsset·SceneSerializer 정본**. 08 패널은 전부 이 위에 얹힌다.
-- [08-mcp.md](../08-mcp.md) — MCP 개발도구·RemoteControl(Stage B). AI 어시스트·content_* 툴의 하부.
+- [08-mcp.md](../08-mcp.md) — MCP 개발도구·RemoteControl 요구사항. AI 어시스트·content_* 툴의 하부.
 
 ### 8.2 MMORPG 시리즈 타 도메인(상호참조)
 

@@ -2,7 +2,7 @@
   "name": "myengine-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "MyEngine dev-tools MCP server (Stage A) — build/test/run/capture tools for AI agents",
+  "description": "MyEngine MCP server — build, test, run, capture and pixel asset tools",
   "type": "module",
   "scripts": {
     "build": "tsc",

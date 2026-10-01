@@ -1,19 +1,19 @@
-// MyGame — 스탠드얼론 게임 런타임 (docs/mmorpg, M7/M9)
+// MyGame — 프로젝트 씬·게임 UI·오디오·온라인 이동 실행 앱
 //
 // 에디터 없이 프로젝트(assets + .scene)를 로드해 실행하는 게임 실행 파일. 엔진 모듈 스택
 // (SceneModule + GameRuntimeModule) 위에서 RHI 디바이스·스왑체인·픽셀퍼펙트 RT·하이브리드
 // 렌더러·에셋·오디오를 조립하고, 데이터드리븐 씬을 mye::scene::SceneSerializer 로 로드해 매
 // 프레임 렌더한다. village_demo(하드코딩 C++ 데모)를 데이터드리븐으로 일반화한 것.
 //
-// 타이틀 화면(M9+): 게임 시작 시 픽셀아트 타이틀(기차 풍경·패럴랙스 스크롤·증기 연기) 위에
+// 타이틀 화면: 게임 시작 시 픽셀아트 타이틀(기차 풍경·패럴랙스 스크롤·증기 연기) 위에
 //   한글 메뉴(게임 시작/환경설정)를 띄운다. 환경설정에서 캐릭터(남자/여자 모험가 — 사용자가
 //   넣어준 아트에서 추출) 선택과 BGM/SFX 볼륨(실제 오디오 버스)을 조정한다.
 //
-// --connect 네트워크 모드(M9): 권위 서버(MyServer)에 접속해 서버권위 이동 + 클라 예측/재조정 +
+// --connect 네트워크 모드: 권위 서버(MyServer)에 접속해 서버권위 이동 + 클라 예측/재조정 +
 // 원격 플레이어 스냅샷 보간 렌더를 수행한다. 같은 존의 다른 접속자(봇 포함)가 원격 도트로 보인다.
 //
 // CLI:
-//   --project <dir>        프로젝트 루트(assets/ 를 포함). 기본 samples/game_sample.
+//   --project <dir>        프로젝트 루트(assets/ 를 포함). 기본 samples/mmo_demo.
 //   --scene <vpath|path>   로드할 씬(예: assets://scenes/sample.scene). 기본 위 프로젝트의 sample.
 //   --make-sample          텍스처 하나로 데모 씬을 생성·저장하고 종료(자체 검증 시드).
 //   --auto-start           타이틀 화면 거치지 않고 곧바로 플레이(E2E/CI 종래 경로).
@@ -140,7 +140,7 @@ struct GameCli {
     uint64_t    maxFrames = 0;
     bool        dumpEnabled = false;
     std::string dumpPath;
-    // 네트워크 모드(M9) — --connect 가 있으면 권위 서버에 접속.
+    // 네트워크 모드 — --connect 가 있으면 권위 서버에 접속.
     std::string connectAddr;        // "ip:port"
     std::string account;
     std::string password;
@@ -835,7 +835,7 @@ private:
         scene::ExtractRenderItems(world, m_proxies);
 
         // 전역 앰비언트(데이나이트) — 각 스프라이트 tint에 색을 곱해 씬 전체를 물들인다(셰이더 무변경
-        //   2D 라이팅 1단계). 이후 포인트라이트/라이트버퍼는 M7 P1에서 렌더패스로 확장.
+        //   2D 라이팅 1단계). 포인트라이트·라이트버퍼 합성은 별도 렌더 확장 항목이다.
         const Color amb = m_cli.ambient;
         if (amb.r != 1.0f || amb.g != 1.0f || amb.b != 1.0f) {
             for (scene::RenderItem& it : m_proxies.items) {
@@ -1035,7 +1035,7 @@ private:
     }
 
     // -------------------------------------------------------------------------
-    // 네트워크 모드(M9) — 권위 서버 접속: 클라 예측/재조정 + 원격 엔티티 보간.
+    // 네트워크 모드 — 권위 서버 접속: 클라 예측/재조정 + 원격 엔티티 보간.
     // -------------------------------------------------------------------------
     static uint64_t SteadyMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1250,7 +1250,7 @@ private:
     std::vector<float> m_smokeLife;
     float m_bgScroll = 0.0f, m_fgScroll = 0.0f;
 
-    // 네트워크 모드(M9) — 권위 서버 접속 상태.
+    // 네트워크 모드 — 권위 서버 접속 상태.
     std::unique_ptr<net::NetSubsystem>        m_netSys;   // Winsock RAII(넷 모드만 생성)
     std::unique_ptr<net::NetClient>           m_net;
     net::SnapshotInterpolator                 m_interp;

@@ -1,4 +1,4 @@
-# sprite_demo — M1 통합 데모·검증 (도트 캐릭터 픽셀퍼펙트 렌더 + WASD 이동 + ImGui 오버레이)
+# sprite_demo — 스프라이트 통합 데모·검증 (도트 캐릭터 픽셀퍼펙트 렌더 + WASD 이동 + ImGui 오버레이)
 add_executable(sprite_demo
     src/main.cpp
 )

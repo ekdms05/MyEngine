@@ -1,4 +1,4 @@
-# mye_gameserver — 게임플레이↔영속(↔넷) 통합 세션 관리 (M8·M10 통합)
+# mye_gameserver — 게임플레이↔영속(↔넷) 통합 세션 관리
 add_library(mye_gameserver STATIC
     include/mye/gameserver/GameServer.h
     include/mye/gameserver/NetGameServer.h

@@ -1,4 +1,4 @@
-# village_demo assets — content spec (M6-B)
+# village_demo assets — content spec
 
 Layered 2.5D village demo content. Binary assets are produced by deterministic
 generators in `../tools`; JSON and Lua files define editable content.

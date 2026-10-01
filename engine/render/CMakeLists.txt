@@ -1,7 +1,7 @@
-# mye_render — L2 렌더러 (M1-B: 스프라이트 배처·픽셀퍼펙트 / M2-C: 하이브리드 깊이 렌더러)
+# mye_render — L2 렌더러 (스프라이트 배처·픽셀퍼펙트 / 하이브리드 깊이 렌더러)
 # 의존: mye_core(수학·메모리) + mye_rhi(디바이스·커맨드·셰이더컴파일) + mye_asset(Texture 에셋).
-# M2-C: 렌더 데이터 계약(RenderExtract.h·Tilemap.h)은 mye_scene 헤더로 소비한다. 단, scene은 이미
-#   render를 링크하므로(추출 스텁) 링크 사이클을 피하려고 include 경로만 참조하고 링크 edge는 만들지
+# 렌더 데이터 계약(RenderExtract.h·Tilemap.h)은 mye_scene 헤더로 소비한다. 단, scene은 이미
+#   render를 링크하므로(렌더 타입 소비) 링크 사이클을 피하려고 include 경로만 참조하고 링크 edge는 만들지
 #   않는다. HybridRenderer.cpp가 참조하는 scene 심볼(TilemapWorld::Layer 등)은 최종 실행/테스트
 #   타깃이 두 정적 라이브러리를 함께 링크할 때 해소된다.
 add_library(mye_render STATIC

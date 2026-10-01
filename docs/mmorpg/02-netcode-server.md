@@ -1,6 +1,6 @@
 # 02. 넷코드 & 권위 서버 아키텍처 (Netcode & Authoritative Server)
 
-> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+> MMO 서비스 확장 요구사항이다. 본문의 신규/있음 표는 설계 제안 당시의 분류이며 현재 완료 상태가 아니다. 현재 MyServer는 Winsock UDP 프로토콜 v1의 루프백 서버이며 접속 상한은 64명이다. MyGame의 예측·재조정·원격 보간은 연결되어 있다. 인증된 세션·신뢰 이벤트·AoI·다중 존·공유 충돌 시뮬레이션은 확장 요구다. 실제 연결은 [현재 구조](../13-architecture-and-features.md), 우선순위는 [개발 항목](../14-development-priorities.md)을 따른다.
 
 > 픽셀 2.5D MMORPG의 **서버 권위(server-authoritative) 시뮬레이션**과 **클라이언트 넷코드**를 정의한다.
 > 목표 스케일: **존(zone)당 수백~수천 동접**, 왕복 지연(RTT) 30~250ms, 패킷 손실 0~5%, 라이브 운영(24/7).
@@ -43,7 +43,7 @@
 
 ### 1.3 설계 원칙 (MyEngine 규약 계승)
 
-1. **서버는 클라이언트가 아니다, 그러나 코드는 공유한다.** 서버는 `engine/scene`(ECS·물리·타일맵·A*)을 **헤드리스로 링크**한다. `engine/render`·`engine/rhi`·`engine/audio`·`engine/ui`·`engine/imgui`는 **링크하지 않는다**. 이로써 "서버 물리 = 클라 물리" 결정론이 공짜로 성립한다.
+1. **서버는 클라이언트가 아니다, 그러나 코드는 공유한다.** 서버는 `engine/scene`(ECS·물리·타일맵·A*)을 **헤드리스로 링크**한다. `engine/render`·`engine/rhi`·`engine/audio`·`engine/ui`·`engine/imgui`는 **링크하지 않는다**. 공유 코드만으로 결정론을 보장하지 않는다. 현재 앱의 이동·충돌 계약 차이를 연결하고 틱·수치·실행 순서를 검증해야 한다.
 2. **예외 불사용.** 넷코드도 `Expected<T, Error>` + 로그. 소켓 오류·역직렬화 실패는 값으로 전파.
 3. **UTF-8 전면.** 문자열 페이로드는 UTF-8 바이트. 채팅/이름은 길이 프리픽스 + 검증.
 4. **모듈·서비스 게이트웨이 재사용.** 넷코드는 `IModule` 라이프사이클을 따르고, `NetClient`/`NetServer`는 `MYE_SERVICE`로 `EngineContext`에 등록된다.
@@ -439,7 +439,7 @@ engine/net/
 ### 6.2 `apps/game` — 데이터드리븐 게임 클라이언트 (신규, [06-game-runtime](../06-runtime-systems.md) 소유·본 문서 소비)
 
 ```
-apps/game/                            # 프로젝트를 로드해 실행하는 exe (현재 부재 — 핵심 갭)
+apps/game/                            # 현재 MyGame 앱; 온라인 이동 외 콘텐츠는 통합 필요
   src/net/
     PredictionSystem.cpp              # 로컬 입력 예측(Play World 즉시 적용, 링버퍼 보관)
     ReconcileSystem.cpp               # 서버 스냅샷 도착 시 재조정·replay·에러 스무딩
@@ -486,25 +486,23 @@ tools/loadtest/                       # 헤드리스 봇 클라이언트 N개, �
 
 ---
 
-## 7. 마일스톤 (작은 검증 단위)
+## 7. 확장 기능과 검증 기준
 
-| 단계 | 산출물 | 검증(테스트/데모) |
+현재 MyServer는 Winsock UDP 프로토콜 v1의 루프백 서버이며 접속 상한은 64명이다. MyGame의 예측·재조정·원격 보간은 연결되어 있다. 인증된 세션·신뢰 이벤트·AoI·다중 존·공유 충돌 시뮬레이션은 확장 요구다. 다음 표는 확장 시 확인할 조건이다. 완료 상태는 [현재 구조](../13-architecture-and-features.md)에서 확인한다.
+
+| 기능 | 확장 요구 | 검증(테스트/데모) |
 |---|---|---|
-| **N0 — 전송·직렬화 기반** | `engine/net`: `BitStream`, `UdpTransport`, `Protocol`, `Connection`(handshake/timeout) | `mye_net` 유닛테스트: BitStream 라운드트립·양자화 오차 한계·seq 랩·채널 ack/재전송/중복제거. 로컬 루프백 ping/pong RTT. |
-| **N1 — 헤드리스 존 루프** | `server/world_server`: `Application --headless` + `mye_scene` 링크 + fixed tick 회전 | 봇 1개 접속 → 서버가 tick 진행·keep-alive 유지. `--frames`로 결정론 덤프 회귀(에디터 CI 패턴 재사용). |
-| **N2 — 입력→권위 이동→스냅샷** | 클라 입력 커맨드 송신, 서버 move&slide 적용, 단일 엔티티 스냅샷 브로드캐스트 | 봇 클라가 입력 → 서버 위치 갱신 → 스냅샷 수신. 위치 일치(양자화 오차 내). |
-| **N3 — 예측 + 재조정** | 클라 `PredictionSystem`·`ReconcileSystem`, 로컬 즉시 이동 + 서버 ack replay | 인위 지연(200ms)·손실(3%) 주입 시 스냅 없이 부드러운 이동. 벽 예측 오류 → 재조정 스냅백 확인. |
-| **N4 — 원격 보간 + 다중 클라** | `InterpolationSystem`, 여러 봇 상호 관찰 | 2~10 봇이 서로 보간으로 부드럽게 보임. 지터 적응 버퍼 검증. |
-| **N5 — AoI + 관련성** | `AoiSystem`(SpatialHash 재사용), enter/leave·하이스테리시스, 세션 `subscribed` | 넓은 존에서 시야 밖 엔티티 미복제. 경계 왕복 시 flicker 없음. |
-| **N6 — 델타 압축 + 우선순위 예산** | `DeltaCodec`, baseline ack, `PriorityAccumulator`, 대역 상한 | 델타 vs full 대역 절감 측정. 예산 초과 시 기아 없이 이월 확인. |
-| **N7 — 재접속·세션·이중 로그인** | `SessionManager`, grace 창, full resync, duplicate 정책 | 끊었다 재접속 시 상태 복구. 이중 로그인 킥 동작. |
-| **N8 — 지연보상 + 서버 검증** | `LagCompensation` rewind, `MovementValidation` sanity | 되감기 히트 판정 정확도(고RTT에서 "맞았는데 안 맞음" 해소). 속도핵 봇 차단. |
-| **N9 — 존/인스턴스/핸드오프** | `ZoneManager` 다중 인스턴스·채널, `Handoff` 크로스존 원자 이전 | 필드→던전 진입, 존 경계 이동 무유령. 핸드오프 중 끊김 복구. |
-| **N10 — 부하/봇 테스트 + 스케일** | `tools/loadtest` N=수백~수천, 병렬 존 틱(JobSystem) | 존당 목표 동접에서 tick<16.6ms·대역 예산 준수 회귀. |
-
-각 단계는 앞 단계 위에서 **독립 검증 가능**하며, N0~N2가 수직 슬라이스(한 존·소수 인원 실동작)의 최소 골격이다.
-
----
+| 전송·직렬화 기반 | `engine/net`: `BitStream`, `UdpTransport`, `Protocol`, `Connection`(handshake/timeout) | `mye_net` 유닛테스트: BitStream 라운드트립·양자화 오차 한계·seq 랩·채널 ack/재전송/중복제거. 로컬 루프백 ping/pong RTT. |
+| 헤드리스 존 루프 | `server/world_server`: `Application --headless` + `mye_scene` 링크 + fixed tick 회전 | 봇 1개 접속 → 서버가 tick 진행·keep-alive 유지. `--frames`로 결정론 덤프 회귀(에디터 CI 패턴 재사용). |
+| 입력→권위 이동→스냅샷 | 클라 입력 커맨드 송신, 서버 move&slide 적용, 단일 엔티티 스냅샷 브로드캐스트 | 봇 클라가 입력 → 서버 위치 갱신 → 스냅샷 수신. 위치 일치(양자화 오차 내). |
+| 예측 + 재조정 | 클라 `PredictionSystem`·`ReconcileSystem`, 로컬 즉시 이동 + 서버 ack replay | 인위 지연(200ms)·손실(3%) 주입 시 스냅 없이 부드러운 이동. 벽 예측 오류 → 재조정 스냅백 확인. |
+| 원격 보간 + 다중 클라 | `InterpolationSystem`, 여러 봇 상호 관찰 | 2~10 봇이 서로 보간으로 부드럽게 보임. 지터 적응 버퍼 검증. |
+| AoI + 관련성 | `AoiSystem`(SpatialHash 재사용), enter/leave·하이스테리시스, 세션 `subscribed` | 넓은 존에서 시야 밖 엔티티 미복제. 경계 왕복 시 flicker 없음. |
+| 델타 압축 + 우선순위 예산 | `DeltaCodec`, baseline ack, `PriorityAccumulator`, 대역 상한 | 델타 vs full 대역 절감 측정. 예산 초과 시 기아 없이 이월 확인. |
+| 재접속·세션·이중 로그인 | `SessionManager`, grace 창, full resync, duplicate 정책 | 끊었다 재접속 시 상태 복구. 이중 로그인 킥 동작. |
+| 지연보상 + 서버 검증 | `LagCompensation` rewind, `MovementValidation` sanity | 되감기 히트 판정 정확도(고RTT에서 "맞았는데 안 맞음" 해소). 속도핵 봇 차단. |
+| 존/인스턴스/핸드오프 | `ZoneManager` 다중 인스턴스·채널, `Handoff` 크로스존 원자 이전 | 필드→던전 진입, 존 경계 이동 무유령. 핸드오프 중 끊김 복구. |
+| 부하/봇 테스트 + 스케일 | `tools/loadtest` N=수백~수천, 병렬 존 틱(JobSystem) | 존당 목표 동접에서 tick<16.6ms·대역 예산 준수 회귀. |
 
 ## 8. 의존성 · 타 도메인 참조
 
@@ -542,4 +540,4 @@ mye_core + mye_scene + render/ui/audio ◄── apps/game ──► mye_net
 
 1. **서버 권위 + 클라 예측/재조정**을 표준으로, 서버는 `engine/scene`을 **헤드리스로 공유**(이동·물리·타일맵·A* 결정론 공짜)하고 넷코드는 순수 전송/직렬화 `engine/net` + `server/world_server` 스택으로 붙인다 — 클라 상태는 절대 신뢰하지 않고 **입력만** 신뢰한다.
 2. 핵심 신규는 **NetId(안정 엔티티 ID)·BitStream/델타 스냅샷·신뢰성 UDP 채널·연결 상태기계·AoI(SpatialHash 재사용)·지연보상 rewind·세션/재접속**이며, 01의 고정 스텝 루프·JobSystem·EventBus·Config·모듈 게이트웨이를 그대로 기반으로 삼는다.
-3. 경우의 수는 **지연/손실/순서·예측오류·AoI 경계·대역예산·존 핸드오프·재접속/이중로그인·시간동기·서버측 치트방지**를 exhaustive하게 규정했고, N0(전송·직렬화)→N10(부하·스케일)까지 작은 검증 단위로 마일스톤을 쪼갰다.
+3. 네트워크 확장 검증은 **지연/손실/순서·예측오류·AoI 경계·대역예산·존 핸드오프·재접속/이중로그인·시간동기·서버측 검증**을 다룬다. 전송·직렬화와 부하 검증을 기능별로 구분한다.

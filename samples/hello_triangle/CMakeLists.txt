@@ -1,4 +1,4 @@
-# hello_triangle — M0 데모: 창 + 클리어 컬러 위 DX11 삼각형 (콘솔 서브시스템)
+# hello_triangle — 데모: 창 + 클리어 컬러 위 DX11 삼각형 (콘솔 서브시스템)
 add_executable(hello_triangle
     src/main.cpp
 )

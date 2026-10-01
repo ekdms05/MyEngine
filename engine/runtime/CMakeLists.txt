@@ -1,6 +1,6 @@
-# mye_runtime — L4/06 게임 런타임 시스템 (M6-A: 대화·컷신·씬전환·세이브·로컬라이제이션·2.5D 오디오)
+# mye_runtime — L4/06 게임 런타임 시스템 (대화·컷신·씬전환·세이브·로컬라이제이션·2.5D 오디오)
 #
-# 소유: docs/06 §7(세이브·로컬라이제이션·씬전환) + 대화/컷신 연출(코루틴 프리미티브 say/choose/
+# 소유: docs/06 세이브·로컬라이즈·씬 전환 + 대화/컷신 연출(코루틴 프리미티브 say/choose/
 #   move_to/camera.focus). "데이터(에셋)로 정의 + Lua 로 로직" 철학. 시뮬(고정틱)/표현(가변) 분리.
 #
 # 의존:
@@ -45,7 +45,7 @@ add_library(mye_runtime STATIC
     include/mye/runtime/AudioListener.h
     src/AudioListener.cpp
 
-    # ---- NPC 배회·상호작용 시스템(M6-B — 배회 상태기계·접근·대화 개시) ----
+    # ---- NPC 배회·상호작용 시스템(배회 상태기계·접근·대화 개시) ----
     include/mye/runtime/NpcSystem.h
     src/NpcSystem.cpp
 
@@ -57,7 +57,7 @@ add_library(mye_runtime STATIC
     include/mye/runtime/RuntimeBindings.h
     src/RuntimeBindings.cpp
 
-    # ---- NPC Lua 바인딩 모듈(sol 표면 — 벤더 경계, M6-B) ----
+    # ---- NPC Lua 바인딩 모듈(sol 표면 — 벤더 경계) ----
     include/mye/runtime/NpcBindings.h
     src/NpcBindings.cpp
 )

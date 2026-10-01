@@ -7,36 +7,32 @@ The design favors clear ownership, small modules and measured performance.
 
 > 한국어 문서: [문서 안내](docs/README.md) · [현재 구조와 기능](docs/13-architecture-and-features.md) · [개선·개발 우선순위](docs/14-development-priorities.md) · [스킬·에이전트 조사](docs/15-skills-and-agents.md).
 
-## Status
+## Applications
 
-The table below records the original M0–M6 milestones. The repository now also
-contains game/server apps, gameplay, networking, persistence and social libraries.
-See the [current implementation report](docs/13-architecture-and-features.md)
-for the distinction between library tests, sample coverage and app integration,
-and the [prioritized backlog](docs/14-development-priorities.md) for remaining work.
+| Application | Purpose | Current behavior |
+|-------------|---------|------------------|
+| `MyEditor` | Edit scenes and content | Docking panels, selection, inspector, undo, tile/animation tools and an isolated play world |
+| `MyGame` | Run a game project | Title/settings, scene loading, local movement, audio and loopback multiplayer movement |
+| `MyServer` | Host local multiplayer | Account authentication, authoritative movement, session snapshots, backups and metrics |
+| `paktool` | Package assets | Build and inspect pak files through the asset/VFS layer |
 
-| Milestone | Goal | State |
-|-----------|------|-------|
-| **M0** | Window + DX11 triangle | ✅ Done |
-| **M1** | Pixel-perfect sprites, WASD dot character | ✅ Done |
-| **M2** | Hybrid scene core — ECS, tilemap (height/bridge), physics, **hybrid depth rendering** | ✅ Done |
-| **M3** | 8-direction animation, audio, **Lua scripting**, hot reload | ✅ Done |
-| **M4** | Reflection-driven ImGui editor — inspector, scene save, undo, play mode | ✅ Done |
-| **M5** | Content tools — tilemap/animation editors, Korean text, in-game UI, pathfinding | ✅ Done |
-| **M6** | Vertical slice — dialogue, cutscenes, NPCs → a 2.5D village demo | ✅ Done |
+The [implementation report](docs/13-architecture-and-features.md) describes each
+application's modules and tested paths. Remaining integration and service work
+has separate [completion criteria](docs/14-development-priorities.md).
 
-The M2 demo already proves the hardest technical risk: a character can walk
+The `bridge_demo` sample verifies that a character can walk
 **over a bridge while another walks under it**, and step **behind a 3D statue**
 with correct per-pixel occlusion — all 2D sprites and 3D meshes sharing one
 depth buffer.
 
-The **M6 vertical slice** (`samples/village_demo`) demonstrates the existing content
+The **village integration sample** (`samples/village_demo`) demonstrates the content
 stack: a dot character walks a layered village — sloped hill,
 a one-way bridge over a creek, 3D fountain/statue props — and talks with three
 NPCs (chief, merchant, guard) in **Korean**, complete with branching choices, an
-opening cutscene, wandering NPCs, footsteps and BGM. Map, dialogue (localization
-keys) and game logic (per-entity Lua) are all editable **without rebuilding the
-engine** (editor + Lua hot reload).
+opening cutscene, wandering NPCs, footsteps and BGM. Lua scripts and localization
+tables load from assets at startup. The map and spawn layout are currently
+constructed in C++; complete data-driven editing and automatic reload remain
+integration work.
 
 ## Key features
 
@@ -67,7 +63,7 @@ engine** (editor + Lua hot reload).
 - **MCP dev-tools server** — a Model Context Protocol server (`tools/mcp`) that
   provides build, test, run, log and frame-capture commands.
 
-## Current foundation
+## Runtime and server behavior
 
 - MyGame: title/settings, pixel UI text, fixed-tick local movement, AudioModule
   output, scene rendering and loopback multiplayer movement.
@@ -93,18 +89,30 @@ Requirements: **Windows**, **Visual Studio 2022/2026** (C++20 toolchain),
 ```sh
 cmake -S . -B build/dev -G "Visual Studio 18 2026" -A x64
 cmake --build build/dev --config Debug
+cmake --build build/dev --config Release
 ```
+
+Run the editor or game from the repository root:
+
+```sh
+build/dev/apps/editor/Release/MyEditor.exe
+build/dev/apps/game/Release/MyGame.exe
+```
+
+`MyGame` uses `samples/mmo_demo` by default. `--project <directory>` selects
+another project; `--auto-start` opens gameplay and `--settings` opens settings.
+The complete editor project/scene file-open workflow is still being integrated.
 
 Run a demo (from the build tree):
 
 ```sh
-build/dev/samples/sprite_demo/Debug/sprite_demo.exe      # M1: WASD dot character
-build/dev/samples/bridge_demo/Debug/bridge_demo.exe      # M2: bridge over/under, 3D occlusion
-build/dev/samples/character_demo/Debug/character_demo.exe # M3: 8-dir anim, Lua, footsteps, hot reload
-build/dev/samples/village_demo/Debug/village_demo.exe    # M6: full vertical slice (see below)
+build/dev/samples/sprite_demo/Debug/sprite_demo.exe       # WASD character and pixel scaling
+build/dev/samples/bridge_demo/Debug/bridge_demo.exe       # bridge layers and 3D occlusion
+build/dev/samples/character_demo/Debug/character_demo.exe # animation, Lua, footsteps, hot reload
+build/dev/samples/village_demo/Debug/village_demo.exe      # dialogue, NPCs and runtime integration
 ```
 
-### village_demo — the M6 vertical slice
+### village_demo — content and runtime integration
 
 `village_demo` is an integration demo: one executable that walks the whole
 engine stack (RHI, ECS/scene, tilemap, physics, animation, audio, Lua scripting,
@@ -127,8 +135,10 @@ last frame, no overlay), `--dump-ui path.bmp` (dump including the dialogue box),
 `--scenario <name>`, `--headless`. Assets (map, character/tile PNGs, glTF props,
 audio) are regenerated deterministically by
 `samples/village_demo/tools/make_all.ps1`; map/dialogue/localization JSON and the
-Lua scripts under `samples/village_demo/assets/` are editable and
-hot-reloadable.
+Lua scripts under `samples/village_demo/assets/` provide content inputs and
+reference data. Localization and Lua source changes take effect on restart;
+map layout changes currently require updating the sample C++ implementation.
+`character_demo` has a separate scripted hot-reload verification scenario.
 
 Run the tests:
 
@@ -170,7 +180,7 @@ samples/     runnable demos (hello_triangle, asset_smoke, sprite_demo, bridge_de
              character_demo, village_demo)
 tests/       mye_tests  — unit + integration tests
 tools/mcp/   Model Context Protocol dev-tools server (TypeScript)
-docs/        design documents (Korean) + architecture overview
+docs/        product and system references (Korean) + extension requirements
 third_party/ vendored dependencies
 ```
 
@@ -179,14 +189,14 @@ exceptions in engine code (`Expected<T, Error>`), `/W4`. Coordinate system is
 left-handed, +Y up, PPU 48; see `docs/02-rendering.md` for the authoritative
 spec.
 
-## Design docs
+## Documentation
 
 Start with the [documentation index](docs/README.md) and follow the
 [repository working rules](AGENTS.md) when making changes.
-The `docs/` directory also preserves the original design (in Korean):
-`00-overview.md` (architecture, layers, roadmap), then one document per
-subsystem (`01` core, `02` rendering, `03` scene/ECS, `04` assets, `05`
-scripting/plugins, `06` runtime systems, `07` editor/UI, `08` MCP).
+The Korean system references describe current responsibilities, data contracts,
+source entry points and known limits: `00` overview, `01` core, `02` rendering,
+`03` scene/ECS, `04` assets, `05` scripting/plugins, `06` runtime, `07` editor/UI
+and `08` MCP. MMO extension requirements are kept separately in `docs/mmorpg/`.
 
 ## Third-party
 

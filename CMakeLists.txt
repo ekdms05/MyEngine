@@ -1,4 +1,4 @@
-# MyEngine — 테일즈위버류 2.5D 픽셀아트 하이브리드 엔진 (M0 부트스트랩)
+# MyEngine — 2.5D 픽셀아트 하이브리드 엔진
 cmake_minimum_required(VERSION 3.26)
 
 project(MyEngine VERSION 0.1.0 LANGUAGES CXX C)   # C: 벤더 stb_vorbis(OGG 디코드) 컴파일

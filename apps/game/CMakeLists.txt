@@ -1,4 +1,4 @@
-# MyGame — 스탠드얼론 게임 런타임 (docs/mmorpg M7). 엔진 전 계층 위 데이터드리븐 실행 파일.
+# MyGame — 프로젝트 씬·렌더·UI·오디오와 온라인 이동을 조합하는 게임 실행 파일.
 add_executable(MyGame
     main.cpp
 )

@@ -41,7 +41,7 @@ PBKDF2 회수는 [OWASP 비밀번호 저장 기준](https://cheatsheetseries.owa
 | 6 · P1-06 | 에셋 흐름 | 앱 경로 GUID·PNG 선로딩을 기존 GUID/.meta/VFS/AssetManager에 수렴. watcher·import 설정·필요한 에셋만 로딩. 이동/재임포트 실패에서 참조·이전 자원 보존 |
 | 7 · P2-01/02 | 코드 경계 | AudioModule 중복은 제거. main의 UI·씬·네트워크를 수명/변경 이유가 다른 책임에서만 분리. render가 PRIVATE include로 scene 구현을 읽는 결합을 순수 렌더 입력 계약으로 정리 |
 | 8 · P2-03/04 | UI·진단 | 설정 마우스·키보드·배율 UX, 배포 폰트, UiDocument 위젯/스크립트 연결. ConfigChangedEvent EventBus·minidump·초기화 오류 경계 검증 |
-| 9 · P2-05/06 | 측정·배포 | 동일 Release 장면의 CPU/GPU·할당·배치·에셋·바이트 기준선. 일반 GPU readback은 stub이므로 연결 전 완료 주장 금지. pak/글꼴/스크립트 배포·새 PC 실행 확인 |
+| 9 · P2-05/06 | 측정·배포 | 동일 Release 장면의 CPU/GPU·할당·배치·에셋·바이트 기준선. GPU 타임스탬프와 일반 readback은 DX11 stub이므로 연결 전 완료 주장 금지. pak/글꼴/스크립트 배포·새 PC 실행 확인 |
 
 ## 새 개발·제품 통합
 
@@ -49,7 +49,7 @@ PBKDF2 회수는 [OWASP 비밀번호 저장 기준](https://cheatsheetseries.owa
 
 | ID | 우선순위 | 개발 범위 | 완료 조건·선행 조건 |
 |---|---|---|---|
-| D-01 | P1 | 오프라인 수직 슬라이스 | P1-04~06 후 MyGame에서 에디터 맵·물리·Lua/runtime 대화·NPC·퀘스트·세이브·씬 전환. village_demo 경로 재사용 |
+| D-01 | P1 | 오프라인 콘텐츠 통합 | P1-04~06 후 MyGame에서 에디터 맵·물리·Lua/runtime 대화·NPC·퀘스트·세이브·씬 전환. village_demo 경로 재사용 |
 | D-02 | P1 | 온라인 게임 명령 | P0·P1-02/04 후 선택·공격·피해·스킬·아이템·퀘스트의 서버 권위 요청/결과. 두 클라이언트·손실·역순·중복에서 결과 수렴 |
 | D-03 | P2 | 게임 UI·소셜 | 기존 social 채팅·파티부터 실제 메시지·UI 연결. 권한·차단·탈퇴·재접속 검증. 길드·우편·경매는 개별 완료 조건 |
 | D-04 | P2 | 직업·사냥 콘텐츠·정식 아트 | game/mmo 데이터로 스폰→처치→루트→성장→복원. 현재 캐릭터 PNG의 여러 포즈·배경 잔여·실루엣은 정식 시트/프레임/피벗/방향 검수 필요 |

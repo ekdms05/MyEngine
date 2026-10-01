@@ -1,4 +1,4 @@
-// mye/render/DepthEncoder.h — 하이브리드 깊이 인코딩 (M2-C 구현) (docs/02 §하이브리드 깊이 정렬)
+// mye/render/DepthEncoder.h — 하이브리드 깊이 인코딩 (docs/02 §하이브리드 깊이 정렬)
 //
 // 02가 소유하는 "단일 깊이 함수". RenderExtract(RenderItem)의 (sortLayer 밴드, sortKeyY,
 // orderInLayer)를 NDC 깊이[0,1]로 인코딩한다. 스프라이트/타일 VS가 이 값을 SV_Position.z로 출력하고,
@@ -6,10 +6,11 @@
 //
 // 깊이 규약(02): NDC 0(near, 화면 앞) ~ 1(far, 화면 뒤). "앞"은 작은 값.
 //   depth = LayerBand(sortLayer).base + t × LayerBand(sortLayer).width
-//   t = saturate((viewTopY − sortKeyY) / viewRangeY)   // sortKeyY 클수록(화면 위=뒤) t↑ → 더 뒤
+//   range = max(viewRangeY, 0.0001), viewBottomY = viewTopY - range
+//   t = saturate((sortKeyY - viewBottomY) / range)    // sortKeyY 클수록(화면 위=뒤) t↑ → 더 뒤
+//   order 바이어스와 밴드 경계 클램프는 EncodeDepth 구현을 따른다.
 //
-// ★ 이 문서(02)가 밴드표를 확정한다. M2-B의 RenderExtract.h::kSortLayerWorldBase(placeholder 100)를
-//   본 헤더의 FloorLevelToSortLayer로 대체한다(양쪽 상수 정합: kSortLayerWorldBase == 100).
+// RenderExtract.h와 kSortLayerWorldBase == 100을 공유한다. 층 변환의 상한은 호출 경계에서 확인한다.
 #pragma once
 
 #include "mye/core/Base.h"
@@ -48,11 +49,11 @@ enum SortLayerId : uint16_t {
     kSortLayerOverheadFX     = 3,
     // 4..99 예약(추가 고정 밴드).
     kSortLayerWorldBase      = 100,   // World 0 밴드. World k = 100 + k. (RenderExtract.h와 정합)
-    kSortLayerWorldMax       = 199,   // World 밴드 상한(World 0..99 지원)
+    kSortLayerWorldMax       = 199,   // World sortLayer 식별 범위(실제 밴드는 kWorldBandCount로 제한)
 };
 
 // World 밴드 총 개수(0..kWorldBandCount-1). 다리/고가 층 수 + 1(지상). 밴드폭 산정에 사용.
-inline constexpr int   kWorldBandCount   = 8;      // 지상 + 최대 7층(다리·고가). 프로젝트 설정 가능.
+inline constexpr int   kWorldBandCount   = 8;      // 지상 + 최대 7층(다리·고가). 컴파일 상수.
 inline constexpr float kWorldBandTop     = 0.20f;  // World 밴드 전체 상단(가장 앞, 최상위 층)
 inline constexpr float kWorldBandBottom  = 0.85f;  // World 밴드 전체 하단(가장 뒤, 지상 World 0)
 
@@ -60,11 +61,10 @@ inline constexpr float kWorldBandBottom  = 0.85f;  // World 밴드 전체 하단
 LayerBand BandForSortLayer(uint16_t sortLayer);
 
 // ---------------------------------------------------------------------------
-// FloorLevel → World 밴드 sortLayer 변환 (RenderExtract.h placeholder 대체 정본)
+// FloorLevel → World 밴드 sortLayer 변환
 // ---------------------------------------------------------------------------
 // FloorLevel{k} → World k 밴드 sortLayer(kSortLayerWorldBase + k). k는 [0, kWorldBandCount-1] 클램프.
-// (RenderExtract.h::FloorLevelToSortLayer가 이 규약의 협의값; 본 함수가 정본. 상수 kSortLayerWorldBase
-//  == 100으로 양쪽 일치하므로 M2-B가 채운 sortLayer를 재계산 없이 그대로 소비 가능.)
+// RenderExtract도 World base 100을 사용하지만 상한 제한은 다르다. docs/02에 차이를 기록한다.
 uint16_t FloorLevelToSortLayer(int8_t floorLevel);
 
 // ---------------------------------------------------------------------------

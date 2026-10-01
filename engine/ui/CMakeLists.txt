@@ -1,13 +1,13 @@
-# mye_ui — L4/06 인게임 UI + 한글 텍스트 렌더링 (M5-A)
+# mye_ui — L4/06 인게임 UI + 한글 텍스트 렌더링
 #
-# 소유: docs/06 §1(인게임 UI 자체 시스템 — ImGui 아님)·§2(FreeType 온디맨드 글리프 아틀라스·
+# 소유: docs/06 게임 UI와 텍스트(자체 위젯·FreeType 온디맨드 글리프 아틀라스·
 #   리치텍스트·한글 줄바꿈). 02 SpriteBatch 를 스크린 레이어에서 소비, rhi WriteTexture 로 R8
 #   글리프 아틀라스 부분 업로드, 04 refl/ser 로 UiDocument/UiSkin 직렬화, core InputState 소비.
 # 의존:
 #   PUBLIC  mye_core(수학·이벤트·입력·Base) mye_render(SpriteBatch) mye_rhi(디바이스·텍스처)
 #           mye_reflect(UiDocument/Skin 직렬화)  — 헤더가 노출하는 타입 경로.
 #   PRIVATE mye_thirdparty_freetype(폰트 래스터라이즈 — FT 헤더는 구현 TU 에만).
-#           mye_asset 는 후속(폰트/스프라이트 에셋 로드) — M5-A 골격은 blob/핸들 표면만.
+#           폰트/스프라이트 입력은 blob·핸들 표면을 사용하며 mye_asset 직접 링크는 없다.
 #
 # 네임스페이스: mye::text (텍스트), mye::ui (위젯/시스템). 텍스트는 mye_ui 안의 text 서브로 둔다
 #   (독립 라이브러리 분리는 과분할 — 06 단일 소유, 한 정적 라이브러리).

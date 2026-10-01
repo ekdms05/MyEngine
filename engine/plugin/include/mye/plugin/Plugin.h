@@ -4,8 +4,8 @@
 // 플러그인으로 붙는다. 플러그인은 OnLoad 에서 리플렉션 타입·시스템(틱 콜백)을 등록하고,
 // OnUnload 에서 대칭 해제한다. 호스트가 엔진버전 호환을 게이팅하고 언로드 시 정리한다.
 //
-// 1단계: 인프로세스(정적) 플러그인. 네이티브 DLL 로더(LoadLibrary + 엔트리 심볼)는 후속 —
-//   IPlugin/PluginContext 계약은 DLL 경계에서도 동일하게 쓰이도록 설계했다.
+// 인프로세스와 네이티브 DLL 로더가 IPlugin/PluginContext 계약을 공유한다.
+// DLL의 타입 레지스트리 공유 한계는 PluginHost::LoadDll 계약을 따른다.
 #pragma once
 
 #include "mye/core/Base.h"
@@ -71,7 +71,7 @@ public:
 };
 
 // ---- 네이티브 DLL 플러그인 C ABI 계약 ----
-// DLL 은 아래 두 심볼을 export 한다. 호스트(PluginHost::LoadLibrary)가 GetProcAddress 로 찾는다.
+// DLL 은 아래 두 심볼을 export 한다. 호스트(PluginHost::LoadDll)가 GetProcAddress 로 찾는다.
 //   생성/파괴를 DLL 이 담당해야 한다(exe/DLL 힙 분리 — new/delete 를 섞으면 안 됨).
 using CreatePluginFn  = IPlugin* (*)();
 using DestroyPluginFn = void (*)(IPlugin*);

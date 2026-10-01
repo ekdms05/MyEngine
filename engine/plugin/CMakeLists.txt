@@ -1,5 +1,5 @@
 # mye_plugin — 플러그인 확장 시스템(인프로세스 호스트) (엔진 확장성)
-# 게임 로직·툴·콘텐츠는 이 위에 플러그인으로 붙는다(엔진에 포함되지 않음). DLL 로더는 후속.
+# 게임 로직·툴·콘텐츠는 이 위에 플러그인으로 붙는다(엔진에 포함되지 않음). 인프로세스·Windows DLL 로드를 지원한다.
 add_library(mye_plugin STATIC
     include/mye/plugin/Plugin.h
     include/mye/plugin/PluginHost.h

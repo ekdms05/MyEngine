@@ -141,7 +141,7 @@ bool EnsureDirectory(std::string_view utf8Path) {
     return true;
 }
 
-// Phase 0 크래시 필터: 로그만 남긴다. 미니덤프(MiniDumpWriteDump)는 Phase 1 (docs/01).
+// 크래시 필터는 로그만 남긴다. minidump 생성은 아직 구현되지 않았다 (docs/01).
 LONG WINAPI CrashExceptionFilter(EXCEPTION_POINTERS* info) {
     const uint32_t code =
         (info != nullptr && info->ExceptionRecord != nullptr)
@@ -149,12 +149,12 @@ LONG WINAPI CrashExceptionFilter(EXCEPTION_POINTERS* info) {
     const void* address =
         (info != nullptr && info->ExceptionRecord != nullptr)
             ? info->ExceptionRecord->ExceptionAddress : nullptr;
-    MYE_LOG_FATAL("Core", "unhandled SEH exception: code=0x{:08X} address={} (minidump: Phase 1)",
+    MYE_LOG_FATAL("Core", "unhandled SEH exception: code=0x{:08X} address={} (minidump: unavailable)",
                   code, address);
     return EXCEPTION_EXECUTE_HANDLER;   // 로그 플러시 후 프로세스 종료 (WER 팝업 억제)
 }
 
-// Debug 빌드: CRT 디버그 힙 릭 체크 — 종료 시 자동 릭 리포트 (M0 완료 기준: 릭 0건)
+// Debug 빌드: CRT 디버그 힙 릭 체크 — 종료 시 자동 릭 리포트
 void EnableCrtLeakCheck() {
 #if MYE_CRT_LEAK_CHECK
     int flags = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);

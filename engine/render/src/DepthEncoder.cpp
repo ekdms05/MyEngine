@@ -49,8 +49,7 @@ float EncodeDepth(uint16_t sortLayer, float sortKeyY, int16_t orderInLayer,
 
     // sortKeyY 정규화: viewTopY(가장 뒤=밴드 뒤쪽) 기준. sortKeyY가 클수록(화면 위=뒤) t↑ →
     // 밴드 뒤쪽(깊이 큼). viewBottomY = viewTopY - range(화면 아래=앞). 큰 sortKeyY = 큰 t = 뒤.
-    // (이전 구현은 (viewTopY - sortKeyY)로 부호가 반대여서 화면 아래 캐릭터가 오히려 뒤로 밀렸다 —
-    //  M2-C 통합에서 발견·수정. 문서 규약 "sortKeyY 클수록 t↑"과 정합.)
+    // 분자는 sortKeyY - viewBottomY여야 화면 아래 캐릭터가 앞쪽 깊이를 얻는다.
     const float range = view.viewRangeY > 1.0e-4f ? view.viewRangeY : 1.0e-4f;
     const float viewBottomY = view.viewTopY - range;
     const float t = Saturate01((sortKeyY - viewBottomY) / range);

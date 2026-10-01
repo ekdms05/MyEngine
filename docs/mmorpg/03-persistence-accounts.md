@@ -1,6 +1,6 @@
 # MMORPG 03. 영속성 · 계정 · 월드 상태 (Persistence · Accounts · World State)
 
-> 현재 구현과 설계 후보 구분 (2026-10-01): 아래 Postgres/Redis/분산 서버 토폴로지는 장기 설계 자료이며 현재 실행 경로가 아니다. 현재 MyServer는 루프백 UDP + 단일 작성자 JSON 스냅샷을 사용한다. 실제 상태·우선순위는 [현재 구조](../13-architecture-and-features.md)와 [개발 우선순위](../14-development-priorities.md)를 따른다.
+> MMO 서비스 확장 요구사항이다. 본문의 신규/있음 표는 설계 제안 당시의 분류이며 현재 완료 상태가 아니다. 현재 MyServer는 루프백 UDP와 단일 작성자 JSON 상태 파일·세대 백업을 사용한다. 아래 PostgreSQL·Redis·WAL/PITR·분산 서버 요구는 현재 저장 보장이 아니다. 실제 연결은 [현재 구조](../13-architecture-and-features.md), 우선순위는 [개발 항목](../14-development-priorities.md)을 따른다.
 
 ## 현재 파일 저장 계약
 
@@ -545,23 +545,23 @@ engine/runtime/  (기존 — 오프라인/싱글 폴백)
 
 ---
 
-## 7. 마일스톤 (작은 검증가능 단위)
+## 7. 확장 기능과 검증 기준
 
-| 단계 | 산출물 | 검증(수용 기준) |
+현재 MyServer는 루프백 UDP와 단일 작성자 JSON 상태 파일·세대 백업을 사용한다. 아래 PostgreSQL·Redis·WAL/PITR·분산 서버 요구는 현재 저장 보장이 아니다. 다음 표는 확장 시 확인할 조건이며 현재 완료 상태는 [현재 구조](../13-architecture-and-features.md)를 따른다.
+
+| 기능 | 확장 요구 | 검증(수용 기준) |
 |---|---|---|
-| **P0-a 스키마·연결** | `PgConnection`·`migrations/0001` + `Snowflake` | 마이그레이션 up/down 왕복, snowflake 유일·k-sortable 단위테스트 |
-| **P0-b JSONB 브리지** | `JsonbBridge`(refl↔JSONB) | 컴포넌트 라운드트립(write→JSONB→read) 필드 동일. `__version` 마이그레이션 통과 |
-| **P0-c 트랜잭션·멱등** | `Transaction`·`Idempotency`·`MoveItem` | 동시 이동 100개 → 아이템 총량 보존, 재시도 중복 0(멱등) |
-| **P0-d 계정·세션** | 가입·로그인·토큰·단일 세션 | 중복 로그인 축출, 브루트포스 차단, 밴 로그인 거부 |
-| **P0-e 캐릭터 로드/저장** | `CharacterStore` write-behind + 저널 | 크래시 주입 후 손실 ≤5s, 부분저장 불일치 0 |
-| **P0-f 경제 원장** | `EconomyOps` 이중부기 + `balances` CHECK | 원장 총합=0 불변, 음수/오버플로 거부 |
-| **P1-a 거래·우편·경매** | Trade/Mail/Auction 서비스 | 확정 중 크래시→복사·유실 0, 만료 큐 동작 |
-| **P1-b 은행·창고·GDPR** | 계정 귀속 컨테이너·데이터 추출/삭제 | 동시 접근 정합, GDPR dump/anonymize 검증 |
-| **P0-g 백업·PITR** | WAL 아카이브·복구 리허설 자동화 | PITR로 임의 시점 복구 성공, RPO≈0 확인 |
-| **P2 샤딩·감사·모니터링** | shard 라우팅·audit·경제 지표 | 샤드 간 이전 무손실, 감사 replay로 롤백 재구성 |
-| **P3 서버통합·캐릭터이전** | merge/transfer 파이프라인 | 이름 충돌 해소, 아이템 ID 전역 유일 |
-
----
+| 스키마·연결 | `PgConnection`·`migrations/0001` + `Snowflake` | 마이그레이션 up/down 왕복, snowflake 유일·k-sortable 단위테스트 |
+| JSONB 브리지 | `JsonbBridge`(refl↔JSONB) | 컴포넌트 라운드트립(write→JSONB→read) 필드 동일. `__version` 마이그레이션 통과 |
+| 트랜잭션·멱등 | `Transaction`·`Idempotency`·`MoveItem` | 동시 이동 100개 → 아이템 총량 보존, 재시도 중복 0(멱등) |
+| 계정·세션 | 가입·로그인·토큰·단일 세션 | 중복 로그인 축출, 브루트포스 차단, 밴 로그인 거부 |
+| 캐릭터 로드/저장 | `CharacterStore` write-behind + 저널 | 크래시 주입 후 손실 ≤5s, 부분저장 불일치 0 |
+| 경제 원장 | `EconomyOps` 이중부기 + `balances` CHECK | 원장 총합=0 불변, 음수/오버플로 거부 |
+| 거래·우편·경매 | Trade/Mail/Auction 서비스 | 확정 중 크래시→복사·유실 0, 만료 큐 동작 |
+| 은행·창고·GDPR | 계정 귀속 컨테이너·데이터 추출/삭제 | 동시 접근 정합, GDPR dump/anonymize 검증 |
+| 백업·PITR | WAL 아카이브·복구 리허설 자동화 | PITR로 임의 시점 복구 성공, RPO≈0 확인 |
+| 샤딩·감사·모니터링 | shard 라우팅·audit·경제 지표 | 샤드 간 이전 무손실, 감사 replay로 롤백 재구성 |
+| 서버통합·캐릭터이전 | merge/transfer 파이프라인 | 이름 충돌 해소, 아이템 ID 전역 유일 |
 
 ## 8. 의존성 · 타 도메인 참조
 

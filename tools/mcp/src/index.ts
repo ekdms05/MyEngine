@@ -1,5 +1,5 @@
 /**
- * index.ts — MyEngine 개발도구 MCP 서버 엔트리 (Stage A).
+ * index.ts — MyEngine 개발도구 MCP 서버 엔트리.
  *
  * 규약(docs/08-mcp.md):
  * - McpServer + StdioServerTransport, 툴 일괄 등록(파일 1개 = 툴 1개 컨벤션).

@@ -1,4 +1,4 @@
-# mye_rhi — L1 RHI 인터페이스 + DX11 백엔드 + FXC 런타임 셰이더 컴파일(M0 임시)
+# mye_rhi — L1 RHI 인터페이스 + DX11 백엔드 + FXC 런타임 셰이더 컴파일
 add_library(mye_rhi STATIC
     include/mye/rhi/RhiTypes.h
     include/mye/rhi/Rhi.h

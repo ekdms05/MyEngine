@@ -1,4 +1,4 @@
-# make_assets.ps1 — deterministic M3-C character_demo assets (8-dir sheet + footstep WAV + grid).
+# make_assets.ps1 — deterministic character_demo assets (8-dir sheet + footstep WAV + grid).
 #
 # Produces:
 #   player_sheet.png  — 8 rows (Dir8: down,down_left,left,up_left,up,up_right,right,down_right)

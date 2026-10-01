@@ -1,7 +1,7 @@
 // mye/plugin/PluginHost.h — 플러그인 로드/언로드·틱 오케스트레이션 (엔진 확장성)
 //
 // 플러그인을 엔진버전 호환 검사 후 로드(OnLoad)하고, 등록된 시스템을 매 프레임 틱하며,
-// 언로드 시 OnUnload + 등록 타입 TypeRegistry 해제까지 대칭 정리한다. 인프로세스 1단계.
+// 언로드 시 OnUnload + 등록 타입 TypeRegistry 해제까지 대칭 정리한다. 인프로세스와 Windows DLL 로드를 제공한다.
 #pragma once
 
 #include "mye/plugin/Plugin.h"

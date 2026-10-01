@@ -1,6 +1,6 @@
-// character_demo — M3 통합 데모·검증 (docs/00 §7 M3 완료 기준, M3-C)
+// character_demo — Lua·8방향 애니메이션·오디오·핫리로드 통합 데모
 //
-// M3 를 관통 증명한다:
+// 다음 시스템의 연결을 검증한다:
 //   (1) 8방향 걷기↔대기 전환이 자연스럽다(SpriteAnimator 상태머신 + Dir8).
 //   (2) 발소리가 애니메이션 이벤트→AudioCue 로 재생된다(월드버스 구독 + Lua on_event).
 //   (3) NPC/플레이어 .lua 를 수정·저장하면 실행 중 즉시 반영된다(핫 리로드, self.state 생존).
@@ -20,7 +20,7 @@
 //     애니메이션이 돌게 한다. footstep 은 오프라인 믹서 출력이 non-zero 인지 검증한다.
 //     hotreload 는 실행 중 player.lua 소스를 바꿔 self.state 생존·on_hot_reload 를 확인한다.
 //     error 는 에러 스크립트 엔티티가 정지하고 ScriptErrorEvent 가 1회 발행되며 게임이 계속됨을
-//     확인한다. 결과는 로그 "M3-VERIFY:" 라인으로 요약한다(검증 스크립트가 파싱).
+//     확인한다. 결과는 로그 "CHARACTER-VERIFY:" 라인으로 요약한다(검증 스크립트가 파싱).
 #include "mye/core/App.h"
 #include "mye/core/Events.h"
 #include "mye/core/Input.h"
@@ -323,7 +323,7 @@ private:
         m_footstepCue.maxVoices = 8;
     }
 
-    // 8방향 walk/idle 클립을 코드로 결정적 생성(M3-A 데이터 타입 소비).
+    // 8방향 walk/idle 클립을 코드로 결정적 생성(애니메이션 데이터 타입 사용).
     //   시트 프레임 레이아웃(SliceGrid, row-major): row=방향(Dir8 0..7), col=프레임(0..3).
     //   walk_<dir>: 프레임 0,1,2,3 순환. footstep 마커는 접촉 프레임(slot 1,3)에.
     //   idle_<dir>: 프레임 0 고정(단일).
@@ -696,7 +696,7 @@ return Player
         if (drawUi) {
             m_debugUi.BeginFrame();
             ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-            ImGui::Begin("CharacterDemo (M3)");
+            ImGui::Begin("CharacterDemo");
             ImGui::Text("FPS: %.1f", m_fps);
             ImGui::Text("State: %s  Facing: %d (%s)", CurrentStateName(),
                         static_cast<int>(CurrentFacing()),
@@ -779,7 +779,7 @@ return Player
             errorEntityStopped = sc && sc->hasError;
         }
         MYE_LOG_INFO("CharacterDemo",
-            "M3-VERIFY: scenario={} frames={} facing={} state={} frameIdx={} footsteps={} "
+            "CHARACTER-VERIFY: scenario={} frames={} facing={} state={} frameIdx={} footsteps={} "
             "luaSteps={} audioPeak={:.5f} scriptErrors={} errorStopped={} "
             "hotReloadFired={} reloaded={} reloadCount={} stateMarker={} preSteps={} preInits={} speed={:.2f}",
             static_cast<int>(m_control->scenario), m_frameCount,
@@ -928,7 +928,7 @@ int main(int /*argc*/, char** /*argv*/) {
         for (int i = 0; i < wideArgc; ++i) launch.args.emplace_back(mye::Narrow(wideArgv[i]));
         ::LocalFree(wideArgv);
     }
-    launch.mainWindow.title = "MyEngine — character_demo (M3)";
+    launch.mainWindow.title = "MyEngine — character_demo";
     launch.mainWindow.clientSize = {960, 540};
     launch.mainWindow.resizable = true;
     return mye::GuardedMain(launch);

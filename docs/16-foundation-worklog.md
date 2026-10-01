@@ -145,3 +145,33 @@ m6-review, m6a, m6a-dialogue, m6a-world, m6b, m6b-npc
 정리 순서는 현재 dev 유지 → 필요한 비생성 소스·데이터·증거 보관 → 확인된 구 산출물만 경로별 정리 → dev 빌드/CTest 확인이다. 재귀 삭제/이동 전 실제 절대 경로가 MyEngine/build 내부인지와 재분석점 여부를 다시 검사한다. `build/*` 일괄 삭제·CMake cache가 있는 디렉터리의 무조건 삭제·현재 dev의 clean은 이번 조사에 포함하지 않았다.
 
 이번 변경은 조사 문서뿐이다. UTF-8 읽기·문서 링크·diff 형식만 확인하고 앱 빌드/CTest를 새로 실행하지 않았다. 이전 실행 결과를 정리 후 검증 결과로 재사용하지 않는다.
+
+## 제품 기준 문서 정리 (2026-10-01)
+
+작업 기준은 직전 main 커밋 bb5b3f4이며 시작 시 작업 트리는 깨끗했다. 사용자의 요청에 따라 개발 순서로 기능을 구분하던 표·명칭을 제품의 현재 책임·사용법·검증 기준으로 바꿨다. 구현되지 않은 앱 연결을 완료 상태로 재분류하지 않았다.
+
+| 변경 | 근거·판단 |
+|---|---|
+| README·문서 안내·시스템 문서·코드 탐색 지도 | 과거 완료표와 서로 다른 시점의 기능 표가 현재 앱을 설명하지 못했다. CMake 타깃·공개 헤더·앱 등록·최종 소비자를 기준으로 다시 작성하고 중복 진행 이력을 제거했다. 기존 파일 경로는 링크 호환을 위해 유지한다. |
+| MMO 문서 | 현재 앱의 실행 범위와 서비스 확장 요구를 구분했다. 단계 코드 대신 기능 이름·의존 기능·검증 기준을 남겼다. 서버 64명·루프백·JSON 저장을 대규모 운영 보장으로 확대하지 않는다. |
+| 제작 도구 문서 | 실제 MCP 8개 도구·설치 스킬·기존 임포트 경로를 기준으로 설명했다. 미구현 engine/ai·생성 게이트웨이의 필수 도입안과 확인되지 않은 제공자 모델·가격·API 표를 제거했다. 기존 도구로 수행하는 작업에 새 엔진 모듈을 요구할 사용처·측정 근거가 없다. 추가 조건은 해당 문서에 기록했다. |
+| 앱·샘플·CMake·MCP 안내 | 사용자 창/패널 제목·검증 로그·진단 문구를 기능 이름과 실제 지원 범위로 바꿨다. CMake 명령·타깃·링크 의존성과 CLI 옵션은 변경하지 않았다. 샘플 검증 로그의 접두사는 CHARACTER-VERIFY/VILLAGE-VERIFY로 바뀌며 필드는 유지한다. 추적 소스·도구·CTest에서 기존 접두사를 파싱하는 소비자는 없었다. 외부/비추적 검사 스크립트는 새 접두사로 맞춰야 한다. |
+
+### 소스 대조로 바로잡은 설명
+
+- ECS는 EnTT 래퍼가 아니라 자체 sparse-set이다. 과거 설계 선택을 현재 구현으로 나열하던 설명을 교체했다.
+- 깊이 정규화는 sortKeyY - viewBottomY다. [DepthEncoder.cpp](../engine/render/src/DepthEncoder.cpp)의 기존 구현·바이어스·밴드 경계에 맞춰 [렌더 계약](02-rendering.md)과 헤더 주석을 정정했다. 좌표·PPU·밴드·알고리즘은 변경하지 않았다. 씬/렌더 층 변환의 상한 차이도 기록했다.
+- [DX11 구현](../engine/rhi/src/dx11/Dx11Device.cpp)의 WriteTimestamp는 빈 본문, ResolveTimestamps는 false를 반환한다. 이전 구조 문서의 GPU 타임스탬프 지원 설명을 stub으로 정정했다. DrawIndexedInstanced 호출 구현과 인스턴스 슬롯/StructuredBuffer 미지원도 구분했다.
+- village_demo의 BuildWorld는 지도·스폰을 C++로 구성하고 BuildRuntimeAndScripts는 로컬라이즈 JSON·Lua를 시작 시 읽는다. JSON 지도 자동 반영·전체 자동 핫 리로드 주장은 제거했다. character_demo의 명시적 재임포트 검증과 구분한다.
+- [PluginHost](../engine/plugin/include/mye/plugin/PluginHost.h)는 LoadDll을 제공한다. DLL 로더를 후속 기능으로 설명하던 문서·주석을 수정하고 DLL 정적 링크 시 타입 레지스트리 공유 한계를 남겼다.
+
+### 검증
+
+- 기존 build/dev의 Debug·Release 빌드 성공, CTest 각각 13/13. mye_tests의 실제 출력은 각각 511/511 passed였다. 샘플 테스트에서 새 CHARACTER-VERIFY/VILLAGE-VERIFY 로그도 확인했다.
+- tools/mcp에서 npm.cmd run build와 npm.cmd run smoke 성공. 프로토콜 초기화·8개 도구·상태/로그·잘못된 실행 경로 안내는 ALL PASS였다.
+- UTF-8 읽기·실제 로컬 문서 링크·제품 문서/CMake 설명의 개발 단계 표기·git diff --check를 검사했다. 수정 C++는 주석·표시 문자열 외 토큰이 같고, 수정 CMake는 주석 외 명령·타깃·의존성이 같음을 별도로 대조했다.
+- 빌드/CTest 로그는 build/docs-audit/product-debug-build.log, product-debug-ctest.log, product-release-build.log, product-release-ctest.log에 남겼다. 생성 산출물을 Git에 포함하지 않는다.
+
+변경은 문서·주석·표시 문자열이다. 새 기능·추상화·패키지를 추가하지 않았고 사용자 에셋·저장 데이터·구 build 폴더를 삭제하지 않았다. 이전 정리 조사에 필요한 실제 구 디렉터리명·경로와 기존 테스트 산출물 이름은 보존한다. 기존 C4996 경고는 남는다.
+
+에디터 실제 파일 열기, MyGame의 전체 온라인 콘텐츠, 보호되는 전송·신뢰 세션, GPU 타임스탬프·일반 readback은 여전히 개선 항목이다. 이번 검증은 전체 마우스/DPI 워크플로·청취·운영 MMO 부하 검증을 새로 수행한 것이 아니다. 상세 완료 조건은 [개발 우선순위](14-development-priorities.md)를 따른다.

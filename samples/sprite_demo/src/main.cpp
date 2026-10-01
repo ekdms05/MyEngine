@@ -1,4 +1,4 @@
-// sprite_demo — M1 통합 데모·검증 (docs/00 §7 M1 완료 기준)
+// sprite_demo — 픽셀 스프라이트·이동·ImGui 통합 데모
 //
 // 목표: 정수배 스케일 창에서 도트 캐릭터(hero.png)가 WASD로 부드럽게(60Hz 고정 시뮬 +
 //       렌더 보간) 이동, 지터·텍셀 번짐 없음, ImGui 오버레이에 FPS·드로우콜, 카메라 추적 시
@@ -568,7 +568,7 @@ int main(int /*argc*/, char** /*argv*/) {
         if (a.starts_with(prefix)) launch.projectPath = a.substr(prefix.size());
     }
 
-    launch.mainWindow.title = "MyEngine — sprite_demo (M1)";
+    launch.mainWindow.title = "MyEngine — sprite_demo";
     launch.mainWindow.clientSize = {960, 540};
     launch.mainWindow.resizable = true;
 

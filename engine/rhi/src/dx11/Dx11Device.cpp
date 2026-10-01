@@ -378,7 +378,7 @@ void Dx11CommandContext::SetBindGroup(uint32_t slot, BindGroupHandle g,
     }
     // DX11은 레지스터가 BindGroup 생성 시 이미 구워져 있어 슬롯은 규약(0=PerFrame..3=PerDraw) 검증 용도.
     if (!dynamicOffsets.empty() && !m_warnedDynamicOffsets) {
-        MYE_LOG_WARN(kLog, "SetBindGroup: dynamic offsets are not supported in M0 (ignored)");
+        MYE_LOG_WARN(kLog, "SetBindGroup: dynamic offsets are not supported by this backend (ignored)");
         m_warnedDynamicOffsets = true;
     }
 
@@ -422,7 +422,7 @@ void Dx11CommandContext::SetBindGroup(uint32_t slot, BindGroupHandle g,
 
 void Dx11CommandContext::SetVertexBuffer(uint32_t slot, BufferHandle b, uint64_t offset) {
     if (slot != 0) {
-        MYE_LOG_ERROR(kLog, "SetVertexBuffer: only slot 0 is supported in M0 (got {})", slot);
+        MYE_LOG_ERROR(kLog, "SetVertexBuffer: only vertex slot 0 is supported by this backend (got {})", slot);
         return;
     }
     if (!m_device->m_buffers.Get(b)) {
@@ -710,7 +710,7 @@ BufferHandle Dx11Device::CreateBuffer(const BufferDesc& desc, const void* initia
     }
     if (HasFlag(desc.usage, BufferUsage::Structured)) {
         // BufferDesc에 구조체 스트라이드가 없어 SRV를 만들 수 없다 — M1(스프라이트 인스턴싱)에서 확장
-        MYE_LOG_ERROR(kLog, "CreateBuffer: Structured buffers are M1+ ('{}')", SafeName(desc.debugName));
+        MYE_LOG_ERROR(kLog, "CreateBuffer: Structured buffers are not supported by this backend ('{}')", SafeName(desc.debugName));
         return {};
     }
 
@@ -752,7 +752,7 @@ BufferHandle Dx11Device::CreateBuffer(const BufferDesc& desc, const void* initia
 
 TextureHandle Dx11Device::CreateTexture(const TextureDesc& desc, const TextureInitData* init) {
     if (desc.dim != TextureDim::Tex2D && desc.dim != TextureDim::Tex2DArray) {
-        MYE_LOG_ERROR(kLog, "CreateTexture: Tex3D/TexCube are M1+ ('{}')", SafeName(desc.debugName));
+        MYE_LOG_ERROR(kLog, "CreateTexture: Tex3D/TexCube are not supported by this backend ('{}')", SafeName(desc.debugName));
         return {};
     }
     if (desc.width == 0 || desc.height == 0) {
@@ -781,7 +781,7 @@ TextureHandle Dx11Device::CreateTexture(const TextureDesc& desc, const TextureIn
     const D3D11_SUBRESOURCE_DATA* pInit = nullptr;
     if (init && init->data) {
         if (desc.mips > 1 || td.ArraySize > 1) {
-            MYE_LOG_ERROR(kLog, "CreateTexture: initial data for mip/array chains is M1+ ('{}')",
+            MYE_LOG_ERROR(kLog, "CreateTexture: initial data for mip/array chains is not supported by this backend ('{}')",
                           SafeName(desc.debugName));
             return {};
         }
@@ -918,7 +918,7 @@ BindGroupHandle Dx11Device::CreateBindGroup(const BindGroupDesc& desc) {
         switch (entry.type) {
         case BindingType::UniformBuffer:
             if (entry.bufferOffset != 0)
-                MYE_LOG_ERROR(kLog, "CreateBindGroup: bufferOffset != 0 is M1+ — ignored (binding={})",
+                MYE_LOG_ERROR(kLog, "CreateBindGroup: nonzero bufferOffset is not supported by this backend — ignored (binding={})",
                               entry.binding);
             // bufferSize: DX11 기본 바인딩은 전체 버퍼 — 부분 뷰(SetConstantBuffers1)는 M1+
             if (!m_buffers.Get(entry.buffer)) {
@@ -942,7 +942,7 @@ BindGroupHandle Dx11Device::CreateBindGroup(const BindGroupDesc& desc) {
             res.smps.push_back({entry.binding, entry.sampler, vis});
             break;
         case BindingType::StructuredBuffer:
-            MYE_LOG_ERROR(kLog, "CreateBindGroup: StructuredBuffer bindings are M1+ (binding={})",
+            MYE_LOG_ERROR(kLog, "CreateBindGroup: StructuredBuffer bindings are not supported by this backend (binding={})",
                           entry.binding);
             break;
         }

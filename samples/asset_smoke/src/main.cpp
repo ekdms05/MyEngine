@@ -1,4 +1,4 @@
-// asset_smoke — M1 토대 에셋 경로 GPU 스모크 테스트 (docs/04)
+// asset_smoke — 에셋 경로 GPU 스모크 테스트 (docs/04)
 //
 // 목적: 실제 PNG 파일을 assets 폴더에 만들고, AssetManager로 로드해
 //   1) TextureHandle 유효성, 2) width/height 정확성, 3) 픽셀 왕복(premultiply 규약 포함)을

@@ -12,7 +12,7 @@ add_library(mye_asset STATIC
     include/mye/asset/MeshImporter.h
     include/mye/asset/AsyncLoad.h
     include/mye/asset/AssetManager.h
-    # ---- M3-A: 핫 리로드·콘텐츠 임포터·오디오 ----
+    # ---- 핫 리로드·콘텐츠 임포터·오디오 ----
     include/mye/asset/FileWatcher.h
     include/mye/asset/AssetDatabase.h
     include/mye/asset/SpriteSheet.h
@@ -29,7 +29,7 @@ add_library(mye_asset STATIC
     src/TextureImporter.cpp
     src/MeshImporter.cpp
     src/AssetManager.cpp
-    # ---- M3-A ----
+    # ---- ----
     src/FileWatcher.cpp
     src/AssetDatabase.cpp
     src/SpriteImporter.cpp
@@ -41,7 +41,7 @@ target_include_directories(mye_asset PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-# M3-C: AssetManager.cpp 가 ScriptAsset(.lua) LoadSync 를 명시적 인스턴스화한다. ScriptTypes.h
+# AssetManager.cpp 가 ScriptAsset(.lua) LoadSync 를 명시적 인스턴스화한다. ScriptTypes.h
 #   는 헤더 온리(mye_script 링크 의존 없음)이며 mye/ecs/Entity.h(헤더 온리)만 추가로 참조한다.
 #   빌드 전용 include 경로만 부여해 링크 사이클 없이 타입을 컴파일 가능하게 한다.
 target_include_directories(mye_asset PRIVATE

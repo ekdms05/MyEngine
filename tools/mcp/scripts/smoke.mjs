@@ -124,7 +124,7 @@ async function main() {
   const tools = list.result?.tools ?? [];
   const names = tools.map((t) => t.name).sort();
   check(
-    `tools/list — 8개 툴 전부 노출(Stage A 6 + dot 2)`,
+    `tools/list — 8개 툴 전부 노출(개발 도구 6 + 픽셀 도구 2)`,
     EXPECTED_TOOLS.every((n) => names.includes(n)) && names.length === EXPECTED_TOOLS.length,
     names.join(", "),
   );

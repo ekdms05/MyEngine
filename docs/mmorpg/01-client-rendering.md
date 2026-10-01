@@ -1,6 +1,6 @@
 # MMORPG 01 — 클라이언트 아키텍처 & 픽셀 2.5D 렌더링
 
-> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+> MMO 서비스 확장 요구사항이다. 본문의 신규/있음 표는 설계 제안 당시의 분류이며 현재 완료 상태가 아니다. 현재 클라이언트는 DX11 HybridRenderer·SpriteBatch·픽셀 타깃과 원격 스냅샷 보간을 사용한다. 아래 대량 인스턴싱·청크 스트리밍·후처리·오버레이 요구는 구현 또는 성능 보장을 뜻하지 않는다. 실제 연결은 [현재 구조](../13-architecture-and-features.md), 우선순위는 [개발 항목](../14-development-priorities.md)을 따른다.
 
 > 도메인 소유 주제: **게임 클라이언트가 화면에 그리는 모든 것** — 대규모 월드 스트리밍, 수백~수천 엔티티의 배칭/컬링/LOD, 2D 라이팅, 파티클, 포스트프로세싱, 강화 카메라, 네트워크 엔티티 보간·스냅샷 렌더, 월드 앵커 오버레이(이름표·HP바·데미지 플로터), 미니맵/월드맵, 런타임 타일맵 렌더.
 > 전제: 픽셀 2.5D MMORPG, 수백~수천 동접, RTT 30~300ms, 서버 권위 복제, 치트 방어, 라이브 운영.
@@ -104,7 +104,7 @@ Opaque3D → TerrainTiles(청크 스트리밍) → WorldSorted(수천 스프라�
 | 런타임 타일맵 청크 렌더 | P0 | 부분 | `HybridRenderer::BuildTileChunkQuads`는 UV 미배선(전체 텍스처 placeholder). **타일 아틀라스 UV 매핑 배선 필요** |
 | 오토타일 런타임 반영 | P1 | 부분 | 03 오토타일 룰 평가는 에디터/임포트 시점. 런타임 편집(건설·파괴) 반영은 청크 리빌드 훅 신규 |
 | 뷰 컬링(프러스텀/뷰렉트) | P0 | 신규 | 03 `ExtractRenderItems`에 뷰 렉트 컬 삽입 또는 신규 `render/CullingSystem` |
-| 스프라이트 인스턴싱 배칭 | P0 | 신규 | RHI `DrawIndexedInstanced` 계약 존재하나 DX11 미배선. **인스턴스 VB 슬롯·StructuredBuffer 배선 필요**(현 `SetVertexBuffer` 슬롯0만) |
+| 스프라이트 인스턴싱 배칭 | P0 | 신규 | RHI `DrawIndexedInstanced`의 DX11 호출은 구현되어 있으나 배칭 소비 경로는 별도다. **인스턴스 VB 슬롯·StructuredBuffer 배선 필요**(현 `SetVertexBuffer` 슬롯0만) |
 | 엔티티 LOD(애니/정지/임포스터) | P1 | 신규 | 신규 `render/EntityLod`. 03 애니 샘플링 게이팅 + 렌더 임포스터 |
 | 원격 엔티티 스냅샷 보간/외삽 | P0 | 신규 | 신규 `render/SnapshotInterpolator`(렌더 소비). 넷코드([02-netcode](02-netcode-server.md))가 스냅샷 공급 |
 | 로컬 예측 엔티티 렌더 스무딩 | P0 | 부분 | 02 고정스텝 보간 재사용 + 보정 스무딩(reconciliation smoothing) 신규 |
@@ -347,7 +347,7 @@ struct DamageFloater {     // 오브젝트 풀(초당 수백 생성 가능)
 
 ## 6. 신규 모듈·파일 제안
 
-기존 `engine/render`·`engine/scene`를 확장하고, MMO 전용 렌더 확장은 `engine/render` 하위에 배치. 게임 런타임 앱은 별도(현재 부재 — [04-gameplay-framework](04-gameplay-systems.md) 및 apps와 협의).
+기존 `engine/render`·`engine/scene`를 확장하고, MMO 전용 렌더 확장은 `engine/render` 하위에 배치. 게임 런타임 앱은 apps/game의 MyGame이며, 현재 연결 상태는 [구조 문서](../13-architecture-and-features.md)를 따른다.
 
 ```
 engine/render/
@@ -384,29 +384,27 @@ engine/scene/ (03 협의)
   tilemap/Tilemap.h  # 청크 스트리밍 경계·런타임 편집 리빌드 훅
 ```
 
-> RHI 확장(인스턴싱·StructuredBuffer·리드백·타임스탬프)은 02가 이미 계약(인터페이스)을 확정했고 DX11 구현만 비어 있다. **인터페이스 재설계 없이 백엔드 구현만 채우면 된다** — 02 확장 원칙과 정합.
+> RHI의 DrawIndexedInstanced 호출은 DX11에 구현되어 있다. 인스턴스 버텍스 슬롯·StructuredBuffer와 일반 readback·GPU 타임스탬프는 미구현 범위가 남아 있다. 현재 API와 최종 렌더 소비자를 확인한 뒤 필요한 부분만 연결한다.
 
 ---
 
-## 7. 마일스톤 단계 (작은 검증 가능 단위)
+## 7. 확장 기능과 검증 기준
 
-전역 로드맵([docs/00 §7](../00-overview.md))의 M2(하이브리드 핵심)·M6(수직 슬라이스) 이후를 잇는 MMO 렌더 단계. 각 단계는 **눈으로 확인 가능한 데모**로 게이트한다.
+현재 클라이언트는 DX11 HybridRenderer·SpriteBatch·픽셀 타깃과 원격 스냅샷 보간을 사용한다. 아래 대량 인스턴싱·청크 스트리밍·후처리·오버레이 요구는 구현 또는 성능 보장을 뜻하지 않는다. 다음 표는 확장 시 확인할 조건이다. 완료 상태는 [현재 구조](../13-architecture-and-features.md)에서 확인한다.
 
-| 단계 | 범위 | 완료 데모(검증) |
+| 기능 | 범위 | 검증 기준(검증) |
 |---|---|---|
-| **CR-M0 배칭·컬링** | RHI 인스턴싱·StructuredBuffer 배선(DX11), 아틀라스 통합, 뷰 렉트 컬링, `InstancedSpritePass`(하이브리드 뎁스 유지) | 한 화면 1,000 스프라이트가 60fps(내부 960×540), 드로우콜 < 아틀라스 수. 다리 위/아래 정렬 불변 |
-| **CR-M1 원격 엔티티 보간** | `SnapshotInterpolator`, interpDelay 버퍼, 외삽·teleport 스냅, 보정 스무딩, netEntityId 추출 | 모의 스냅샷(10Hz+지터+로스)으로 원격 캐릭터 100명이 지터 없이 이동. 순간이동은 스냅 |
-| **CR-M2 월드 앵커 오버레이** | `WorldOverlay`(이름표·HP바·데미지플로터 풀), 컬링·거리 LOD·겹침 회피, WorldToScreen 배칭 | 500 엔티티에 이름표·HP바 + 초당 수백 데미지 숫자, 프레임 안정. 4K에서 크기 정상 |
-| **CR-M3 강화 카메라** | `CameraController`(데드존·룩어헤드·경계 클램프·셰이크·줌 트윈), 셰이크×픽셀스냅 합성 | 존 경계 클램프·피격 셰이크·이동 룩어헤드가 픽셀 무결성 유지하며 동작 |
-| **CR-M4 스트리밍** | `WorldStreamer`(청크 로드/언로드/프리페치·히스테리시스), 존 그래프·포탈, 런타임 타일 편집 리빌드 | 넓은 맵을 이동하며 청크가 비동기 스트리밍, 스톨 없음. 존 포탈 이동. 고속 이동 대응 |
-| **CR-M5 라이팅·파티클** | `Light2DPass`(포인트/스팟/앰비언트·데이나이트), `ParticleRenderer`(타격·마법·날씨), 블롭 그림자 | 밤 마을에 횃불 조명, 스킬 파티클, 비/눈 날씨. 저사양 프로파일에서 예산 하향 동작 |
-| **CR-M6 포스트·픽킹·연출** | `PostChain`(블룸·그레이딩·비네트·CRT), ID 버퍼 픽킹, 팔레트 스왑·아웃라인·디더 페이드·실루엣 | 마우스로 몹 클릭 타겟팅, 염색 장비 색, 타겟 아웃라인, 지붕 진입 디더 페이드 |
-| **CR-M7 미니맵·품질·프로파일** | `MinimapRenderer`·월드맵·블립, `QualityScaler`, GPU 타임스탬프 프로파일 | 미니맵에 블립·지형, 저/고사양 자동 스케일, 프레임 히스토그램 텔레메트리 |
-| **CR-M8 스케일 강화(백로그)** | 노멀맵 2D 라이팅(MRT), 캐스트 그림자, 다중 뷰포트 분할, 렌더 스레드 분리(02 D9) | 노멀맵 도트 조명, 파티 분할 화면, 렌더 스레드 프레임타임 개선 |
+| 배칭·컬링 | RHI 인스턴싱·StructuredBuffer 배선(DX11), 아틀라스 통합, 뷰 렉트 컬링, `InstancedSpritePass`(하이브리드 뎁스 유지) | 한 화면 1,000 스프라이트가 60fps(내부 960×540), 드로우콜 < 아틀라스 수. 다리 위/아래 정렬 불변 |
+| 원격 엔티티 보간 | `SnapshotInterpolator`, interpDelay 버퍼, 외삽·teleport 스냅, 보정 스무딩, netEntityId 추출 | 모의 스냅샷(10Hz+지터+로스)으로 원격 캐릭터 100명이 지터 없이 이동. 순간이동은 스냅 |
+| 월드 앵커 오버레이 | `WorldOverlay`(이름표·HP바·데미지플로터 풀), 컬링·거리 LOD·겹침 회피, WorldToScreen 배칭 | 500 엔티티에 이름표·HP바 + 초당 수백 데미지 숫자, 프레임 안정. 4K에서 크기 정상 |
+| 강화 카메라 | `CameraController`(데드존·룩어헤드·경계 클램프·셰이크·줌 트윈), 셰이크×픽셀스냅 합성 | 존 경계 클램프·피격 셰이크·이동 룩어헤드가 픽셀 무결성 유지하며 동작 |
+| 스트리밍 | `WorldStreamer`(청크 로드/언로드/프리페치·히스테리시스), 존 그래프·포탈, 런타임 타일 편집 리빌드 | 넓은 맵을 이동하며 청크가 비동기 스트리밍, 스톨 없음. 존 포탈 이동. 고속 이동 대응 |
+| 라이팅·파티클 | `Light2DPass`(포인트/스팟/앰비언트·데이나이트), `ParticleRenderer`(타격·마법·날씨), 블롭 그림자 | 밤 마을에 횃불 조명, 스킬 파티클, 비/눈 날씨. 저사양 프로파일에서 예산 하향 동작 |
+| 포스트·픽킹·연출 | `PostChain`(블룸·그레이딩·비네트·CRT), ID 버퍼 픽킹, 팔레트 스왑·아웃라인·디더 페이드·실루엣 | 마우스로 몹 클릭 타겟팅, 염색 장비 색, 타겟 아웃라인, 지붕 진입 디더 페이드 |
+| 미니맵·품질·프로파일 | `MinimapRenderer`·월드맵·블립, `QualityScaler`, GPU 타임스탬프 프로파일 | 미니맵에 블립·지형, 저/고사양 자동 스케일, 프레임 히스토그램 텔레메트리 |
+| 스케일 강화(백로그) | 노멀맵 2D 라이팅(MRT), 캐스트 그림자, 다중 뷰포트 분할, 렌더 스레드 분리(02 D9) | 노멀맵 도트 조명, 파티 분할 화면, 렌더 스레드 프레임타임 개선 |
 
-**리스크 노트**: 가장 무거운 단계는 **CR-M0(인스턴싱 배칭 — 현 텍스처런 드로우 구조를 대체)**과 **CR-M1(스냅샷 보간 — 넷코드 계약 의존)**이다. CR-M0가 02의 하이브리드 깊이 불변식을 인스턴싱에서 유지하지 못하면 이후 대량 렌더가 흔들리므로, 다리 위/아래·석상 뒤 정렬 회귀 테스트를 CR-M0 게이트에 포함한다.
-
----
+배칭 방식을 변경할 때 다리 위/아래·석상 뒤의 깊이 정렬을 회귀 검증한다. 대량 렌더 성능은 같은 Release 장면과 하드웨어에서 측정한다.
 
 ## 8. 의존성·타 도메인 문서 참조
 
@@ -414,7 +412,7 @@ engine/scene/ (03 협의)
 
 | 문서 | 본 도메인이 인용/의존하는 것 |
 |---|---|
-| [docs/00-overview.md](../00-overview.md) | 전역 아키텍처·레이어·마일스톤·확장 원칙 |
+| [docs/00-overview.md](../00-overview.md) | 제품 구조·계층·확장 원칙 |
 | [docs/01-core-platform.md](../01-core-platform.md) | 메인 루프(고정스텝+보간 alpha), JobSystem(IO 큐·ParallelFor·RunOnMainThread), EventBus, FrameAllocator, WindowResized |
 | [docs/02-rendering.md](../02-rendering.md) | **좌표계·PPU·레이어 밴드·깊이 함수·PassStage·프록시 계약·픽셀퍼펙트·라이팅/파티클/포스트 설계 스켈레톤 — 전부 정본. 본 문서는 소비·확장만** |
 | [docs/03-scene-world.md](../03-scene-world.md) | ECS·RenderExtract·Renderable·Tilemap 청크·FloorLevel·애니메이션 샘플링·SceneManager 스텁 |

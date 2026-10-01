@@ -1,6 +1,6 @@
 # make_hero.ps1 - deterministic placeholder dot character PNG (24x32, transparent bg alpha0).
 #
-# Draws hero.png for the M1-B integration demo using System.Drawing, deterministically.
+# Draws hero.png for the sprite integration demo using System.Drawing, deterministically.
 # Recognizable character: skin-tone head + dark outline + eyes, blue shirt body,
 # brown legs, dark boots. Pixel-art: no anti-aliasing, pixel-by-pixel fills.
 #

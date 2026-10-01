@@ -93,7 +93,7 @@ flowchart LR
 
 [DepthEncoder](../engine/render/src/DepthEncoder.cpp)와 [HybridRenderer](../engine/render/src/HybridRenderer.cpp)는 높이·Y 정렬·레이어를 깊이로 표현한다. 불투명 픽셀만 남기는 alpha cutout과 depth write, 3D 물체의 anchor 기반 깊이 보정을 사용한다. 그래서 다리 위·아래 캐릭터와 3D 물체 뒤 캐릭터를 같은 깊이 버퍼로 가린다.
 
-DX11 백엔드·셰이더 컴파일·GPU 타임스탬프가 있다. 일반 비동기 readback의 CopyTextureToBuffer/EnqueueReadback/TryGetReadback은 아직 stub이다. 프레임 검증은 구현된 CaptureBackbuffer를 쓴다. UI는 +Y 아래와 R8 글리프 마스크를 SpriteBatch에서 명시하며 월드의 +Y 위·깊이 계약을 유지한다. 다른 그래픽 API는 인터페이스 확장 가능성과 실제 백엔드 구현을 구분한다. 조명·파티클 관련 데이터·계산이 있다는 사실도 완성된 GPU 표현과 같지 않다.
+DX11 백엔드·셰이더 컴파일은 구현되어 있다. GPU 타임스탬프의 WriteTimestamp/ResolveTimestamps는 인터페이스만 있고 DX11 구현은 stub이다. 일반 비동기 readback의 CopyTextureToBuffer/EnqueueReadback/TryGetReadback은 아직 stub이다. 프레임 검증은 구현된 CaptureBackbuffer를 쓴다. UI는 +Y 아래와 R8 글리프 마스크를 SpriteBatch에서 명시하며 월드의 +Y 위·깊이 계약을 유지한다. 다른 그래픽 API는 인터페이스 확장 가능성과 실제 백엔드 구현을 구분한다. 조명·파티클 관련 데이터·계산이 있다는 사실도 완성된 GPU 표현과 같지 않다.
 
 ## 5. 에셋과 콘텐츠의 흐름
 
@@ -115,7 +115,7 @@ Lua·DDC·리플렉션·플러그인 기능도 라이브러리와 테스트가 �
 | [MyServer](../apps/server/CMakeLists.txt) | core, net, persist, liveops, gameserver, gameplay | 계정 인증, 세션, 권위 이동, 자동 저장, 운영 명령·메트릭, 봇 | social/mmo 연결, 암호화 전송·신뢰성 있는 게임 메시지 |
 | [paktool](../apps/paktool/CMakeLists.txt) | core, asset | pak 패키징 CLI | 프로젝트 배포 흐름에 통합·검증 |
 
-`village_demo`는 대화·컷신·NPC·Lua·물리·한글 UI·오디오를 조합하는 현재의 참고 실행 경로다. 기능을 게임 앱에 연결할 때 이 경로와 기존 모듈을 먼저 재사용한다.
+`village_demo`는 대화·컷신·NPC·Lua·물리·한글 UI·오디오를 조합하는 현재의 참고 실행 경로다. 지도·스폰은 C++로 구성하며 로컬라이즈 JSON·Lua는 시작 시 로드한다. 파일 감시·JSON 지도 자동 반영은 연결되지 않았다. 기능을 게임 앱에 연결할 때 이 경로와 기존 모듈을 먼저 재사용한다.
 
 ## 7. 기능 상태표
 

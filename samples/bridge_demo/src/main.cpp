@@ -1,4 +1,4 @@
-// bridge_demo — M2 통합 데모·검증 (docs/00 §7 M2 완료 기준)
+// bridge_demo — 다리·경사·삽입 3D의 깊이 정렬 검증 데모
 //
 // 이 엔진의 존재 이유인 하이브리드 깊이 정렬을 실제 화면으로 증명한다.
 // 테스트 맵: 지면 + 그 위를 가로지르는 다리(다중 컬럼) + 경사로 + 3D 석상.
@@ -776,7 +776,7 @@ int main(int /*argc*/, char** /*argv*/) {
         for (int i = 0; i < wideArgc; ++i) launch.args.emplace_back(mye::Narrow(wideArgv[i]));
         ::LocalFree(wideArgv);
     }
-    launch.mainWindow.title = "MyEngine — bridge_demo (M2)";
+    launch.mainWindow.title = "MyEngine — bridge_demo";
     launch.mainWindow.clientSize = {960, 540};
     launch.mainWindow.resizable = true;
     return mye::GuardedMain(launch);

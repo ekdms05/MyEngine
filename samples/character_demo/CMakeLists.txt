@@ -1,4 +1,4 @@
-# character_demo — M3 통합 데모·검증 (Lua 스크립팅 + 8방향 애니 + 발소리 오디오 + 핫리로드)
+# character_demo — 캐릭터 통합 데모·검증 (Lua 스크립팅 + 8방향 애니 + 발소리 오디오 + 핫리로드)
 add_executable(character_demo
     src/main.cpp
 )

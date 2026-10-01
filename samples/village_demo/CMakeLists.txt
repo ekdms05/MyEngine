@@ -1,4 +1,4 @@
-# village_demo — M6-B 로드맵 최종 수직 슬라이스 데모(테일즈위버풍 마을).
+# village_demo — 마을 콘텐츠 통합 데모
 #
 # 전체 엔진 스택 관통: RHI(DX11) · Asset(PNG/GLB/WAV/Lua) · ECS/scene(물리·타일맵·nav·anim) ·
 #   render(HybridRenderer·PixelPerfectTarget) · audio · script(ScriptRuntime + 바인딩) ·

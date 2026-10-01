@@ -1,4 +1,4 @@
-# mye_script — L4 Lua 스크립팅 런타임(05 M3-C: sol2 + Lua 5.4 게임 로직 핫 리로드)
+# mye_script — L4 Lua 스크립팅 런타임(05 sol2 + Lua 5.4 게임 로직 핫 리로드)
 #
 # 의존:
 #   mye_core   — EventBus·Log·Time·Base(Expected/해시)·Module
@@ -8,7 +8,7 @@
 #   mye_thirdparty_sol2 — sol2 단일 헤더(+ mye_thirdparty_lua 를 전이 링크)
 #     ★ Lua 는 메인 스레드 전용(잡 워커 실행 금지 — 확정 규약). sol2/Lua 경계는 예외 사용 가능.
 #
-# docs/05 §Lua 스테이트 소유 모델: 게임 스테이트 1개(ScriptRuntime 소유). 에디터 스테이트는 07.
+# docs/05 Lua 실행과 수명: ScriptRuntime이 VM을 소유한다. 에디터 전용 VM은 별도 확장 요구다.
 add_library(mye_script STATIC
     # ---- 공용 타입·계약(sol 비의존 표면) ----
     include/mye/script/ScriptTypes.h

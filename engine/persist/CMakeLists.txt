@@ -1,5 +1,5 @@
-# mye_persist — 영속화 계층 (계정·캐릭터·아이템 원장) (docs/mmorpg/03, M10)
-# 윈도우 개발/서버 전제. 1단계는 파일 기반(JSON) — 스케일용 Postgres/Redis는 후속(설계 문서).
+# mye_persist — 영속화 계층 (계정·캐릭터·아이템 원장) (docs/mmorpg/03)
+# 윈도우 개발/서버 전제. 현재 저장은 JSON 상태 파일·세대 백업이며 DB 도입은 별도 확장 요구다.
 add_library(mye_persist STATIC
     include/mye/persist/AccountStore.h
     include/mye/persist/CharacterStore.h

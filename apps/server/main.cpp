@@ -1,4 +1,4 @@
-// MyServer — 헤드리스 게임 서버 (docs/mmorpg/02·03, M9·M10)
+// MyServer — 루프백 권위 이동·계정·저장·지표를 조합하는 콘솔 서버
 //
 // 윈도우 콘솔 서버: 고정 틱으로 NetServer 를 돌리며 클라 입력을 서버권위로 시뮬하고 스냅샷을
 // 브로드캐스트한다. 계정·캐릭터·거래원장을 세이브 디렉터리로 영속(PersistenceService)하고,
@@ -56,7 +56,7 @@ static BOOL WINAPI ConsoleCtrlHandler(DWORD type) {
 using namespace mye;
 
 // 배회 봇(--bots) — 서버 프로세스 안의 가짜 클라. 진짜 NetClient 로 접속·인증·입력
-// 송신까지 실제 클라이언트 경로를 그대로 통과한다(클라 로직 검증 + M13 부하테스트 씨앗).
+// 송신까지 실제 클라이언트 경로를 그대로 통과한다(클라이언트 로직과 부하 검증).
 // 움직임: 천천히 회전하는 단위 방향 → 원점 주변 원형 배회(봇마다 위상 차이).
 struct ServerBot {
     net::NetClient cli;

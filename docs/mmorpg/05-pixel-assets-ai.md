@@ -1,6 +1,6 @@
 # 05. 픽셀 에셋 파이프라인 & AI 에셋 생성 (Pixel Asset Pipeline & AI Asset Generation)
 
-> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+> MMO 서비스 확장 요구사항이다. 본문의 신규/있음 표는 설계 제안 당시의 분류이며 현재 완료 상태가 아니다. 현재 에셋 임포트·픽셀 MCP 도구·별도 제작 스킬을 사용한다. 생성 서비스·검수 패널·생성 이력 스키마는 확장 요구다. 실제 연결은 [현재 구조](../13-architecture-and-features.md), 우선순위는 [개발 항목](../14-development-priorities.md)을 따른다.
 
 > 소유 주제: **도트(픽셀아트) 생성·검수·임포트 파이프라인** · **AI 이미지/스프라이트 생성 연동** · **8방향 애니·페이퍼돌·오토타일·아틀라스** · **배치 생성(도감·아이템 세트)** · **에셋 메타·시드·버전관리·저작권**
 > 레이어: L2(engine/asset) 위 확장 + 에디터(engine/editor) + 개발도구(tools/mcp) + (신규) 생성 서비스(tools/genserver)
@@ -394,27 +394,27 @@ assets/gen/
 
 ---
 
-## 7) 마일스톤 단계(작게·검증 가능)
+## 7. 확장 기능과 검증 기준
 
-| 단계 | 산출물 | 검증(테스트/데모) |
+현재 에셋 임포트·픽셀 MCP 도구·별도 제작 스킬을 사용한다. 생성 서비스·검수 패널·생성 이력 스키마는 확장 요구다. 다음 표는 확장 시 확인할 조건이며 현재 완료 상태는 [현재 구조](../13-architecture-and-features.md)를 따른다.
+
+| 기능 | 확장 요구 | 검증(테스트/데모) |
 |---|---|---|
-| **A0. GUID·핫리로드 배선(P0 전제)** | `.meta` GUID 영속(CreateFor/Parse 실배선) + `AssetModule` + AssetDatabase StartWatching/ImportDirty 에디터 구동 | 같은 PNG 두 번 로드 시 GUID 동일; 파일 저장 시 에디터 자동 리로드(단위+수동) |
-| **A1. GenSidecar 스키마** | `GenSidecar.h/.cpp` 파서 + `.gen.json` 라운드트립 | `GenSidecarTests` 왕복·필드 보존·에러 케이스 |
-| **A2. provider 추상화 + Mock** | `tools/genserver` IGenProvider + MockProvider + pipeline | Mock으로 GenRequest→GenResult 결정론(시드 고정) 통과 |
-| **A3. 후처리 승격·공유** | dot.ts의 downscale/quantize/palette/trim/shade를 `post/`로 승격, dot.ts는 재사용 | 기존 `dot_from_photo` 회귀 없음 + 트림·pivot 추가 |
-| **B1. 텍스트→스프라이트** | `gen_sprite`(txt2img→post→도트→저장→.gen.json) + 실 provider 1종(SD/Comfy 로컬) | 프롬프트로 아이템 스프라이트 생성→검수→임포트 end-to-end |
-| **B2. 배경제거·팔레트락** | BgRemove(local) + master palette lock | 흰 배경 사진→투명 도트; 락 팔레트 강제 후 색 검증 |
-| **B3. 검수 게이트** | `mye::gen::Validate` + `GenReviewPanel`(승인/반려) | 저품질(빈/저해상도) 자동 reject; 수동 승인→커밋 |
-| **C1. 8방향·시트 조립** | 시트 조립+bodyTemplate 검증 → SpriteSheet/AnimationClipData | 8방향 walk 클립 생성·정합 검증·재생 데모 |
-| **C2. 페이퍼돌** | `PaperDoll.h` 합성 + `PaperDollPreviewPanel` | 바디+장비 레이어 8방향 합성·방향별 z스왑 |
-| **C3. 타일셋·오토타일** | `TilesetImporter`+`Autotile`(blob47) + 타일 아틀라스 UV 배선 | 비트마스크→프레임 매핑 단위 테스트 + 맵에 오토타일 배치 |
-| **D1. 배치 생성** | `gen_batch`/`gentool`(템플릿×스윕, 예산, 재개, 재시도) | 도감 20종 배치→부분 실패 재시도·중복 탐지 |
-| **D2. 캐릭터/스타일 일관성** | styleAnchor·characterRef(provider controlnet/ip-adapter) | 같은 characterId로 여러 포즈 일관 생성 |
-| **D3. 저작권 감사** | `.gen.json.license` + `gen_audit`/`gentool audit` | provider/model별 에셋 전수 리포트 |
-| **E1. 임포트 캐시·닷 왕복** | 04 캐시 키 배선 + 닷 에디터 AI 왕복 | 소스 무변경 시 리임포트 스킵; AI채우기→수정→저장 |
-| **E2. 스트리밍·패치(도메인 공유)** | 버전드 pak·서명·델타(넷코드/에셋 스트리밍과 공유) | 신규 에셋 델타 패치 후 클라 무결성 검증 |
-
----
+| GUID·핫리로드 배선(P0 전제) | `.meta` GUID 영속(CreateFor/Parse 실배선) + `AssetModule` + AssetDatabase StartWatching/ImportDirty 에디터 구동 | 같은 PNG 두 번 로드 시 GUID 동일; 파일 저장 시 에디터 자동 리로드(단위+수동) |
+| GenSidecar 스키마 | `GenSidecar.h/.cpp` 파서 + `.gen.json` 라운드트립 | `GenSidecarTests` 왕복·필드 보존·에러 케이스 |
+| provider 추상화 + Mock | `tools/genserver` IGenProvider + MockProvider + pipeline | Mock으로 GenRequest→GenResult 결정론(시드 고정) 통과 |
+| 후처리 승격·공유 | dot.ts의 downscale/quantize/palette/trim/shade를 `post/`로 승격, dot.ts는 재사용 | 기존 `dot_from_photo` 회귀 없음 + 트림·pivot 추가 |
+| 텍스트→스프라이트 | `gen_sprite`(txt2img→post→도트→저장→.gen.json) + 실 provider 1종(SD/Comfy 로컬) | 프롬프트로 아이템 스프라이트 생성→검수→임포트 end-to-end |
+| 배경제거·팔레트락 | BgRemove(local) + master palette lock | 흰 배경 사진→투명 도트; 락 팔레트 강제 후 색 검증 |
+| 검수 게이트 | `mye::gen::Validate` + `GenReviewPanel`(승인/반려) | 저품질(빈/저해상도) 자동 reject; 수동 승인→커밋 |
+| 8방향·시트 조립 | 시트 조립+bodyTemplate 검증 → SpriteSheet/AnimationClipData | 8방향 walk 클립 생성·정합 검증·재생 데모 |
+| 페이퍼돌 | `PaperDoll.h` 합성 + `PaperDollPreviewPanel` | 바디+장비 레이어 8방향 합성·방향별 z스왑 |
+| 타일셋·오토타일 | `TilesetImporter`+`Autotile`(blob47) + 타일 아틀라스 UV 배선 | 비트마스크→프레임 매핑 단위 테스트 + 맵에 오토타일 배치 |
+| 배치 생성 | `gen_batch`/`gentool`(템플릿×스윕, 예산, 재개, 재시도) | 도감 20종 배치→부분 실패 재시도·중복 탐지 |
+| 캐릭터/스타일 일관성 | styleAnchor·characterRef(provider controlnet/ip-adapter) | 같은 characterId로 여러 포즈 일관 생성 |
+| 저작권 감사 | `.gen.json.license` + `gen_audit`/`gentool audit` | provider/model별 에셋 전수 리포트 |
+| 임포트 캐시·닷 왕복 | 04 캐시 키 배선 + 닷 에디터 AI 왕복 | 소스 무변경 시 리임포트 스킵; AI채우기→수정→저장 |
+| 스트리밍·패치(도메인 공유) | 버전드 pak·서명·델타(넷코드/에셋 스트리밍과 공유) | 신규 에셋 델타 패치 후 클라 무결성 검증 |
 
 ## 8) 의존성·타 도메인 문서 참조
 
@@ -436,4 +436,4 @@ assets/gen/
 
 1. MyEngine은 후처리·아틀라스·시트·핫리로드 **파이프라인 뼈대(engine/asset)**와 도트 MCP 툴(dot_write_sprite/dot_from_photo)·닷 에디터가 이미 견고하나, **안정 GUID 영속·핫리로드 실구동·AssetModule**이 미배선이고 **AI 생성 층(멀티 provider·생성→검수→임포트 자동화)**이 전무하다 — 이 둘이 MMORPG 콘텐츠 파이프라인의 P0 공백이다.
 2. 설계 핵심은 **원격(비결정 AI)과 로컬(결정 후처리)의 분리**로 재현성을 확보하고, `.gen.json`(시드·프롬프트·라이선스) 사이드카로 라이브 운영급 재현·감사·저작권 추적을 보장하며, 8방향·페이퍼돌·오토타일·배치 생성을 기존 SpriteSheet/AtlasPacker/AnimationClipData 스키마 위에 얹는 것이다.
-3. 마일스톤은 GUID·핫리로드 배선(P0) → GenSidecar·provider 추상화·후처리 승격 → 텍스트→스프라이트·검수 게이트 → 8방향·페이퍼돌·오토타일 → 배치·일관성·감사 순으로, 각 단계가 작은 단위 테스트·데모로 검증 가능하게 쪼개진다.
+3. 에셋 확장은 GUID·핫리로드, 생성 이력·제공자·후처리, 스프라이트 검수, 방향별 시트·페이퍼돌·오토타일, 배치·일관성·감사로 구분한다. 각 기능은 해당 데이터 계약과 제작 흐름으로 검증한다.

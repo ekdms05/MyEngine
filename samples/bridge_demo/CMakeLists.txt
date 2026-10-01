@@ -1,4 +1,4 @@
-# bridge_demo — M2 통합 데모·검증 (하이브리드 깊이 정렬: 다리 위/아래·석상 가림·경사)
+# bridge_demo — 깊이 정렬 통합 데모·검증 (하이브리드 깊이 정렬: 다리 위/아래·석상 가림·경사)
 add_executable(bridge_demo
     src/main.cpp
 )

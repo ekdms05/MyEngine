@@ -1,6 +1,6 @@
 # 06. AI 오디오 생성 & 사운드 디자인 (AI Audio Generation & Sound Design)
 
-> 초기 설계 후보 자료다. 본문의 신규/있음 표는 작성 시점 기준이며 현재 구현 완료를 뜻하지 않는다. 실제 모듈·앱 연결은 [현재 구조](../13-architecture-and-features.md), 진행 순서는 [개발 우선순위](../14-development-priorities.md)를 따른다.
+> MMO 서비스 확장 요구사항이다. 본문의 신규/있음 표는 설계 제안 당시의 분류이며 현재 완료 상태가 아니다. 현재 AudioModule·AudioEngine·SoftwareMixer와 WAV/OGG 임포트가 있다. 다이나믹 뮤직·리버브 DSP·음원 생성 패널은 확장 요구다. 실제 연결은 [현재 구조](../13-architecture-and-features.md), 우선순위는 [개발 항목](../14-development-priorities.md)을 따른다.
 
 > 소유 범위: **텍스트→음악/SFX AI 생성**부터 **미리듣기·채택·임포트·`mye_audio` 배선**까지의 콘텐츠
 > 파이프라인, 그리고 그 위에 얹히는 **다이나믹 뮤직(전투 레이어드·스팅어)·2.5D 공간 사운드·리버브존·오클루전**
@@ -97,7 +97,7 @@
 
 ## 3. 기능 목록
 
-우선순위: **P0**=MMORPG MVP 필수, **P1**=초기 라이브 필요, **P2**=콘텐츠 확장, **P3**=고급/폴리시,
+우선순위: **P0**=MMORPG 기본 기능, **P1**=초기 라이브 필요, **P2**=콘텐츠 확장, **P3**=고급/폴리시,
 **P4**=선택/실험. 상태: **있음**=현 코드 존재, **부분**=일부만/미배선, **신규**=신설.
 
 | 기능 | 우선순위 | 상태 | 엔진 매핑(추가/재사용) |
@@ -422,26 +422,25 @@ mye.audio.play_cue(name, x, y)     -- (기존 재사용)
 
 ---
 
-## 7. 마일스톤 단계 (작은 검증가능 단위)
+## 7. 확장 기능과 검증 기준
 
-| 단계 | 산출물 | 검증(테스트/CI) |
+현재 AudioModule·AudioEngine·SoftwareMixer와 WAV/OGG 임포트가 있다. 다이나믹 뮤직·리버브 DSP·음원 생성 패널은 확장 요구다. 다음 표는 확장 시 확인할 조건이며 현재 완료 상태는 [현재 구조](../13-architecture-and-features.md)를 따른다.
+
+| 기능 | 확장 요구 | 검증(테스트/CI) |
 |---|---|---|
-| **A0. 에셋 안정화** | `AudioMeta`+`.meta` GUID 기록/판독, `AudioCue` 직렬화 | 왕복 테스트(저장→로드 GUID 동일), 매 로드 새 GUID 갭 해소 확인 |
-| **A1. LocalStub + `sound_synthesize`** | 결정론 합성 제공자 + MCP 툴(파형 썸네일 반환) | 동일 seed→동일 contentHash, WAV 디코드 성공, CI 무키 |
-| **A2. 임포트 후처리** | frameCount 산정, LUFS 정규화, loop point 스냅 | 스트리밍 길이>0, 정규화 후 LUFS 목표±0.5 |
-| **A3. AudioCue 데이터 배선** | GUID 참조 큐 로드→`PostCue`, cooldown·audibleRadius·거리컬링 | 헤드리스 믹서 RenderInto로 재생/컬링 수치 검증 |
-| **B1. 다이나믹 뮤직** | `MusicSet`/`DynamicMusicDirector`(스템 레이어·강도 전이·스팅어) | 강도 전이 크로스페이드·히스테리시스, 스팅어 양자화 |
-| **B2. 발소리·앰비언스** | AnimationEvent→SurfaceType→Cue, `Ambient` 버스 앰비언스 베드 | village_demo 데모 배선(현 하드코딩 대체), 지역 크로스페이드 |
-| **B3. RemoteHttp + `sound_generate`/`sound_batch`** | 텍스트→음악/SFX(키·레이트리밋·백오프), 배치·사운드팩 | 폴백(무키→LocalStub), 부분 성공, 프로버넌스 각인 |
-| **C1. 미리듣기·채택 에디터** | `SoundGenPanel`(프롬프트·파형·채택→에셋) | 채택 후 인스펙터에 프로버넌스/라이선스 표시 |
-| **C2. 공간 사운드 강화** | `ReverbZone`·오클루전(저주기 레이·LPF)·리버브 send | 존 진입 wet 변화, 벽 너머 LPF 게인 저하 |
-| **C3. 넷코드 연동** | 서버 사운드 이벤트 스키마·관심관리 필터 재생 | 안 보이는 소스 미재생(치트 정보 유출 차단) — [07-netcode] 공동 |
-| **D. 보이스 스틸링·스트리밍·DSP·서명** | 폴리포니 스틸, DSP send(리버브/EQ/덕킹), pak 서명 | 폴리포니 상한 준수, 덕킹(대사 시 BGM 감쇠) |
+| 에셋 안정화 | `AudioMeta`+`.meta` GUID 기록/판독, `AudioCue` 직렬화 | 왕복 테스트(저장→로드 GUID 동일), 매 로드 새 GUID 갭 해소 확인 |
+| LocalStub + `sound_synthesize` | 결정론 합성 제공자 + MCP 툴(파형 썸네일 반환) | 동일 seed→동일 contentHash, WAV 디코드 성공, CI 무키 |
+| 임포트 후처리 | frameCount 산정, LUFS 정규화, loop point 스냅 | 스트리밍 길이>0, 정규화 후 LUFS 목표±0.5 |
+| AudioCue 데이터 배선 | GUID 참조 큐 로드→`PostCue`, cooldown·audibleRadius·거리컬링 | 헤드리스 믹서 RenderInto로 재생/컬링 수치 검증 |
+| 다이나믹 뮤직 | `MusicSet`/`DynamicMusicDirector`(스템 레이어·강도 전이·스팅어) | 강도 전이 크로스페이드·히스테리시스, 스팅어 양자화 |
+| 발소리·앰비언스 | AnimationEvent→SurfaceType→Cue, `Ambient` 버스 앰비언스 베드 | village_demo 데모 배선(현 하드코딩 대체), 지역 크로스페이드 |
+| RemoteHttp + `sound_generate`/`sound_batch` | 텍스트→음악/SFX(키·레이트리밋·백오프), 배치·사운드팩 | 폴백(무키→LocalStub), 부분 성공, 프로버넌스 각인 |
+| 미리듣기·채택 에디터 | `SoundGenPanel`(프롬프트·파형·채택→에셋) | 채택 후 인스펙터에 프로버넌스/라이선스 표시 |
+| 공간 사운드 강화 | `ReverbZone`·오클루전(저주기 레이·LPF)·리버브 send | 존 진입 wet 변화, 벽 너머 LPF 게인 저하 |
+| 넷코드 연동 | 서버 사운드 이벤트 스키마·관심관리 필터 재생 | 안 보이는 소스 미재생(치트 정보 유출 차단) — [07-netcode] 공동 |
+| 보이스 스틸링·스트리밍·DSP·서명 | 폴리포니 스틸, DSP send(리버브/EQ/덕킹), pak 서명 | 폴리포니 상한 준수, 덕킹(대사 시 BGM 감쇠) |
 
-각 단계는 `mye_audio`의 헤드리스 오프라인 렌더(`SoftwareMixer::RenderInto`, `AudioEngine::RenderOffline`)로
-장치 없이 수치 검증한다(현 AudioPlayback 16·AudioHotReload 9 테스트 패턴 재사용).
-
----
+믹서의 장치 없는 수치 검증과 실제 장치 재생·청취 검증을 구분한다.
 
 ## 8. 의존성·타 도메인 문서 참조
 

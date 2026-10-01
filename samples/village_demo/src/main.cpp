@@ -1,7 +1,7 @@
-// village_demo — M6-B 로드맵 최종 수직 슬라이스 데모 (docs/00 §7 M6 완료 기준)
+// village_demo — 마을·NPC·대화·컷신·UI·오디오 통합 데모
 //
 // 2.5D 픽셀아트 RPG풍 마을: 도트 캐릭터가 하이브리드 맵(지면·길·다리·개울·경사 언덕·3D 프랍)을 걸어다니고
-//   NPC(촌장·상인·경비병)와 한글로 대화하는 수직 슬라이스. 실행 파일 하나로 처음부터 끝까지 시연.
+//   NPC(촌장·상인·경비병)와 한글로 대화하는 통합 데모. 실행 파일 하나로 처음부터 끝까지 시연.
 //   맵·대사·게임 로직 수정이 엔진 재빌드 없이(Lua 핫리로드) 이뤄진다.
 //
 // 관통 계층(자립형 배선 — bridge_demo/character_demo 패턴 확장):
@@ -21,7 +21,7 @@
 //       { free, walk, walk_up, bridge, under_bridge, talk, talk_merchant, talk_guard,
 //         wander, behind_prop }
 //     walk 계열: 강제 이동으로 위치 변화(두 프레임 비교). bridge: 다리 위/아래 하이브리드 정렬.
-//     talk: 촌장과 상호작용 → 한글 대화창. wander: NPC 배회. 결과는 "M6-VERIFY:" 로그로 요약.
+//     talk: 촌장과 상호작용 → 한글 대화창. wander: NPC 배회. 결과는 "VILLAGE-VERIFY:" 로그로 요약.
 #include "mye/core/App.h"
 #include "mye/core/Events.h"
 #include "mye/core/Input.h"
@@ -776,7 +776,7 @@ private:
         m_npc->SetPlayer(m_player);
 
         // 세이브 시스템(user:// 슬롯 왕복). VFS 는 읽기 전용이라 쓰기 루트를 OS 경로로 직접 준다.
-        //   수직 슬라이스가 로드맵 5대 서브시스템(대화·컷신·NPC·로컬라이즈·세이브)을 모두 관통하도록,
+        //   대화·컷신·NPC·로컬라이즈·세이브의 연결을 검증하도록,
         //   mye.save.* Lua 표면에 실제 백엔드를 배선한다(nullptr 죽은 표면 → 실동작으로 승격).
         m_save = std::make_unique<runtime::SaveSystem>();
         m_save->Initialize(m_vfs.get(), "saves");
@@ -1385,7 +1385,7 @@ private:
                           Vec2i winSize, const render::HybridRenderer::Stats& stats) {
         m_debugUi.BeginFrame();
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-        ImGui::Begin("VillageDemo (M6)");
+        ImGui::Begin("VillageDemo");
         ImGui::Text("FPS: %.1f", m_fps);
         ImGui::Text("Draw calls: %u  Sprites: %u  Tiles: %u  Meshes: %u",
                     stats.drawCalls, stats.spriteCount, stats.tileQuadCount, stats.meshCount);
@@ -1440,10 +1440,10 @@ private:
             floor = fl->level;
         const bool dlgActive = m_dialogue && m_dialogue->IsActive();
         const Vec2 camPos = m_camera.Position();
-        MYE_LOG_INFO("VillageDemo", "M6-VERIFY-CAM: camPos=({:.2f},{:.2f}) camFixed={}",
+        MYE_LOG_INFO("VillageDemo", "VILLAGE-VERIFY-CAM: camPos=({:.2f},{:.2f}) camFixed={}",
                      camPos.x, camPos.y, m_camFixed ? 1 : 0);
         MYE_LOG_INFO("VillageDemo",
-            "M6-VERIFY: scenario={} frames={} playerPos=({:.2f},{:.2f}) floor={} footsteps={} "
+            "VILLAGE-VERIFY: scenario={} frames={} playerPos=({:.2f},{:.2f}) floor={} footsteps={} "
             "npcs={} dialogueActive={} scriptErrors={} sprites={} tiles={} meshes={} draws={} "
             "saveRoundtrip={} moved={:.3f}",
             static_cast<int>(m_control->scenario), m_frameCount, pp.x, pp.y, floor,
@@ -1633,7 +1633,7 @@ int main(int /*argc*/, char** /*argv*/) {
         for (int i = 0; i < wideArgc; ++i) launch.args.emplace_back(mye::Narrow(wideArgv[i]));
         ::LocalFree(wideArgv);
     }
-    launch.mainWindow.title = "MyEngine — village_demo (M6)";
+    launch.mainWindow.title = "MyEngine — village_demo";
     launch.mainWindow.clientSize = {960, 540};
     launch.mainWindow.resizable = true;
     return mye::GuardedMain(launch);

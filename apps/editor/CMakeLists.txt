@@ -1,6 +1,6 @@
-# MyEditor — 에디터 실행 파일 (docs/07 §1). L5 얇은 앱: 엔진 스택 + EditorModule.
+# MyEditor — 에디터 실행 파일 (docs/07). L5 얇은 앱: 엔진 스택 + EditorModule.
 #
-# M4-A 골격: 컴파일·부팅 경로 확립. main()이 GuardedMain(argc,argv)에 위임(엔진 진입 규약).
+# main()이 LaunchArgs를 구성하고 GuardedMain에 위임한다.
 add_executable(MyEditor
     src/main.cpp
 )

@@ -29,6 +29,8 @@ namespace mye::editor {
 
 class EditorApp : private IWindowMessageHook {
 public:
+    enum class Workspace : std::uint8_t { Scene2D, Scene3D, Scenes, Dot, Lua };
+    enum class SceneElement : std::uint8_t { Object, Sprite, Character, Collider, Trigger, Interaction, Spawn, Lua };
     EditorApp();
     ~EditorApp() override;
     EditorApp(const EditorApp&) = delete;
@@ -81,11 +83,21 @@ public:
     Expected<std::string, Error> BrowseDotFile(bool save);
     void ActivateDocument(DocumentId id);
     void RefreshDocumentContext(); // Also called before the module renders/ticks a world.
+    Workspace CurrentWorkspace() const { return m_workspace; }
+    std::string_view CentralPanelId() const;
+    void SelectWorkspace(Workspace workspace);
+    Expected<void, Error> CreateScene(bool perspective);
+    Expected<ecs::Entity, Error> CreateSceneElement(SceneElement element, ecs::Entity parent = ecs::Entity::Null());
+    void NewScene(); // Request the 2D/3D choice, shared by menu, shortcut and panels.
+    void RequestAddElement(ecs::Entity parent = ecs::Entity::Null());
+    void DrawDocumentTabs(); // Scene documents belong to the viewport work area.
+    void RequestOpenScene();
+    void SaveActive();
 
 private:
     void RegisterBuiltinPanels();   // 하이어라키·인스펙터·씬 뷰포트·콘솔 등 내장 패널
     void DrawMenuBar();             // File/Edit/View/... + 확장 메뉴 항목
-    void DrawToolbar();             // New/Save · 기즈모 · Play/Stop/Step · 확장 버튼
+    bool DrawToolbar(bool inMenuBar); // Centered workspaces and right-aligned playback.
     void DrawStatusBar();
     void HandleShortcuts();         // Ctrl+S/Z/Y/P 등(포커스 문서 기준)
 
@@ -97,14 +109,11 @@ private:
     CommandStack* ActiveStack();
 
     // 메뉴/툴바/단축키 액션.
-    void NewScene();
-    void SaveActive();
     void TogglePlay();
     void DrawFileDialogs();
-    void DrawDocumentTabs();
+    void DrawWorkspaceDialogs();
     void RequestNewProject();
     void RequestOpenProject(bool folder = false);
-    void RequestOpenScene();
     void RequestSaveAs();
     void OpenUserGuide();
     void RequestSaveProject();
@@ -124,6 +133,14 @@ private:
     ecs::World*    m_boundWorld = nullptr;
     bool           m_selectDocumentTab = false;
     bool           m_showNewProject = false;
+    bool           m_showNewScene = false;
+    bool           m_showAddElement = false;
+    bool           m_toolbarInMenu = false;
+    Workspace      m_workspace = Workspace::Scene2D;
+    ecs::Entity    m_elementParent = ecs::Entity::Null();
+    DocumentId     m_elementDocument{};
+    SceneElement   m_elementChoice = SceneElement::Object;
+    std::array<char, 128> m_elementSearch{};
     bool           m_useStarter = true;
     std::string    m_templateDirectory;
     DocumentId     m_animationId{};

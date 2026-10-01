@@ -47,6 +47,7 @@ add_library(mye_editor STATIC
     include/mye/editor/EditorModule.h
     src/EditorApp.cpp
     src/EditorFileActions.cpp
+    src/EditorWorkspace.cpp
     src/EditorModule.cpp
 
     # ---- 씬 뷰포트·기즈모 (docs/07 씬 뷰포트) ----

@@ -1,9 +1,6 @@
-// Panel.cpp — 패널 매니저 골격 (M4-A: 등록·오픈 로직, 도킹/드로우는 구현 에이전트가 완성)
-//
-// 07 §7: buildDockspaceAndDrawAll은 ImGui 도킹 스페이스 + Window 메뉴 자동 생성 + 전체 패널
-//   OnGui. 골격은 등록·오픈·인스턴스 목록·이벤트 브로드캐스트를 구현하고, ImGui 호출부는
-//   M4-B 구현 에이전트가 채운다(mye_imgui/ImGui:: 의존은 구현 TU에서).
+// Panel manager: persistent dock regions and workspace-specific central panels.
 #include "mye/editor/Panel.h"
+#include "mye/editor/EditorApp.h"
 
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -30,7 +27,8 @@ struct PanelManager::Impl {
     std::vector<Instance> instances;
     std::uint64_t nextInstanceId = 1;
     bool builtDefaultLayout = false;   // 첫 프레임 1회 기본 도킹 레이아웃 구성
-    std::uint32_t layoutLangVersion = 0xFFFFFFFFu;  // 언어 변경 시 레이아웃 재빌드 트리거
+    ImGuiID centerDock = 0;
+    std::string focusPanel;
 
     IEditorPanelFactory* FindFactory(std::string_view panelId) {
         for (auto& f : factories)
@@ -80,10 +78,13 @@ bool PanelManager::IsOpen(std::string_view panelId) const {
     return false;
 }
 
+void PanelManager::Focus(std::string_view panelId) { m_impl->focusPanel = panelId; }
+
 void PanelManager::SetupDockspace(EditorContext& /*ctx*/) {
     // 호스트 윈도우(EditorApp) 안에서 호출 — 툴바 아래 남은 영역에 도크스페이스를 만든다.
     //   고정 ID 를 써서 layout.ini 가 이 도크스페이스 레이아웃을 저장/복원할 수 있게 한다.
-    const ImGuiID dockId = ImGui::GetID("MyeDockSpace");
+    // A new root adopts the requested regions once without deleting old layout files.
+    const ImGuiID dockId = ImGui::GetID("MyeWorkspaceDockSpace");
     const ImGuiDockNodeFlags dockFlags = ImGuiDockNodeFlags_PassthruCentralNode;
 
     // 저장된 레이아웃(layout.ini)이 없을 때만 최초 1회 기본 배치. 이후엔 사용자가 조절/저장한
@@ -95,22 +96,30 @@ void PanelManager::SetupDockspace(EditorContext& /*ctx*/) {
         ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetContentRegionAvail());
 
         ImGuiID center = dockId;
-        ImGuiID left   = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left,  0.18f, nullptr, &center);
-        ImGuiID right  = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
-        ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,  0.26f, nullptr, &center);
-
-        // stableId 로만 매칭(언어 무관). 패널 Begin 은 "라벨###안정ID"를 쓴다(PanelWindowTitle).
-        ImGui::DockBuilderDockWindow("###mye.hierarchy", left);
-        ImGui::DockBuilderDockWindow("###mye.inspector", right);
-        ImGui::DockBuilderDockWindow("###mye.anim", right);
-        ImGui::DockBuilderDockWindow("###mye.assets",    bottom);
-        ImGui::DockBuilderDockWindow("###mye.console",   bottom);
-        ImGui::DockBuilderDockWindow("###mye.viewport",  center);
-        ImGui::DockBuilderDockWindow("###mye.doteditor", center);   // 뷰포트와 탭 그룹
+        ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, .18f, nullptr, &center);
+        ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, .25f, nullptr, &center);
+        const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, .20f, nullptr, &center);
+        const ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, .43f, nullptr, &left);
+        const ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, .35f, nullptr, &right);
+        for (const auto& desc : m_impl->descs) {
+            ImGuiID target = 0;
+            switch (desc.defaultDock) {
+            case DockSlot::Left: target = left; break;
+            case DockSlot::LeftBottom: target = leftBottom; break;
+            case DockSlot::Right: target = right; break;
+            case DockSlot::RightBottom: target = rightBottom; break;
+            case DockSlot::Bottom: target = bottom; break;
+            case DockSlot::Center: target = center; break;
+            case DockSlot::Floating: break;
+            }
+            if (target) ImGui::DockBuilderDockWindow(("###" + desc.id).c_str(), target);
+        }
         ImGui::DockBuilderFinish(dockId);
     } else {
         m_impl->builtDefaultLayout = true;
     }
+
+    if (const auto* node = ImGui::DockBuilderGetCentralNode(dockId)) m_impl->centerDock = node->ID;
 
     ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), dockFlags);
 }
@@ -119,7 +128,19 @@ void PanelManager::DrawPanels(EditorContext& ctx) {
     // 전체 패널 OnGui. 순회 중 Close로 벡터가 흔들리지 않도록 인덱스 스냅샷.
     const std::size_t count = m_impl->instances.size();
     for (std::size_t i = 0; i < count && i < m_impl->instances.size(); ++i) {
-        if (m_impl->instances[i].panel) m_impl->instances[i].panel->OnGui(ctx);
+        auto* panel = m_impl->instances[i].panel.get();
+        if (!panel) continue;
+        const auto& id = panel->Desc().id;
+        const bool central = id == "mye.viewport" || id == "mye.doteditor" || id == "mye.scenes" || id == "mye.lua";
+        if (central && ctx.app && id != ctx.app->CentralPanelId()) continue;
+        if (central && m_impl->centerDock) {
+            ImGui::SetNextWindowDockID(m_impl->centerDock, ImGuiCond_Always);
+            ImGuiWindowClass windowClass;
+            windowClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+            ImGui::SetNextWindowClass(&windowClass);
+        }
+        if (id == m_impl->focusPanel) { ImGui::SetNextWindowFocus(); m_impl->focusPanel.clear(); }
+        panel->OnGui(ctx);
     }
 }
 
@@ -145,13 +166,10 @@ void PanelManager::DeserializeLayout(const json::Value& in) {
     for (const json::Value& p : panels->AsArray()) {
         const json::Value* id = p.IsObject() ? p.Find("id") : nullptr;
         if (!id || !id->IsString()) continue;
-        PanelInstanceId inst = Open(id->AsString());
-        (void)inst;
-        // DeserializeState는 새로 만든 인스턴스에 적용(마지막 인스턴스).
-        if (!m_impl->instances.empty()) {
-            const json::Value* state = p.Find("state");
-            if (state) m_impl->instances.back().panel->DeserializeState(*state);
-        }
+        const PanelInstanceId inst = Open(id->AsString());
+        const json::Value* state = p.Find("state");
+        if (state) for (auto& instance : m_impl->instances)
+            if (instance.id == inst && instance.panel) { instance.panel->DeserializeState(*state); break; }
     }
 }
 

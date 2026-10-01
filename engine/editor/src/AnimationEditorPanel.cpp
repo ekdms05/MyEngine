@@ -19,7 +19,7 @@
 
 namespace mye::editor {
 namespace {
-const PanelDesc kDesc{"mye.anim", "애니메이션", false, DockSlot::Right};
+const PanelDesc kDesc{"mye.anim", "애니메이션", false, DockSlot::RightBottom};
 
 class AnimationEditorPanel final : public IEditorPanel {
 public:

@@ -34,14 +34,14 @@
         <p class="eyebrow">만들고 · 저장하고 · 플레이하기</p>
         <h1>초원 마을에서 첫 게임을 시작하세요.</h1>
         <p class="lead">기본 프로젝트를 만들면 개별 건물·지형 오브젝트와 레벨 1 캐릭터가 준비됩니다. 장면을 수정하고 저장한 뒤 Play로 바로 확인할 수 있습니다.</p>
-        <figure><img src="media/editor.png" width="960" height="540" alt="회색 에디터의 중앙 마을 뷰포트, 왼쪽 오브젝트 계층, 오른쪽 인스펙터와 하단 콘솔" fetchpriority="high"><figcaption>실제 MyEditor 화면. 메뉴와 상태 메시지는 별도 영역을 사용합니다.</figcaption></figure>
+        <figure><img src="media/editor.png" width="960" height="540" alt="회색 에디터의 중앙 마을 뷰포트, 왼쪽 오브젝트 계층, 오른쪽 인스펙터와 하단 콘솔" fetchpriority="high"><figcaption>실제 MyEditor 화면. 상단 중앙의 작업대를 선택하면 중앙 내용이 바뀝니다. 주변 다섯 영역은 탭으로 사용합니다.</figcaption></figure>
         <ol><li><code>build/dev/apps/editor/Release/MyEditor.exe</code>를 실행합니다.</li><li><strong>파일 → 새 프로젝트</strong>에서 이름·폴더를 지정하고 기본 콘텐츠 사용을 선택합니다.</li><li>프로젝트를 저장하고 Play를 누릅니다. WASD 또는 방향키로 걷고 E로 상호작용합니다.</li></ol>
         <details><summary>왜 기본 프로젝트로 시작하나요?</summary><p>씬·에셋 GUID·충돌·캐릭터 구성의 연결을 실제로 확인할 수 있습니다. 새 프로젝트는 원본 템플릿을 복사하므로 제작 중 변경이 다른 프로젝트에 전파되지 않습니다.</p><p>근거: <code>ProjectContext::Create</code>, <code>game/starter/meadow_village</code>.</p></details>
       </section>
       <section id="scene">
         <p class="eyebrow">장면 구성</p><h2>건물과 지형을 오브젝트별로 편집하세요.</h2>
         <p class="lead">계층에서 개별 오브젝트를 선택하면 위치·스프라이트·충돌·행동을 인스펙터에서 바꿀 수 있습니다.</p>
-        <ol><li>계층에서 건물 또는 지형을 선택합니다. 새 오브젝트는 계층의 생성 기능으로 만듭니다.</li><li>인스펙터에서 위치와 스케일을 수정합니다. 에셋 브라우저의 이미지는 뷰포트로 끌어 배치합니다.</li><li><kbd>Ctrl</kbd> + <kbd>S</kbd>로 활성 씬을 저장합니다. 전체 문서는 파일 메뉴의 프로젝트 저장을 사용합니다.</li></ol>
+        <ol><li>계층에서 건물 또는 지형을 선택합니다. 상단 <strong>씬 → 씬 만들기</strong>에서 2D/3D를 선택합니다. <strong>+ 요소 추가</strong> 또는 계층의 <strong>+ 추가</strong>에서 요소를 검색하고 Enter로 만듭니다.</li><li>인스펙터에서 위치와 스케일을 수정합니다. 에셋 브라우저의 이미지는 뷰포트로 끌어 배치합니다.</li><li><kbd>Ctrl</kbd> + <kbd>S</kbd>로 활성 씬을 저장합니다. 전체 문서는 파일 메뉴의 프로젝트 저장을 사용합니다.</li></ol>
         <details><summary>저장 구조와 이유</summary><p>씬은 <code>assets/scenes/*.scene</code>, 이미지와 모션은 GUID 및 <code>.meta</code>로 연결됩니다. 에디터 배치 상태는 <code>.myeditor</code>에 따로 저장됩니다. 같은 오브젝트에 대한 변경은 기존 문서 Undo 스택을 사용합니다.</p></details>
       </section>
       <section id="movement">
@@ -53,14 +53,14 @@
       <section id="events">
         <p class="eyebrow">게임 규칙</p><h2>이벤트를 행동에 연결하고 맵을 이동하세요.</h2>
         <p class="lead">코드 없이 메시지·표시 전환·위치 이동·맵 변경을 연결할 수 있습니다. 추가 규칙은 오브젝트의 Lua 콜백으로 작성합니다.</p>
-        <ol><li>인스펙터에서 <code>ObjectBehavior</code>를 추가하고 연결을 만듭니다. <code>Start</code>, <code>Interact</code>, <code>TriggerEnter</code>, <code>TriggerExit</code> 중 이벤트를 고릅니다.</li><li>행동과 대상을 지정합니다. 대상 이름은 씬에서 유일해야 합니다. 빈 대상은 현재 오브젝트입니다.</li><li>E 상호작용에는 <code>InteractionTarget</code>, 접촉 이벤트에는 트리거 <code>Collider2D</code>를 구성합니다.</li><li>출입구에 <code>ScenePortal</code>을 추가합니다. <code>scenePath</code>는 <code>assets/scenes/cottage.scene</code> 같은 프로젝트 내부 경로, <code>spawnName</code>은 목적지의 고유 오브젝트 이름입니다.</li></ol>
+        <ol><li>인스펙터에서 <code>ObjectBehavior</code>를 추가하고 연결을 만듭니다. 소스는 상단 <strong>Lua</strong> 작업대에서 선택 오브젝트를 편집합니다. <code>Start</code>, <code>Interact</code>, <code>TriggerEnter</code>, <code>TriggerExit</code> 중 이벤트를 고릅니다.</li><li>행동과 대상을 지정합니다. 대상 이름은 씬에서 유일해야 합니다. 빈 대상은 현재 오브젝트입니다.</li><li>E 상호작용에는 <code>InteractionTarget</code>, 접촉 이벤트에는 트리거 <code>Collider2D</code>를 구성합니다.</li><li>출입구에 <code>ScenePortal</code>을 추가합니다. <code>scenePath</code>는 <code>assets/scenes/cottage.scene</code> 같은 프로젝트 내부 경로, <code>spawnName</code>은 목적지의 고유 오브젝트 이름입니다.</li></ol>
         <details><summary>Lua와 컴포넌트의 역할</summary><p>반복되는 이동·충돌은 공유 컴포넌트로 처리하고 콘텐츠 고유 행동만 Lua에 둡니다. 이벤트 연결은 순서대로 실행되는 목록입니다. 범용 노드 그래프나 시각 스크립트 전체를 구현한 기능은 아닙니다.</p><p>기본 마을의 표지판과 오두막 출입구에서 작동 예를 확인하세요.</p></details>
       </section>
       <section id="dot">
         <p class="eyebrow">픽셀 제작</p><h2>참조 이미지를 보며 픽셀을 그리세요.</h2>
         <p class="lead">도트 에디터에서 PNG를 가져와 반투명 참조로 표시하고, 확대·이동하면서 픽셀을 편집할 수 있습니다. 원본은 <code>.dot</code> 문서로 저장합니다.</p>
         <figure><img src="media/dot.png" width="960" height="540" loading="lazy" alt="도트 에디터의 픽셀 캔버스, 그리기 도구와 프레임 타임라인"><figcaption>새 기본 프로젝트의 편집 가능한 도트 문서. 에셋 브라우저에서 더블클릭해 엽니다.</figcaption></figure>
-        <ol><li><strong>창 → 도트 에디터</strong>를 열고 새 도트 문서를 만듭니다. 제공 예제는 <code>assets/sprites/novice.dot</code>입니다.</li><li>참조 이미지의 PNG 선택 버튼이나 에셋 끌어놓기로 가져옵니다. 불투명도·표시 여부를 조절합니다.</li><li>휠로 확대·축소, 마우스 가운데 버튼으로 이동합니다. <strong>맞춤</strong>과 <strong>1:1</strong> 버튼으로 배율을 복원합니다.</li><li>브러시·지우개·스포이트·채우기·영역 선택을 사용합니다. 참조를 현재 프레임에 복사하면 가장 가까운 픽셀 방식으로 크기를 맞춥니다.</li><li><code>assets/sprites/hero.dot</code>처럼 저장합니다. 이미 존재하는 다른 파일에 저장할 때는 덮어쓰기를 확인합니다.</li></ol>
+        <ol><li><strong>상단 도트메이커</strong>를 열고 새 도트 문서를 만듭니다. 제공 예제는 <code>assets/sprites/novice.dot</code>입니다.</li><li>참조 이미지의 PNG 선택 버튼이나 에셋 끌어놓기로 가져옵니다. 불투명도·표시 여부를 조절합니다.</li><li>휠로 확대·축소, 마우스 가운데 버튼으로 이동합니다. <strong>맞춤</strong>과 <strong>1:1</strong> 버튼으로 배율을 복원합니다.</li><li>브러시·지우개·스포이트·채우기·영역 선택을 사용합니다. 참조를 현재 프레임에 복사하면 가장 가까운 픽셀 방식으로 크기를 맞춥니다.</li><li><code>assets/sprites/hero.dot</code>처럼 저장합니다. 이미 존재하는 다른 파일에 저장할 때는 덮어쓰기를 확인합니다.</li></ol>
         <details><summary>원본과 내보내기를 나누는 이유</summary><p><code>.dot</code>에는 참조·픽셀·뼈·키·모션이 함께 들어갑니다. 런타임용 PNG와 <code>.anim</code>은 내보내기 결과이므로 다시 생성할 수 있습니다. 참조 입력은 PNG만 지원하며 최대 한 변 4096, 총 4,194,304 픽셀입니다. 편집 프레임은 한 변 512, 최대 64장입니다.</p></details>
       </section>
       <section id="rig">
@@ -73,7 +73,7 @@
       <section id="viewport">
         <p class="eyebrow">결과 확인</p><h2>2D와 3D에서 같은 장면을 확인하세요.</h2>
         <p class="lead">뷰포트의 2D/3D 전환은 같은 씬을 다른 카메라로 보여줍니다. Play는 편집 씬의 복제본에서 실행되어 Stop 뒤 원본 배치로 돌아갑니다.</p>
-        <ol><li>뷰포트에서 2D 또는 3D를 선택합니다. 캐릭터의 발 위치·건물 가림·충돌 범위를 확인합니다.</li><li>Play로 이동·상호작용·출입구·모션 전환을 확인합니다. Pause와 Step으로 진행을 관찰합니다.</li><li>Stop 후 필요한 변경을 편집 씬에 적용하고 저장합니다.</li></ol>
+        <ol><li>상단 중앙에서 2D 또는 3D를 선택합니다. 캐릭터의 발 위치·건물 가림·충돌 범위를 확인합니다.</li><li>오른쪽 위 ▶로 이동·상호작용·출입구·모션 전환을 확인합니다. ⏸로 일시정지하고 ▶로 계속합니다. 프레임 진행은 플레이 메뉴의 Step을 사용합니다.</li><li>■로 중지한 뒤 필요한 변경을 편집 씬에 적용하고 저장합니다.</li></ol>
         <figure><img src="media/3d.png" width="960" height="540" loading="lazy" alt="같은 초원 마을을 기울어진 3D 카메라로 렌더링한 화면"><figcaption>동일한 씬의 3D 카메라 렌더 결과.</figcaption></figure>
         <details><summary>좌표와 화질 기준</summary><p>왼손 좌표계, +Y 위, 기본 PPU 48, 렌더 타깃 960×540을 사용합니다. 3D 카메라 전환으로 2D 이미지가 입체 모델로 바뀌지는 않습니다. 깊이와 알파 컷아웃 계약은 <a href="../02-rendering.md">렌더 문서</a>에 있습니다.</p></details>
       </section>

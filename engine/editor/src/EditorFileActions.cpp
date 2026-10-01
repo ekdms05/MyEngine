@@ -115,6 +115,8 @@ Expected<void, Error> EditorApp::CreateProject(std::string_view name, std::strin
     auto created = m_project->Create(name, directory, discardUnsaved, useStarter ? m_templateDirectory : "");
     if (!created) return created.GetError();
     m_animationId = {};
+    m_dotId = {};
+    SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
     m_selectDocumentTab = true;
@@ -128,6 +130,8 @@ Expected<void, Error> EditorApp::OpenProject(std::string_view path, bool discard
     auto opened = m_project->Open(path, discardUnsaved);
     if (!opened) return opened.GetError();
     m_animationId = {};
+    m_dotId = {};
+    SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
     m_selectDocumentTab = true;
@@ -155,6 +159,7 @@ Expected<void, Error> EditorApp::OpenAnimation(std::string_view path) {
     m_animationId = opened.Value()->Id();
     opened.Value()->Commands().SetContext(&m_ctx);
     m_panels->Open("mye.anim");
+    m_panels->Focus("mye.anim");
     return {};
 }
 
@@ -166,7 +171,7 @@ Document* EditorApp::DotDocumentForEditing() {
 Expected<void, Error> EditorApp::OpenDot(std::string_view path) {
     auto opened = m_project->OpenDot(path); if (!opened) return opened.GetError();
     m_dotId = opened.Value()->Id(); opened.Value()->Commands().SetContext(&m_ctx);
-    m_panels->Open("mye.doteditor"); return {};
+    SelectWorkspace(Workspace::Dot); return {};
 }
 Expected<std::string, Error> EditorApp::BrowseImageFile() {
     return Browse(m_window, FileDialog::Image, Utf8String(Utf8Path(m_project->RootDir()) / "assets"));
@@ -258,7 +263,7 @@ void EditorApp::OpenUserGuide() {
 
 void EditorApp::RequestSaveAs() {
     if (m_playMode->IsPlaying()) return;
-    if (m_dotFocused && DotDocumentForEditing()) {
+    if (!m_animationFocused && (m_dotFocused || m_workspace == Workspace::Dot) && DotDocumentForEditing()) {
         auto path = BrowseDotFile(true);
         if (!path) ReportFileResult(path.GetError(), "");
         else if (!path.Value().empty()) ReportFileResult(m_project->SaveDot(m_dotId, path.Value()), T("file.saved"));
@@ -305,8 +310,6 @@ void EditorApp::DrawDocumentTabs() {
         ImGui::TextWrapped("%s", T("file.welcome"));
         return;
     }
-    ImGui::TextDisabled("%s", std::string(m_project->Name()).c_str());
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", std::string(m_project->RootDir()).c_str());
     if (!ImGui::BeginTabBar("##scene_documents")) return;
     const bool selectRequested = m_selectDocumentTab;
     const Document* active = m_project->Active();

@@ -17,12 +17,14 @@
 #include "mye/editor/CommandStack.h"
 #include "mye/editor/PlayMode.h"
 #include "mye/editor/AnimEditing.h"
+#include "mye/editor/BuiltinPanels.h"
 #include "mye/core/I18n.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/ser/JsonArchive.h"
 #include "mye/core/Log.h"
 
 #include "mye/ecs/World.h"
+#include "mye/scene/Renderable.h"
 #include "mye/ecs/ComponentType.h"
 #include "mye/refl/TypeInfo.h"
 #include "mye/refl/TypeId.h"
@@ -60,11 +62,11 @@ CommandStack* Stack(EditorContext& ctx) {
     return ctx.commands;
 }
 
-bool EditText(const char* label, std::string& text, bool multiline = false) {
+bool EditText(const char* label, std::string& text, bool multiline = false, float height = 260) {
     std::vector<char> buffer(multiline ? 65537 : std::max<std::size_t>(1024, text.size() + 256), 0);
     std::copy_n(text.data(), std::min(text.size(), buffer.size() - 1), buffer.data());
     const bool changed = multiline
-        ? ImGui::InputTextMultiline(label, buffer.data(), buffer.size(), ImVec2(-1, 260), ImGuiInputTextFlags_AllowTabInput)
+        ? ImGui::InputTextMultiline(label, buffer.data(), buffer.size(), ImVec2(-1, height), ImGuiInputTextFlags_AllowTabInput)
         : ImGui::InputText(label, buffer.data(), buffer.size());
     if (changed) text = buffer.data();
     return changed;
@@ -119,19 +121,12 @@ void DrawObjectBehavior(EditorContext& ctx, ecs::Entity entity, const runtime::O
     ImGui::BeginDisabled(edited.connections.size() >= 64);
     if (ImGui::Button("+ 이벤트 → 동작")) { edited.connections.emplace_back(); changed = true; }
     ImGui::EndDisabled();
-    if (ImGui::TreeNode("오브젝트 Lua")) {
-        ImGui::TextWrapped("return 테이블 규약. on_start(self), on_update(self, dt), on_interact(self), on_trigger_enter(self, other)를 사용합니다. 변경 내용은 씬 저장에 포함되며 Play를 다시 시작하면 반영됩니다.");
-        if (edited.luaSource.empty() && ImGui::Button("기본 코드 만들기")) {
-            edited.luaSource = "return {\n    on_interact = function(self)\n        print(\"interacted\")\n    end,\n}\n"; changed = true;
-        }
-        changed |= EditText("##lua_source", edited.luaSource, true);
-        ImGui::TreePop();
-    }
     if (changed) {
         auto before = BehaviorBlob(current), after = BehaviorBlob(edited);
         if (!before || !after) { MYE_LOG_ERROR("Editor", "Could not serialize object behavior"); return; }
         if (auto* stack = Stack(ctx)) stack->Push(std::make_unique<PropertyEditCommand>(ObjectRef::Component(entity, *refl::GetType<runtime::ObjectBehavior>()), refl::PropertyPath{}, before.Value(), after.Value(), "Edit Object Behavior"));
     }
+    if (ImGui::TreeNode("오브젝트 Lua")) { DrawObjectLua(ctx, 260); ImGui::TreePop(); }
 }
 
 class InspectorPanel final : public IEditorPanel {
@@ -304,6 +299,42 @@ public:
 
 std::unique_ptr<IEditorPanelFactory> MakeInspectorPanelFactory() {
     return std::make_unique<InspectorPanelFactory>();
+}
+
+void DrawObjectLua(EditorContext& ctx, float height) {
+    auto* world = ctx.activeWorld();
+    const auto selected = ctx.selection ? ctx.selection->Primary() : SelectableRef{};
+    if (!world || !selected.IsEntity() || !world->Valid(selected.AsEntity())) {
+        ImGui::TextWrapped("왼쪽 계층에서 Lua를 작성할 오브젝트를 선택하세요. + 추가에서 Lua 오브젝트를 만들 수도 있습니다.");
+        return;
+    }
+    const auto entity = selected.AsEntity();
+    const auto* name = world->TryGet<scene::ObjectName>(entity);
+    ImGui::Text("Lua · %s", name ? name->value.c_str() : "선택한 오브젝트");
+    ImGui::TextWrapped("return 테이블: on_start(self), on_update(self, dt), on_interact(self), on_trigger_enter(self, other). 씬에 저장되며 실행을 다시 시작하면 반영됩니다.");
+    ImGui::BeginDisabled(ctx.playMode && ctx.playMode->IsPlaying());
+    const auto* behavior = world->TryGet<runtime::ObjectBehavior>(entity);
+    if (!behavior) {
+        if (ImGui::Button("Lua 추가") && ctx.commands)
+            ctx.commands->Push(std::make_unique<AddComponentCommand>(entity, *refl::GetType<runtime::ObjectBehavior>()));
+    } else if (behavior->luaSource.size() > 65536) {
+        ImGui::TextWrapped("Lua 소스가 64 KiB 제한을 초과했습니다.");
+    } else {
+        auto text = behavior->luaSource;
+        bool changed = false;
+        if (text.empty() && ImGui::Button("기본 코드 만들기")) {
+            text = "return {\n    on_interact = function(self)\n        print(\"interacted\")\n    end,\n}\n";
+            changed = true;
+        }
+        changed |= EditText("##lua_source", text, true, height);
+        if (changed && ctx.commands) {
+            refl::PropertyPath path;
+            path.segments.push_back(refl::PathSegment{std::string("luaSource")});
+            ctx.commands->Push(std::make_unique<PropertyEditCommand>(ObjectRef::Component(entity, *refl::GetType<runtime::ObjectBehavior>()), path,
+                ValueBlob{json::Stringify(json::Value(behavior->luaSource))}, ValueBlob{json::Stringify(json::Value(text))}, "Edit Object Lua"));
+        }
+    }
+    ImGui::EndDisabled();
 }
 
 } // namespace mye::editor

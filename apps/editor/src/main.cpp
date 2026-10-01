@@ -63,6 +63,8 @@ public:
                 m_animationPath = a[++i];
             } else if (a[i] == "--dot" && i + 1 < a.size()) {
                 m_dotPath = a[++i];
+            } else if (a[i] == "--workspace" && i + 1 < a.size()) {
+                m_workspace = a[++i];
             } else if (a[i] == "--view3d") {
                 m_view3d = true;
             } else if (a[i] == "--select" && i + 1 < a.size()) {
@@ -94,6 +96,7 @@ public:
     void OnStart(EngineContext& ctx) override {
         // EditorModule 에 CLI 제어를 주입(프레임 한도 도달 시 이 Application 을 종료).
         if (auto* em = ctx.GetService<editor::EditorModule>()) {
+            if (m_view3d) em->SetPerspectiveView(true);
             if (em->App() && !m_dotPath.empty()) {
                 const auto opened = em->App()->OpenDot(m_dotPath);
                 if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); }
@@ -102,11 +105,19 @@ public:
                 const auto opened = em->App()->OpenAnimation(m_animationPath);
                 if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); }
             }
+            if (em->App() && !m_workspace.empty()) {
+                using Workspace = editor::EditorApp::Workspace;
+                if (m_workspace == "2d") em->App()->SelectWorkspace(Workspace::Scene2D);
+                else if (m_workspace == "3d") em->App()->SelectWorkspace(Workspace::Scene3D);
+                else if (m_workspace == "scenes") em->App()->SelectWorkspace(Workspace::Scenes);
+                else if (m_workspace == "dot") em->App()->SelectWorkspace(Workspace::Dot);
+                else if (m_workspace == "lua") em->App()->SelectWorkspace(Workspace::Lua);
+                else { MYE_LOG_ERROR("MyEditor", "Unknown workspace: {}", m_workspace); RequestExit(1); }
+            }
             if (em->App() && m_startPlaying) {
                 const auto started = em->App()->PlayMode().Play();
                 if (!started) { MYE_LOG_ERROR("MyEditor", "{}", started.GetError().message); RequestExit(1); }
             }
-            em->SetPerspectiveView(m_view3d);
             if (em->App()) em->App()->RefreshDocumentContext();
             if (em->App() && !m_selectName.empty()) {
                 if (auto* world = em->App()->PlayMode().ActiveWorld())
@@ -124,7 +135,7 @@ public:
     void OnStop(EngineContext& /*ctx*/) override {}
 
 private:
-    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_dotPath, m_selectName;
+    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_dotPath, m_selectName, m_workspace;
     bool m_view3d = false;
     bool          m_startPlaying = false;
     bool          m_frameLimit = false;

@@ -510,7 +510,10 @@ void EditorModule::OnShutdown(EngineContext& ctx) {
     ctx.UnregisterServiceRaw(kServiceId);
 }
 
-void EditorModule::SetPerspectiveView(bool enabled) { m_impl->vpCam.perspective = enabled; }
+void EditorModule::SetPerspectiveView(bool enabled) {
+    m_impl->vpCam.perspective = enabled;
+    if (m_impl->app) m_impl->app->SelectWorkspace(enabled ? EditorApp::Workspace::Scene3D : EditorApp::Workspace::Scene2D);
+}
 
 EditorApp* EditorModule::App() { return m_impl->app.get(); }
 

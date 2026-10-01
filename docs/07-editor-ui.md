@@ -2,7 +2,7 @@
 
 MyEditor는 C++20·ECS·DX11·ImGui로 구성한 Windows 에디터다. 실행 파일은 `build/dev/apps/editor/Release/MyEditor.exe`, Debug는 같은 경로의 `Debug/MyEditor.exe`다.
 
-![개별 마을 오브젝트와 동작 편집의 실제 MyEditor 화면](images/editor-objects.png)
+![상단 작업대 선택과 다섯 주변 영역의 실제 MyEditor 화면](images/editor-workspace.png)
 
 ## 기본 프로젝트 시작
 
@@ -16,6 +16,18 @@ MyEditor는 C++20·ECS·DX11·ImGui로 구성한 Windows 에디터다. 실행 �
 
 ## 화면과 문서
 
+상단 왼쪽은 메뉴, 중앙은 **2D · 3D · 씬 · 도트메이커 · Lua**, 오른쪽은 **▶ 실행 · ⏸ 일시정지 · ■ 중지**다. 테두리 없는 작업대 텍스트를 누르면 선택 색·밑줄이 강조되고 중앙 내용이 바뀐다. ▶는 실행 중 비활성화하고 일시정지 상태에서는 계속 진행한다. 좁은 창에서는 작업대·재생 제어가 바로 아래 줄로 이동한다.
+
+| 영역 | 기본 탭 | 추가 탭 |
+|---|---|---|
+| 왼쪽 위 | Hierarchy | 등록된 도구의 도킹 가능 |
+| 왼쪽 아래 | Asset Browser | 창 → 타일 팔레트 |
+| 중앙 아래 | Console | 등록된 도구의 도킹 가능 |
+| 오른쪽 위 | Inspector | 등록된 도구의 도킹 가능 |
+| 오른쪽 아래 | Animation | 창 → 타일맵 편집 |
+
+주변 패널은 탭과 분할 경계를 드래그해 조절한다. 중앙은 상단 텍스트를 작업대 탭으로 쓰고 중복 제목 탭은 숨긴다. 씬 문서 탭은 뷰포트 안에 있다. 새 도킹 루트는 기존 레이아웃 파일을 삭제하지 않고 이번 배치를 처음 적용한다. 이후 분할·패널 상태와 선택한 작업대는 `.myeditor`에 저장한다. 열린 콘텐츠 문서 전체의 재개는 별도 기능이다.
+
 | 화면 | 현재 동작 |
 |---|---|
 | Hierarchy | ObjectName 표시·선택·생성·삭제·재부모화. Terrain 그룹과 독립 Player |
@@ -26,6 +38,8 @@ MyEditor는 C++20·ECS·DX11·ImGui로 구성한 Windows 에디터다. 실행 �
 | Dot Editor | .dot 문서·Undo·PNG 참조·줌/팬·그리기·파츠 뼈·포즈 키·프레임/모션·PNG/.anim/.meta 내보내기·씬 모션 연결 |
 | Tile Editing | 창 메뉴의 별도 도구. 기본 배경을 자동으로 지형 타일로 변환하지 않음 |
 | Console | 파싱·임포트·저장·실행 오류 |
+| 씬 작업대 | 씬 만들기·불러오기·요소 추가, 열린 씬 목록 |
+| Lua 작업대 | 선택 오브젝트의 ObjectBehavior.luaSource 편집·기본 코드 생성. 씬 저장·Undo 재사용 |
 
 [ProjectContext·Document](../engine/editor/include/mye/editor/Project.h)는 씬·애니메이션·도트 문서를 소유한다. 씬마다 독립 World·EventBus·Undo가 있고, 애니메이션마다 독립 데이터·Undo가 있다. 씬 탭과 애니메이션 문서 선택은 별개다. 문서 이름의 `*`는 미저장 상태다. 애니메이션 또는 도트 패널에 포커스가 있으면 Undo/Redo·Ctrl+S는 그 문서를 대상으로 한다.
 
@@ -40,8 +54,8 @@ MyEditor는 C++20·ECS·DX11·ImGui로 구성한 Windows 에디터다. 실행 �
 | 새 프로젝트 | Ctrl+Shift+N | 이름·빈 최종 폴더·기본 에셋 포함 여부 선택 |
 | 프로젝트 열기 | Ctrl+Shift+O | .myeproj 선택. 파일 메뉴에서 폴더 열기도 가능 |
 | 프로젝트 저장 | Ctrl+Alt+S | 열린 씬·애니메이션과 프로젝트 메타데이터 저장. 이름 없는 문서는 먼저 경로 지정 |
-| 새 씬 / 씬 열기 | Ctrl+N / Ctrl+O | 독립 빈 씬 생성 / 프로젝트 내부 .scene 열기 |
-| 저장 | Ctrl+S | 활성 씬 또는 포커스가 있는 애니메이션 저장 |
+| 새 씬 / 씬 열기 | Ctrl+N / Ctrl+O | 2D·3D 보기 선택 후 독립 빈 씬 생성 / 프로젝트 내부 .scene 열기 |
+| 저장 | Ctrl+S | 선택한 도트 작업대·포커스가 있는 애니메이션·활성 씬 저장 |
 | 씬 다른 이름으로 저장 | Ctrl+Shift+S | 프로젝트 내부 .scene 지정. 애니메이션 포커스에서는 패널 저장 경로 사용 안내 |
 
 ```text
@@ -62,6 +76,14 @@ MyEditor는 C++20·ECS·DX11·ImGui로 구성한 Windows 에디터다. 실행 �
 후보 프로젝트와 시작 씬의 파싱·컴포넌트·계층 검증 후 현재 프로젝트를 교체한다. 전환·종료 시 미저장 문서에 대해 저장·버리기·취소를 확인한다. 파싱 실패·저장 실패·선택 취소는 기존 작업을 보존한다. 플레이 중 프로젝트·씬 전환과 씬 저장·클립 지정은 제한한다.
 
 JSON은 공용 [JsonFile](../engine/core/include/mye/core/JsonFile.h)의 64 MiB 제한과 임시 파일 쓰기→flush→교체를 사용한다. 실패한 저장은 원본·경로·dirty를 유지한다. 기존 .tmp를 자동 삭제하거나 덮어쓰지 않는다. 전체 프로젝트는 파일별 순차 저장이므로 앞 파일 성공 뒤 다른 파일이 실패할 수 있다. 로컬 레이아웃 저장 실패는 콘텐츠 저장과 별도로 기록한다.
+
+## 씬 만들기와 요소 추가
+
+**상단 씬 → 씬 만들기** 또는 Hierarchy의 **씬 만들기**에서 2D/3D를 선택한다. 같은 ECS 씬 형식을 사용하며 평면/원근 카메라로 시작하는 차이다. 3D 메시·물리 제작을 추가하는 선택은 아니다.
+
+**+ 요소 추가** 또는 Hierarchy의 **+ 추가**를 누르면 검색·설명·목록을 가진 창이 열린다. 오브젝트, 스프라이트, 캐릭터, 충돌 영역, 트리거, 상호작용, 도착 지점, Lua 오브젝트 중 선택해 **추가**·Enter·더블 클릭으로 확정한다. Escape는 취소한다. 선택한 부모 아래에 만들며 캐릭터는 최상위에 만든다. PNG와 이벤트 행동·목적지 연결은 Inspector에서 지정한다. 캐릭터는 기존 기본 이동 구성을 재사용하며 활성 조작 캐릭터가 이미 있으면 거부한다.
+
+생성·이름·필수 컴포넌트는 한 Undo 트랜잭션이다. 새 직렬화나 미지원 요소의 임시 항목을 추가하지 않는다. Lua 작업대의 소스는 씬에 저장되고 Play 재시작 시 적용된다. 외부 .lua 파일 에디터·구문 강조·디버거는 미지원이다.
 
 ## 애니메이션 수정·제작
 
@@ -97,7 +119,11 @@ EditorModule은 `assets://` VFS·AssetManager·AssetDatabase와 retained Texture
 ```powershell
 .\build\dev\apps\editor\Release\MyEditor.exe --project <project> --view3d
 .\build\dev\apps\editor\Release\MyEditor.exe --project <project> --select "Village Sign"
+.\build\dev\apps\editor\Release\MyEditor.exe --project <project> --workspace scenes
+.\build\dev\apps\editor\Release\MyEditor.exe --project <project> --dot assets/sprites/novice.dot --workspace dot
 ```
+
+`--workspace`는 `2d`, `3d`, `scenes`, `dot`, `lua`를 받는다. 지정하지 않으면 저장된 작업대를 사용한다. 캡처 시 시작 화면을 고르는 기능이며 사용자 입력을 주입하지 않는다.
 
 ## Godot에서 참고한 계약
 
@@ -108,13 +134,15 @@ EditorModule은 `assets://` VFS·AssetManager·AssetDatabase와 retained Texture
 | [Project Manager](https://docs.godotengine.org/en/stable/tutorials/editor/project_manager.html) | 이름·빈 폴더 생성, 파일/폴더 열기 | 최근 목록·별도 런처·복구 정책은 후속 작업 |
 | [File paths in Godot projects](https://docs.godotengine.org/en/stable/tutorials/io/data_paths.html) | 프로젝트 내부 경로와 로컬 편집 설정 구분 | 기존 assets://·GUID 재사용, 새 res:// 계층 미도입 |
 | [Nodes and Scenes](https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html) | 여러 씬 문서와 저장/재열기 | 노드 대신 독립 ECS World |
+| [First look at the editor](https://docs.godotengine.org/en/stable/getting_started/introduction/first_look_at_the_editor.html) | 왼쪽 메뉴·중앙 작업대·오른쪽 실행, 주변 도크·하단 패널 | 사용자 지정 5개 작업대·5개 주변 영역, 기존 PlayWorld 사용 |
+| [Nodes and Scenes](https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html), [CreateDialog source (4.5)](https://github.com/godotengine/godot/blob/4.5/editor/gui/create_dialog.cpp), [EditorNode source (4.5)](https://github.com/godotengine/godot/blob/4.5/editor/editor_node.cpp) | 2D/3D 시작 선택, 요소 검색·설명·선택·확정, 명시적 작업대 전환 | 지원하는 ECS 조합만 표시. 노드 상속·즐겨찾기·전체 노드 카탈로그는 미도입 |
 | [Project organization](https://docs.godotengine.org/en/stable/tutorials/best_practices/project_organization.html) | 관련 콘텐츠를 프로젝트에 포함 | PNG/.anim GUID 연결 완료, 이동·재임포트 실패 검사는 후속 |
 
 이번 스프라이트 애니메이션 공식 문서의 브라우저 접근은 권한 거부로 실패했다. 해당 내용을 읽거나 새 기능을 공식 동작과 비교 완료했다고 기록하지 않는다. 기존 ClipPlayback·SpriteSheetImporter·편집 명령의 검증된 계약으로 구현했다. 재확인은 접근이 허용되는 환경에서 진행한다.
 
 ## 검증과 한계
 
-2026-10-01: Debug/Release 전체 빌드·각 CTest 13/13, 내부 검사 519/519 통과. 기본 프로젝트 수정 보존, 저장 실패 보존, 애니메이션/씬 Undo 분리, 레벨 1 왕복, GUID 유지, 잘못된 프레임·이벤트·경로, Transform 파생 데이터와 렌더 영역을 검사했다.
+2026-10-01 최종 작업대 변경: Debug/Release 전체 빌드·각 CTest 13/13, 내부 검사 각 532/532 통과. 기본 프로젝트 수정 보존, 저장 실패 보존, 애니메이션/씬 Undo 분리, 레벨 1 왕복, GUID 유지, 잘못된 프레임·이벤트·경로, Transform 파생 데이터와 렌더 영역을 검사했다. 실제 ImGui 경로로 도킹·작업대·씬 생성·검색/Enter·Lua 기본 코드/Undo·실행/일시정지/중지·640×480 프레임을 확인했다. Release 다섯 작업대의 MCP 캡처는 모두 exit 0이다.
 
 기존 MyEngine MCP 서버를 공식 SDK stdio Client로 호출해 실제 Release MyEditor의 1920×1080 셸과 960×540 headless 씬·Play를 캡처했다. 셸 이미지는 MCP가 960×540으로 축소한다. Play 캡처의 픽셀 변화는 캐릭터 영역으로 한정되어 실제 프레임 진행을 확인했다. 원본 PNG를 재가공한 그림을 앱 캡처로 표시하지 않는다.
 

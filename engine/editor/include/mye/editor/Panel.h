@@ -32,8 +32,10 @@ enum class DockSlot : std::uint8_t {
     Center,   // 씬 뷰포트
     Left,     // 하이어라키
     Right,    // 인스펙터
-    Bottom,   // 에셋·콘솔 탭 그룹
+    Bottom,   // 콘솔·진단 탭 그룹
     Floating, // 초기 미도킹
+    LeftBottom,  // 에셋·타일 팔레트
+    RightBottom, // 애니메이션·타일맵 편집
 };
 
 // 패널 종류 서술자 — 팩토리가 반환. Window 메뉴·도킹 배치 근거.
@@ -86,6 +88,7 @@ public:
     PanelInstanceId Open(std::string_view panelId);
     void Close(PanelInstanceId id);
     bool IsOpen(std::string_view panelId) const;
+    void Focus(std::string_view panelId);
 
     // 도킹 스페이스 구성(호스트 윈도우 내부에서 호출) — DockSpace + 최초 1회 기본 레이아웃 배치.
     void SetupDockspace(EditorContext& ctx);

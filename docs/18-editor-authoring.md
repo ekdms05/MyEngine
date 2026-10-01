@@ -7,6 +7,9 @@
 | 작업 | 실제 경로 | 경계 |
 |---|---|---|
 | 메뉴·상태 | EditorApp 호스트 높이에서 상태 영역 제외 → 별도 DrawStatusBar | 한 줄·툴팁·콘솔. 긴 오류가 메뉴 높이를 늘리지 않음 |
+| 작업대·도킹 | 상단 텍스트 → SelectWorkspace → 중앙 패널, 주변 5영역 탭 → PanelManager | 2D/3D는 같은 씬의 카메라 전환. 문서·Undo 보존, session.json에 작업대 저장 |
+| 씬 요소 추가 | 씬/Hierarchy → 검색 창 → CreateSceneElement → 기존 생성/컴포넌트/필드 트랜잭션 | 지원하는 8개 ECS 조합만 표시. Redo는 생성 핸들을 복구하고 부모 Children을 유지 |
+| Lua 작업대 | 선택 오브젝트 → DrawObjectLua → luaSource PropertyEdit → 씬 저장/Play | Inspector와 같은 편집 경계. Play 중 읽기 전용 |
 | 기본 이동 | Inspector → SetupCharacterMovement → 기존 AddComponent/PropertyEdit 트랜잭션 → ObjectSystem 고정 틱 | 최상위 오브젝트·활성 조작 캐릭터 1명. 기존 값 보존, 새 Collider만 발밑 박스 설정 |
 | 도트 원본 | Panel → DotDocument → 문서 CommandStack → SaveDot → 공용 WriteJsonFile | assets 안의 .dot, 실패 시 원본·dirty 보존, 다른 기존 파일 덮어쓰기 확인 |
 | 참조 이미지 | PNG 선택/에셋 드롭 → 크기 사전 검사 → 기존 TextureImporter::DecodePng(false) | straight RGBA, 불변 참조를 원본에 포함. 한글 경로 지원 |

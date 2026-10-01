@@ -94,7 +94,7 @@ add_executable(mye_tests
     src/NpcSystemTests.cpp            # M6-B: NPC 배회(웨이포인트)·접근 정지·상호작용 개시/정지/재개·다중 독립·Lua 대화
 )
 
-target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_social mye_mmo mye_audio mye_script mye_editor mye_ui mye_runtime)
+target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_social mye_mmo mye_audio mye_script mye_editor mye_imgui mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 target_compile_definitions(mye_tests PRIVATE MYE_TEST_DATA_DIR="${PROJECT_BINARY_DIR}/test-data")
 

@@ -215,13 +215,13 @@ const PanelDesc kTilemapDesc{
     /*id*/ "mye.tilemap",
     /*title*/ "타일맵 편집",
     /*allowMultiple*/ false,
-    /*defaultDock*/ DockSlot::Right,
+    /*defaultDock*/ DockSlot::RightBottom,
 };
 const PanelDesc kPaletteDesc{
     /*id*/ "mye.tilemap.palette",
     /*title*/ "타일 팔레트",
     /*allowMultiple*/ false,
-    /*defaultDock*/ DockSlot::Right,
+    /*defaultDock*/ DockSlot::LeftBottom,
 };
 
 // 선택된 엔티티의 TilemapRenderer 런타임 인스턴스(편집 대상). 없으면 nullptr.
@@ -246,7 +246,7 @@ public:
     const PanelDesc& Desc() const override { return kTilemapDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin("타일맵 편집")) { ImGui::End(); return; }
+        if (!ImGui::Begin("타일맵 편집###mye.tilemap")) { ImGui::End(); return; }
         TileEditSession& s = TileEditSession::Get();
         tm::TilemapWorld* map = ActiveTilemap(ctx);
 
@@ -358,7 +358,7 @@ public:
     const PanelDesc& Desc() const override { return kPaletteDesc; }
 
     void OnGui(EditorContext&) override {
-        if (!ImGui::Begin("타일 팔레트")) { ImGui::End(); return; }
+        if (!ImGui::Begin("타일 팔레트###mye.tilemap.palette")) { ImGui::End(); return; }
         TileEditSession& s = TileEditSession::Get();
 
         int tile = static_cast<int>(s.activeTile);

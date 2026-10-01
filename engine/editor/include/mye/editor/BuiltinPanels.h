@@ -32,6 +32,10 @@ std::unique_ptr<IEditorPanelFactory> MakeAnimationEditorPanelFactory();
 
 // ---- 도트(픽셀아트) 에디터 패널 ----
 std::unique_ptr<IEditorPanelFactory> MakeDotEditorPanelFactory();
+std::unique_ptr<IEditorPanelFactory> MakeScenesPanelFactory();
+std::unique_ptr<IEditorPanelFactory> MakeLuaPanelFactory();
+// The Inspector and Lua workspace edit the same scene component through Undo.
+void DrawObjectLua(EditorContext& ctx, float height);
 
 // 콘솔 로그 싱크를 프로세스 전역 Log 에 1회 장착(EditorApp 초기화가 호출).
 void InstallConsoleLogSink();

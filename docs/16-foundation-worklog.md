@@ -490,3 +490,47 @@ MyEditorContent CMake 타깃은 실행 파일 빌드의 의존성으로 starter/
 기존 C++ Dear ImGui 스킬이 에디터 구현에 직접 맞아 주력으로 유지한다. game-ui-ux는 게임 HUD, 웹 지침은 HTML 가이드에 적용한다. ui-ux-pro-max는 데스크톱 스택도 지원하므로 이전의 웹 전용으로 읽힐 수 있는 분류를 정정했지만 Dear ImGui 전용 구현 지침은 없다. impeccable의 native audit도 모바일 프레임워크 대상임을 확인했다. Unity IMGUI는 C#의 다른 API이며 minimalist-ui는 밝은 웹 디자인을 강제해 제외했다. 인기도를 제품 적합성·검증 성공으로 취급하지 않았다.
 
 문서만 변경했다. 기존 설치로 역할을 충족해 추가 설치·lock 변경·에이전트 실행은 하지 않았고 UI 코드·에셋·설정은 변경하지 않았다. 변경 문서의 로컬 링크 27개 누락0·새 절 앵커·git diff --check를 확인했다. 제품 빌드·CTest·실제 UI 조작을 이번 조사에서 다시 실행한 것으로 기록하지 않는다.
+
+## 2026-10-01 · 작업대 전환·다섯 도크·씬 요소 선택
+
+### 요청과 설계 근거
+
+상단 왼쪽 메뉴·중앙 2D/3D/씬/도트메이커/Lua 텍스트·오른쪽 실행/일시정지/중지를 배치했다. 경계 없는 텍스트는 선택 색과 밑줄로 표시하고 키보드 포커스·클릭은 기존 ImGui Button이 처리한다. 주변 다섯 영역은 Hierarchy, Asset Browser, Console, Inspector, Animation 탭이다. 타일 팔레트/타일맵 편집도 기존 창 메뉴로 같은 도크에 추가할 수 있다. 좁은 창은 제어 행을 메뉴 아래에 배치한다. 버튼 크기·간격은 현재 ImGui 스타일·글꼴 크기에서 계산하며 별도 테마 설정을 만들지 않았다.
+
+공식 Godot [First look at the editor](https://docs.godotengine.org/en/stable/getting_started/introduction/first_look_at_the_editor.html), [Nodes and Scenes](https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html), 4.5 태그의 [EditorNode](https://github.com/godotengine/godot/blob/4.5/editor/editor_node.cpp)·[CreateDialog](https://github.com/godotengine/godot/blob/4.5/editor/gui/create_dialog.cpp)를 2026-10-01 확인했다. 메뉴/작업대/실행의 위치, 2D/3D 시작 선택, 검색 포커스·결과 설명·확정 흐름을 채택했다. 코드·아이콘은 복사하지 않았다. 기존 ECS/GUID/World와 PlayWorld를 유지하며 전체 노드 상속·카탈로그·즐겨찾기는 현재 요구가 없어 추가하지 않았다. 이전에 보안 정책으로 차단된 다른 페이지는 우회하지 않았다.
+
+### 코드 경계와 보존
+
+- EditorApp/EditorWidgets가 공통 상단 동작과 네이티브 ImGui 버튼·벡터 도형을 제공한다. SelectWorkspace가 중앙 패널과 카메라 종류를 정한다. 중복 2D/3D 뷰포트 버튼·중앙 제목 탭·전역 문서 행을 제거한 이유는 동일 선택을 여러 곳에서 관리하고 공간을 차지했기 때문이다. 파일 생성/저장·Step은 기존 메뉴와 단축키로 유지한다. 확장 툴바 항목은 도구 메뉴에 노출한다.
+- PanelManager는 새 도킹 루트에서 주변 다섯 탭을 처음 배치하고 저장된 분할은 유지한다. 기존 레이아웃 파일을 삭제하지 않았다. 열린 패널 복원에서 기존 인스턴스를 열어도 마지막 패널에 상태를 쓰던 원인을 인스턴스 ID 조회로 수정했다. 선택한 작업대는 기존 session.json에 보관한다. 프로젝트 전환 성공 후 문서 선택 ID와 작업대를 초기화하고 로컬 세션을 복원한다. 콘텐츠 문서 전체 재개를 구현한 것으로 설명하지 않는다.
+- EditorWorkspace.cpp는 기존 IEditorPanelFactory와 문서/명령을 사용한다. 씬 생성/추가 요청의 임시 UI 상태와 두 중앙 패널을 분리했다. 2D/3D는 같은 씬의 평면/원근 시작 보기이며 새 메시·3D 물리 형식이 아니다. 오브젝트·스프라이트·캐릭터·충돌·트리거·상호작용·도착 지점·Lua 8개 조합만 표시한다. 검색 결과가 기존 선택을 숨기면 첫 결과로 변경해 잘못된 요소 생성을 막는다. 빈 결과·잘못된 부모·실행 상태·변경된 씬·중복 조작 캐릭터를 거부하고 오류를 표시한다.
+- 생성 전에 등록 컴포넌트·직렬화 값을 확인하고 생성/이름/컴포넌트를 한 트랜잭션으로 기록한다. 캐릭터는 기존 SetupCharacterMovement를 재사용한다. CreateEntityCommand의 Redo가 다른 핸들을 생성해 뒤따르는 컴포넌트 명령이 옛 대상을 가리키던 공통 원인은 기존 World::CreateWithId로 수정했다. Undo는 먼저 부모 Children에서 분리한다. 명령 밖에서 엔티티 슬롯을 임의 재사용하는 작업은 같은 핸들 복구 계약을 보장하지 않는다.
+- Lua 작업대와 Inspector는 DrawObjectLua를 공유하고 luaSource만 기존 PropertyEdit로 기록한다. 이벤트 연결의 전체 복사본을 확정한 뒤 Lua를 편집해 서로의 변경을 덮지 않는다. Play 중에는 읽기 전용이다. 메뉴 포커스에서도 도트 작업대의 저장 대상을 유지하며 명시적인 애니메이션 패널 포커스를 우선한다. CLI --workspace는 시작 화면/실제 캡처용이며 OS 입력을 주입하지 않는다.
+
+사용자 에셋·기본 콘텐츠·GUID·씬 형식·렌더 좌표·물리 계약은 변경하지 않았다. 측정 없는 성능 수치·캐시·스레드·새 UI 프레임워크를 추가하지 않았다. 기존 imgui-ui-ux-engineering·clean-code 스킬을 적용했고 새 패키지/에이전트는 필요하지 않았다. 기준 문서 07/13/14/17/18 및 오프라인 가이드의 사용 순서를 갱신한다.
+
+### 검증과 제한
+
+최종 결과와 실제 캡처는 아래에 기록했다. Debug/Release 전체 빌드 로그는 build/workspace-build-{debug,release}.log, CTest와 상세 출력은 build/workspace-ctest-{debug,release}.log 및 build/workspace-{debug,release}-details.log다. Release 첫 시도는 사용자가 연 MyEditor.exe의 잠금으로 LNK1104가 발생했다. 저장·종료를 요청했고 강제 종료하지 않았다. 프로세스 종료를 확인한 뒤 기존 build/dev 트리의 실행 파일을 정상 교체했다. 잠금 당시 로그는 build/workspace-build-release-locked.log다.
+
+기존 프레임워크에 3개 회귀를 추가했다. 작업대 전환/문서 보존/새 씬/실행 중 거부, 요소 추가/부모 Children/반복 Undo·Redo/저장 재열기/중복·잘못된 입력, 실제 ImGui 도킹/작업대/모달/검색·Enter/Lua 기본 코드·Undo/실행·일시정지·계속·중지/좁은 창/작업대 재열기를 검사한다. 기존 기본 프로젝트 회귀에는 도트 작업대를 유지한 상태의 애니메이션 저장 대상 검사를 추가했다. UI 검사에는 실제 ImGui 컨텍스트·OnFrame·ActivateItemByID·텍스트/키 이벤트를 사용하며 OS 마우스·키 입력 검사로 확대하지 않는다. 검색 포커스는 등장 프레임의 요청 다음 프레임에 적용되므로 테스트 입력도 그 순서를 따른다.
+
+스킬 quality_suite는 구조/대비·정적 픽스처·의미 기준 30/30과 공식 v1.92.0/master 소스 가져오기를 통과했다. g++/c++만 탐색하는 스킬 컴파일 단계는 이 MSVC 환경에서 실패했으므로 전체 스킬 게이트 통과로 표시하지 않는다. 제품은 vendored Dear ImGui 1.92.9-WIP와 MSVC로 빌드한다. 정적 검사의 EditorApp/Panel/Inspector/EditorWidgets는 통과했고 팝업 파일은 검사기가 실제 API인 EndPopup 대신 존재하지 않는 EndPopupModal/EndPopupContextItem/EndPopupContextWindow를 요구해 실패했다. 실제 헤더·빌드·런타임 회귀로 짝을 확인했으며 스킬 검사를 임의 수정하지 않았다. 로그는 build/workspace-skill-quality.log, build/workspace-static.log다.
+
+네이티브 CUA 입력 RPC는 미구성이므로 OS 파일 선택/마우스 클릭·여러 DPI·접근성 전체 검증은 미완료다. 정적 HTML/미디어 검사와 앱 프레임 캡처를 브라우저 직접 사용 검증으로 설명하지 않는다. 외부 Lua 파일 편집·구문 강조·디버거와 3D 메시/기즈모/물리 제작은 현재 범위에 포함하지 않았다.
+
+최종 Debug/Release 전체 빌드는 모두 성공했고 CTest는 각각 13/13, 내부 검사는 각각 532/532 통과했다. 마지막 CTest 실행 시간은 Debug 33.31초/Release 28.06초이며 성능 개선 수치로 사용하지 않는다. 테스트용 World/프로젝트/저장은 새 build/ 하위 경로를 사용했다.
+
+기존 MyEngine MCP 서버의 공식 SDK stdio Client에서 8개 도구를 확인하고 engine_capture_frame을 호출했다. 도구 서버나 패키지를 변경하지 않았으며 tools/mcp의 새 build/smoke 검증을 실행했다고 주장하지 않는다. 기본 템플릿을 build/workspace-validation/capture-*에 복사해 실제 Release 앱의 각 작업대를 40프레임 캡처했다. 모두 exit 0이고 MCP가 원본 1920×1080을 960×540으로 축소했다. 원본 화면을 임의로 재구성하지 않았다.
+
+| 작업대 | 최종 MCP 캡처 |
+|---|---|
+| 2D | MyEditor-2026-10-01T14-06-23-614Z.png |
+| 3D | MyEditor-2026-10-01T14-06-24-095Z.png |
+| 씬 | MyEditor-2026-10-01T14-06-24-574Z.png |
+| 도트메이커 | MyEditor-2026-10-01T14-06-25-110Z.png |
+| Lua | MyEditor-2026-10-01T14-06-25-578Z.png |
+
+MCP 원본은 tools/mcp/.state/captures/, 실행 기록은 build/workspace-validation/captures-release.log다. 2D 캡처를 그대로 docs/images/editor-workspace.png와 docs/guide/media/editor.png에 복사했다. 두 문서 이미지와 캡처의 SHA256 일치로 보존을 확인한다. Lua 캡처는 Player 선택/추가 진입 UI이며 코드 편집·Undo는 실제 ImGui 회귀로 구분해 확인했다. 웹 가이드는 실제 UI 스크린샷과 새 메뉴 순서를 반영했고 기존 GIF/영상 콘텐츠는 유지했다.
+
+변경 문서의 코드 영역을 제외한 Markdown 로컬 링크 95개와 HTML 경로 12개는 누락 0개였다. git diff --check가 통과했다. 최종 문서·미디어는 기존 MyEditorContent 타깃으로 Debug/Release 실행 파일 옆에도 복사했다.

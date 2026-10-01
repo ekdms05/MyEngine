@@ -108,6 +108,7 @@ public:
 private:
     ecs::Entity m_parent;
     ecs::Entity m_created = ecs::Entity::Null();
+    ecs::Entity m_undone = ecs::Entity::Null(); // Redo keeps targets of subsequent component/property commands valid.
     std::string m_label;
 };
 

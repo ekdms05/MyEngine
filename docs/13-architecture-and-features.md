@@ -167,6 +167,8 @@ MyEditor의 편집 World는 각 Document가 소유하고 EditorModule이 활성 
 
 ## 에디터 제작 UI의 현재 연결
 
+상단 왼쪽 메뉴·중앙 2D/3D/씬/도트메이커/Lua·오른쪽 실행/일시정지/중지를 배치한다. 중앙 작업대만 전환하고 주변은 Hierarchy/Asset Browser/Console/Inspector/Animation의 다섯 탭 영역으로 유지한다. 씬 생성의 2D/3D 선택과 검색 가능한 요소 추가 창은 기존 ECS World·CommandStack을 사용한다. Lua는 선택 오브젝트의 씬 저장 소스를 편집한다. 작업대 선택은 프로젝트 로컬 세션에 저장한다. 실제 화면·사용 순서·벤치마킹 근거는 [07](07-editor-ui.md)에 있다.
+
 2026-10-01: 중립 회색/파랑 테마와 벡터 아이콘+텍스트 버튼, 별도 하단 상태 영역, Inspector 기본 이동 구성, .dot 문서별 저장·Undo·PNG 참조·캔버스 줌/팬·파츠 계층·키/모션 편집·PNG/.anim/.meta 내보내기를 연결했다. 다음 모션 GUID는 MyEditor Play의 기존 resolver가 소비하며 조작 상태 변화만 진입 모션을 재지정한다. MyGame 자원 조합까지 연결된 기능으로 설명하지 않는다. 원본/파생 데이터의 소유권과 실제 경로는 [18](18-editor-authoring.md)에 있다.
 
 도움말의 제작 가이드는 실행 파일 옆 docs/guide/index.html이다. 빌드 시 docs를 복사한다. 새 기본 프로젝트에는 assets/sprites/novice.dot 편집 예제를 복사하고 기존 사용자 프로젝트는 덮어쓰지 않는다. 실제 MCP UI/2D Play/3D 캡처와 라이브러리 테스트는 확인했으나 네이티브 UI 입력·브라우저 가이드 검증은 권한/환경 제약으로 미완료다.

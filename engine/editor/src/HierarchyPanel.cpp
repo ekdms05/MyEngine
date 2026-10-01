@@ -11,6 +11,7 @@
 #include "mye/editor/Command.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/editor/PlayMode.h"
+#include "mye/editor/EditorApp.h"
 
 #include "mye/ecs/World.h"
 #include "mye/scene/Renderable.h"
@@ -51,6 +52,15 @@ public:
             return;
         }
         ecs::World* world = ctx.activeWorld();
+        ImGui::BeginDisabled(!world || (ctx.playMode && ctx.playMode->IsPlaying()));
+        if (ImGui::Button("+ 추가") && ctx.app) {
+            const auto primary = ctx.selection ? ctx.selection->Primary() : SelectableRef{};
+            ctx.app->RequestAddElement(primary.IsEntity() ? primary.AsEntity() : ecs::Entity::Null());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("씬 만들기") && ctx.app) ctx.app->NewScene();
+        ImGui::EndDisabled();
+        ImGui::Separator();
         if (!world) {
             ImGui::TextDisabled("활성 씬 없음");
             ImGui::End();
@@ -182,8 +192,7 @@ private:
     }
 
     void PushCreate(EditorContext& ctx, ecs::Entity parent) {
-        if (CommandStack* s = Stack(ctx))
-            s->Push(std::make_unique<CreateEntityCommand>(parent));
+        if (ctx.app) ctx.app->RequestAddElement(parent);
     }
     void PushDelete(EditorContext& ctx, ecs::Entity e) {
         if (CommandStack* s = Stack(ctx))

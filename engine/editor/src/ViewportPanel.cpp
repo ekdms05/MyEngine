@@ -132,11 +132,9 @@ public:
             return;
         }
 
-        if (!m_cameraInitialized) { if (vp->Camera().perspective) m_cam.perspective = true; m_cameraInitialized = true; }
-        if (ImGui::Button(m_cam.perspective ? "2D" : "2D 선택됨")) m_cam.perspective = false;
-        ImGui::SameLine();
-        if (ImGui::Button(m_cam.perspective ? "3D 선택됨" : "3D")) m_cam.perspective = true;
-        ImGui::SameLine(); ImGui::Checkbox("충돌 영역", &m_showCollision);
+        if (ctx.app) ctx.app->DrawDocumentTabs();
+        m_cam.perspective = ctx.app ? ctx.app->CurrentWorkspace() == EditorApp::Workspace::Scene3D : vp->Camera().perspective;
+        ImGui::Checkbox("충돌 영역", &m_showCollision);
         ImGui::SameLine(); ImGui::TextDisabled(m_cam.perspective ? "우클릭: 회전 / 중클릭: 이동 / 휠: 확대" : "중클릭: 이동 / 휠: 확대");
 
         // 사용 가능한 영역 = 이미지 크기(정수 픽셀). 최소 1x1.
@@ -290,7 +288,6 @@ public:
 private:
     ViewportCamera m_cam{};
     bool m_showCollision = false;
-    bool m_cameraInitialized = false;
 
     // 픽셀 그리드(1 unit 간격) + 원점 축. 화면 밖 라인은 클립됨.
     static void DrawGrid(ImDrawList* dl, IEditorViewport* vp, const ImVec2& origin,

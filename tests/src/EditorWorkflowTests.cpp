@@ -10,6 +10,7 @@
 #include "TestFramework.h"
 
 #include "mye/editor/BuiltinPanels.h"
+#include "mye/editor/AnimEditing.h"
 #include "mye/editor/Command.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/editor/EditorContext.h"
@@ -18,6 +19,11 @@
 #include "mye/editor/Selection.h"
 #include "mye/editor/EditorApp.h"
 #include "mye/editor/Project.h"
+#include "mye/editor/Viewport.h"
+#include "mye/runtime/ObjectComponents.h"
+#include "mye/phys/Collision.h"
+#include "imgui.h"
+#include "imgui_internal.h"
 
 #include "mye/core/Events.h"
 #include "mye/core/Json.h"
@@ -38,6 +44,22 @@
 
 using namespace mye;
 using namespace mye::editor;
+
+namespace {
+class TestEditorViewport final : public IEditorViewport {
+public:
+    ViewportCamera camera;
+    uint32_t width = 640, height = 360;
+    void SetViewportSize(uint32_t w, uint32_t h) override { width = w; height = h; }
+    void SetCamera(const ViewportCamera& value) override { camera = value; }
+    ViewportCamera Camera() const override { return camera; }
+    void* ColorTextureId() const override { return nullptr; }
+    uint32_t RenderWidth() const override { return width; }
+    uint32_t RenderHeight() const override { return height; }
+    Vec2 ScreenToWorld(Vec2 pixel) const override { return ViewportPointOnPlane(camera, pixel, width, height); }
+    Vec2 WorldToScreen(Vec2 world) const override { return ProjectViewportPoint(camera, {world.x, world.y, 0}, width, height); }
+};
+}
 
 // -----------------------------------------------------------------------------
 // 테스트용 스프라이트 엔티티 컴포넌트 — 씬 저장이 왕복시키려면 리플렉션 이름 == 컴포넌트 이름
@@ -607,11 +629,196 @@ MYE_TEST(EditorStartupCopiesStarterAndPreservesUserEdits) {
     MYE_EXPECT(app.SaveProject());
     const auto saved = ReadJsonFile(Utf8Path(mainPath));
     MYE_EXPECT(saved && saved.Value().Find("entities")->AsArray().size() == initialCount + 1);
+    MYE_EXPECT(app.OpenAnimation("assets/animations/novice_idle.anim"));
+    auto* animation = app.AnimationDocument();
+    if (animation) {
+        auto after = animation->Animation();
+        after.clip.frameDurations[0] = .25f;
+        animation->Commands().Push(std::make_unique<AnimAssetEditCommand>(animation->Animation(), after, "duration"));
+        MYE_EXPECT(app.OpenDot("assets/sprites/novice.dot"));
+        app.SetAnimationFocused();
+        app.SaveActive();
+        MYE_EXPECT(!animation->IsDirty()); // Explicit animation focus takes priority over the Dot workspace.
+    }
     app.Shutdown();
     EditorApp reopened;
     MYE_EXPECT(reopened.Initialize(engine, "", MYE_STARTER_SOURCE_DIR));
     MYE_EXPECT(reopened.Project().ProjectFilePath() == projectFile);
     const auto retained = ReadJsonFile(Utf8Path(mainPath));
     MYE_EXPECT(retained && retained.Value().Find("entities")->AsArray().size() == initialCount + 1);
+    reopened.Shutdown();
+}
+
+
+MYE_TEST(EditorWorkspacePreservesDocumentsAndSwitchesProjection) {
+    const auto root = ProjectTestDirectory("workspace");
+    EditorTestContext engine(root);
+    EditorApp app;
+    TestEditorViewport viewport;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    app.SetViewport(&viewport);
+    MYE_EXPECT(!app.CreateScene(false));
+    MYE_EXPECT(app.CreateProject("Workspace", Utf8String(root / "project")));
+    const auto* initial = app.Project().Active();
+    const auto count = app.Project().Documents().size();
+    const auto position = app.Commands().Position();
+    viewport.camera.center = {4, 7}; viewport.camera.zoom = 2;
+    app.SelectWorkspace(EditorApp::Workspace::Scene3D);
+    MYE_EXPECT(viewport.camera.perspective && viewport.camera.center.x == 4 && viewport.camera.zoom == 2);
+    app.SelectWorkspace(EditorApp::Workspace::Dot);
+    MYE_EXPECT(app.CentralPanelId() == "mye.doteditor");
+    app.SelectWorkspace(EditorApp::Workspace::Lua);
+    MYE_EXPECT(app.CentralPanelId() == "mye.lua");
+    app.SelectWorkspace(EditorApp::Workspace::Scenes);
+    MYE_EXPECT(app.CentralPanelId() == "mye.scenes");
+    MYE_EXPECT(app.Project().Active() == initial && app.Project().Documents().size() == count && app.Commands().Position() == position);
+    MYE_EXPECT(app.CreateScene(true));
+    MYE_EXPECT(app.CurrentWorkspace() == EditorApp::Workspace::Scene3D && viewport.camera.perspective);
+    MYE_EXPECT(app.Project().Documents().size() == count + 1);
+    MYE_EXPECT(app.PlayMode().Play());
+    MYE_EXPECT(!app.CreateScene(false));
+    MYE_EXPECT(!app.CreateSceneElement(EditorApp::SceneElement::Object));
+    app.PlayMode().Stop();
+    app.Shutdown();
+}
+
+MYE_TEST(EditorSceneElementsUndoRedoAndValidation) {
+    const auto root = ProjectTestDirectory("elements");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(app.CreateProject("Elements", Utf8String(root / "project")));
+    auto& world = app.Project().Active()->World();
+    const auto parent = app.CreateSceneElement(EditorApp::SceneElement::Object);
+    MYE_EXPECT(parent);
+    const auto child = app.CreateSceneElement(EditorApp::SceneElement::Sprite, parent.Value());
+    MYE_EXPECT(child && world.Has<scene::SpriteRenderer>(child.Value()));
+    const auto name = world.TryGet<scene::ObjectName>(child.Value())->value;
+    app.Commands().Undo();
+    MYE_EXPECT(!world.Valid(child.Value()));
+    const auto* children = world.TryGet<scene::Children>(parent.Value());
+    MYE_EXPECT(!children || children->list.empty());
+    app.Commands().Redo();
+    MYE_EXPECT(world.Valid(child.Value()) && world.Has<scene::SpriteRenderer>(child.Value()));
+    MYE_EXPECT(world.TryGet<scene::ObjectName>(child.Value())->value == name);
+    MYE_EXPECT(world.TryGet<scene::Parent>(child.Value())->parent == parent.Value());
+    app.Commands().Undo(); app.Commands().Redo();
+    MYE_EXPECT(world.Valid(child.Value()) && world.Has<scene::SpriteRenderer>(child.Value()));
+    const auto trigger = app.CreateSceneElement(EditorApp::SceneElement::Trigger);
+    MYE_EXPECT(trigger && world.TryGet<phys::Collider2D>(trigger.Value())->isTrigger);
+    MYE_EXPECT(world.Has<runtime::ObjectBehavior>(trigger.Value()));
+    const auto player = app.CreateSceneElement(EditorApp::SceneElement::Character);
+    MYE_EXPECT(player && world.Has<runtime::CharacterController2D>(player.Value()) && world.Has<phys::KinematicBody2D>(player.Value()));
+    const auto position = app.Commands().Position();
+    MYE_EXPECT(!app.CreateSceneElement(EditorApp::SceneElement::Character));
+    MYE_EXPECT(!app.CreateSceneElement(EditorApp::SceneElement::Character, parent.Value()));
+    MYE_EXPECT(!app.CreateSceneElement(static_cast<EditorApp::SceneElement>(255)));
+    MYE_EXPECT(app.Commands().Position() == position);
+    MYE_EXPECT(runtime::ValidateObjectComponents(world));
+    const auto path = Utf8String(root / "project/assets/scenes/elements.scene");
+    MYE_EXPECT(app.SaveScene(path));
+    app.Shutdown();
+    EditorApp reopened;
+    MYE_EXPECT(reopened.Initialize(engine, Utf8String(root / "project/project.myeproj")));
+    MYE_EXPECT(reopened.OpenScene(path));
+    bool sprite = false, character = false;
+    auto& loaded = reopened.Project().Active()->World();
+    loaded.Query<scene::ObjectName>().Each([&](ecs::Entity e, const auto& object) {
+        if (object.value == name) sprite = loaded.Has<scene::SpriteRenderer>(e) && loaded.Has<scene::Parent>(e);
+        if (object.value == "캐릭터") character = loaded.Has<runtime::CharacterController2D>(e);
+    });
+    MYE_EXPECT(sprite && character && runtime::ValidateObjectComponents(loaded));
+    reopened.Shutdown();
+}
+
+MYE_TEST(EditorWorkspaceImGuiRoutingAndDialogs) {
+    struct GuiScope {
+        GuiScope() { ImGui::CreateContext(); }
+        ~GuiScope() { ImGui::DestroyContext(); }
+    } gui;
+    auto& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
+    io.IniFilename = nullptr;
+    io.DisplaySize = ImVec2(1600, 900); io.DeltaTime = 1.0f / 60;
+    unsigned char* pixels = nullptr; int width = 0, height = 0;
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    const auto root = ProjectTestDirectory("workspace-ui");
+    EditorTestContext engine(root);
+    EditorApp app;
+    TestEditorViewport viewport;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    app.SetViewport(&viewport);
+    MYE_EXPECT(app.CreateProject("UI", Utf8String(root / "project")));
+    auto frame = [&]() { ImGui::NewFrame(); app.OnFrame(); ImGui::Render(); };
+    frame(); frame();
+    const auto* hierarchy = ImGui::FindWindowByName("하이어라키###mye.hierarchy");
+    const auto* assets = ImGui::FindWindowByName("에셋###mye.assets");
+    const auto* inspector = ImGui::FindWindowByName("인스펙터###mye.inspector");
+    const auto* animation = ImGui::FindWindowByName("애니메이션###mye.anim");
+    MYE_EXPECT(hierarchy && assets && inspector && animation);
+    MYE_EXPECT(hierarchy->DockId != assets->DockId && inspector->DockId != animation->DockId);
+    MYE_EXPECT(hierarchy->Pos.y < assets->Pos.y && inspector->Pos.y < animation->Pos.y);
+    app.SelectWorkspace(EditorApp::Workspace::Dot); frame();
+    MYE_EXPECT(ImGui::FindWindowByName("도트 에디터###mye.doteditor")->Active);
+    MYE_EXPECT(!ImGui::FindWindowByName("씬 뷰포트###mye.viewport")->Active);
+    app.SelectWorkspace(EditorApp::Workspace::Lua); frame();
+    MYE_EXPECT(ImGui::FindWindowByName("Lua###mye.lua")->Active);
+    app.NewScene(); frame();
+    auto* newSceneDialog = ImGui::FindWindowByName("씬 만들기###new_scene");
+    MYE_EXPECT(newSceneDialog && newSceneDialog->Active);
+    const auto documentsBefore = app.Project().Documents().size();
+    if (newSceneDialog) { ImGui::ActivateItemByID(newSceneDialog->GetID("3D 씬")); frame(); }
+    MYE_EXPECT(app.Project().Documents().size() == documentsBefore + 1);
+    MYE_EXPECT(app.CurrentWorkspace() == EditorApp::Workspace::Scene3D);
+    frame();
+    app.RequestAddElement(); frame();
+    auto* addDialog = ImGui::FindWindowByName("요소 추가###add_scene_element");
+    MYE_EXPECT(addDialog && addDialog->Active);
+    frame(); // Keyboard focus requested when the dialog appears is applied on the next frame.
+    MYE_EXPECT(addDialog && ImGui::GetActiveID() == addDialog->GetID("##element_search"));
+    io.AddInputCharactersUTF8("트리거"); frame();
+    io.AddKeyEvent(ImGuiKey_Enter, true); frame();
+    io.AddKeyEvent(ImGuiKey_Enter, false); frame();
+    const auto added = app.Selection().Primary();
+    auto& world = app.Project().Active()->World();
+    MYE_EXPECT(added.IsEntity() && world.Has<phys::Collider2D>(added.AsEntity()));
+    if (added.IsEntity()) {
+        const auto* collider = world.TryGet<phys::Collider2D>(added.AsEntity());
+        MYE_EXPECT(collider && collider->isTrigger);
+    }
+    app.SelectWorkspace(EditorApp::Workspace::Lua); frame();
+    auto* lua = ImGui::FindWindowByName("Lua###mye.lua");
+    MYE_EXPECT(lua && lua->Active);
+    if (lua) { ImGui::ActivateItemByID(lua->GetID("기본 코드 만들기")); frame(); }
+    const auto* behavior = world.TryGet<runtime::ObjectBehavior>(added.AsEntity());
+    MYE_EXPECT(behavior && !behavior->luaSource.empty());
+    if (behavior) {
+        const auto source = behavior->luaSource;
+        app.Commands().Undo();
+        MYE_EXPECT(behavior->luaSource.empty());
+        app.Commands().Redo();
+        MYE_EXPECT(behavior->luaSource == source);
+    }
+    // Activate the real header button, so the test covers its action binding.
+    auto* menu = ImGui::FindWindowByName("##MainMenuBar");
+    MYE_EXPECT(menu);
+    const auto menuScope = ImHashStr("##MenuBar", 0, menu->ID);
+    const auto activate = [&](const char* label) { ImGui::ActivateItemByID(ImHashStr(label, 0, menuScope)); frame(); };
+    activate("3D");
+    MYE_EXPECT(app.CurrentWorkspace() == EditorApp::Workspace::Scene3D && viewport.camera.perspective);
+    activate("##run");
+    MYE_EXPECT(app.PlayMode().State() == PlayState::Playing);
+    activate("##pause");
+    MYE_EXPECT(app.PlayMode().State() == PlayState::Paused);
+    activate("##run");
+    MYE_EXPECT(app.PlayMode().State() == PlayState::Playing);
+    activate("##stop");
+    MYE_EXPECT(app.PlayMode().State() == PlayState::Edit);
+    io.DisplaySize = ImVec2(640, 480); frame();
+    app.SelectWorkspace(EditorApp::Workspace::Lua);
+    app.Shutdown();
+    EditorApp reopened;
+    MYE_EXPECT(reopened.Initialize(engine, Utf8String(root / "project/project.myeproj")));
+    MYE_EXPECT(reopened.CurrentWorkspace() == EditorApp::Workspace::Lua);
     reopened.Shutdown();
 }

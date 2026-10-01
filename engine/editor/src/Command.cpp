@@ -133,8 +133,8 @@ CreateEntityCommand::CreateEntityCommand(ecs::Entity parent, std::string label)
 void CreateEntityCommand::Execute(EditorContext& ctx) {
     ecs::World* world = WorldOf(ctx);
     if (!world) return;
-    // Redo 시 이전에 만든 엔티티는 이미 파괴됐으므로 매번 새로 생성한다(핸들 갱신).
-    m_created = world->Create();
+    m_created = m_undone.IsNull() ? world->Create() : world->CreateWithId(m_undone.index, m_undone.generation);
+    if (m_created.IsNull()) { MYE_LOG_ERROR("Editor", "Could not restore created entity"); return; }
     // 기본 컴포넌트: 편집 대상이 되도록 LocalTransform 부여(에디터 신규 엔티티 규약).
     world->Add<scene::LocalTransform>(m_created);
     world->Add<scene::WorldTransform>(m_created);
@@ -145,7 +145,11 @@ void CreateEntityCommand::Execute(EditorContext& ctx) {
 void CreateEntityCommand::Undo(EditorContext& ctx) {
     ecs::World* world = WorldOf(ctx);
     if (!world || m_created.IsNull()) return;
-    if (world->Valid(m_created)) world->Destroy(m_created);
+    if (world->Valid(m_created)) {
+        scene::ApplyReparent(*world, m_created, ecs::Entity::Null(), false);
+        world->Destroy(m_created);
+    }
+    m_undone = m_created;
     m_created = ecs::Entity::Null();
 }
 

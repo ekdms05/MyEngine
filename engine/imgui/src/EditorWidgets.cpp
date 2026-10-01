@@ -3,12 +3,8 @@
 #include <string>
 
 namespace mye::imgui {
-bool EditorButton(EditorIcon icon, const char* label) {
-    const std::string caption = "    " + std::string(label);
-    const bool pressed = ImGui::Button(caption.c_str());
-    const auto low = ImGui::GetItemRectMin(), high = ImGui::GetItemRectMax();
-    const float size = ImGui::GetFontSize() * .7f;
-    const ImVec2 origin(low.x + ImGui::GetStyle().FramePadding.x, (low.y + high.y - size) * .5f);
+namespace {
+void DrawIcon(EditorIcon icon, ImVec2 origin, float size) {
     const auto color = ImGui::GetColorU32(ImGuiCol_Text);
     auto& draw = *ImGui::GetWindowDrawList();
     const auto point = [&](float x, float y) { return ImVec2(origin.x + x * size, origin.y + y * size); };
@@ -35,7 +31,50 @@ bool EditorButton(EditorIcon icon, const char* label) {
         draw.AddTriangleFilled(point(0,0),point(.7f,.5f),point(0,1),color);
         line(.9f,0,.9f,1); break;
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s",label);
+}
+}
+
+bool EditorButton(EditorIcon icon, const char* label) {
+    const std::string caption = "    " + std::string(label);
+    const bool pressed = ImGui::Button(caption.c_str());
+    const auto low = ImGui::GetItemRectMin(), high = ImGui::GetItemRectMax();
+    const float size = ImGui::GetFontSize() * .7f;
+    DrawIcon(icon, ImVec2(low.x + ImGui::GetStyle().FramePadding.x, (low.y + high.y - size) * .5f), size);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", label);
+    return pressed;
+}
+
+bool EditorTextButton(const char* label, bool selected) {
+    const auto text = ImGui::GetStyleColorVec4(selected ? ImGuiCol_CheckMark : ImGuiCol_Text);
+    ImGui::PushStyleColor(ImGuiCol_Text, text);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
+    const bool pressed = ImGui::Button(label);
+    if (selected || ImGui::IsItemHovered()) {
+        const auto low = ImGui::GetItemRectMin(), high = ImGui::GetItemRectMax();
+        const float padding = ImGui::GetStyle().FramePadding.x;
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(low.x + padding, high.y - 1),
+            ImVec2(high.x - padding, high.y - 1), ImGui::GetColorU32(ImGuiCol_CheckMark));
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
+    return pressed;
+}
+
+bool EditorIconButton(EditorIcon icon, const char* id, const char* tooltip, bool selected) {
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(selected ? ImGuiCol_CheckMark : ImGuiCol_Text));
+    const float side = ImGui::GetFrameHeight();
+    const bool pressed = ImGui::Button(id, ImVec2(side, side));
+    const auto low = ImGui::GetItemRectMin();
+    const float size = ImGui::GetFontSize() * .7f;
+    DrawIcon(icon, ImVec2(low.x + (side - size) * .5f, low.y + (side - size) * .5f), size);
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", tooltip);
     return pressed;
 }
 }

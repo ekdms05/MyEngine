@@ -57,7 +57,7 @@ const PanelDesc kAssetBrowserDesc{
     /*id*/ "mye.assets",
     /*title*/ "에셋",
     /*allowMultiple*/ false,
-    /*defaultDock*/ DockSlot::Bottom,
+    /*defaultDock*/ DockSlot::LeftBottom,
 };
 
 CommandStack* Stack(EditorContext& ctx) {

@@ -1,7 +1,7 @@
 // EditorApp.cpp — 에디터 앱 셸 (docs/07 §1, §7)
 //
 // 07 §1·§7: 서브시스템(패널·커맨드·선택·플레이모드·확장·프로젝트)을 소유하고 매 프레임 mye_imgui
-//   도킹 셸 위에 메뉴바(File/Edit/View/Play/Window)·툴바(New/Save·Play/Pause/Stop/Step)·도킹
+//   도킹 셸 위에 메뉴·작업대 선택·재생 제어·도킹
 //   스페이스·패널을 빌드한다. 단축키(Ctrl+S/N/Z/Y·Ctrl+P·F10·Alt+←/→)를 처리한다. 레이아웃은
 //   <project>/.myeditor/(layout.ini=ImGui ini, session.json=열린 패널 목록)에 저장·복원한다.
 //
@@ -18,6 +18,7 @@
 #include "mye/core/Window.h"
 #include "mye/ecs/World.h"
 #include "mye/imgui/EditorWidgets.h"
+#include "mye/editor/Viewport.h"
 
 #include "imgui.h"
 
@@ -89,11 +90,13 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->RegisterFactory(MakeInspectorPanelFactory());
     m_panels->RegisterFactory(MakeAssetBrowserPanelFactory());
     m_panels->RegisterFactory(MakeConsolePanelFactory());
-    // M5-B 콘텐츠 제작 도구(타일맵 편집·팔레트·애니메이션 에디터).
+    // 콘텐츠 제작 도구(타일맵 편집·팔레트·애니메이션 에디터).
     m_panels->RegisterFactory(MakeTilemapEditorPanelFactory());
     m_panels->RegisterFactory(MakeTilePalettePanelFactory());
     m_panels->RegisterFactory(MakeAnimationEditorPanelFactory());
     m_panels->RegisterFactory(MakeDotEditorPanelFactory());   // 도트(픽셀아트) 에디터
+    m_panels->RegisterFactory(MakeScenesPanelFactory());
+    m_panels->RegisterFactory(MakeLuaPanelFactory());
 
     // 확장 경로(플러그인·MCP·Lua)로 등록된 패널 팩토리를 PanelManager로 위임(07 §확장:
     //   내장이 되는 건 플러그인도 된다). AddPanel이 보관한 팩토리를 여기서 흡수한다.
@@ -102,13 +105,14 @@ void EditorApp::RegisterBuiltinPanels() {
     // 콘솔 로그 싱크를 전역 Log 에 장착(패널 인스턴스와 독립적으로 로그 수집).
     InstallConsoleLogSink();
 
-    // 기본 레이아웃: 전 패널을 연다(도킹 프리셋은 PanelManager 가 DockSlot 힌트로 배치).
+    // 기본 도구만 연다. PanelManager가 DockSlot 힌트로 주변 탭을 배치한다.
     m_panels->Open("mye.hierarchy");
     m_panels->Open("mye.viewport");
     m_panels->Open("mye.inspector");
     m_panels->Open("mye.assets");
     m_panels->Open("mye.console");
-    // Pixel drawing and animation tools open on demand; the scene starts visible.
+    m_panels->Open("mye.anim");
+    // Dot and Lua workspaces open on demand; the scene starts visible.
 }
 
 void EditorApp::RestoreLayout() {
@@ -140,7 +144,13 @@ void EditorApp::RestoreLayout() {
         const std::string sessionPath = m_project->SessionJsonPath();
         if (std::filesystem::exists(Utf8Path(sessionPath), ec)) {
             auto parsed = ReadJsonFile(Utf8Path(sessionPath));
-            if (parsed) m_panels->DeserializeLayout(parsed.Value());
+            if (parsed) {
+                m_panels->DeserializeLayout(parsed.Value());
+                const auto* workspace = parsed.Value().IsObject() ? parsed.Value().Find("workspace") : nullptr;
+                if (workspace && workspace->IsInteger() && workspace->AsInt() >= 0 &&
+                    workspace->AsInt() <= static_cast<int64_t>(Workspace::Lua))
+                    SelectWorkspace(static_cast<Workspace>(workspace->AsInt()));
+            }
             else MYE_LOG_WARN("Editor", "Layout restore failed: {}", parsed.GetError().message);
         }
     }
@@ -162,6 +172,9 @@ Expected<void, Error> EditorApp::SaveLayout() {
     if (!m_project || !m_project->IsOpen()) return {};
     json::Value session;
     m_panels->SerializeLayout(session);
+    auto state = session.AsObject();
+    state["workspace"] = json::Value(static_cast<int64_t>(m_workspace));
+    session = json::Value(std::move(state));
     const std::string sessionPath = m_project->SessionJsonPath();
     std::error_code ec;
     std::filesystem::create_directories(Utf8Path(m_project->EditorStateDir()), ec);
@@ -196,8 +209,7 @@ void EditorApp::OnFrame() {
     ImGui::Begin("##EditorHost", nullptr, hostFlags);
     ImGui::PopStyleVar(3);
 
-    DrawToolbar();                                   // 툴바 행(인라인)
-    DrawDocumentTabs();
+    if (!m_toolbarInMenu) DrawToolbar(false); // Narrow windows retain accessible controls on a second row.
     if (m_panels) m_panels->SetupDockspace(m_ctx);   // 남은 영역에 도크스페이스 + 최초 1회 기본 배치
     ImGui::End();                                    // 호스트 종료
 
@@ -205,6 +217,7 @@ void EditorApp::OnFrame() {
     m_animationFocused = false;
     m_dotFocused = false;
     if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
+    DrawWorkspaceDialogs();
     DrawFileDialogs();
 }
 
@@ -219,8 +232,8 @@ CommandStack& EditorApp::Commands() {
 CommandStack* EditorApp::ActiveStack() {
     if (m_playMode && m_playMode->IsPlaying())
         return m_playMode->PlayCommandStack();
-    if (m_dotFocused) if (auto* doc = DotDocumentForEditing()) return &doc->Commands();
     if (m_animationFocused) if (auto* doc = AnimationDocument()) return &doc->Commands();
+    if (m_dotFocused || m_workspace == Workspace::Dot) if (auto* doc = DotDocumentForEditing()) return &doc->Commands();
     Document* active = m_project ? m_project->Active() : nullptr;
     return active ? &active->Commands() : nullptr;
 }
@@ -306,7 +319,11 @@ void EditorApp::DrawMenuBar() {
             for (const PanelDesc& d : m_panels->RegisteredPanels()) {
                 const bool open = m_panels->IsOpen(d.id);
                 if (ImGui::MenuItem(PanelTitle(d), nullptr, open)) {
-                    if (!open) m_panels->Open(d.id);
+                    if (d.id == "mye.doteditor") SelectWorkspace(Workspace::Dot);
+                    else if (d.id == "mye.scenes") SelectWorkspace(Workspace::Scenes);
+                    else if (d.id == "mye.lua") SelectWorkspace(Workspace::Lua);
+                    else if (d.id == "mye.viewport") SelectWorkspace(m_viewport && m_viewport->Camera().perspective ? Workspace::Scene3D : Workspace::Scene2D);
+                    else { if (!open) m_panels->Open(d.id); m_panels->Focus(d.id); }
                 }
             }
         }
@@ -356,64 +373,57 @@ void EditorApp::DrawMenuBar() {
         }
     }
 
+    if (m_extensions && !m_extensions->ToolbarEntries().empty() && ImGui::BeginMenu("도구")) {
+        for (const auto& entry : m_extensions->ToolbarEntries()) {
+            const bool enabled = !entry.desc.isEnabled || entry.desc.isEnabled();
+            if (ImGui::MenuItem(entry.desc.tooltip.c_str(), nullptr, false, enabled) && entry.onClick) entry.onClick(m_ctx);
+        }
+        ImGui::EndMenu();
+    }
+    m_toolbarInMenu = DrawToolbar(true);
     ImGui::EndMainMenuBar();
 }
 
-void EditorApp::DrawToolbar() {
-    // 툴바 버튼 행 — 별도 창이 아니라 에디터 호스트 윈도우 안에 인라인으로 그린다(도크스페이스
-    //   위를 덮지 않도록). OnFrame 이 호스트 윈도우를 열고 이 함수 → 도크스페이스 순으로 그린다.
-    using mye::i18n::T;
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
-    ImGui::Dummy(ImVec2(0, 2));   // 상단 여백
-    ImGui::Indent(6.0f);
-
-    const bool playing = m_playMode && m_playMode->IsPlaying();
-    ImGui::BeginDisabled(playing);
-    ImGui::BeginDisabled(!m_project || !m_project->IsOpen());
-    if (imgui::EditorButton(imgui::EditorIcon::NewFile,T("toolbar.newscene"))) NewScene();
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!m_project || !m_project->Active() || !m_ctx.activeWorld());
-    if (imgui::EditorButton(imgui::EditorIcon::Save,T("toolbar.save"))) SaveActive();
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::TextDisabled("|");
-    ImGui::SameLine();
-
-    if (imgui::EditorButton(playing ? imgui::EditorIcon::Stop : imgui::EditorIcon::Play,T(playing ? "toolbar.stop" : "toolbar.play")))
-        TogglePlay();
-    ImGui::SameLine();
-    if (playing) {
-        const bool paused = m_playMode->State() == PlayState::Paused;
-        if (imgui::EditorButton(paused ? imgui::EditorIcon::Play : imgui::EditorIcon::Pause,T(paused ? "play.toggle" : "play.pause"))) {
-            if (paused) m_playMode->Resume(); else m_playMode->Pause();
-        }
-        ImGui::SameLine();
-        ImGui::BeginDisabled(!paused);
-        if (imgui::EditorButton(imgui::EditorIcon::Step,T("play.step"))) m_playMode->StepFrame();
-        ImGui::EndDisabled();
+bool EditorApp::DrawToolbar(bool inMenuBar) {
+    struct Tab { const char* label; Workspace workspace; };
+    static constexpr Tab tabs[] = {{"2D", Workspace::Scene2D}, {"3D", Workspace::Scene3D},
+        {"씬", Workspace::Scenes}, {"도트메이커", Workspace::Dot}, {"Lua", Workspace::Lua}};
+    const float gap = ImGui::GetStyle().ItemSpacing.x;
+    const auto padding = ImGui::GetStyle().FramePadding;
+    const float verticalPadding = inMenuBar ? 0.0f : padding.y;
+    float tabWidth = gap * 4;
+    for (const auto& tab : tabs) tabWidth += ImGui::CalcTextSize(tab.label).x + padding.x * 2;
+    const float controlsWidth = (ImGui::GetFontSize() + verticalPadding * 2) * 3 + gap * 2;
+    const float right = ImGui::GetWindowWidth() - gap - controlsWidth;
+    const float left = inMenuBar ? ImGui::GetCursorPosX() + gap : gap;
+    if (inMenuBar && right - left < tabWidth + gap) return false;
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padding.x, verticalPadding));
+    ImGui::SetCursorPosX(std::max(left, std::min((ImGui::GetWindowWidth() - tabWidth) * .5f, right - tabWidth - gap)));
+    for (std::size_t i = 0; i < std::size(tabs); ++i) {
+        if (i) ImGui::SameLine();
+        if (imgui::EditorTextButton(tabs[i].label, m_workspace == tabs[i].workspace)) SelectWorkspace(tabs[i].workspace);
     }
-
-    // 확장 툴바 버튼.
-    if (m_extensions) {
-        int toolbarIndex = 0;
-        for (const auto& t : m_extensions->ToolbarEntries()) {
-            ImGui::PushID(toolbarIndex++);
-            ImGui::SameLine();
-            bool enabled = !t.desc.isEnabled || t.desc.isEnabled();
-            ImGui::BeginDisabled(!enabled);
-            std::string caption = t.desc.icon.empty() ? t.desc.tooltip : t.desc.icon;
-            if (ImGui::Button(caption.c_str()) && t.onClick) t.onClick(m_ctx);
-            ImGui::EndDisabled();
-            ImGui::PopID();
-        }
+    ImGui::SameLine(std::max(right, ImGui::GetCursorPosX() + gap));
+    const auto state = m_playMode ? m_playMode->State() : PlayState::Edit;
+    const bool playing = state != PlayState::Edit;
+    ImGui::BeginDisabled(!m_project || !m_project->Active() || state == PlayState::Playing);
+    if (imgui::EditorIconButton(imgui::EditorIcon::Play, "##run", state == PlayState::Paused ? "계속 실행" : "실행 (Ctrl+P)", state == PlayState::Playing)) {
+        if (state == PlayState::Paused) m_playMode->Resume();
+        else { auto result = m_playMode->Play(); if (!result) ReportFileResult(result, ""); }
+        RefreshDocumentContext();
+        SelectWorkspace(m_viewport && m_viewport->Camera().perspective ? Workspace::Scene3D : Workspace::Scene2D);
     }
-
-    ImGui::Unindent(6.0f);
-    ImGui::Dummy(ImVec2(0, 2));
-    ImGui::Separator();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!playing);
+    if (imgui::EditorIconButton(imgui::EditorIcon::Pause, "##pause", "일시정지 / 계속 (Ctrl+Shift+P)", state == PlayState::Paused)) {
+        if (state == PlayState::Paused) m_playMode->Resume(); else m_playMode->Pause();
+    }
+    ImGui::SameLine();
+    if (imgui::EditorIconButton(imgui::EditorIcon::Stop, "##stop", "중지")) { m_playMode->Stop(); RefreshDocumentContext(); }
+    ImGui::EndDisabled();
     ImGui::PopStyleVar();
+    return true;
 }
 
 void EditorApp::DrawStatusBar() {
@@ -481,9 +491,8 @@ void EditorApp::HandleShortcuts() {
 
 void EditorApp::NewScene() {
     if (!m_project || !m_project->IsOpen() || (m_playMode && m_playMode->IsPlaying())) return;
-    m_project->NewScene();
-    RefreshDocumentContext();
-    m_selectDocumentTab = true;
+    m_showNewScene = true;
+    m_fileError = false;
 }
 
 void EditorApp::SaveActive() {
@@ -491,7 +500,7 @@ void EditorApp::SaveActive() {
         ReportFileResult(Error{mye::i18n::T("file.stopfirst"), 1}, "");
         return;
     }
-    if (m_dotFocused) {
+    if (!m_animationFocused && (m_dotFocused || m_workspace == Workspace::Dot)) {
         if (auto* doc = DotDocumentForEditing()) {
             if (doc->Path().empty()) RequestSaveAs();
             else ReportFileResult(m_project->SaveDot(doc->Id(), doc->Path()), mye::i18n::T("file.saved"));
@@ -518,6 +527,7 @@ void EditorApp::TogglePlay() {
     else {
         auto started = m_playMode->Play();
         if (!started) ReportFileResult(started, "");
+        else SelectWorkspace(m_viewport && m_viewport->Camera().perspective ? Workspace::Scene3D : Workspace::Scene2D);
     }
     RefreshDocumentContext();
 }

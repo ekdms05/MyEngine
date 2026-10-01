@@ -1,6 +1,6 @@
 # MyEngine
 
-A Windows C++20 game engine for 2.5D pixel art games. Build scenes from separate objects, connect collision and interaction components, write Lua behavior, and test in a separate game window.
+A Windows C++20 game engine for 2D/3D pixel art games. Build scenes from separate objects, connect collision and interaction components, write Lua behavior, and test in a separate game window.
 
 Static embedded GLB meshes, camera-facing sprites and saved 3D game cameras share the official editor/player path. Movement and collision remain 2D; 3D physics and an authenticated online player are still in development. See the [component guide](docs/20-components.md) for supported formats and limits.
 

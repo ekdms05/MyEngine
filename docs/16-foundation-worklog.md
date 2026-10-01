@@ -17,11 +17,14 @@
 | Inspector 에셋 Undo 수정 | AssetRef 이전 값이 스냅샷에서 빠지고 비우기 버튼의 상태 추적이 명령을 누락 | 에셋 지정/비우기는 단발 명령, 연속 편집은 기존 추적; GUID·타입 복원과 무변경 회귀 |
 | 잘못된 시작 프로젝트 복구 | 초기화의 복구 창을 앱 진입점이 즉시 종료하던 불일치 | 대화형 실행은 복구, 자동 캡처·임포트·플레이는 실패 종료; 실제 프로세스 회귀 |
 | CI의 명시적 DX11 WARP 선택 | 일반 GitHub Windows 호스트에 GPU가 보장되지 않음 | 기본 HARDWARE 유지, 정확히 MYE_DX11_WARP=1인 검증에서만 WARP; 실제 소프트웨어 어댑터 확인 |
+| 배포 빌드의 Visual Studio 버전 강제 제거 | 실제 Windows 러너는 VS2026 이미지이며 VS2022 구성은 실패함 | 기존 MCP와 같은 CMake 기본 선택을 사용. 공개한 0.2.0 태그는 보존하고 수정본을 0.2.1로 구분 |
 | 오래된 빌드 생성물 제거 | CMake 디렉터리 복사는 삭제된 소스를 대상에서 자동 제거하지 않음 | 구 samples/·Dot OBJ·템플릿 .dot·과거 문서 복사본만 제거; 사용자 에셋 보존 |
 
 에디터 Lua 기본 바인딩은 Math/ECS/log/co다. 선택 모듈의 라이브러리 지원을 에디터 기본 지원으로 표기하지 않는다. 사용 중인 Lua VM·ImGui·디코더·FreeType는 실제 경로가 있어 유지했다. 시스템 폰트는 설치된 Windows에서 로드하며 패키지에 복사하지 않는다.
 
 공식 벤치마킹 URL·채택 범위·차이는 [07](07-editor-ui.md), 남은 완료 조건은 [14](14-development-priorities.md), Lua 계약은 [19](19-lua-api.md)에 있다.
+
+배포 환경의 근거는 [실패한 구성 로그](https://github.com/ekdms05/MyEngine/actions/runs/36893191832)와 해당 실행의 [Windows 이미지 목록](https://github.com/actions/runner-images/blob/win25-vs2026/20260925.250/images/windows/Windows2025-VS2026-Readme.md)이다. CMake의 제너레이터 선택을 재구현하지 않고 설치된 도구의 기본 선택을 사용한다.
 
 ## 검증
 

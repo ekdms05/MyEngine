@@ -1,4 +1,4 @@
-# MyEngine 0.2.0
+# MyEngine 0.2.1
 
 - 프로젝트 생성·불러오기 창에서 시작하고, 프로젝트를 선택한 뒤 에디터를 엽니다.
 - 작업대를 2D·3D·Lua로 정리하고 요소 추가·인스펙터의 간격과 사용 설명을 보완했습니다.
@@ -7,6 +7,7 @@
 - Sol2를 제거하고 Lua 5.4 C API로 직접 연결했습니다. Lua 함수·콜백·제약을 제작 가이드에 정리했습니다.
 - 도트 제작·리깅은 외부 제작 도구에서 수행하고 PNG·`.anim`을 가져오는 흐름으로 정리했습니다. 오래된 데모와 초기 연구 자료는 배포에서 제외했습니다.
 - MCP에 프로젝트 검사·API 참조·에셋 가져오기를 연결했습니다.
+- Windows 배포 빌드는 CMake가 설치된 Visual Studio를 선택합니다. 존재하지 않는 Visual Studio 2022를 강제하던 설정을 제거했습니다.
 
 Windows x64, DirectX 11 환경용입니다. [최신 Microsoft Visual C++ v14 x64 런타임](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)이 필요합니다. ZIP을 새 폴더에 풀고 `MyEditor.exe`를 실행하세요. 기존 프로젝트는 새 버전에서 열기 전에 백업을 권장합니다.
 

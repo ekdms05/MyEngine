@@ -100,7 +100,7 @@ void PanelManager::SetupDockspace(EditorContext& /*ctx*/) {
         ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, .25f, nullptr, &center);
         const ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, .20f, nullptr, &center);
         const ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, .43f, nullptr, &left);
-        const ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, .35f, nullptr, &right);
+        const ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, .50f, nullptr, &right);
         for (const auto& desc : m_impl->descs) {
             ImGuiID target = 0;
             switch (desc.defaultDock) {
@@ -131,7 +131,7 @@ void PanelManager::DrawPanels(EditorContext& ctx) {
         auto* panel = m_impl->instances[i].panel.get();
         if (!panel) continue;
         const auto& id = panel->Desc().id;
-        const bool central = id == "mye.viewport" || id == "mye.doteditor" || id == "mye.scenes" || id == "mye.lua";
+        const bool central = id == "mye.viewport" || id == "mye.lua";
         if (central && ctx.app && id != ctx.app->CentralPanelId()) continue;
         if (central && m_impl->centerDock) {
             ImGui::SetNextWindowDockID(m_impl->centerDock, ImGuiCond_Always);

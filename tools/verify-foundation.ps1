@@ -1,11 +1,15 @@
 param(
-    [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug'
+    [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
+    [string]$BuildDir = 'build/dev'
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$serverExe = Join-Path $repoRoot "build/dev/apps/server/$Configuration/MyServer.exe"
+$buildRoot = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $repoRoot $BuildDir }
+$serverExe = Join-Path $buildRoot "apps/server/$Configuration/MyServer.exe"
 if (-not (Test-Path -LiteralPath $serverExe)) { throw "Build MyServer first: $serverExe" }
+$playerExe = Join-Path $buildRoot "apps/game/$Configuration/MyGame.exe"
+if (-not (Test-Path -LiteralPath $playerExe)) { throw "Build MyGame first: $playerExe" }
 $runDir = Join-Path $repoRoot ('build/foundation/server-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $runDir | Out-Null
 $script:step = 0
@@ -44,3 +48,84 @@ $before = (Get-FileHash -LiteralPath $snapshotPath).Hash
 Invoke-ServerCheck 4 @('--port', '0', '--ticks', '0')
 if ((Get-FileHash -LiteralPath $snapshotPath).Hash -ne $before) { throw 'Failed load overwrote data' }
 Write-Output "PASS: CLI bounds, registration, active-session autosave/shutdown, restart, corrupt-save refusal ($runDir)"
+
+# Native project loading is checked separately from server state and shared runtime unit tests.
+$playerDir = Join-Path $repoRoot ('build/foundation/player-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $playerDir | Out-Null
+Copy-Item -LiteralPath (Join-Path $repoRoot 'game/starter/meadow_village') -Destination (Join-Path $playerDir 'project') -Recurse
+$projectFile = Join-Path $playerDir 'project/project.myeproj'
+$script:playerStep = 0
+function Invoke-PlayerCheck([int]$ExpectedExit, [string[]]$Arguments) {
+    $script:playerStep++
+    # Windows PowerShell turns expected native stderr into an ErrorRecord before exit-code checks.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $playerExe @Arguments > (Join-Path $playerDir "step-$script:playerStep.log") 2>&1
+        $actualExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    if ($actualExit -ne $ExpectedExit) {
+        throw "Player step $script:playerStep expected exit $ExpectedExit, received $actualExit; logs: $playerDir"
+    }
+}
+Invoke-PlayerCheck 64 @('--headless')
+Invoke-PlayerCheck 64 @('--make-sample')
+Invoke-PlayerCheck 64 @('--project', $projectFile, '--frames', 'invalid')
+$frame = Join-Path $playerDir 'frame.bmp'
+Invoke-PlayerCheck 0 @('--project', $projectFile, '--headless', '--frames', '30', '--dump', $frame)
+if (-not (Test-Path -LiteralPath $frame) -or (Get-Item -LiteralPath $frame).Length -le 54) { throw 'Project player capture was not produced' }
+$bitmapHeader = [IO.File]::ReadAllBytes($frame)
+if ($bitmapHeader[0] -ne 0x42 -or $bitmapHeader[1] -ne 0x4D -or
+    [BitConverter]::ToInt32($bitmapHeader, 18) -ne 960 -or [Math]::Abs([BitConverter]::ToInt32($bitmapHeader, 22)) -ne 540) {
+    throw 'Project player did not render the contracted 960x540 BMP target'
+}
+Invoke-PlayerCheck 1 @('--project', $projectFile, '--headless', '--frames', '1', '--scene', '../outside.scene')
+$projectBefore = Get-Content -LiteralPath $projectFile -Raw -Encoding UTF8
+$manifest = $projectBefore | ConvertFrom-Json
+$sceneFile = Join-Path (Split-Path -Parent $projectFile) $manifest.mainScene
+
+# Drive the authored event/map/Lua path without relying on synthetic OS keyboard input.
+$village = Get-Content -LiteralPath $sceneFile -Raw -Encoding UTF8 | ConvertFrom-Json
+$door = $village.entities | Where-Object { $_.components.ObjectName.value -eq 'Cottage Door' }
+if (-not $door) { throw 'Starter portal fixture missing' }
+$doorBehavior = $door.components.ObjectBehavior
+if (-not $doorBehavior) {
+    $doorBehavior = [pscustomobject]@{ connections = @(); luaSource = '' }
+    $door.components | Add-Member -MemberType NoteProperty -Name ObjectBehavior -Value $doorBehavior
+}
+$doorBehavior.connections += [pscustomobject]@{
+    event = 'Start'; action = 'ChangeMap'; target = 'Cottage Spawn'; text = 'assets/scenes/cottage.scene'; x = 0; y = 0; visible = $true
+}
+[IO.File]::WriteAllText($sceneFile, ($village | ConvertTo-Json -Depth 24), [Text.UTF8Encoding]::new($false))
+$cottageFile = Join-Path (Split-Path -Parent $projectFile) 'assets/scenes/cottage.scene'
+$cottage = Get-Content -LiteralPath $cottageFile -Raw -Encoding UTF8 | ConvertFrom-Json
+$spawn = $cottage.entities | Where-Object { $_.components.ObjectName.value -eq 'Cottage Spawn' }
+$character = $cottage.entities | Where-Object { $_.components.CharacterController2D.enabled }
+if (-not $spawn -or -not $character) { throw 'Starter destination fixture missing' }
+$spawn.components.LocalTransform.px = 2
+$spawn.components.LocalTransform.py = -1
+$spawnX = $spawn.components.LocalTransform.px.ToString([Globalization.CultureInfo]::InvariantCulture)
+$spawnY = $spawn.components.LocalTransform.py.ToString([Globalization.CultureInfo]::InvariantCulture)
+$behavior = [pscustomobject]@{ connections = @(); luaSource = @"
+return { on_init = function(self)
+  local p = mye.world.entity_from_packed(self.entity):get_position()
+  assert(math.abs(p.x - $spawnX) < 0.001 and math.abs(p.y - $spawnY) < 0.001, 'destination spawn mismatch')
+  mye.log('player-map-spawn-pass')
+end }
+"@ }
+$character.components | Add-Member -MemberType NoteProperty -Name ObjectBehavior -Value $behavior -Force
+[IO.File]::WriteAllText($cottageFile, ($cottage | ConvertTo-Json -Depth 24), [Text.UTF8Encoding]::new($false))
+Invoke-PlayerCheck 0 @('--project', $projectFile, '--headless', '--frames', '120')
+$mapLog = Get-Content -LiteralPath (Join-Path $playerDir "step-$script:playerStep.log") -Raw -Encoding UTF8
+if ($mapLog -notmatch 'Scene loaded: assets/scenes/cottage.scene' -or $mapLog -notmatch 'player-map-spawn-pass') {
+    throw 'Authored map request, destination spawn and Lua initialization did not complete'
+}
+$sceneHash = (Get-FileHash -LiteralPath $sceneFile).Hash
+$manifest.version = 99
+[IO.File]::WriteAllText($projectFile, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+Invoke-PlayerCheck 1 @('--project', $projectFile, '--headless', '--frames', '1')
+if ((Get-FileHash -LiteralPath $sceneFile).Hash -ne $sceneHash) { throw 'Failed project load modified the scene' }
+Write-Output "PASS: explicit project CLI, removed demo options, GUID-based native capture, scene bounds, event/map/spawn/Lua integration, invalid-version refusal ($playerDir)"
+exit 0

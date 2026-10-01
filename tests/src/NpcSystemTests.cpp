@@ -1,4 +1,4 @@
-// NpcSystemTests.cpp — NPC 배회·접근·상호작용 헤드리스 테스트 (M6-B, 06)
+// NpcSystemTests.cpp — NPC 배회·접근·상호작용 헤드리스 테스트
 //
 // 검증 범위:
 //   - 배회: Patrol 모드가 웨이포인트를 순서대로 따라간다(도착→대기→다음 웨이포인트).
@@ -22,7 +22,7 @@
 
 #include "mye/core/Events.h"
 
-#include <sol/sol.hpp>
+#include "LuaTest.h"
 
 using namespace mye;
 using namespace mye::runtime;
@@ -283,9 +283,9 @@ MYE_TEST(NpcLuaInteractionDrivesDialogue) {
     rt.ReapplyBindings();
 
     // Lua 로 NPC 등록(웨이포인트 없이 제자리 — 배회는 다른 테스트가 검증). on_interact 는 say 1회.
-    sol::state& lua = rt.State();
-    lua["_GUARD"] = static_cast<double>(guard.Packed());
-    lua["_PLAYER"] = static_cast<double>(player.Packed());
+    lua_State* lua = rt.State();
+    luatest::SetInteger(lua, "_GUARD", static_cast<lua_Integer>(guard.Packed()));
+    luatest::SetInteger(lua, "_PLAYER", static_cast<lua_Integer>(player.Packed()));
     auto reg = rt.DoString(R"LUA(
         _flags = { talked = false }
         mye.npc.set_player(_PLAYER)
@@ -304,12 +304,12 @@ MYE_TEST(NpcLuaInteractionDrivesDialogue) {
     // 상호작용 개시(플레이어 입력 시뮬).
     auto call = rt.DoString("_hit = mye.npc.interact()", "interact.lua");
     MYE_EXPECT(bool(call));
-    MYE_EXPECT(lua["_hit"].get<double>() != 0.0);
+    MYE_EXPECT(luatest::Eval<double>(lua, "return _hit") != 0.0);
     MYE_EXPECT(npc.IsAnyInteracting());
     MYE_EXPECT(npc.State(guard) == NpcState::Interacting);
 
     // on_interact 코루틴이 say 를 시작 → 대화창 표시 대기. talked 플래그·대화 상태 확인.
-    MYE_EXPECT(lua["_flags"]["talked"].get<bool>());
+    MYE_EXPECT(luatest::Eval<bool>(lua, "return _flags[\"talked\"]"));
     MYE_EXPECT(dlg.State() == DialogueState::ShowingLine);
 
     // 대화 중에는 NPC 정지 유지(틱을 돌려도 Interacting).

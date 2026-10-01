@@ -1,6 +1,6 @@
 # 06. 게임 UI·텍스트·오디오·런타임
 
-`mye_ui`는 게임 위젯·텍스트, `mye_audio`는 재생, `mye_runtime`은 대화·컷신·NPC·로컬 세이브·로컬라이즈·씬 전환과 오브젝트 조작·동작 실행을 담당한다. 현재 MyGame의 타이틀/설정과 전체 콘텐츠 통합 샘플의 실행 범위를 구분한다.
+`mye_ui`는 게임 위젯·텍스트, `mye_audio`는 재생, `mye_runtime`은 대화·컷신·NPC·로컬 세이브·로컬라이즈·씬 전환과 오브젝트 조작·동작 실행을 담당한다. 현재 MyGame은 프로젝트의 오브젝트·Lua·모션·맵 전환을 실행하는 로컬 플레이어다. 다른 런타임 모듈의 라이브러리 지원과 플레이어 통합을 구분한다.
 
 ## 게임 UI와 텍스트
 
@@ -14,7 +14,7 @@
 
 게임 UI는 자체 위젯/스프라이트 경로이고 에디터는 ImGui다. 화면은 좌상단 원점·+Y 아래, 글리프 R8은 coverage이며 [렌더 계약](02-rendering.md)의 `yDown`·`alphaMask`로 출력한다. 클릭 좌표도 픽셀 타깃의 destRect·배율을 따른다.
 
-TextInput·ScrollView·ListView 로직 구현과 실제 채팅·인벤토리 화면 통합은 별개다. MyGame 타이틀은 게임 앱의 명시적 UI 조합을 사용하며 모든 화면이 UiDocument/Lua 컨트롤러로 구성된 것은 아니다. 한글 출력·글꼴 배포·IME 입력·후보창 UX도 각각 검증한다.
+TextInput·ScrollView·ListView 로직 구현과 실제 채팅·인벤토리 화면 통합은 별개다. 현재 MyGame에 UI 문서 편집기·타이틀·채팅·인벤토리는 연결되지 않았다. 한글 출력·글꼴 배포·IME 입력·후보창 UX도 각각 검증한다.
 
 ## 오디오
 
@@ -24,7 +24,7 @@ TextInput·ScrollView·ListView 로직 구현과 실제 채팅·인벤토리 화
 WAV/OGG 임포트 → AudioClip → 재생 소스/보이스 → 버스·믹서 → 장치 콜백
 ```
 
-MyGame은 기존 AudioModule을 사용하고 설정의 BGM/SFX 음량을 재생 버스에 반영한다. 음원 핸들을 해제하기 전에 재생 소스를 정리하고, 장치 콜백과 제어 스레드가 공유 상태의 동기화 계약을 지킨다. headless 무음 테스트·장치 초기화·사람의 청취 평가는 서로 다른 검증이다.
+현재 MyGame은 AudioModule을 등록하지 않는다. 오디오를 연결하는 앱은 음원 핸들을 해제하기 전에 재생 소스를 정리하고, 장치 콜백과 제어 스레드가 공유 상태의 동기화 계약을 지켜야 한다. headless 무음 테스트·장치 초기화·사람의 청취 평가는 서로 다른 검증이다.
 
 고급 리버브·오클루전·전투 레이어 음악·외부 음원 생성 서비스는 현재 기본 재생 기능으로 설명하지 않는다.
 
@@ -37,7 +37,7 @@ MyGame은 기존 AudioModule을 사용하고 설정의 BGM/SFX 음량을 재생 
 | NPC | 배회·접근·상호작용 상태 | [NpcSystem.h](../engine/runtime/include/mye/runtime/NpcSystem.h) |
 | 오디오 리스너 | 씬 위치와 청취 위치 연결 | [AudioListener.h](../engine/runtime/include/mye/runtime/AudioListener.h) |
 
-전체 조합 예는 `village_demo`다. 컷신 이동이 항상 A*·게임의 권위 이동을 사용한다고 가정하지 않는다. MyGame에서 NPC·대화·퀘스트를 사용하는 제품 경로는 별도 통합 항목이다.
+대화·컷신·세이브·씬 전환의 CPU 조합은 `tests/src/RuntimeIntegrationTests.cpp`에서 검증한다. 컷신 이동이 항상 A*·게임의 권위 이동을 사용한다고 가정하지 않는다. MyGame에서 NPC·대화·퀘스트를 사용하는 제품 경로는 별도 통합 항목이다.
 
 ## 에디터 오브젝트 실행
 
@@ -51,4 +51,4 @@ MyGame은 기존 AudioModule을 사용하고 설정의 BGM/SFX 음량을 재생 
 
 ## 검증과 개선
 
-위젯·글리프·대화·컷신·NPC·세이브·문자열·전환은 자체 테스트에서 검증한다. GPU R8 출력은 실제 DX11 픽셀 검사, 사용자 흐름은 앱 캡처·입력 시나리오로 확인한다. 배포 폰트·설정 마우스 UX·UiDocument 연결·MyGame 콘텐츠 통합은 [14](14-development-priorities.md)의 완료 조건을 따른다.
+위젯·글리프·대화·컷신·NPC·세이브·문자열·전환은 자체 테스트에서 검증한다. GPU R8 출력은 실제 DX11 픽셀 검사, 사용자 흐름은 앱 캡처·입력 시나리오로 확인한다. 배포 폰트·UiDocument 연결·MyGame 콘텐츠 통합은 [14](14-development-priorities.md)의 완료 조건을 따른다.

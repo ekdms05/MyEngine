@@ -31,8 +31,6 @@ std::unique_ptr<IEditorPanelFactory> MakeTilePalettePanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeAnimationEditorPanelFactory();
 
 // ---- 도트(픽셀아트) 에디터 패널 ----
-std::unique_ptr<IEditorPanelFactory> MakeDotEditorPanelFactory();
-std::unique_ptr<IEditorPanelFactory> MakeScenesPanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeLuaPanelFactory();
 // The Inspector and Lua workspace edit the same scene component through Undo.
 void DrawObjectLua(EditorContext& ctx, float height);

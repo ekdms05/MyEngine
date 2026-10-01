@@ -18,10 +18,17 @@
 #include "mye/editor/SceneSerializer.h"
 #include "mye/editor/Selection.h"
 #include "mye/editor/EditorApp.h"
+#include "mye/editor/EditorModule.h"
+#include "mye/editor/ExtensionRegistry.h"
+#include "mye/editor/PlayWindow.h"
 #include "mye/editor/Project.h"
 #include "mye/editor/Viewport.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/phys/Collision.h"
+#include "mye/asset/AssetDatabase.h"
+#include "mye/asset/AssetManager.h"
+#include "mye/asset/FileSystem.h"
+#include "mye/asset/Importer.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -29,6 +36,8 @@
 #include "mye/core/Json.h"
 #include "mye/core/JsonFile.h"
 #include "mye/core/Module.h"
+#include "mye/core/platform/Win32Window.h"
+#include "mye/scene/SceneModule.h"
 #include "mye/ecs/World.h"
 #include "mye/refl/TypeBuilder.h"
 #include "mye/refl/TypeRegistry.h"
@@ -36,11 +45,16 @@
 #include "mye/scene/Renderable.h"
 
 #include <cstdio>
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstring>
+#include <cwchar>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <Windows.h>
 
 using namespace mye;
 using namespace mye::editor;
@@ -440,6 +454,313 @@ public:
     uint32_t GetEngineVersion() const override { return 1; }
     const EnginePaths& GetPaths() const override { return paths; }
 };
+
+struct EditorGuiScope {
+    EditorGuiScope() {
+        ImGui::CreateContext();
+        auto& io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
+        io.IniFilename = nullptr;
+        io.DisplaySize = ImVec2(1600, 900);
+        io.DeltaTime = 1.0f / 60;
+        unsigned char* pixels = nullptr;
+        int width = 0, height = 0;
+        io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    }
+    ~EditorGuiScope() { ImGui::DestroyContext(); }
+};
+
+struct EditorProcess {
+    PROCESS_INFORMATION process{};
+    ~EditorProcess() {
+        if (process.hProcess) {
+            if (WaitForSingleObject(process.hProcess, 0) == WAIT_TIMEOUT) {
+                TerminateProcess(process.hProcess, 2); // Only a failed test's own child process.
+                WaitForSingleObject(process.hProcess, 5000);
+            }
+            CloseHandle(process.hProcess);
+            CloseHandle(process.hThread);
+        }
+    }
+    bool Start(const std::filesystem::path& directory, std::wstring_view arguments) {
+        std::error_code ec;
+        std::filesystem::create_directories(directory, ec);
+        if (ec) return false;
+        // The app writes logs/layout under LOCALAPPDATA; keep every test write under build/.
+        auto* inherited = GetEnvironmentStringsW();
+        if (!inherited) return false;
+        std::vector<std::wstring> entries;
+        for (const wchar_t* entry = inherited; *entry; entry += std::wcslen(entry) + 1)
+            if (_wcsnicmp(entry, L"LOCALAPPDATA=", 13) != 0) entries.emplace_back(entry);
+        FreeEnvironmentStringsW(inherited);
+        entries.emplace_back(L"LOCALAPPDATA=" + (directory / "localappdata").wstring());
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return _wcsicmp(a.c_str(), b.c_str()) < 0; });
+        std::vector<wchar_t> environment;
+        for (const auto& entry : entries) {
+            environment.insert(environment.end(), entry.begin(), entry.end());
+            environment.push_back(L'\0');
+        }
+        environment.push_back(L'\0');
+        const auto executable = Widen(MYE_EDITOR_EXE);
+        auto command = L"\"" + executable + L"\" " + std::wstring(arguments);
+        STARTUPINFOW startup{};
+        startup.cb = sizeof(startup);
+        startup.dwFlags = STARTF_USESHOWWINDOW;
+        startup.wShowWindow = SW_HIDE;
+        return CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, FALSE,
+            CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, environment.data(), directory.c_str(), &startup, &process) != FALSE;
+    }
+};
+
+struct EditorProcessWindow {
+    DWORD processId;
+    HWND hwnd = nullptr;
+};
+
+BOOL CALLBACK FindEditorProcessWindow(HWND hwnd, LPARAM parameter) {
+    auto& result = *reinterpret_cast<EditorProcessWindow*>(parameter);
+    DWORD processId = 0;
+    GetWindowThreadProcessId(hwnd, &processId);
+    wchar_t className[64]{};
+    GetClassNameW(hwnd, className, static_cast<int>(std::size(className)));
+    if (processId == result.processId && std::wcscmp(className, L"MyEngineWindowClass") == 0) {
+        result.hwnd = hwnd;
+        return FALSE;
+    }
+    return TRUE;
+}
+}
+
+MYE_TEST(EditorExecutableRecoversInteractiveProjectButFailsAutomatedProject) {
+    const auto root = ProjectTestDirectory("startup-process");
+    const auto broken = root / "broken" / "project.myeproj";
+    std::filesystem::create_directories(broken.parent_path());
+    { std::ofstream file(broken); file << "{"; }
+    const auto projectArgument = L"--project \"" + broken.wstring() + L"\"";
+    int index = 0;
+    for (const auto* flags : {L" --headless --frames 1", L" --frames 1"}) {
+        EditorProcess child;
+        const auto started = child.Start(root / std::to_string(index++), projectArgument + flags);
+        MYE_EXPECT(started);
+        if (!started) continue;
+        MYE_EXPECT(WaitForSingleObject(child.process.hProcess, 15000) == WAIT_OBJECT_0);
+        DWORD exitCode = 0;
+        MYE_EXPECT(GetExitCodeProcess(child.process.hProcess, &exitCode) && exitCode == 1);
+    }
+    EditorProcess interactive;
+    const auto directory = root / "interactive";
+    const auto started = interactive.Start(directory, projectArgument);
+    MYE_EXPECT(started);
+    if (!started) return;
+    const auto logPath = directory / "localappdata" / "MyEngine" / "broken" / "logs" / "engine.log";
+    bool enteredLoop = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while (std::chrono::steady_clock::now() < deadline && WaitForSingleObject(interactive.process.hProcess, 25) == WAIT_TIMEOUT) {
+        std::ifstream log(logPath);
+        const std::string text((std::istreambuf_iterator<char>(log)), std::istreambuf_iterator<char>());
+        if (text.find("start (frames=") != std::string::npos) { enteredLoop = true; break; }
+    }
+    MYE_EXPECT(enteredLoop && WaitForSingleObject(interactive.process.hProcess, 0) == WAIT_TIMEOUT);
+    EditorProcessWindow window{interactive.process.dwProcessId};
+    EnumWindows(FindEditorProcessWindow, reinterpret_cast<LPARAM>(&window));
+    MYE_EXPECT(window.hwnd);
+    if (window.hwnd) MYE_EXPECT(PostMessageW(window.hwnd, WM_CLOSE, 0, 0));
+    MYE_EXPECT(WaitForSingleObject(interactive.process.hProcess, 15000) == WAIT_OBJECT_0);
+    DWORD exitCode = 1;
+    MYE_EXPECT(GetExitCodeProcess(interactive.process.hProcess, &exitCode) && exitCode == 0);
+    std::ifstream file(broken);
+    const std::string preserved((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    MYE_EXPECT(preserved == "{");
+}
+
+MYE_TEST(EditorInspectorAssetClearUndoRestoresGuidAndType) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("asset-ref-undo");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(app.CreateProject("Assets", Utf8String(root / "project")));
+    auto& world = app.Project().Active()->World();
+    const auto entity = world.Create();
+    auto& sprite = world.Add<scene::SpriteRenderer>(entity);
+    const asset::AssetRef original{asset::AssetGuid::Generate(), 0xf123456789abcdefULL};
+    sprite.sprite = original;
+    const auto* type = refl::TypeRegistry::Get().Find(scene::SpriteRenderer::kComponentTypeId);
+    MYE_EXPECT(type);
+    if (!type) { app.Shutdown(); return; }
+    auto frame = [&]() {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowSize(ImVec2(500, 700));
+        ImGui::Begin("asset-ref-test");
+        app.Inspector().DrawReflected(app.Context(), ObjectRef::Component(entity, *type), *type, &sprite, {});
+        ImGui::End();
+        ImGui::Render();
+    };
+    frame();
+    auto* window = ImGui::FindWindowByName("asset-ref-test");
+    MYE_EXPECT(window);
+    if (!window) { app.Shutdown(); return; }
+    ImGui::ActivateItemByID(window->GetID("비우기##sprite"));
+    frame();
+    MYE_EXPECT(!sprite.sprite.guid.IsValid() && sprite.sprite.type == 0);
+    MYE_EXPECT(app.Commands().Position() == 1 && app.Commands().IsDirty());
+    app.Commands().Undo();
+    MYE_EXPECT(sprite.sprite.guid == original.guid && sprite.sprite.type == original.type);
+    MYE_EXPECT(!app.Commands().IsDirty());
+    app.Commands().Redo();
+    MYE_EXPECT(!sprite.sprite.guid.IsValid() && sprite.sprite.type == 0);
+    app.Commands().MarkSaved();
+    ImGui::ActivateItemByID(window->GetID("비우기##sprite"));
+    frame();
+    MYE_EXPECT(app.Commands().Position() == 1 && !app.Commands().IsDirty());
+    app.Shutdown();
+}
+
+MYE_TEST(EditorInvalidStartupReturnsToLauncherAndCanOpenProject) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("invalid-startup");
+    const auto broken = root / "broken.myeproj";
+    { std::ofstream file(broken); file << "{"; }
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, Utf8String(broken)));
+    auto frame = [&]() { ImGui::NewFrame(); app.OnFrame(); ImGui::Render(); };
+    frame();
+    const auto* launcher = ImGui::FindWindowByName("프로젝트###project_launcher");
+    MYE_EXPECT(!app.Project().IsOpen() && launcher && launcher->Active);
+    MYE_EXPECT(app.CreateProject("Recovery", Utf8String(root / "recovered")));
+    frame();
+    MYE_EXPECT(app.Project().IsOpen());
+    MYE_EXPECT(launcher && !launcher->Active);
+    const auto* hierarchy = ImGui::FindWindowByName("하이어라키###mye.hierarchy");
+    MYE_EXPECT(hierarchy && hierarchy->Active);
+    std::ifstream file(broken);
+    const std::string preserved((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    MYE_EXPECT(preserved == "{");
+    app.Shutdown();
+}
+
+MYE_TEST(EditorInspectorAssetDropUndoAndUnchangedDrop) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("asset-ref-drop");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, "", MYE_STARTER_SOURCE_DIR));
+    MYE_EXPECT(app.CreateProject("Assets", Utf8String(root / "project"), false, true));
+    const auto assets = Utf8Path(app.Project().RootDir()) / "assets";
+    asset::VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<asset::LooseFileSystem>(Utf8String(assets)), 0);
+    asset::AssetManager manager(vfs, nullptr);
+    manager.RegisterImporter(std::make_unique<asset::TextureImporter>());
+    asset::AssetDatabase database(manager, nullptr);
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)));
+    engine.RegisterServiceRaw(asset::AssetDatabase::kServiceId, &database);
+    constexpr char assetPath[] = "assets://characters/novice.png";
+    const auto assigned = database.GuidFromPath(assetPath);
+    MYE_EXPECT(assigned.IsValid());
+    auto& world = app.Project().Active()->World();
+    const auto entity = world.Create();
+    auto& sprite = world.Add<scene::SpriteRenderer>(entity);
+    const asset::AssetRef original{asset::AssetGuid::Generate(), 0xf123456789abcdefULL};
+    sprite.sprite = original;
+    const auto* type = refl::TypeRegistry::Get().Find(scene::SpriteRenderer::kComponentTypeId);
+    MYE_EXPECT(type);
+    if (!type) { engine.UnregisterServiceRaw(asset::AssetDatabase::kServiceId); app.Shutdown(); return; }
+    ImVec2 target{};
+    auto frame = [&](bool source) {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(20, 20));
+        ImGui::SetNextWindowSize(ImVec2(500, 700));
+        ImGui::Begin("asset-drop-test");
+        const auto cursor = ImGui::GetCursorScreenPos();
+        target = ImVec2(cursor.x + 120, cursor.y + ImGui::GetTextLineHeightWithSpacing() + ImGui::GetFrameHeight() * .5f);
+        if (source && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceExtern | ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
+            ImGui::SetDragDropPayload("MYE_ASSET", assetPath, sizeof(assetPath));
+            ImGui::EndDragDropSource();
+        }
+        app.Inspector().DrawReflected(app.Context(), ObjectRef::Component(entity, *type), *type, &sprite, {});
+        ImGui::End();
+        ImGui::Render();
+    };
+    frame(false);
+    ImGui::GetIO().AddMousePosEvent(target.x, target.y);
+    frame(false);
+    frame(true);  // Preview the external payload over the real inspector drop target.
+    frame(false); // Ending the source delivers it once.
+    MYE_EXPECT(sprite.sprite.guid == assigned && sprite.sprite.type == 0);
+    MYE_EXPECT(app.Commands().Position() == 1 && app.Commands().IsDirty());
+    app.Commands().Undo();
+    MYE_EXPECT(sprite.sprite.guid == original.guid && sprite.sprite.type == original.type);
+    app.Commands().Redo();
+    MYE_EXPECT(sprite.sprite.guid == assigned && sprite.sprite.type == 0);
+    app.Commands().MarkSaved();
+    frame(true); frame(false);
+    MYE_EXPECT(app.Commands().Position() == 1 && !app.Commands().IsDirty());
+    engine.UnregisterServiceRaw(asset::AssetDatabase::kServiceId);
+    app.Shutdown();
+}
+
+MYE_TEST(EditorFrameReacquiresBackbufferAfterUiResize) {
+    const auto root = ProjectTestDirectory("frame-resize");
+    EditorTestContext engine(root);
+    WindowDesc desc;
+    desc.title = "Editor frame resize regression";
+    desc.clientSize = {640, 420};
+    auto window = win32::Win32Window::Create(desc, engine.events);
+    MYE_EXPECT(window);
+    if (!window) return;
+    engine.RegisterServiceRaw(kMainWindowServiceId, static_cast<IWindow*>(window.Value().get()));
+    ModuleRegistry modules;
+    engine.RegisterServiceRaw(ModuleRegistry::kServiceId, &modules);
+    modules.Register(std::make_unique<scene::SceneModule>());
+    auto editor = std::make_unique<EditorModule>();
+    auto* module = editor.get();
+    modules.Register(std::move(editor));
+    const auto initialized = modules.InitializeAll(engine);
+    MYE_EXPECT(initialized);
+    if (!initialized) return;
+    MYE_EXPECT(module->App()->CreateProject("Resize", Utf8String(root / "project")));
+
+    struct ResizePanel : IEditorPanel {
+        PanelDesc desc{"test.resize", "Resize regression", false, DockSlot::Floating};
+        bool& resized;
+        explicit ResizePanel(bool& value) : resized(value) {}
+        const PanelDesc& Desc() const override { return desc; }
+        void OnGui(EditorContext& ctx) override {
+            if (!resized) {
+                const auto hwnd = static_cast<HWND>(ctx.engine->MainWindow().GetNativeHandle());
+                resized = SetWindowPos(hwnd, nullptr, 0, 0, 820, 560, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+            }
+        }
+    };
+    struct ResizeFactory : IEditorPanelFactory {
+        PanelDesc desc{"test.resize", "Resize regression", false, DockSlot::Floating};
+        bool& resized;
+        explicit ResizeFactory(bool& value) : resized(value) {}
+        const PanelDesc& Desc() const override { return desc; }
+        std::unique_ptr<IEditorPanel> Create() override { return std::make_unique<ResizePanel>(resized); }
+    };
+    bool resized = false;
+    module->App()->Panels().RegisterFactory(std::make_unique<ResizeFactory>(resized));
+    module->App()->Panels().Open("test.resize");
+    const auto output = root / "resized.bmp";
+    bool finished = false;
+    module->SetCliControl(true, 1, true, Utf8String(output), [&]() { finished = true; });
+    window.Value()->PumpMessages();
+    modules.Tick(UpdatePhase::PreRender, TimeStep{});
+    MYE_EXPECT(resized && finished);
+    std::ifstream file(output, std::ios::binary);
+    std::array<char, 26> header{};
+    file.read(header.data(), static_cast<std::streamsize>(header.size()));
+    MYE_EXPECT(file && header[0] == 'B' && header[1] == 'M');
+    if (file) {
+        int32_t width = 0, height = 0;
+        std::memcpy(&width, header.data() + 18, sizeof(width));
+        std::memcpy(&height, header.data() + 22, sizeof(height));
+        const auto size = window.Value()->GetClientSize();
+        MYE_EXPECT(width == size.x && std::abs(height) == size.y);
+    }
+    modules.ShutdownAll(engine);
 }
 
 MYE_TEST(EditorProjectCreateEditSaveReopenPlay) {
@@ -614,11 +935,13 @@ MYE_TEST(EditorProjectRejectsBrokenSceneAndMetadata) {
     MYE_EXPECT(project.HasUnsavedChanges());
 }
 
-MYE_TEST(EditorStartupCopiesStarterAndPreservesUserEdits) {
+MYE_TEST(EditorLauncherCreatesStarterExplicitlyAndPreservesUserEdits) {
     const auto root = ProjectTestDirectory("starter-startup");
     EditorTestContext engine(root);
     EditorApp app;
     MYE_EXPECT(app.Initialize(engine, "", MYE_STARTER_SOURCE_DIR));
+    MYE_EXPECT(!app.Project().IsOpen());
+    MYE_EXPECT(app.CreateProject("초원마을", Utf8String(root / "project"), false, true));
     MYE_EXPECT(app.Project().IsOpen() && app.Project().Name() == "초원마을");
     const auto projectFile = std::string(app.Project().ProjectFilePath());
     const auto mainPath = std::string(app.Project().Active()->Path());
@@ -635,20 +958,36 @@ MYE_TEST(EditorStartupCopiesStarterAndPreservesUserEdits) {
         auto after = animation->Animation();
         after.clip.frameDurations[0] = .25f;
         animation->Commands().Push(std::make_unique<AnimAssetEditCommand>(animation->Animation(), after, "duration"));
-        MYE_EXPECT(app.OpenDot("assets/sprites/novice.dot"));
         app.SetAnimationFocused();
         app.SaveActive();
-        MYE_EXPECT(!animation->IsDirty()); // Explicit animation focus takes priority over the Dot workspace.
+        MYE_EXPECT(!animation->IsDirty()); // Save targets the focused animation document.
     }
     app.Shutdown();
     EditorApp reopened;
-    MYE_EXPECT(reopened.Initialize(engine, "", MYE_STARTER_SOURCE_DIR));
+    MYE_EXPECT(reopened.Initialize(engine, projectFile, MYE_STARTER_SOURCE_DIR));
     MYE_EXPECT(reopened.Project().ProjectFilePath() == projectFile);
     const auto retained = ReadJsonFile(Utf8Path(mainPath));
     MYE_EXPECT(retained && retained.Value().Find("entities")->AsArray().size() == initialCount + 1);
     reopened.Shutdown();
 }
 
+
+MYE_TEST(PlayWindowReopensWithoutRetainingInputOrResources) {
+    auto device = rhi::CreateDevice(rhi::Backend::DX11, {});
+    MYE_EXPECT(device);
+    if (!device) return;
+    PlayWindow window;
+    MYE_EXPECT(window.Open(*device.Value()));
+    MYE_EXPECT(window.IsOpen() && !window.CloseRequested());
+    window.Input().SetKeyboardSuppressed(false);
+    window.Input().OnKey(KeyCode::D, true);
+    MYE_EXPECT(window.Input().IsDown(KeyCode::D));
+    window.Close();
+    MYE_EXPECT(!window.IsOpen() && !window.HasFocus() && !window.Input().IsDown(KeyCode::D));
+    MYE_EXPECT(window.Open(*device.Value()));
+    MYE_EXPECT(!window.Input().IsDown(KeyCode::D));
+    window.Close();
+}
 
 MYE_TEST(EditorWorkspacePreservesDocumentsAndSwitchesProjection) {
     const auto root = ProjectTestDirectory("workspace");
@@ -665,12 +1004,8 @@ MYE_TEST(EditorWorkspacePreservesDocumentsAndSwitchesProjection) {
     viewport.camera.center = {4, 7}; viewport.camera.zoom = 2;
     app.SelectWorkspace(EditorApp::Workspace::Scene3D);
     MYE_EXPECT(viewport.camera.perspective && viewport.camera.center.x == 4 && viewport.camera.zoom == 2);
-    app.SelectWorkspace(EditorApp::Workspace::Dot);
-    MYE_EXPECT(app.CentralPanelId() == "mye.doteditor");
     app.SelectWorkspace(EditorApp::Workspace::Lua);
     MYE_EXPECT(app.CentralPanelId() == "mye.lua");
-    app.SelectWorkspace(EditorApp::Workspace::Scenes);
-    MYE_EXPECT(app.CentralPanelId() == "mye.scenes");
     MYE_EXPECT(app.Project().Active() == initial && app.Project().Documents().size() == count && app.Commands().Position() == position);
     MYE_EXPECT(app.CreateScene(true));
     MYE_EXPECT(app.CurrentWorkspace() == EditorApp::Workspace::Scene3D && viewport.camera.perspective);
@@ -748,8 +1083,12 @@ MYE_TEST(EditorWorkspaceImGuiRoutingAndDialogs) {
     TestEditorViewport viewport;
     MYE_EXPECT(app.Initialize(engine, ""));
     app.SetViewport(&viewport);
-    MYE_EXPECT(app.CreateProject("UI", Utf8String(root / "project")));
     auto frame = [&]() { ImGui::NewFrame(); app.OnFrame(); ImGui::Render(); };
+    frame();
+    MYE_EXPECT(!app.Project().IsOpen());
+    MYE_EXPECT(ImGui::FindWindowByName("프로젝트###project_launcher")->Active);
+    MYE_EXPECT(!ImGui::FindWindowByName("하이어라키###mye.hierarchy"));
+    MYE_EXPECT(app.CreateProject("UI", Utf8String(root / "project")));
     frame(); frame();
     const auto* hierarchy = ImGui::FindWindowByName("하이어라키###mye.hierarchy");
     const auto* assets = ImGui::FindWindowByName("에셋###mye.assets");
@@ -758,11 +1097,9 @@ MYE_TEST(EditorWorkspaceImGuiRoutingAndDialogs) {
     MYE_EXPECT(hierarchy && assets && inspector && animation);
     MYE_EXPECT(hierarchy->DockId != assets->DockId && inspector->DockId != animation->DockId);
     MYE_EXPECT(hierarchy->Pos.y < assets->Pos.y && inspector->Pos.y < animation->Pos.y);
-    app.SelectWorkspace(EditorApp::Workspace::Dot); frame();
-    MYE_EXPECT(ImGui::FindWindowByName("도트 에디터###mye.doteditor")->Active);
-    MYE_EXPECT(!ImGui::FindWindowByName("씬 뷰포트###mye.viewport")->Active);
     app.SelectWorkspace(EditorApp::Workspace::Lua); frame();
     MYE_EXPECT(ImGui::FindWindowByName("Lua###mye.lua")->Active);
+    MYE_EXPECT(!ImGui::FindWindowByName("씬 뷰포트###mye.viewport")->Active);
     app.NewScene(); frame();
     auto* newSceneDialog = ImGui::FindWindowByName("씬 만들기###new_scene");
     MYE_EXPECT(newSceneDialog && newSceneDialog->Active);

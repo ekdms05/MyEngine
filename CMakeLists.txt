@@ -1,7 +1,8 @@
 # MyEngine — 2.5D 픽셀아트 하이브리드 엔진
 cmake_minimum_required(VERSION 3.26)
 
-project(MyEngine VERSION 0.1.0 LANGUAGES CXX C)   # C: 벤더 stb_vorbis(OGG 디코드) 컴파일
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" MYE_VERSION LIMIT_COUNT 1)
+project(MyEngine VERSION ${MYE_VERSION} LANGUAGES CXX C)   # C: 벤더 stb_vorbis(OGG 디코드) 컴파일
 
 # ---- 전역 언어·툴체인 규약 (docs/01: C++20, /W4, /utf-8, 예외는 /EHsc 유지) ----
 set(CMAKE_CXX_STANDARD 20)
@@ -54,10 +55,4 @@ add_subdirectory(apps/editor)
 add_subdirectory(apps/paktool)
 add_subdirectory(apps/game)
 add_subdirectory(apps/server)
-add_subdirectory(samples/hello_triangle)
-add_subdirectory(samples/asset_smoke)
-add_subdirectory(samples/sprite_demo)
-add_subdirectory(samples/bridge_demo)
-add_subdirectory(samples/character_demo)
-add_subdirectory(samples/village_demo)
 add_subdirectory(tests)

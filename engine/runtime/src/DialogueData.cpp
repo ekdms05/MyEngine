@@ -1,4 +1,4 @@
-// mye/runtime/DialogueData.cpp — 대사 데이터 조회·직렬화 (M6-A)
+// mye/runtime/DialogueData.cpp — 대사 데이터 조회·직렬화
 //
 // IndexOf 실동작 + refl/ser JsonArchive 왕복(SaveDialogueJson/LoadDialogueJson).
 //   refl 등록: LocalizedText / DialogueChoice / DialogueLine / DialogueScript. vector<struct>

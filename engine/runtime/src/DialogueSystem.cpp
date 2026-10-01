@@ -1,4 +1,4 @@
-// mye/runtime/DialogueSystem.cpp — 대화 진행 상태기계 + DialogueBox UI 배선 (M6-A)
+// mye/runtime/DialogueSystem.cpp — 대화 진행 상태기계 + DialogueBox UI 배선
 //
 // DialogueBox: UiDocument 를 UiSystem 에 Open 하고 speaker/portrait/body/choices 위젯을 캐시,
 //   SetLine/SetChoices 로 한글 RichText·초상화·선택지 버튼을 갱신한다(loc 로 로컬라이즈).
@@ -189,9 +189,9 @@ struct DialogueSystem::Impl {
         lineIndex = -1;
         if (box) box->Hide();
     }
-    // voiceCue 재생(있으면). AudioCue 에셋 로드는 asset 배선(M6-B) 필요 — 여기선 훅만.
+    // voiceCue 재생(있으면). AudioCue 에셋 로드는 asset 배선 필요 — 여기선 훅만.
     void PlayVoice(const DialogueLine& /*line*/) {
-        // TODO(M6-B): AssetManager 로 voiceCue vpath → AudioCue 로드 후 audio->PostCue.
+        // TODO: AssetManager 로 voiceCue vpath → AudioCue 로드 후 audio->PostCue.
     }
     // 스크립트 라인을 박스에 표시.
     void ShowScriptLine(int32_t idx) {

@@ -49,41 +49,6 @@ Expected<void, Error> PrepareComponent(ecs::World& world, const T& value, std::v
     return {};
 }
 
-class ScenesPanel final : public IEditorPanel {
-public:
-    const PanelDesc& Desc() const override {
-        static const PanelDesc desc{"mye.scenes", "씬", false, DockSlot::Center};
-        return desc;
-    }
-    void OnGui(EditorContext& ctx) override {
-        if (ImGui::Begin("씬###mye.scenes")) {
-            const bool available = ctx.project && ctx.project->IsOpen();
-            ImGui::TextUnformatted("씬");
-            ImGui::TextDisabled("씬을 만들거나 열고, 오브젝트를 배치하세요.");
-            ImGui::BeginDisabled(!available || (ctx.playMode && ctx.playMode->IsPlaying()));
-            if (ImGui::Button("씬 만들기")) ctx.app->NewScene();
-            ImGui::SameLine();
-            if (ImGui::Button("불러오기")) ctx.app->RequestOpenScene();
-            ImGui::SameLine();
-            if (ImGui::Button("+ 요소 추가")) ctx.app->RequestAddElement();
-            ImGui::Separator();
-            if (available) for (auto* doc : ctx.project->Documents()) {
-                if (doc->GetKind() != Document::Kind::Scene) continue;
-                ImGui::PushID(static_cast<int>(doc->Id().value));
-                if (ImGui::Selectable(doc->TabTitle().c_str(), doc == ctx.project->Active())) {
-                    ctx.app->ActivateDocument(doc->Id());
-                    const bool perspective = ctx.app->Viewport() && ctx.app->Viewport()->Camera().perspective;
-                    ctx.app->SelectWorkspace(perspective ? EditorApp::Workspace::Scene3D : EditorApp::Workspace::Scene2D);
-                }
-                ImGui::PopID();
-            }
-            ImGui::EndDisabled();
-            if (!available) ImGui::TextWrapped("파일 메뉴에서 프로젝트를 만들거나 불러오세요.");
-        }
-        ImGui::End();
-    }
-};
-
 class LuaPanel final : public IEditorPanel {
 public:
     const PanelDesc& Desc() const override {
@@ -95,23 +60,19 @@ public:
         ImGui::End();
     }
 };
-template<class T>
 class WorkspacePanelFactory final : public IEditorPanelFactory {
 public:
     const PanelDesc& Desc() const override { return m_description.Desc(); }
-    std::unique_ptr<IEditorPanel> Create() override { return std::make_unique<T>(); }
+    std::unique_ptr<IEditorPanel> Create() override { return std::make_unique<LuaPanel>(); }
 private:
-    T m_description;
+    LuaPanel m_description;
 };
 }
 
-std::unique_ptr<IEditorPanelFactory> MakeScenesPanelFactory() { return std::make_unique<WorkspacePanelFactory<ScenesPanel>>(); }
-std::unique_ptr<IEditorPanelFactory> MakeLuaPanelFactory() { return std::make_unique<WorkspacePanelFactory<LuaPanel>>(); }
+std::unique_ptr<IEditorPanelFactory> MakeLuaPanelFactory() { return std::make_unique<WorkspacePanelFactory>(); }
 
 std::string_view EditorApp::CentralPanelId() const {
     switch (m_workspace) {
-    case Workspace::Scenes: return "mye.scenes";
-    case Workspace::Dot: return "mye.doteditor";
     case Workspace::Lua: return "mye.lua";
     default: return "mye.viewport";
     }
@@ -119,7 +80,6 @@ std::string_view EditorApp::CentralPanelId() const {
 
 void EditorApp::SelectWorkspace(Workspace workspace) {
     m_workspace = workspace;
-    m_dotFocused = false;
     m_animationFocused = false;
     if (m_playMode) m_playMode->SetInputEnabled(false);
     if (m_viewport && (workspace == Workspace::Scene2D || workspace == Workspace::Scene3D)) {
@@ -225,8 +185,11 @@ void EditorApp::DrawWorkspaceDialogs() {
         ImGui::EndPopup();
     }
     if (m_showAddElement) { ImGui::OpenPopup("요소 추가###add_scene_element"); m_showAddElement = false; }
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 34, ImGui::GetFontSize() * 27), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 38, ImGui::GetFontSize() * 36), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("요소 추가###add_scene_element", nullptr)) {
+        ImGui::TextUnformatted("씬에 추가할 요소를 선택하세요.");
+        ImGui::TextWrapped("추가 후 인스펙터에서 이미지·속도·충돌과 동작을 설정합니다.");
+        ImGui::Spacing();
         if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
         ImGui::SetNextItemWidth(-1);
         ImGui::InputTextWithHint("##element_search", "요소 검색...", m_elementSearch.data(), m_elementSearch.size());
@@ -238,24 +201,29 @@ void EditorApp::DrawWorkspaceDialogs() {
         if (firstMatch != kElements.end() && !std::any_of(kElements.begin(), kElements.end(), [&](const auto& d) { return d.kind == m_elementChoice && matches(d); }))
             m_elementChoice = firstMatch->kind;
         bool accepted = false, found = false;
-        const float footer = ImGui::GetFrameHeightWithSpacing() * 4;
-        if (ImGui::BeginChild("##elements", ImVec2(0, std::max(60.0f, ImGui::GetContentRegionAvail().y - footer)))) {
+        const float footer = ImGui::GetFontSize() * (m_fileError ? 6 : 4) + ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
+        if (ImGui::BeginChild("##elements", ImVec2(0, std::max(60.0f, ImGui::GetContentRegionAvail().y - footer)), ImGuiChildFlags_Borders)) {
             for (const auto& d : kElements) {
                 if (!matches(d)) continue;
                 found = true;
-                if (ImGui::Selectable(d.name, d.kind == m_elementChoice, ImGuiSelectableFlags_AllowDoubleClick)) {
+                if (ImGui::Selectable(d.name, d.kind == m_elementChoice, ImGuiSelectableFlags_AllowDoubleClick,
+                                      ImVec2(0, ImGui::GetFrameHeight()))) {
                     m_elementChoice = d.kind;
                     accepted = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
                 }
-                ImGui::TextWrapped("%s", d.description);
-                ImGui::Spacing();
             }
             if (!found) ImGui::TextDisabled("검색 결과가 없습니다.");
         }
         ImGui::EndChild();
+        const auto choice = std::find_if(kElements.begin(), kElements.end(), [this](const auto& d) { return d.kind == m_elementChoice; });
+        if (found && choice != kElements.end()) {
+            ImGui::TextUnformatted(choice->name);
+            ImGui::TextWrapped("%s", choice->description);
+        }
+        ImGui::Separator();
         if (m_fileError) ImGui::TextWrapped("%s", m_fileStatus.c_str());
         ImGui::BeginDisabled(!found);
-        accepted |= ImGui::Button("추가") || (found && ImGui::IsKeyPressed(ImGuiKey_Enter, false));
+        accepted |= ImGui::Button("추가", ImVec2(ImGui::GetFontSize() * 6, 0)) || (found && ImGui::IsKeyPressed(ImGuiKey_Enter, false));
         ImGui::EndDisabled();
         if (accepted) {
             if (!m_project->Active() || m_project->Active()->Id() != m_elementDocument) {
@@ -272,7 +240,7 @@ void EditorApp::DrawWorkspaceDialogs() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("취소") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
+        if (ImGui::Button("취소", ImVec2(ImGui::GetFontSize() * 6, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 }

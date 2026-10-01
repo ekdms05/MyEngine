@@ -1,9 +1,6 @@
-// mye/runtime/AudioListener.h — 2.5D 리스너 배선(플레이어 위치) (docs/06 §4 공간화, M6-A)
-//
-// 소유: 06 (M6-A 배선). docs/06 §4: "리스너는 카메라가 아니라 관심점(보통 플레이어 캐릭터의 월드
-//   위치)". 감쇠는 월드 XY 거리 커브, 패닝은 화면 X 좌우만. 오디오 감쇠·패닝 구현은 mye_audio
-//   가 이미 소유(AudioEngine::SetListener/PostCue worldPos) — 여기선 "플레이어 엔티티 위치를 매
-//   시뮬 틱 리스너로 밀어주는 배선"만 담당한다(소비, 재구현 아님).
+// Audio listener interest point, normally a root player entity or manual XY.
+// AudioEngine owns attenuation and panning; this bridge updates its position.
+// Parented entities currently use LocalTransform XY rather than world matrices.
 #pragma once
 
 #include "mye/core/Math.h"

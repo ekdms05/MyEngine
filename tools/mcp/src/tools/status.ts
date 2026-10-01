@@ -1,5 +1,5 @@
 /**
- * project_status — configure 상태·마지막 빌드/테스트/실행/캡처 요약·샘플 목록·최근 캡처.
+ * project_status — configure 상태·마지막 빌드/테스트/실행/캡처 요약·앱 목록·최근 캡처.
  * 항상 성공한다(부재 항목은 "없음" 표기).
  */
 import fs from "node:fs";
@@ -14,7 +14,7 @@ export function registerStatusTool(server: McpServer, ctx: ServerContext): void 
     {
       description:
         "프로젝트 상태 요약: configure 상태(제너레이터), 마지막 빌드/테스트/실행/캡처 결과, " +
-        "샘플 목록, 최근 캡처 파일, MCP 서버 버전.",
+        "앱 소스 목록, 최근 캡처 파일, MCP 서버 버전.",
       inputSchema: {},
     },
     async (): Promise<CallToolResult> => doStatus(ctx),
@@ -44,7 +44,7 @@ function doStatus(ctx: ServerContext): CallToolResult {
     }
     out.push(`configure: 완료 — 제너레이터 "${generator}"${platform}`);
   } else {
-    out.push(`configure: 안 됨 (${ctx.buildDirRel}/CMakeCache.txt 없음) — engine_build 가 자동 configure 합니다`);
+    out.push(`configure: 안 됨 (${ctx.buildDirRel}/CMakeCache.txt 없음) — engine_build가 CMake 기본 제너레이터/x64로 configure 합니다`);
   }
   out.push("");
 
@@ -57,18 +57,17 @@ function doStatus(ctx: ServerContext): CallToolResult {
   out.push(`  캡처:   ${formatEntry(status.capture)}`);
   out.push("");
 
-  // 샘플 목록 (samples/*/ 스캔 — 읽기 전용)
-  const samplesDir = path.join(ctx.root, "samples");
-  let samples: string[] = [];
+  // 앱 소스 목록은 실행 산출물이나 프로젝트 연결 상태를 뜻하지 않는다.
+  const appsDir = path.join(ctx.root, "apps");
+  let apps: string[] = [];
   try {
-    samples = fs
-      .readdirSync(samplesDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+    apps = fs.readdirSync(appsDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && fs.existsSync(path.join(appsDir, entry.name, "CMakeLists.txt")))
+      .map(entry => entry.name).sort();
   } catch {
-    /* samples/ 없음 */
+    /* 앱 소스가 없는 fixture도 상태 조회를 지원한다. */
   }
-  out.push(`샘플 (samples/): ${samples.length > 0 ? samples.join(", ") : "없음"}`);
+  out.push(`앱 소스 (apps/): ${apps.length > 0 ? apps.join(", ") : "없음"}`);
 
   // 최근 캡처
   const captures = ctx.state.recentCaptures(5);

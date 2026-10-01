@@ -43,6 +43,30 @@
 namespace mye::editor {
 
 namespace {
+const char* ComponentHelp(std::string_view name) {
+    static constexpr std::pair<std::string_view, const char*> descriptions[]{
+        {"ObjectName", "오브젝트의 고유 이름입니다. 이벤트 대상과 맵 도착 지점에서 이 이름을 사용합니다."},
+        {"LocalTransform", "부모 기준 위치·회전·크기입니다. +Y는 위쪽이며 1 단위는 기본 48 픽셀입니다."},
+        {"WorldTransform", "계층에서 계산되는 월드 변환입니다. 위치는 LocalTransform에서 편집하세요."},
+        {"Parent", "부모 오브젝트 연결입니다. 하이어라키에서 이동하여 계층을 편집하세요."},
+        {"Children", "자식 목록은 계층 변경 시 관리됩니다. 하이어라키에서 편집하세요."},
+        {"SpriteRenderer", "PNG를 드래그해 sprite에 지정합니다. UV는 0~1 비율, 피벗은 잘라낸 영역의 픽셀 기준입니다."},
+        {"FloorLevel", "높이 층입니다. 렌더 가림과 충돌 층을 함께 확인하세요. 일반 지면은 0입니다."},
+        {"SpriteAnimator", ".anim 에셋을 드래그하여 지정합니다. speed는 재생 배율, playing은 자동 재생 여부입니다."},
+        {"Collider2D", "벽·캐릭터의 충돌 범위입니다. 트리거는 이동을 막지 않고 진입·이탈 이벤트를 보냅니다."},
+        {"KinematicBody2D", "고정 틱에서 충돌하며 이동하는 본체입니다. 기본값으로 시작하고 충돌 가장자리에서만 조정하세요."},
+        {"CharacterController2D", "WASD·방향키로 조작합니다. speed는 단위/초입니다. 활성 캐릭터는 씬 최상위에 1명만 둡니다."},
+        {"InteractionTarget", "캐릭터가 radius 안에서 E를 누르면 상호작용합니다. ObjectBehavior에 실행할 행동을 연결하세요."},
+        {"ScenePortal", "프로젝트의 씬 경로와 목적지의 고유 오브젝트 이름을 지정합니다. E 또는 트리거로 이동합니다."},
+        {"ObjectBehavior", "이벤트에서 행동을 순서대로 실행합니다. 연결 설정 또는 Lua 콜백 중 필요한 방식으로 작성하세요."},
+        {"Progression", "캐릭터 레벨과 현재 레벨의 경험치입니다. 성장 규칙은 게임 콘텐츠에서 정합니다."},
+    };
+    for (const auto& [type, description] : descriptions) if (name == type) return description;
+    return "등록된 컴포넌트입니다. 필드에 마우스를 올리면 사용 설명을 확인할 수 있습니다.";
+}
+}
+
+namespace {
 
 const PanelDesc kInspectorDesc{
     /*id*/ "mye.inspector",
@@ -175,6 +199,7 @@ public:
             m_movementStatus = result ? "WASD / 방향키로 이동합니다. 아래에서 속도·충돌 크기와 대기/걷기 모션을 지정하세요." : result.GetError().message;
         }
         ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("필수 컴포넌트를 한 번에 구성합니다. 기존 설정은 보존하고 Ctrl+Z로 되돌립니다.");
         if (!m_movementStatus.empty()) ImGui::TextWrapped("%s", m_movementStatus.c_str());
 
         // 리플렉션 자동 인스펙터 — 컴포넌트별 헤더·필드 위젯·PropertyEditCommand 발행.
@@ -214,13 +239,14 @@ private:
             const std::string header(t->Name());
             ImGui::PushID(header.c_str());
 
-            ImGui::SetNextItemAllowOverlap();
-            bool open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen |
-                                                                ImGuiTreeNodeFlags_AllowOverlap);
-            // 헤더 우측에 제거 버튼(트랜스폼 등 필수 컴포넌트도 규약상 허용 — Undo로 복원).
-            ImGui::SameLine(ImGui::GetWindowWidth() - 60.0f);
-            if (ImGui::SmallButton("제거"))
-                m_pendingRemove = t;
+            const bool basic = header == "LocalTransform" || header == "SpriteRenderer" || header == "CharacterController2D";
+            bool open = ImGui::CollapsingHeader(header.c_str(), basic ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s\n우클릭으로 컴포넌트를 제거할 수 있습니다.", ComponentHelp(header));
+            if (ImGui::BeginPopupContextItem("##component_actions")) {
+                if (ImGui::MenuItem("컴포넌트 제거")) m_pendingRemove = t;
+                ImGui::EndPopup();
+            }
+            if (open) ImGui::TextWrapped("%s", ComponentHelp(header));
 
             if (open && cid == runtime::ObjectBehavior::kComponentTypeId) {
                 DrawObjectBehavior(ctx, entity, *static_cast<runtime::ObjectBehavior*>(comp));
@@ -228,6 +254,7 @@ private:
                 insp->DrawReflected(ctx, ObjectRef::Component(entity, *t), *t, comp,
                                     refl::PropertyPath{});
             }
+            ImGui::Spacing();
             ImGui::PopID();
         }
 
@@ -261,6 +288,7 @@ private:
                 const std::string name(t->Name());
                 if (!m_addSearch.empty() && !ContainsCI(name, m_addSearch)) continue;
                 if (ImGui::Selectable(name.c_str())) pick = t;
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s", ComponentHelp(name));
             }
 
             if (pick) {

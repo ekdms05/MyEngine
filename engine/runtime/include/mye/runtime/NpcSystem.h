@@ -1,6 +1,6 @@
-// mye/runtime/NpcSystem.h — NPC 배회·상호작용 시스템 (docs/06 §7, M6-B)
+// mye/runtime/NpcSystem.h — NPC 배회·상호작용 시스템
 //
-// 소유: 06 (M6-B). 2.5D 픽셀아트 RPG풍 데모의 NPC 행동을 담당한다:
+// NPC 배회·플레이어 접근·상호작용을 담당한다:
 //   - 배회(wander): 웨이포인트 순회(patrol) 또는 랜덤 순회(random). 대기(Idle)↔이동(Moving)
 //     상태를 오가며, MoveController 로 목표까지 전진하고 SpriteAnimator 로 8방향 애니를 구동한다.
 //   - 플레이어 접근 감지: 플레이어가 alertRadius 안에 들어오면 배회를 멈추고 플레이어를 바라본다.
@@ -11,7 +11,7 @@
 //   시뮬(고정틱)에서, 애니 파라미터 갱신은 표현에서 한다. 본 시스템은 Tick(고정틱) 만 노출하고
 //   애니 배선은 콜백/컴포넌트 직접 갱신으로 처리한다(비소유 World).
 //
-// 배선 모델(sol/스크립트 경계 격리): 이 헤더는 sol.hpp 를 끌어오지 않는다. Lua 는 NpcBindings 로
+// 배선 모델(Lua/스크립트 경계 격리): 이 헤더는 Lua API 헤더 를 끌어오지 않는다. Lua 는 NpcBindings 로
 //   NPC 를 등록하고, on_interact 를 콜백(InteractFn)으로 심는다. 상호작용 개시는 콜백 호출뿐이며,
 //   실제 대화 코루틴은 Lua 가 mye.dialogue/cutscene 로 기술한다(에러 격리는 코루틴 스케줄러가).
 //

@@ -4,7 +4,7 @@
  *
  * 검증 항목(엔진 빌드는 절대 실행하지 않는다 — 격리 규칙):
  *  1. initialize 핸드셰이크(serverInfo.name === "myengine")
- *  2. tools/list — 8개 툴 전부 노출 + 각 inputSchema 존재
+ *  2. tools/list — 9개 툴 전부 노출 + 각 inputSchema 존재
  *  3. project_status 호출 — 빌드 없이도 정상 텍스트 응답(항상 성공 규약)
  *  4. engine_logs 호출 — 기록 부재 시 isError + "engine_run 먼저" 우아한 실패
  *  5. engine_run 호출 — 빌드 산출물 부재 시 isError + "engine_build 먼저" 우아한 실패
@@ -100,8 +100,9 @@ const EXPECTED_TOOLS = [
   "engine_capture_frame",
   "engine_logs",
   "project_status",
-  "dot_write_sprite",
-  "dot_from_photo",
+  "project_inspect",
+  "engine_reference",
+  "asset_import",
 ];
 
 async function main() {
@@ -134,7 +135,7 @@ async function main() {
   const tools = list.result?.tools ?? [];
   const names = tools.map((t) => t.name).sort();
   check(
-    `tools/list — 8개 툴 전부 노출(개발 도구 6 + 픽셀 도구 2)`,
+    `tools/list — 9개 툴 전부 노출(개발 도구 6 + 제작 도구 3)`,
     EXPECTED_TOOLS.every((n) => names.includes(n)) && names.length === EXPECTED_TOOLS.length,
     names.join(", "),
   );
@@ -175,7 +176,7 @@ async function main() {
   // 5) engine_run — 빌드 산출물 부재의 우아한 실패 (빌드는 실행하지 않는다)
   const run = await request("tools/call", {
     name: "engine_run",
-    arguments: { sample: "hello_triangle", frames: 1, timeoutSec: 5 },
+    arguments: { sample: "MyEditor", frames: 1, timeoutSec: 5 },
   });
   const runText = firstText(run.result);
   check(
@@ -183,6 +184,32 @@ async function main() {
     run.result?.isError === true && /engine_build/.test(runText),
     runText.split("\n")[0],
   );
+
+  // Real file parsing in an isolated build/ project; no user data or engine build.
+  const fixtureRel = `build/mcp-smoke-${Date.now()}`;
+  const fixture = path.join(repoRoot, fixtureRel);
+  fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });
+  fs.writeFileSync(path.join(fixture, "project.myeproj"), JSON.stringify({ version: 1, name: "Smoke", mainScene: "assets/scenes/main.scene" }));
+  const sceneFile = path.join(fixture, "assets", "scenes", "main.scene");
+  fs.writeFileSync(sceneFile, JSON.stringify({ __version: 1, entities: [
+    { id: 1, components: { ObjectName: { __version: 1, value: "Player" } } },
+    { id: 2, parent: 1, components: { ObjectName: { __version: 1, value: "Child" } } },
+  ] }));
+  const inspect = await request("tools/call", { name: "project_inspect", arguments: { project: `${fixtureRel}/project.myeproj`, filter: "Player" } });
+  check("project_inspect — 실제 프로젝트/씬 파싱·필터", inspect.result?.isError !== true && firstText(inspect.result).includes("ID 1 · Player") && !firstText(inspect.result).includes("ID 2 · Child"));
+  fs.writeFileSync(sceneFile, JSON.stringify({ __version: 1, entities: [
+    { id: 1, parent: 2, components: {} }, { id: 2, parent: 1, components: {} },
+  ] }));
+  const cyclic = await request("tools/call", { name: "project_inspect", arguments: { project: `${fixtureRel}/project.myeproj` } });
+  check("project_inspect — 순환 계층 거부", cyclic.result?.isError === true && firstText(cyclic.result).includes("순환"));
+  const escaped = await request("tools/call", { name: "project_inspect", arguments: { project: "../project.myeproj" } });
+  check("project_inspect — 경로 탈출 거부", escaped.result?.isError === true && firstText(escaped.result).includes("루트 밖"));
+  const reference = await request("tools/call", { name: "engine_reference", arguments: { topic: "rendering", search: "48" } });
+  check("engine_reference — 현재 렌더 계약 조회", reference.result?.isError !== true && firstText(reference.result).includes("48"));
+  const asset = await request("tools/call", { name: "asset_import", arguments: {
+    project: `${fixtureRel}/project.myeproj`, source: `${fixtureRel}/project.myeproj`, destination: "../escape.png",
+  } });
+  check("asset_import — assets 밖 쓰기 거부", asset.result?.isError === true && firstText(asset.result).includes("루트 밖"));
 
   // 종료
   child.kill();

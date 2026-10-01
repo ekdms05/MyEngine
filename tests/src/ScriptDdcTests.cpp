@@ -8,7 +8,7 @@
 #include "mye/script/bindings/EngineBindings.h"
 #include "mye/ddc/SchemaRegistry.h"
 
-#include <sol/sol.hpp>
+#include "LuaTest.h"
 
 #include <cmath>
 #include <string>
@@ -27,10 +27,10 @@ void SetupDdc(ScriptRuntime& rt) {
 
 MYE_TEST(ScriptDdcDefineAndUse) {
     ScriptRuntime rt; SetupDdc(rt);
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 게임이 Lua 에서 JSON 으로 컴포넌트 스키마 정의 → 인스턴스 생성·조작.
-    std::int64_t hp = lua.script(R"(
+    std::int64_t hp = luatest::Eval<std::int64_t>(lua, R"(
         local ok = mye.ddc.define([[
             { "name":"Stats", "fields":[
                 { "name":"hp","type":"i32","default":100 },
@@ -49,26 +49,26 @@ MYE_TEST(ScriptDdcDefineAndUse) {
     MYE_EXPECT(hp == 55);
 
     // 타입별 get.
-    double crit = lua.script(R"(return mye.ddc.new("Stats"):get("crit"))");
+    double crit = luatest::Eval<double>(lua, R"(return mye.ddc.new("Stats"):get("crit"))");
     MYE_EXPECT(Near(crit, 0.1));
-    std::string nm = lua.script(R"(local c = mye.ddc.new("Stats"); c:set("name","마법사"); return c:get("name"))");
+    std::string nm = luatest::Eval<std::string>(lua, R"(local c = mye.ddc.new("Stats"); c:set("name","마법사"); return c:get("name"))");
     MYE_EXPECT(nm == "마법사");
-    bool alive = lua.script(R"(return mye.ddc.new("Stats"):get("alive"))");
+    bool alive = luatest::Eval<bool>(lua, R"(return mye.ddc.new("Stats"):get("alive"))");
     MYE_EXPECT(alive);
 
     // has_schema / has.
-    bool hasSchema = lua.script(R"(return mye.ddc.has_schema("Stats") and not mye.ddc.has_schema("Nope"))");
+    bool hasSchema = luatest::Eval<bool>(lua, R"(return mye.ddc.has_schema("Stats") and not mye.ddc.has_schema("Nope"))");
     MYE_EXPECT(hasSchema);
-    bool hasField = lua.script(R"(return mye.ddc.new("Stats"):has("hp") and not mye.ddc.new("Stats"):has("zzz"))");
+    bool hasField = luatest::Eval<bool>(lua, R"(return mye.ddc.new("Stats"):has("hp") and not mye.ddc.new("Stats"):has("zzz"))");
     MYE_EXPECT(hasField);
 }
 
 MYE_TEST(ScriptDdcSafeOnMisuse) {
     ScriptRuntime rt; SetupDdc(rt);
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 미등록 스키마 new → nil, 잘못된 define → false (크래시/행 없음).
-    bool safe = lua.script(R"(
+    bool safe = luatest::Eval<bool>(lua, R"(
         local none = mye.ddc.new("Missing")
         local bad = mye.ddc.define("{ not valid json ")
         return none == nil and bad == false
@@ -76,7 +76,7 @@ MYE_TEST(ScriptDdcSafeOnMisuse) {
     MYE_EXPECT(safe);
 
     // 없는 필드 get/set 안전(nil/false).
-    bool fieldSafe = lua.script(R"(
+    bool fieldSafe = luatest::Eval<bool>(lua, R"(
         mye.ddc.define([[{ "name":"C", "fields":[ { "name":"v","type":"i32" } ] }]])
         local c = mye.ddc.new("C")
         local g = c:get("nope")           -- nil
@@ -99,7 +99,22 @@ MYE_TEST(ScriptDdcPreloadedSchema) {
     (void)mod->Registry().Register(s);
     rt.AddBindingModule(std::move(mod));
 
-    sol::state& lua = rt.State();
-    std::int64_t gold = lua.script(R"(return mye.ddc.new("Loot"):get("gold"))");
+    lua_State* lua = rt.State();
+    std::int64_t gold = luatest::Eval<std::int64_t>(lua, R"(return mye.ddc.new("Loot"):get("gold"))");
     MYE_EXPECT(gold == 500);
+}
+
+MYE_TEST(ScriptDdcFinalizersArePrivate) {
+    ScriptRuntime runtime; SetupDdc(runtime);
+    MYE_EXPECT(runtime.DoString(R"(
+        assert(mye.ddc.define([[{"name":"Message","fields":[{"name":"text","type":"string"}]}]]))
+        local owned = mye.ddc.new('Message')
+        local attached = mye.ddc.attach(1, 'Message')
+        assert(getmetatable(owned) == false and owned.__gc == nil)
+        assert(getmetatable(attached) == false and attached.__gc == nil)
+        assert(owned:set('text', string.rep('x', 200)))
+        assert(attached:set('text', 'still in store'))
+    )", "ddc-ownership.lua").HasValue());
+    lua_gc(runtime.State(), LUA_GCCOLLECT);
+    MYE_EXPECT(luatest::Eval<std::string>(runtime.State(), "return mye.ddc.get(1, 'Message'):get('text')") == "still in store");
 }

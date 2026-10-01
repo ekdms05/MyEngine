@@ -1,199 +1,120 @@
-// mye/script/src/bindings/EcsBindings.cpp — 엔티티·컴포넌트·스폰/파괴 바인딩 (docs/05, M3-C)
-//
-// mye.Entity: {ecs::Entity + World*} 경량 래퍼. 주요 컴포넌트 접근자를 메서드로 노출한다:
-//   - Transform 위치(get/set_position)
-//   - KinematicBody2D 속도(get/set_velocity)
-//   - SpriteAnimator 파라미터(set_bool/set_float/set_trigger), 방향(set_facing/facing_from_move)
-// mye.world: spawn/destroy(CommandBuffer 경유 지연) + find/valid.
-//
-// 안전: World/컴포넌트 미보유·무효 핸들 접근은 크래시 대신 안전값 반환 또는 no-op.
-//   구조 변경(spawn/destroy)은 순회 중 금지 규약을 지키려 EcsBindingModule 이 소유한
-//   CommandBuffer 에 기록하고, 앱/ScriptSystem 이 Update 페이즈 경계에서 FlushDeferred() 한다.
 #include "mye/script/bindings/EngineBindings.h"
+#include "mye/script/LuaApi.h"
 
 #include "mye/anim/AnimationTypes.h"
 #include "mye/anim/SpriteAnimator.h"
-#include "mye/core/Math.h"
 #include "mye/ecs/CommandBuffer.h"
-#include "mye/ecs/Entity.h"
 #include "mye/ecs/World.h"
 #include "mye/phys/Collision.h"
 #include "mye/scene/Transform.h"
 
-#include <sol/sol.hpp>
-
-#include <string>
+#include <new>
 
 namespace mye::script {
-
 namespace {
-
-// Lua 에 노출하는 엔티티 핸들 — 값 타입(복사 가능). World 는 비소유 포인터.
+constexpr const char* kEntity = "mye.Entity";
 struct LuaEntity {
-    ecs::Entity  e{};
-    ecs::World*  world = nullptr;
-
-    bool IsValid() const { return world && world->Valid(e); }
+    ecs::Entity entity{};
+    ecs::World* world = nullptr;
+    ecs::CommandBuffer* commands = nullptr;
+    bool Valid() const { return world && world->Valid(entity); }
 };
-
-// SpriteAnimator 파라미터 편의 접근(널 안전).
-anim::SpriteAnimator* GetAnimator(const LuaEntity& le) {
-    if (!le.IsValid()) return nullptr;
-    return le.world->TryGet<anim::SpriteAnimator>(le.e);
+LuaEntity& Entity(lua_State* L, int index = 1) {
+    return *static_cast<LuaEntity*>(luaL_checkudata(L, index, kEntity));
 }
-
+void PushEntity(lua_State* L, ecs::Entity entity, ecs::World* world, ecs::CommandBuffer* commands) {
+    new (lua_newuserdatauv(L, sizeof(LuaEntity), 0)) LuaEntity{entity, world, commands};
+    luaL_setmetatable(L, kEntity);
+}
+anim::SpriteAnimator* Animator(const LuaEntity& e) { return e.Valid() ? e.world->TryGet<anim::SpriteAnimator>(e.entity) : nullptr; }
+int Valid(lua_State* L) { lua_pushboolean(L, Entity(L).Valid()); return 1; }
+int Packed(lua_State* L) { lua_pushinteger(L, static_cast<lua_Integer>(Entity(L).entity.Packed())); return 1; }
+int Equal(lua_State* L) { lua_pushboolean(L, Entity(L).entity == Entity(L, 2).entity); return 1; }
+int Text(lua_State* L) {
+    const auto e = Entity(L).entity;
+    lua_pushfstring(L, "Entity(%I:%I)", static_cast<lua_Integer>(e.index), static_cast<lua_Integer>(e.generation));
+    return 1;
+}
+int Position(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto* t = e.Valid() ? e.world->TryGet<scene::LocalTransform>(e.entity) : nullptr;
+    PushVec2(L, t ? Vec2{t->position.x, t->position.y} : Vec2{});
+    return 1;
+}
+int SetPosition(lua_State* L) {
+    const auto& e = Entity(L); const Vec2 p = ReadVec2(L, 2);
+    if (auto* t = e.Valid() ? e.world->TryGet<scene::LocalTransform>(e.entity) : nullptr) {
+        t->position.x = p.x; t->position.y = p.y; t->dirty = true;
+    }
+    return 0;
+}
+int Velocity(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto* body = e.Valid() ? e.world->TryGet<phys::KinematicBody2D>(e.entity) : nullptr;
+    PushVec2(L, body ? body->velocity : Vec2{}); return 1;
+}
+int SetVelocity(lua_State* L) {
+    const auto& e = Entity(L); const Vec2 v = ReadVec2(L, 2);
+    if (auto* body = e.Valid() ? e.world->TryGet<phys::KinematicBody2D>(e.entity) : nullptr) body->velocity = v;
+    return 0;
+}
+int HitWall(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto* body = e.Valid() ? e.world->TryGet<phys::KinematicBody2D>(e.entity) : nullptr;
+    lua_pushboolean(L, body && body->hitWall); return 1;
+}
+int SetBool(lua_State* L) {
+    auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2);
+    luaL_checktype(L, 3, LUA_TBOOLEAN);
+    if (a) a->SetBool(name, lua_toboolean(L, 3) != 0); return 0;
+}
+int SetFloat(lua_State* L) {
+    auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); const float v = static_cast<float>(luaL_checknumber(L, 3));
+    if (a) a->SetFloat(name, v); return 0;
+}
+int SetTrigger(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); if (a) a->SetTrigger(name); return 0; }
+int GetFloat(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); lua_pushnumber(L, a ? a->GetFloat(name) : 0); return 1; }
+int GetBool(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); lua_pushboolean(L, a && a->GetBool(name)); return 1; }
+int FaceMove(lua_State* L) { auto* a = Animator(Entity(L)); const Vec2 direction = ReadVec2(L, 2); if (a) a->facing = anim::Dir8FromVector(direction, a->facing); return 0; }
+int FacingVector(lua_State* L) { auto* a = Animator(Entity(L)); PushVec2(L, a ? anim::Dir8Vector(a->facing) : Vec2{0, -1}); return 1; }
+int FacingIndex(lua_State* L) { auto* a = Animator(Entity(L)); lua_pushinteger(L, a ? static_cast<int>(a->facing) : 0); return 1; }
+int HasAnimator(lua_State* L) { lua_pushboolean(L, Animator(Entity(L)) != nullptr); return 1; }
+int HasBody(lua_State* L) { const auto& e = Entity(L); lua_pushboolean(L, e.Valid() && e.world->Has<phys::KinematicBody2D>(e.entity)); return 1; }
+int Destroy(lua_State* L) {
+    const auto& e = Entity(L);
+    if (e.Valid()) { if (e.commands) e.commands->Destroy(e.entity); else e.world->Destroy(e.entity); }
+    return 0;
+}
 } // namespace
 
 EcsBindingModule::EcsBindingModule(ecs::World* world) : m_world(world) {
     if (m_world) m_commands = std::make_unique<ecs::CommandBuffer>(*m_world);
 }
-
 EcsBindingModule::~EcsBindingModule() = default;
-
-void EcsBindingModule::Register(sol::state& lua) {
-    ecs::World* world = m_world;   // 캡처용 로컬(비소유).
-    sol::table mye = lua["mye"].get_or_create<sol::table>();
-
-    // ---- mye.Entity usertype ------------------------------------------
-    mye.new_usertype<LuaEntity>(
-        "Entity",
-        // Lua 에서 직접 생성 금지(핸들은 엔진이 발급) — 기본 생성자만(null 핸들).
-        sol::no_constructor,
-
-        "is_valid", [](const LuaEntity& le) { return le.IsValid(); },
-        "packed", [](const LuaEntity& le) { return le.e.Packed(); },
-        sol::meta_function::equal_to,
-        [](const LuaEntity& a, const LuaEntity& b) { return a.e == b.e; },
-        sol::meta_function::to_string,
-        [](const LuaEntity& le) {
-            return "Entity(" + std::to_string(le.e.index) + ":" +
-                   std::to_string(le.e.generation) + ")";
-        },
-
-        // ---- Transform 위치 (LocalTransform.position, XY 평면) ----
-        "get_position",
-        [](const LuaEntity& le) -> Vec2 {
-            if (!le.IsValid()) return Vec2{};
-            auto* t = le.world->TryGet<scene::LocalTransform>(le.e);
-            return t ? Vec2{t->position.x, t->position.y} : Vec2{};
-        },
-        "set_position",
-        [](const LuaEntity& le, const Vec2& p) {
-            if (!le.IsValid()) return;
-            auto* t = le.world->TryGet<scene::LocalTransform>(le.e);
-            if (!t) return;
-            t->position.x = p.x;
-            t->position.y = p.y;
-            t->dirty = true;   // TransformSystem 증분 갱신 트리거.
-        },
-
-        // ---- KinematicBody2D 속도 ----
-        "get_velocity",
-        [](const LuaEntity& le) -> Vec2 {
-            if (!le.IsValid()) return Vec2{};
-            auto* b = le.world->TryGet<phys::KinematicBody2D>(le.e);
-            return b ? b->velocity : Vec2{};
-        },
-        "set_velocity",
-        [](const LuaEntity& le, const Vec2& v) {
-            if (!le.IsValid()) return;
-            auto* b = le.world->TryGet<phys::KinematicBody2D>(le.e);
-            if (b) b->velocity = v;
-        },
-        "hit_wall",
-        [](const LuaEntity& le) {
-            if (!le.IsValid()) return false;
-            auto* b = le.world->TryGet<phys::KinematicBody2D>(le.e);
-            return b ? b->hitWall : false;
-        },
-
-        // ---- SpriteAnimator 파라미터·방향 ----
-        "set_bool",
-        [](const LuaEntity& le, const std::string& name, bool v) {
-            if (auto* a = GetAnimator(le)) a->SetBool(name, v);
-        },
-        "set_float",
-        [](const LuaEntity& le, const std::string& name, float v) {
-            if (auto* a = GetAnimator(le)) a->SetFloat(name, v);
-        },
-        "set_trigger",
-        [](const LuaEntity& le, const std::string& name) {
-            if (auto* a = GetAnimator(le)) a->SetTrigger(name);
-        },
-        "get_float",
-        [](const LuaEntity& le, const std::string& name) -> float {
-            auto* a = GetAnimator(le);
-            return a ? a->GetFloat(name) : 0.0f;
-        },
-        "get_bool",
-        [](const LuaEntity& le, const std::string& name) -> bool {
-            auto* a = GetAnimator(le);
-            return a ? a->GetBool(name) : false;
-        },
-        // 방향 벡터로 facing 갱신(입력 방향 → 8방향 스냅). 이전 방향 유지(영벡터 시).
-        "face_move",
-        [](const LuaEntity& le, const Vec2& dir) {
-            auto* a = GetAnimator(le);
-            if (a) a->facing = anim::Dir8FromVector(dir, a->facing);
-        },
-        // 현재 방향의 단위 벡터 조회(월드, +Y 업).
-        "facing_vector",
-        [](const LuaEntity& le) -> Vec2 {
-            auto* a = GetAnimator(le);
-            return a ? anim::Dir8Vector(a->facing) : Vec2{0.0f, -1.0f};
-        },
-        "facing_index",
-        [](const LuaEntity& le) -> int {
-            auto* a = GetAnimator(le);
-            return a ? static_cast<int>(a->facing) : 0;
-        },
-
-        // ---- 존재 질의 ----
-        "has_animator",
-        [](const LuaEntity& le) {
-            return le.IsValid() && le.world->Has<anim::SpriteAnimator>(le.e);
-        },
-        "has_body",
-        [](const LuaEntity& le) {
-            return le.IsValid() && le.world->Has<phys::KinematicBody2D>(le.e);
-        },
-
-        // ---- 파괴(지연: CommandBuffer 경유) ----
-        "destroy",
-        [](const LuaEntity& le) {
-            if (le.IsValid()) le.world->Destroy(le.e);
-        });
-
-    // ---- mye.world 테이블 ---------------------------------------------
-    sol::table worldTbl = mye["world"].get_or_create<sol::table>();
-
-    // 무효/비소유 world 면 안전 no-op·null 핸들 반환.
-    worldTbl.set_function("valid", [world](const LuaEntity& le) {
-        return world && le.world && world->Valid(le.e);
-    });
-
-    // 즉시 유효 핸들 반환(World 가 index/generation 예약). 저장소 반영은 Flush(비순회 경로).
-    // NOTE: ScriptSystem/앱이 Update 페이즈 경계에서 EcsBindingModule::FlushDeferred() 를
-    //   호출해야 실제 반영된다(순회 중 구조변경 금지 규약 준수).
-    worldTbl.set_function("spawn", [this]() -> LuaEntity {
-        if (!m_world) return LuaEntity{};
-        ecs::Entity e = m_commands ? m_commands->CreateDeferred() : m_world->Create();
-        return LuaEntity{e, m_world};
-    });
-    worldTbl.set_function("destroy", [this](const LuaEntity& le) {
-        if (!m_world || le.e.IsNull()) return;
-        if (m_commands) m_commands->Destroy(le.e);
-        else if (m_world->Valid(le.e)) m_world->Destroy(le.e);
-    });
-    // 패킹된 64비트 핸들 → mye.Entity(직렬화·이벤트 페이로드 경계에서 복원).
-    worldTbl.set_function("entity_from_packed", [world](uint64_t packed) -> LuaEntity {
-        return LuaEntity{ecs::Entity::FromPacked(packed), world};
-    });
+void EcsBindingModule::Register(lua_State* L) {
+    LuaStackGuard stack(L);
+    const luaL_Reg methods[] = {{"is_valid", Valid}, {"packed", Packed}, {"__eq", Equal}, {"__tostring", Text}, {"get_position", Position}, {"set_position", SetPosition}, {"get_velocity", Velocity}, {"set_velocity", SetVelocity}, {"hit_wall", HitWall}, {"set_bool", SetBool}, {"set_float", SetFloat}, {"set_trigger", SetTrigger}, {"get_float", GetFloat}, {"get_bool", GetBool}, {"face_move", FaceMove}, {"facing_vector", FacingVector}, {"facing_index", FacingIndex}, {"has_animator", HasAnimator}, {"has_body", HasBody}, {"destroy", Destroy}, {nullptr, nullptr}};
+    luaL_newmetatable(L, kEntity); luaL_setfuncs(L, methods, 0);
+    lua_pushvalue(L, -1); lua_setfield(L, -2, "__index"); lua_pop(L, 1);
+    lua_getglobal(L, "mye"); EnsureTable(L, -1, "world");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* self = Context<EcsBindingModule>(L); const auto& e = Entity(L);
+        lua_pushboolean(L, e.world == self->m_world && e.Valid()); return 1;
+    }, this); lua_setfield(L, -2, "valid");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* self = Context<EcsBindingModule>(L);
+        const auto e = self->m_commands ? self->m_commands->CreateDeferred() : ecs::Entity{};
+        PushEntity(L, e, self->m_world, self->m_commands.get()); return 1;
+    }, this); lua_setfield(L, -2, "spawn");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* self = Context<EcsBindingModule>(L); const auto& e = Entity(L);
+        if (e.world == self->m_world && self->m_commands && !e.entity.IsNull()) self->m_commands->Destroy(e.entity);
+        return 0;
+    }, this); lua_setfield(L, -2, "destroy");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* self = Context<EcsBindingModule>(L);
+        PushEntity(L, CheckEntity(L, 1), self->m_world, self->m_commands.get()); return 1;
+    }, this); lua_setfield(L, -2, "entity_from_packed");
 }
-
-// 앱/ScriptSystem 이 Update 페이즈 경계에서 호출 — 스크립트가 기록한 spawn/destroy 반영.
-void EcsBindingModule::FlushDeferred() {
-    if (m_commands) m_commands->Flush();
-}
-
+void EcsBindingModule::FlushDeferred() { if (m_commands) m_commands->Flush(); }
 } // namespace mye::script

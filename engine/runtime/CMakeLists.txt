@@ -11,7 +11,6 @@
 #           mye_asset  — VirtualFileSystem(user:// 세이브·문자열 테이블 로드)
 #           mye_reflect— refl/ser JsonArchive(세이브 페이로드·대사/UI 에셋 직렬화)
 #   PRIVATE mye_script — IBindingModule(RuntimeBindings)·CoroutineScheduler(컷신 코루틴 결합)
-#           mye_thirdparty_sol2 — sol2 단일 헤더(RuntimeBindings.cpp 만 소비 — 벤더 경계)
 #
 # 네임스페이스: mye::runtime. Lua 는 메인 스레드 전용(확정 규약).
 add_library(mye_runtime STATIC
@@ -70,12 +69,5 @@ target_include_directories(mye_runtime PUBLIC
 
 target_link_libraries(mye_runtime
     PUBLIC  mye_core mye_ui mye_scene mye_audio mye_asset mye_reflect
-    PRIVATE mye_script mye_thirdparty_sol2
+    PRIVATE mye_script
 )
-
-# Lua 바인딩·오브젝트 실행 TU가 sol2 대형 단일 헤더를 소비한다. 라이브러리 전역을 낮추지 않고
-#   해당 TU 만 /W3 /bigobj 로 완화(벤더 경계 격리, mye_script 와 동일 정책).
-if(MSVC)
-    set_source_files_properties(src/RuntimeBindings.cpp src/NpcBindings.cpp src/ObjectSystem.cpp PROPERTIES
-        COMPILE_OPTIONS "/W3;/bigobj")
-endif()

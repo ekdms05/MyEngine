@@ -18,7 +18,7 @@
 namespace mye::editor {
 namespace {
 using mye::i18n::T;
-enum class FileDialog { Project, Scene, SaveScene, Folder, Image, Dot, SaveDot };
+enum class FileDialog { Project, Scene, SaveScene, Folder, Image, Asset };
 
 Expected<std::string, Error> Browse(IWindow* window, FileDialog kind, std::string_view initial) {
     if (!window) return Error{"File dialogs require an editor window", 1};
@@ -26,7 +26,7 @@ Expected<std::string, Error> Browse(IWindow* window, FileDialog kind, std::strin
     if (FAILED(initialized)) return Error{"Cannot initialize the file dialog", static_cast<int32_t>(initialized)};
     struct ComScope { ~ComScope() { CoUninitialize(); } } comScope;
     IFileDialog* raw = nullptr;
-    const bool save = kind == FileDialog::SaveScene || kind == FileDialog::SaveDot;
+    const bool save = kind == FileDialog::SaveScene;
     HRESULT result = CoCreateInstance(save ? CLSID_FileSaveDialog : CLSID_FileOpenDialog, nullptr,
                                       CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&raw));
     if (FAILED(result)) return Error{"Cannot create the file dialog", static_cast<int32_t>(result)};
@@ -42,12 +42,11 @@ Expected<std::string, Error> Browse(IWindow* window, FileDialog kind, std::strin
         const COMDLG_FILTERSPEC filter = kind == FileDialog::Project
             ? COMDLG_FILTERSPEC{L"MyEngine project", L"*.myeproj"}
             : kind == FileDialog::Image ? COMDLG_FILTERSPEC{L"PNG image", L"*.png"}
-            : (kind == FileDialog::Dot || kind == FileDialog::SaveDot) ? COMDLG_FILTERSPEC{L"MyEngine dot document", L"*.dot"}
+            : kind == FileDialog::Asset ? COMDLG_FILTERSPEC{L"Game assets (PNG, animation, Lua, WAV)", L"*.png;*.anim;*.lua;*.wav"}
             : COMDLG_FILTERSPEC{L"MyEngine scene", L"*.scene"};
         result = dialog->SetFileTypes(1, &filter);
         if (FAILED(result)) return Error{"Cannot set the file filter", static_cast<int32_t>(result)};
-        result = dialog->SetDefaultExtension(kind == FileDialog::Project ? L"myeproj" : kind == FileDialog::Image ? L"png" :
-            (kind == FileDialog::Dot || kind == FileDialog::SaveDot) ? L"dot" : L"scene");
+        result = dialog->SetDefaultExtension(kind == FileDialog::Project ? L"myeproj" : kind == FileDialog::Image ? L"png" : L"scene");
         if (FAILED(result)) return Error{"Cannot set the file extension", static_cast<int32_t>(result)};
     }
     const auto path = Utf8Path(initial);
@@ -101,7 +100,6 @@ void EditorApp::RefreshDocumentContext() {
 void EditorApp::ActivateDocument(DocumentId id) {
     if (!m_project || m_playMode->IsPlaying()) return;
     m_animationFocused = false;
-    m_dotFocused = false;
     m_project->SetActive(id);
     RefreshDocumentContext();
     m_selectDocumentTab = true;
@@ -115,11 +113,11 @@ Expected<void, Error> EditorApp::CreateProject(std::string_view name, std::strin
     auto created = m_project->Create(name, directory, discardUnsaved, useStarter ? m_templateDirectory : "");
     if (!created) return created.GetError();
     m_animationId = {};
-    m_dotId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
     m_selectDocumentTab = true;
+    ExpandEditorWindow();
     return {};
 }
 
@@ -130,11 +128,11 @@ Expected<void, Error> EditorApp::OpenProject(std::string_view path, bool discard
     auto opened = m_project->Open(path, discardUnsaved);
     if (!opened) return opened.GetError();
     m_animationId = {};
-    m_dotId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
     m_selectDocumentTab = true;
+    ExpandEditorWindow();
     return {};
 }
 
@@ -163,24 +161,12 @@ Expected<void, Error> EditorApp::OpenAnimation(std::string_view path) {
     return {};
 }
 
-Document* EditorApp::DotDocumentForEditing() {
-    if (!m_project) return nullptr;
-    for (auto* doc : m_project->Documents()) if (doc->Id() == m_dotId && doc->GetKind() == Document::Kind::Dot) return doc;
-    return nullptr;
-}
-Expected<void, Error> EditorApp::OpenDot(std::string_view path) {
-    auto opened = m_project->OpenDot(path); if (!opened) return opened.GetError();
-    m_dotId = opened.Value()->Id(); opened.Value()->Commands().SetContext(&m_ctx);
-    SelectWorkspace(Workspace::Dot); return {};
-}
 Expected<std::string, Error> EditorApp::BrowseImageFile() {
     return Browse(m_window, FileDialog::Image, Utf8String(Utf8Path(m_project->RootDir()) / "assets"));
 }
-Expected<std::string, Error> EditorApp::BrowseDotFile(bool save) {
-    return Browse(m_window, save ? FileDialog::SaveDot : FileDialog::Dot,
-        Utf8String(Utf8Path(m_project->RootDir()) / "assets" / "sprites" / "new_sprite.dot"));
+Expected<std::string, Error> EditorApp::BrowseAssetFile() {
+    return Browse(m_window, FileDialog::Asset, Utf8String(Utf8Path(m_project->RootDir()) / "assets"));
 }
-
 Expected<void, Error> EditorApp::SaveScene(std::string_view path) {
     if (m_playMode->IsPlaying()) return Error{T("file.stopfirst"), 1};
     Document* doc = m_project->Active();
@@ -263,12 +249,6 @@ void EditorApp::OpenUserGuide() {
 
 void EditorApp::RequestSaveAs() {
     if (m_playMode->IsPlaying()) return;
-    if (!m_animationFocused && (m_dotFocused || m_workspace == Workspace::Dot) && DotDocumentForEditing()) {
-        auto path = BrowseDotFile(true);
-        if (!path) ReportFileResult(path.GetError(), "");
-        else if (!path.Value().empty()) ReportFileResult(m_project->SaveDot(m_dotId, path.Value()), T("file.saved"));
-        return;
-    }
     if (m_animationFocused && AnimationDocument()) {
         m_panels->Open("mye.anim");
         ReportFileResult(Error{"애니메이션 패널에서 저장 경로를 지정하세요", 1}, "");
@@ -293,8 +273,7 @@ void EditorApp::RequestSaveProject() {
     for (Document* doc : m_project->Documents()) {
         if (!doc->Path().empty()) continue;
         if (doc->GetKind() != Document::Kind::Scene) {
-            if (doc->GetKind() == Document::Kind::Dot) { m_dotId = doc->Id(); m_dotFocused = true; RequestSaveAs(); }
-            else { m_animationId = doc->Id(); m_panels->Open("mye.anim"); ReportFileResult(Error{"Save the new animation in the animation panel first", 1}, ""); }
+            { m_animationId = doc->Id(); m_panels->Open("mye.anim"); ReportFileResult(Error{"Save the new animation in the animation panel first", 1}, ""); }
             if (!doc->Path().empty() && !m_fileError) continue;
             return;
         }

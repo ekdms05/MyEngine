@@ -38,8 +38,8 @@ int32_t GainXp(Progression& prog, Stats& stats, int64_t amount) {
 #include "mye/refl/TypeBuilder.h"
 MYE_REFLECT_NAME(mye::gameplay::Progression, "Progression");
 template <> void mye::refl::Reflect<mye::gameplay::Progression>(TypeBuilder<mye::gameplay::Progression>& b) {
-    b.Version(1).Field("level", &mye::gameplay::Progression::level)
-        .Field("xp", &mye::gameplay::Progression::xp)
-        .Field("maxLevel", &mye::gameplay::Progression::maxLevel);
+    b.Version(1).Field("level", &mye::gameplay::Progression::level).Attr(Attribute::MakeTooltip("현재 캐릭터 레벨입니다. 레벨 1부터 시작합니다."))
+        .Field("xp", &mye::gameplay::Progression::xp).Attr(Attribute::MakeTooltip("현재 레벨에서 누적한 경험치입니다."))
+        .Field("maxLevel", &mye::gameplay::Progression::maxLevel).Attr(Attribute::MakeTooltip("레벨 상한입니다. 성장 규칙은 게임에서 정합니다."));
 }
 void mye::gameplay::RegisterProgressionReflection() { (void)refl::GetType<Progression>(); }

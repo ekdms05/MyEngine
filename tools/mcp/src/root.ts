@@ -9,6 +9,7 @@
  *   기본값은 프로젝트 CMake preset·실행 경로와 동일하다.
  */
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** tools/mcp 패키지 디렉터리(컴파일 산출물 dist/의 부모). */
@@ -39,6 +40,7 @@ export function resolveBuildDirRel(root: string): string {
  * 루트 상대 경로를 절대 경로로 해석한다. 절대 경로 입력·루트 밖 탈출('..')은 거부.
  */
 export function resolveInRoot(root: string, rel: string): string {
+  if (rel.includes("\0")) throw new Error("경로에 NUL 문자를 사용할 수 없습니다");
   if (path.isAbsolute(rel)) {
     throw new Error(`절대 경로는 허용되지 않습니다(루트 상대 경로만): ${rel}`);
   }
@@ -48,6 +50,18 @@ export function resolveInRoot(root: string, rel: string): string {
     throw new Error(`리포 루트 밖 경로는 허용되지 않습니다: ${rel}`);
   }
   return abs;
+}
+
+/** Existing files may cross the lexical boundary through a symlink/junction. */
+export function resolveExistingInRoot(root: string, rel: string): string {
+  const candidate = resolveInRoot(root, rel);
+  const canonicalRoot = fs.realpathSync(root);
+  const canonical = fs.realpathSync(candidate);
+  const relative = path.relative(canonicalRoot, canonical);
+  if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
+    throw new Error(`연결된 파일이 리포 루트 밖에 있습니다: ${rel}`);
+  }
+  return canonical;
 }
 
 /** 샘플·타깃 등 이름 파라미터의 안전 검증(경로 구분자·상위 이동 금지). */

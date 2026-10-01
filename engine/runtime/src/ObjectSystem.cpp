@@ -52,8 +52,8 @@ ObjectSystem::~ObjectSystem() {
     s.subscriptions.clear();
     std::vector<ecs::Entity> scripts;
     s.world.Query<script::ScriptComponent>().Each([&](ecs::Entity e, script::ScriptComponent&) { scripts.push_back(e); });
-    if (s.scripts) for (auto e : scripts) s.scripts->CallOnEntity(e, "on_destroy", sol::object{});
-    s.scripts.reset(); // releases tracked sol::tables while the VM is alive
+    if (s.scripts) for (auto e : scripts) s.scripts->CallOnEntity(e, "on_destroy", script::LuaReference{});
+    s.scripts.reset(); // releases tracked Lua references while the VM is alive
     for (auto e : scripts) s.world.Remove<script::ScriptComponent>(e);
     s.lua.Shutdown();
 }
@@ -114,10 +114,10 @@ void ObjectSystem::Dispatch(ecs::Entity object, ObjectEvent event) {
             break;
         case ObjectAction::ChangeMap: s.request = {connection.text, connection.target}; break;
         case ObjectAction::LuaCallback:
-            s.scripts->CallOnEntity(target, connection.text, sol::object{}); break;
+            s.scripts->CallOnEntity(target, connection.text, script::LuaReference{}); break;
         }
     }
-    if (event == ObjectEvent::Interact) s.scripts->CallOnEntity(object, "on_interact", sol::object{});
+    if (event == ObjectEvent::Interact) s.scripts->CallOnEntity(object, "on_interact", script::LuaReference{});
 }
 
 void ObjectSystem::Tick(float dt, Vec2 movement, bool interact) {

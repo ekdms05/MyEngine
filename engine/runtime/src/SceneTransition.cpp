@@ -1,8 +1,4 @@
-// mye/runtime/SceneTransition.cpp — 씬 전환 상태기계 골격 (M6-A)
-//
-// 골격 범위: 페이드아웃→로딩→액티베이트→페이드인 상태기계와 페이드 알파·진행률 관리는 동작한다.
-//   실제 로드는 SceneLoaderFn 콜백 위임(구현 에이전트 배선). 페이드 렌더·로딩 UiDocument 표시는
-//   표현 계층(UiRenderer)에서 FadeAlpha/LoadProgress 를 읽어 그린다.
+// Scene transition state and progress; the app supplies loading and presentation.
 #include "mye/runtime/SceneTransition.h"
 
 #include "mye/core/Events.h"

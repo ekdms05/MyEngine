@@ -1,6 +1,6 @@
 /**
  * engine_build — 엔진 빌드 (자동 configure + MSVC 요약 파서).
- * build/CMakeCache.txt 부재 시 `cmake -S . -B <buildDir> -G "Visual Studio 18 2026" -A x64` 자동 수행.
+ * CMakeCache.txt 부재 시 `cmake -S . -B <buildDir> -A x64`로 CMake 기본 제너레이터를 사용한다.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,8 +16,6 @@ import {
   errorResult,
   caughtResult,
 } from "../state.js";
-
-export const CMAKE_GENERATOR = "Visual Studio 18 2026";
 
 interface BuildParams {
   config: "Debug" | "Release";
@@ -60,7 +58,7 @@ async function doBuild(ctx: ServerContext, p: BuildParams): Promise<CallToolResu
 
   // 1) 자동 configure
   if (!fs.existsSync(cachePath)) {
-    const cfgArgs = ["-S", ".", "-B", ctx.buildDirRel, "-G", CMAKE_GENERATOR, "-A", "x64"];
+    const cfgArgs = ["-S", ".", "-B", ctx.buildDirRel, "-A", "x64"];
     const cfg = await runProcess({
       command: "cmake",
       args: cfgArgs,
@@ -88,9 +86,9 @@ async function doBuild(ctx: ServerContext, p: BuildParams): Promise<CallToolResu
       return errorResult(
         [
           summary,
-          `자동 configure 수행: cmake -S . -B ${ctx.buildDirRel} -G "${CMAKE_GENERATOR}" -A x64 → 실패`,
+          `자동 configure 수행: cmake -S . -B ${ctx.buildDirRel} -A x64 (CMake 기본 제너레이터) → 실패`,
           diag.cmakeErrors.length > 0 ? formatDiagnostics({ ...diag, errors: [], warnings: [] }) : `출력 꼬리:\n${tail}`,
-          `다음 행동: CMakeLists.txt 와 제너레이터("${CMAKE_GENERATOR}") 설치 여부를 확인하세요.`,
+          `다음 행동: CMakeLists.txt와 CMake가 선택한 Visual Studio/C++ 도구 설치를 확인하세요. 특정 버전은 README 명령으로 먼저 configure 하세요.`,
           `로그: ${logPath} (전체는 engine_logs source="build")`,
         ].join("\n"),
       );
@@ -101,7 +99,7 @@ async function doBuild(ctx: ServerContext, p: BuildParams): Promise<CallToolResu
   const buildArgs = ["--build", ctx.buildDirRel, "--config", p.config];
   if (p.target !== undefined) buildArgs.push("--target", p.target);
   if (p.clean) buildArgs.push("--clean-first");
-  buildArgs.push("--", "/m");
+  buildArgs.push("--parallel");
 
   const remainMs = Math.max(5_000, p.timeoutSec * 1000 - (Date.now() - started));
   const build = await runProcess({ command: "cmake", args: buildArgs, cwd: ctx.root, timeoutMs: remainMs });
@@ -123,7 +121,7 @@ async function doBuild(ctx: ServerContext, p: BuildParams): Promise<CallToolResu
   const summary = `BUILD ${ok ? "OK" : "FAILED"} (${p.config}${p.target !== undefined ? `, target ${p.target}` : ""}, ${secs}s, errors ${diag.errors.length}, warnings ${diag.warnings.length})`;
 
   const body: string[] = [summary];
-  if (didConfigure) body.push(`자동 configure 수행: cmake -S . -B ${ctx.buildDirRel} -G "${CMAKE_GENERATOR}" -A x64 → 성공`);
+  if (didConfigure) body.push(`자동 configure 수행: cmake -S . -B ${ctx.buildDirRel} -A x64 (CMake 기본 제너레이터) → 성공`);
   if (build.timedOut) body.push(`타임아웃(${p.timeoutSec}s) 초과 — 프로세스 트리를 강제 종료했습니다. timeoutSec 을 늘려 재시도하세요.`);
   const diagText = formatDiagnostics(diag);
   if (diagText !== "") body.push(diagText);

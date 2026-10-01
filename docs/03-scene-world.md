@@ -1,6 +1,6 @@
 # 03. 씬·월드
 
-`mye_scene`은 ECS·트랜스폼·시스템 실행·타일맵·물리·애니메이션·경로 탐색·씬 직렬화를 제공한다. 현재 ECS는 EnTT 래핑이 아닌 자체 sparse-set 구현이다. 제품별 시스템 조합은 [현재 구조](13-architecture-and-features.md)와 앱/샘플 진입점에서 확인한다.
+`mye_scene`은 ECS·트랜스폼·시스템 실행·타일맵·물리·애니메이션·경로 탐색·씬 직렬화를 제공한다. 현재 ECS는 자체 sparse-set 구현이다. 제품별 시스템 조합은 [현재 구조](13-architecture-and-features.md)와 앱 진입점에서 확인한다.
 
 ## 엔티티와 컴포넌트
 
@@ -26,7 +26,7 @@
 
 [TilemapWorld](../engine/scene/include/mye/tilemap/Tilemap.h)는 32×32 청크와 셀별 다중 컬럼·높이·경사를 표현한다. 다리 위/아래는 같은 화면 위치에 다른 층의 컬럼을 두어 표현한다. `FloorLevel`과 렌더 sortLayer의 연결은 [렌더 계약](02-rendering.md)을 따른다.
 
-[PhysicsWorld2D](../engine/scene/include/mye/phys/PhysicsWorld2D.h)는 AABB/원 충돌·공간 해시·move-and-slide·트리거를 제공하고 [PhysicsSystem](../engine/scene/include/mye/phys/PhysicsSystem.h)이 ECS와 연결한다. 타일 충돌·높이 판정과 몸체 간 충돌을 구분한다. MyGame의 현재 로컬 이동이 이 물리 경로를 전부 사용하지 않는다는 점을 앱 기능 설명에 남긴다.
+[PhysicsWorld2D](../engine/scene/include/mye/phys/PhysicsWorld2D.h)는 AABB/원 충돌·공간 해시·move-and-slide·트리거를 제공하고 [PhysicsSystem](../engine/scene/include/mye/phys/PhysicsSystem.h)이 ECS와 연결한다. MyEditor Play와 MyGame은 공용 ObjectSystem에서 콜라이더·이동 본체·조작을 고정 틱으로 처리한다. 타일 높이·층 전이와 서버 권위 이동의 완전한 통합은 별도 완료 조건이다.
 
 [Pathfinding](../engine/scene/include/mye/nav/Pathfinding.h)은 그리드·층을 고려한 A*와 비동기 경로 요청을 제공한다. 모든 NPC·컷신이 이를 자동 사용하지 않는다. 컷신의 현재 이동과 NPC 경로 추종은 각 소비자의 호출을 확인한다.
 
@@ -38,4 +38,4 @@
 
 ## 검증과 개선
 
-ECS·타일·물리·애니메이션·경로는 자체 테스트, 깊이·층 조합은 `bridge_demo`, Lua·NPC·대화 조합은 `character_demo`·`village_demo`에서 확인한다. 우선 과제는 MyGame의 고정 틱 이동·물리·층 판정과 서버의 동일 이동 계약 연결이다. 완료 조건은 [14](14-development-priorities.md)에 있다.
+ECS·타일·물리·애니메이션·경로와 오브젝트 동작은 `mye_tests`에서 검증한다. 플레이어의 프로젝트·맵 전환·스폰·Lua 연결은 `tools/verify-foundation.ps1`에서 실제 앱으로 확인한다. NPC·대화·컷신의 라이브러리 테스트를 플레이어 통합 완료로 표시하지 않는다. 서버 이동 계약·층 판정 연결의 완료 조건은 [14](14-development-priorities.md)에 있다.

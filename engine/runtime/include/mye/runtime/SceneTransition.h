@@ -1,14 +1,6 @@
-// mye/runtime/SceneTransition.h — 씬 전환(페이드·로딩·비동기 로드) (docs/06 §7, M6-A)
-//
-// 소유: 06 (M6-A). changeScene(sceneRef, TransitionDesc): 페이드아웃 → 로딩 화면(UiDocument)
-//   표시 → 04 비동기 로드(진행률 콜백을 로딩 UI 에 바인딩) → 액티베이트 → 페이드인.
-//   전환 중 입력 컨텍스트는 Loading(전부 소비). 소규모 이동은 로딩 화면 없는 fast-path.
-//
-// 런타임 씬 로드: SceneSerializer 재사용(editor 소유) 또는 런타임 로더. M6-A 는 로더 배선점을
-//   콜백(SceneLoaderFn)으로 추상화 — 실제 로드 구현은 구현 에이전트가 SceneSerializer/asset 로.
-//
-// 시뮬/표현 분리: 전환 상태기계(Phase)는 시뮬, 페이드 알파·로딩 UI 는 표현. 페이드 렌더는
-//   구현 에이전트가 UiRenderer/SpriteBatch 로 배선(전체화면 쿼드). 여기선 상태·진행률 관리.
+// Scene transitions: fade-out, loader progress, activation, and fade-in.
+// The app supplies SceneLoaderFn and renders FadeAlpha/LoadProgress. Providing
+// this state machine alone does not connect a scene loader or an input context.
 #pragma once
 
 #include "mye/runtime/RuntimeTypes.h"
@@ -34,13 +26,13 @@ enum class TransitionPhase : uint8_t {
     FadeIn,      // 화면 밝아지는 중
 };
 
-// 씬 로드 요청 핸들(비동기 로더가 진행률·완료를 갱신). 구현 에이전트가 실제 로드에 매핑.
+// 씬 로드 요청 핸들(비동기 로더가 진행률·완료를 갱신). 앱이 실제 로드에 연결.
 struct SceneLoadTicket {
     uint64_t id = 0;
     bool IsValid() const { return id != 0; }
 };
 
-// 씬 로더 배선(구현 에이전트가 SceneSerializer/asset 로 채운다).
+// 씬 로더 콜백은 앱이 공급한다.
 //   Begin: 로드 시작(티켓 반환). Poll: [0,1] 진행률, done=true 시 완료. Activate: 로드된 씬 활성화.
 struct SceneLoaderFn {
     std::function<SceneLoadTicket(const SceneRef&)>            begin;

@@ -1,4 +1,4 @@
-// mye/imgui/ImGuiFonts.cpp — ImGuiFonts.h 구현 (HaFont/haruna CJK 로딩 + 경로 해석)
+// ImGuiFonts.cpp — system CJK fonts and optional executable-local overrides.
 #include "mye/imgui/ImGuiFonts.h"
 
 #include "imgui.h"
@@ -35,18 +35,25 @@ std::wstring ExeDir() {
     return sl == std::wstring::npos ? std::wstring{} : s.substr(0, sl + 1);
 }
 
-// HaFont.ttf 후보 경로 — exe 상대(배포) 우선, 개발 편의를 위해 저장소 절대 경로 폴백.
+// Optional application-local fonts remain user-owned; system fonts are never copied.
 std::wstring ResolveFont(const wchar_t* file) {
     const std::wstring base = ExeDir();
     const std::wstring rels[] = {
         base + L"assets\\fonts\\" + file,
         base + L"fonts\\" + file,
         base + file,
-        std::wstring(L"E:\\MyEngine\\assets\\fonts\\") + file,   // 개발 폴백
     };
     for (const auto& p : rels)
         if (FileExists(p)) return p;
     return {};
+}
+
+std::wstring ResolveSystemFont(const wchar_t* file) {
+    wchar_t windowsDirectory[MAX_PATH]{};
+    const auto count = ::GetWindowsDirectoryW(windowsDirectory, MAX_PATH);
+    if (count == 0 || count >= MAX_PATH) return {};
+    const auto path = std::wstring(windowsDirectory, count) + L"\\Fonts\\" + file;
+    return FileExists(path) ? path : std::wstring{};
 }
 
 } // namespace
@@ -54,11 +61,12 @@ std::wstring ResolveFont(const wchar_t* file) {
 bool LoadEditorFonts(float sizePx) {
     ImGuiIO& io = ImGui::GetIO();
 
-    const std::wstring haPath = ResolveFont(L"HaFont.ttf");
-    if (haPath.empty())
+    auto basePath = ResolveSystemFont(L"malgun.ttf");
+    if (basePath.empty()) basePath = ResolveFont(L"HaFont.ttf");
+    if (basePath.empty())
         return false;   // 폰트 없음 → 기본 폰트 유지(호출부 계속 진행)
 
-    // 베이스: HaFont(haruna) = 라틴 + 한글. 한자·가나는 아래 병합 폰트가 담당한다.
+    // Windows Korean font supplies Latin/Hangul without bundling an unlicensed font.
     static ImVector<ImWchar> baseRanges;
     if (baseRanges.empty()) {
         ImFontGlyphRangesBuilder b;
@@ -72,16 +80,14 @@ bool LoadEditorFonts(float sizePx) {
     cfg.OversampleV = 1;
     cfg.PixelSnapH  = true;
 
-    const std::string haUtf8 = Utf8(haPath);
+    const std::string haUtf8 = Utf8(basePath);
     ImFont* f = io.Fonts->AddFontFromFileTTF(haUtf8.c_str(), sizePx, &cfg, baseRanges.Data);
     if (f == nullptr)
         return false;
 
-    // 병합 폰트: 같은 글리프 아틀라스에 얹어 코드포인트 커버리지를 넓힌다(MergeMode).
-    //   먼저 병합된 폰트가 해당 코드포인트를 선점 → HaFont(한글)에 없는 일본어 한자/가나는
-    //   M PLUS Rounded 1c 가, 중국어 간체 한자는 ZCOOL KuaiLe 가 채운다. 둘 다 둥근 서체(가독성).
+    // CJK coverage follows the installed Windows language fonts.
     auto mergeFont = [&](const wchar_t* file, const ImWchar* rng) {
-        const std::wstring p = ResolveFont(file);
+        const std::wstring p = ResolveSystemFont(file);
         if (p.empty()) return;
         ImFontConfig m;
         m.MergeMode = true;
@@ -91,8 +97,8 @@ bool LoadEditorFonts(float sizePx) {
         const std::string u = Utf8(p);
         io.Fonts->AddFontFromFileTTF(u.c_str(), sizePx, &m, rng);
     };
-    mergeFont(L"MPLUSRounded1c-Regular.ttf", io.Fonts->GetGlyphRangesJapanese());
-    mergeFont(L"ZCOOLKuaiLe-Regular.ttf",    io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+    mergeFont(L"meiryo.ttc", io.Fonts->GetGlyphRangesJapanese());
+    mergeFont(L"msyh.ttc", io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
 
     io.FontDefault = f;
     return true;

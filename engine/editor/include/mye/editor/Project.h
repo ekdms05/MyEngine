@@ -10,7 +10,6 @@
 #include "mye/editor/EditorTypes.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/asset/AnimationAsset.h"
-#include "mye/editor/DotEditing.h"
 
 #include <memory>
 #include <span>
@@ -20,10 +19,10 @@
 
 namespace mye::editor {
 
-// 열린 씬·애니메이션·도트 원본. 문서별 데이터와 Undo 스택 소유.
+// 열린 씬·애니메이션. 문서별 데이터와 Undo 스택 소유.
 class Document {
 public:
-    enum class Kind : std::uint8_t { Scene, Asset, Dot };
+    enum class Kind : std::uint8_t { Scene, Asset };
 
     Document(DocumentId id, Kind kind, std::string path);
     ~Document();
@@ -40,12 +39,9 @@ public:
     const ecs::World& World() const { return *m_world; }
     asset::AnimationAsset& Animation() { return m_animation; }
     const asset::AnimationAsset& Animation() const { return m_animation; }
-    DotDocument& Dot() { return m_dot; }
-    const DotDocument& Dot() const { return m_dot; }
 
 private:
     asset::AnimationAsset m_animation;
-    DotDocument m_dot;
     DocumentId   m_id;
     Kind         m_kind;
     std::string  m_path;
@@ -84,9 +80,6 @@ public:
     Document* NewAnimation();
     Expected<Document*, Error> OpenAnimation(std::string_view path);
     Expected<void, Error> SaveAnimation(DocumentId id, std::string_view path);
-    Document* NewDot();
-    Expected<Document*, Error> OpenDot(std::string_view path);
-    Expected<void, Error> SaveDot(DocumentId id, std::string_view path);
     void      CloseDocument(DocumentId id);
     Document* Active() const;                           // 포커스 문서(null 가능)
     void      SetActive(DocumentId id);

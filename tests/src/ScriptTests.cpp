@@ -1,6 +1,6 @@
 // ScriptTests.cpp — mye_script 검증 (05, M3-C): 콜백 순서·에러 격리·핫리로드·코루틴
 //
-// GPU·디바이스 불필요(순수 CPU). 각 테스트는 자체 ScriptRuntime(단일 sol::state) +
+// GPU·디바이스 불필요(순수 CPU). 각 테스트는 자체 ScriptRuntime(단일 Lua VM) +
 //   World + ScriptSystem 을 세우고, 스크립트 소스는 파일(핫리로드 케이스) 또는 인메모리
 //   LoadClass/MakeInstance(콜백·코루틴 케이스)로 주입한다.
 #include "TestFramework.h"
@@ -20,7 +20,7 @@
 #include "mye/script/ScriptRuntime.h"
 #include "mye/script/ScriptSystem.h"
 
-#include <sol/sol.hpp>
+#include "LuaTest.h"
 
 #include <atomic>
 #include <filesystem>
@@ -126,15 +126,16 @@ MYE_TEST(ScriptCallbackOrder) {
     MYE_EXPECT(InstallScript(rt, world, e, src, "order.lua"));
 
     // EnsureInstances 는 에셋 요구 → 여기선 on_init 을 직접 호출(인메모리 경로).
-    ss.CallOnEntity(e, callbacks::kOnInit, sol::object());
+    ss.CallOnEntity(e, callbacks::kOnInit, LuaReference{});
 
     ss.Update(0.016f);
     ss.Update(0.016f);
 
-    sol::state& lua = rt.State();
-    sol::table order = lua["_order"];
+    lua_State* lua = rt.State();
     std::vector<std::string> got;
-    for (std::size_t i = 1; i <= order.size(); ++i) got.push_back(order[i].get<std::string>());
+    const auto count = luatest::Eval<int>(lua, "return #_order");
+    for (int i = 1; i <= count; ++i)
+        got.push_back(luatest::Eval<std::string>(lua, "return _order[" + std::to_string(i) + "]"));
 
     // 기대: init, start, update, late, update, late
     MYE_EXPECT(got.size() == 6);
@@ -202,8 +203,8 @@ MYE_TEST(ScriptErrorIsolation) {
     MYE_EXPECT(badSc && badSc->hasError);
     MYE_EXPECT(goodSc && !goodSc->hasError);
 
-    sol::state& lua = rt.State();
-    int ticks = lua["_good_ticks"];
+    lua_State* lua = rt.State();
+    int ticks = luatest::Eval<int>(lua, "return _good_ticks");
     MYE_EXPECT(ticks == 2);                  // good 는 두 프레임 모두 실행
 }
 
@@ -233,18 +234,12 @@ MYE_TEST(ScriptEventAndTriggerRouting) {
     )LUA";
     MYE_EXPECT(InstallScript(rt, world, e, src, "ev.lua"));
 
-    ss.DispatchEvent("hello", sol::make_object(rt.State(), 42));
+    ss.DispatchEvent("hello", luatest::Integer(rt.State(), 42));
     ss.OnTriggerEnter(e, ecs::Entity{99, 1});
     ss.OnTriggerExit(e, ecs::Entity{99, 1});
 
-    sol::state& lua = rt.State();
-    sol::table ev = lua["_ev"];
-    MYE_EXPECT(ev.size() == 3);
-    if (ev.size() == 3) {
-        MYE_EXPECT(ev[1].get<std::string>() == "hello");
-        MYE_EXPECT(ev[2].get<std::string>() == "enter");
-        MYE_EXPECT(ev[3].get<std::string>() == "exit");
-    }
+    lua_State* lua = rt.State();
+    MYE_EXPECT(luatest::Eval<bool>(lua, "return #_ev == 3 and _ev[1] == 'hello' and _ev[2] == 'enter' and _ev[3] == 'exit'"));
 }
 
 // ===========================================================================
@@ -292,10 +287,10 @@ MYE_TEST(ScriptWorldBusRouting) {
     te.other = ecs::Entity{123, 1};
     bus.Publish(te);
 
-    sol::state& lua = rt.State();
-    MYE_EXPECT(int(lua["_wb"]["steps"]) == 1);
-    MYE_EXPECT(lua["_wb"]["lastFoot"].get<std::string>() == "sfx_step_grass");
-    MYE_EXPECT(int(lua["_wb"]["enters"]) == 1);
+    lua_State* lua = rt.State();
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _wb[\"steps\"]") == 1);
+    MYE_EXPECT(luatest::Eval<std::string>(lua, "return _wb[\"lastFoot\"]") == "sfx_step_grass");
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _wb[\"enters\"]") == 1);
 }
 
 // ===========================================================================
@@ -319,18 +314,18 @@ MYE_TEST(ScriptCoroutineWaitSeconds) {
     )LUA", "co.lua");
     MYE_EXPECT(bool(r));
 
-    sol::state& lua = rt.State();
-    MYE_EXPECT(int(lua["_co"]["phase"]) == 1);    // 첫 실행에서 phase=1 후 첫 wait 에서 yield
+    lua_State* lua = rt.State();
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _co[\"phase\"]") == 1);    // 첫 실행에서 phase=1 후 첫 wait 에서 yield
     MYE_EXPECT(rt.Coroutines().ActiveCount() == 1);
 
     rt.UpdateCoroutines(0.5f);
-    MYE_EXPECT(int(lua["_co"]["phase"]) == 1);    // 아직 1초 안 지남
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _co[\"phase\"]") == 1);    // 아직 1초 안 지남
 
     rt.UpdateCoroutines(0.6f);                    // 누적 1.1초 → 재개
-    MYE_EXPECT(int(lua["_co"]["phase"]) == 2);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _co[\"phase\"]") == 2);
 
     rt.UpdateCoroutines(1.0f);                    // 두 번째 wait 만료
-    MYE_EXPECT(int(lua["_co"]["phase"]) == 3);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _co[\"phase\"]") == 3);
 
     rt.UpdateCoroutines(0.1f);                    // 종료 후 제거 확인
     MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);
@@ -355,20 +350,20 @@ MYE_TEST(ScriptCoroutineWaitEvent) {
     )LUA", "ce.lua");
     MYE_EXPECT(bool(r));
 
-    sol::state& lua = rt.State();
-    MYE_EXPECT(int(lua["_ce"]["phase"]) == 1);
+    lua_State* lua = rt.State();
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _ce[\"phase\"]") == 1);
 
     rt.UpdateCoroutines(0.016f);                  // 이벤트 없음 → 계속 대기
-    MYE_EXPECT(int(lua["_ce"]["phase"]) == 1);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _ce[\"phase\"]") == 1);
 
-    rt.Coroutines().NotifyEvent("other_event", sol::make_object(lua, 5));
+    rt.Coroutines().NotifyEvent("other_event", luatest::Integer(lua, 5));
     rt.UpdateCoroutines(0.016f);                  // 다른 이벤트 → 재개 안 함
-    MYE_EXPECT(int(lua["_ce"]["phase"]) == 1);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _ce[\"phase\"]") == 1);
 
-    rt.Coroutines().NotifyEvent("door_opened", sol::make_object(lua, 77));
+    rt.Coroutines().NotifyEvent("door_opened", luatest::Integer(lua, 77));
     rt.UpdateCoroutines(0.016f);                  // 대기 이벤트 도착 → 재개
-    MYE_EXPECT(int(lua["_ce"]["phase"]) == 2);
-    MYE_EXPECT(int(lua["_ce"]["got"]) == 77);     // payload 전달 확인
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _ce[\"phase\"]") == 2);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _ce[\"got\"]") == 77);     // payload 전달 확인
     MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);
 }
 
@@ -418,22 +413,22 @@ MYE_TEST(ScriptCoroutineEventPayloadQueue) {
     )LUA", "pq.lua");
     MYE_EXPECT(bool(r));
 
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 같은 tick 사이 두 번 통지 — payload 10, 20 이 큐에 쌓여야 한다(덮어쓰지 않음).
-    rt.Coroutines().NotifyEvent("ping", sol::make_object(lua, 10));
-    rt.Coroutines().NotifyEvent("ping", sol::make_object(lua, 20));
+    rt.Coroutines().NotifyEvent("ping", luatest::Integer(lua, 10));
+    rt.Coroutines().NotifyEvent("ping", luatest::Integer(lua, 20));
     rt.UpdateCoroutines(0.016f);   // 첫 재개: 10 소비 후 다시 wait_event → 남은 20 재무장
     rt.UpdateCoroutines(0.016f);   // 두 번째 재개: 20 소비
 
-    MYE_EXPECT(int(lua["_pq"]["seen"][1]) == 10);
-    MYE_EXPECT(int(lua["_pq"]["seen"][2]) == 20);   // 두 번째 payload 유실 없음
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _pq[\"seen\"][1]") == 10);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _pq[\"seen\"][2]") == 20);   // 두 번째 payload 유실 없음
 
     // 세 번째는 아직 도착 안 함 → 계속 대기.
     MYE_EXPECT(rt.Coroutines().ActiveCount() == 1);
-    rt.Coroutines().NotifyEvent("ping", sol::make_object(lua, 30));
+    rt.Coroutines().NotifyEvent("ping", luatest::Integer(lua, 30));
     rt.UpdateCoroutines(0.016f);
-    MYE_EXPECT(int(lua["_pq"]["seen"][3]) == 30);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _pq[\"seen\"][3]") == 30);
     MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);
 }
 
@@ -474,13 +469,13 @@ MYE_TEST(ScriptOnDestroyAndCoroutineCancel) {
     world.Destroy(e);
     ss.Update(0.016f);
 
-    sol::state& lua = rt.State();
-    MYE_EXPECT(int(lua["_od"]["destroyed"]) == 1);      // on_destroy 1회
+    lua_State* lua = rt.State();
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _od[\"destroyed\"]") == 1);      // on_destroy 1회
     MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);     // 소유 코루틴 취소됨
 
     // 재호출 없음(추적에서 제거됨).
     ss.Update(0.016f);
-    MYE_EXPECT(int(lua["_od"]["destroyed"]) == 1);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _od[\"destroyed\"]") == 1);
 }
 
 // ===========================================================================
@@ -521,14 +516,11 @@ MYE_TEST(ScriptHotReloadPreservesState) {
     ss.EnsureInstances();   // 인스턴스화 + on_init(hp=100, inits=1)
 
     ScriptComponent* comp = world.TryGet<ScriptComponent>(e);
-    MYE_EXPECT(comp && comp->instance.valid());
-    {
-        sol::table inst = comp->instance;
-        sol::table state = inst["state"];
-        MYE_EXPECT(int(state["hp"]) == 100);
-        MYE_EXPECT(int(state["inits"]) == 1);
-        // 인스턴스에 런타임 변경을 남긴다(리로드 후 생존 검증용).
-        state["hp"] = 42;
+    MYE_EXPECT(comp && comp->instance.Valid());
+    if (comp && comp->instance.Valid()) {
+        luatest::SetGlobal(rt.State(), "_instance", comp->instance);
+        MYE_EXPECT(luatest::Eval<bool>(rt.State(), "return _instance.state.hp == 100 and _instance.state.inits == 1"));
+        luatest::Eval(rt.State(), "_instance.state.hp = 42");
     }
 
     // v2: on_hot_reload 추가·version 변경. 파일 재기록 후 reimport(슬롯 스왑).
@@ -554,17 +546,9 @@ MYE_TEST(ScriptHotReloadPreservesState) {
     ScriptComponent* comp2 = world.TryGet<ScriptComponent>(e);
     MYE_EXPECT(comp2 && !comp2->hasError);
     if (comp2) {
-        sol::table inst = comp2->instance;
-        sol::table state = inst["state"];
-        // self.state 생존: hp 는 리로드에서 42 유지(on_init 재호출 안 됨 → 100 으로 안 덮임).
-        MYE_EXPECT(int(state["hp"]) == 42);
-        MYE_EXPECT(int(state["inits"]) == 1);
-        // on_hot_reload 호출 확인.
-        MYE_EXPECT(bool(state["reloaded"]) == true);
-        // 클래스 스왑 확인: version() == 2.
-        sol::protected_function ver = inst["version"];
-        sol::protected_function_result vr = ver(inst);
-        MYE_EXPECT(vr.valid() && int(vr) == 2);
+        luatest::SetGlobal(rt.State(), "_instance", comp2->instance);
+        MYE_EXPECT(luatest::Eval<bool>(rt.State(), "return _instance.state.hp == 42 and _instance.state.inits == 1"));
+        MYE_EXPECT(luatest::Eval<bool>(rt.State(), "return _instance.state.reloaded == true and _instance:version() == 2"));
     }
 
     std::error_code ec; std::filesystem::remove_all(dir, ec);
@@ -577,16 +561,45 @@ MYE_TEST(ScriptStdLibHardening) {
     ScriptRuntime rt;
     EventBus bus;
     rt.Initialize(DefaultPolicy(), &bus, nullptr);
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
-    MYE_EXPECT(!lua["io"].valid());
-    MYE_EXPECT(!lua["os"].valid());
-    MYE_EXPECT(!lua["require"].valid());
-    MYE_EXPECT(!lua["package"].valid());
-    MYE_EXPECT(!lua["load"].valid());
-    MYE_EXPECT(!lua["loadstring"].valid());
-    // 안전 표준은 살아있어야 함.
-    MYE_EXPECT(lua["math"].valid());
-    MYE_EXPECT(lua["string"].valid());
-    MYE_EXPECT(lua["table"].valid());
+    MYE_EXPECT(luatest::Eval<bool>(lua, "return io == nil and os == nil and require == nil and package == nil and load == nil and loadstring == nil and dofile == nil and loadfile == nil"));
+    MYE_EXPECT(luatest::Eval<bool>(lua, "return math ~= nil and string ~= nil and table ~= nil"));
+}
+
+MYE_TEST(ScriptReferenceShutdownAndReinitialization) {
+    ScriptRuntime runtime;
+    runtime.Initialize({}, nullptr, nullptr);
+    auto oldClass = LoadClass(runtime, "return {}", "old.lua");
+    MYE_EXPECT(bool(oldClass));
+    LuaReference reference = oldClass.Value();
+    MYE_EXPECT(reference.Valid());
+    runtime.Initialize({}, nullptr, nullptr);
+    MYE_EXPECT(!reference.Valid());
+    MYE_EXPECT(runtime.DoString("assert(mye.co ~= nil and io == nil)", "new.lua").HasValue());
+    auto newClass = LoadClass(runtime, "return {}", "new.lua");
+    MYE_EXPECT(newClass.Value().Valid());
+    runtime.Shutdown();
+    MYE_EXPECT(!newClass.Value().Valid());
+    reference.Reset(); // destruction after lua_close must be harmless.
+}
+
+MYE_TEST(ScriptNativeErrorUnwindsAndRestoresStack) {
+    ScriptRuntime runtime;
+    runtime.Initialize({}, nullptr, nullptr);
+    lua_State* state = runtime.State();
+    int destroyed = 0;
+    PushFunction(state, [](lua_State* lua) -> int {
+        struct Guard { int* count; ~Guard() { ++*count; } } guard{Context<int>(lua)};
+        return luaL_error(lua, "native validation failure");
+    }, &destroyed);
+    lua_setglobal(state, "native_error");
+    const int before = lua_gettop(state);
+    for (int i = 0; i < 3; ++i) {
+        const auto result = runtime.DoString("native_error()", "native.lua");
+        MYE_EXPECT(!result.HasValue());
+        MYE_EXPECT(lua_gettop(state) == before);
+    }
+    MYE_EXPECT(destroyed == 3);
+    MYE_EXPECT(runtime.DoString("assert(2 + 2 == 4)", "after.lua").HasValue());
 }

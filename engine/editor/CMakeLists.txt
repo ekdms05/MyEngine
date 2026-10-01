@@ -32,6 +32,8 @@ add_library(mye_editor STATIC
     # ---- 플레이 모드 (docs/07 PlayWorld) ----
     include/mye/editor/PlayMode.h
     src/PlayMode.cpp
+    include/mye/editor/PlayWindow.h
+    src/PlayWindow.cpp
 
     # ---- 씬/프리팹 직렬화 (씬 직렬화는 mye_scene으로 이동; 여기선 별칭 헤더 + 프리팹만) ----
     include/mye/editor/SceneSerializer.h
@@ -41,6 +43,8 @@ add_library(mye_editor STATIC
     # ---- 프로젝트·문서 (docs/07 편집 명령과 문서) ----
     include/mye/editor/Project.h
     src/Project.cpp
+    include/mye/editor/ProjectAssetOperations.h
+    src/ProjectAssetOperations.cpp
 
     # ---- 앱 셸·모듈 (docs/07 화면과 작업 흐름) ----
     include/mye/editor/EditorApp.h
@@ -70,23 +74,14 @@ add_library(mye_editor STATIC
     src/AnimClipEditCommand.cpp
     src/AnimationEditorPanel.cpp
 
-    # ---- 도트(픽셀아트) 에디터 패널 ----
-    src/DotEditorPanel.cpp
-    include/mye/editor/DotEditing.h
-    src/DotEditing.cpp
 )
 
 target_include_directories(mye_editor PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-# stb_image_write(도트 에디터 PNG 저장) — third_party 헤더 경로(PRIVATE).
-target_include_directories(mye_editor PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../third_party>
-)
-
 # 에디터는 엔진 전 계층을 소비. imgui는 도킹 셸(DebugUi 직접 사용).
 target_link_libraries(mye_editor
     PUBLIC  mye_core mye_reflect mye_scene mye_asset mye_render mye_gameplay
-    PRIVATE mye_runtime mye_imgui ole32 shell32 uuid
+    PRIVATE mye_runtime mye_imgui mye_thirdparty_lua ole32 shell32 uuid
 )

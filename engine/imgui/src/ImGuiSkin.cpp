@@ -1,4 +1,4 @@
-// Neutral editor surfaces; blue denotes focus/selection (docs/18-editor-authoring.md).
+// Neutral editor surfaces; blue denotes focus/selection (docs/07-editor-ui.md).
 #include "mye/imgui/ImGuiSkin.h"
 
 #include "imgui.h"
@@ -23,9 +23,9 @@ void ApplySkin() {
     st.FrameRounding     = 3.0f;
     st.PopupRounding     = 3.0f;
     st.GrabRounding      = 2.0f;
-    st.WindowPadding    = ImVec2(10, 10);
-    st.FramePadding     = ImVec2(7, 4);
-    st.ItemSpacing      = ImVec2(8, 6);
+    st.WindowPadding    = ImVec2(16, 14);
+    st.FramePadding     = ImVec2(9, 6);
+    st.ItemSpacing      = ImVec2(10, 10);
     st.ScrollbarSize     = 16.0f;
     st.ScrollbarRounding = 8.0f;
     st.TabRounding       = 3.0f;

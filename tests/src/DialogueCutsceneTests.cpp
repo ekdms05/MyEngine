@@ -1,4 +1,4 @@
-// DialogueCutsceneTests.cpp — 대화·컷신 코루틴 프리미티브 헤드리스 테스트 (M6-A, 06)
+// DialogueCutsceneTests.cpp — 대화·컷신 코루틴 프리미티브 헤드리스 테스트
 //
 // 검증 범위:
 //   - 대사 데이터 JSON 왕복(한글 텍스트·화자·선택지·분기 라운드트립).
@@ -22,7 +22,7 @@
 
 #include "mye/core/Events.h"
 
-#include <sol/sol.hpp>
+#include "LuaTest.h"
 
 using namespace mye;
 using namespace mye::runtime;
@@ -151,27 +151,27 @@ MYE_TEST(CutsceneSayChooseCoroutine) {
     )LUA", "cutscene.lua");
     MYE_EXPECT(bool(r));
 
-    sol::state& lua = rt.State();
-    MYE_EXPECT(int(lua["_cs"]["phase"]) == 1);          // say 시작 후 대기 yield
+    lua_State* lua = rt.State();
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _cs[\"phase\"]") == 1);          // say 시작 후 대기 yield
     MYE_EXPECT(dlg.State() == DialogueState::ShowingLine);
 
     // 아직 진행 입력 없음 → tick 해도 phase 유지.
     rt.UpdateCoroutines(0.016f);
-    MYE_EXPECT(int(lua["_cs"]["phase"]) == 1);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _cs[\"phase\"]") == 1);
 
     // 시뮬 진행 입력 → say 완료 → choose 진입.
     dlg.Advance();
     MYE_EXPECT(dlg.State() == DialogueState::Finished);
     dlg.Update(0.016f);   // Finished → Idle (다음 say/choose 준비)
     rt.UpdateCoroutines(0.016f);
-    MYE_EXPECT(int(lua["_cs"]["phase"]) == 2);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _cs[\"phase\"]") == 2);
     MYE_EXPECT(dlg.State() == DialogueState::WaitingChoice);
 
     // 시뮬 선택 입력 → choose 반환.
     dlg.Pick(1);
     rt.UpdateCoroutines(0.016f);
-    MYE_EXPECT(int(lua["_cs"]["phase"]) == 3);
-    MYE_EXPECT(int(lua["_cs"]["choice"]) == 1);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _cs[\"phase\"]") == 3);
+    MYE_EXPECT(luatest::Eval<int>(lua, "return _cs[\"choice\"]") == 1);
     MYE_EXPECT(rt.Coroutines().ActiveCount() == 0);
 
     rt.Shutdown();
@@ -201,8 +201,8 @@ MYE_TEST(CutsceneMoveToCoroutine) {
     rt.ReapplyBindings();
 
     // entity.Packed() 를 double 경계로 전달(계약).
-    sol::state& lua = rt.State();
-    lua["_ENT"] = static_cast<double>(e.Packed());
+    lua_State* lua = rt.State();
+    luatest::SetInteger(lua, "_ENT", static_cast<lua_Integer>(e.Packed()));
     (void)rt.DoString("_mv = { done = false }", "setup");
     auto r = rt.DoString(R"LUA(
         mye.co.start(function()
@@ -211,15 +211,15 @@ MYE_TEST(CutsceneMoveToCoroutine) {
         end)
     )LUA", "move.lua");
     MYE_EXPECT(bool(r));
-    MYE_EXPECT(int(lua["_mv"]["done"].get<bool>() ? 1 : 0) == 0);
+    MYE_EXPECT(int(luatest::Eval<bool>(lua, "return _mv[\"done\"]") ? 1 : 0) == 0);
 
     // 시뮬 틱: MoveController.Update(고정틱) → 코루틴 재개(표현). 1초씩 두 번.
-    for (int i = 0; i < 3 && !lua["_mv"]["done"].get<bool>(); ++i) {
+    for (int i = 0; i < 3 && !luatest::Eval<bool>(lua, "return _mv[\"done\"]"); ++i) {
         move.Update(1.0f);            // 시뮬: Transform 전진
         rt.UpdateCoroutines(1.0f);    // 코루틴: move_done 폴링
     }
 
-    MYE_EXPECT(lua["_mv"]["done"].get<bool>());
+    MYE_EXPECT(luatest::Eval<bool>(lua, "return _mv[\"done\"]"));
     scene::LocalTransform* after = world.TryGet<scene::LocalTransform>(e);
     MYE_EXPECT(after != nullptr);
     if (after) MYE_EXPECT_NEAR(after->position.x, 10.0f, 1e-3f);

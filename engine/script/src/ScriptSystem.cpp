@@ -1,13 +1,3 @@
-// mye/script/ScriptSystem.cpp — ScriptComponent 실행·에러 격리·핫 리로드 (docs/05, M3-C 구현)
-//
-// 책임:
-//   - EnsureInstances: 미인스턴스화 live 컴포넌트를 LoadClass/MakeInstance/ScanCallbacks →
-//     on_init 1회 호출.
-//   - Update: on_start(1회)·on_update(dt)·on_late_update(dt) + 코루틴 tick + GC step.
-//   - 에러 격리: 콜백/코루틴 실패 시 해당 컴포넌트만 hasError=true 정지 + ScriptErrorEvent
-//     발행(즉시). 엔진·다른 엔티티는 계속(M3 완료 기준).
-//   - 이벤트 라우팅: on_event(name,payload), on_trigger_enter/exit(other), AnimationEvent.
-//   - 핫 리로드: 클래스 테이블 스왑 + self.state 보존 + on_hot_reload(on_init 재호출 안 함).
 #include "mye/script/ScriptSystem.h"
 
 #include "mye/anim/AnimationTypes.h"
@@ -25,7 +15,7 @@
 
 #include "ScriptErrorParse.h"
 
-#include <sol/sol.hpp>
+#include "mye/script/LuaApi.h"
 
 #include <string>
 #include <unordered_map>
@@ -46,7 +36,7 @@ struct ScriptSystem::Impl {
     //   매 프레임 현재 live 집합과 대조해 사라진 엔티티에 on_destroy + 코루틴 취소를 수행한다.
     //   instance/on_destroy 비트를 보관해 컴포넌트가 이미 제거된 뒤에도 on_destroy 를 부를 수 있다.
     struct TrackedInstance {
-        sol::table instance;
+        LuaReference instance;
         bool       hasOnDestroy = false;
     };
     std::unordered_map<ecs::Entity, TrackedInstance> tracked;
@@ -57,16 +47,23 @@ struct ScriptSystem::Impl {
 
 namespace {
 
-bool IsFn(const sol::object& o) {
-    return o.valid() && o.get_type() == sol::type::function;
+// Push function and self in call order. The caller's guard owns stack cleanup.
+bool PushCallback(lua_State* lua, const LuaReference& instance, std::string_view name) {
+    if (!instance.Valid()) return false;
+    instance.Push(lua);
+    lua_pushlstring(lua, name.data(), name.size());
+    lua_gettable(lua, -2);
+    if (!lua_isfunction(lua, -1)) { lua_pop(lua, 2); return false; }
+    lua_insert(lua, -2);
+    return true;
 }
 
-// 콜백 실패 처리: hasError=true + ScriptErrorEvent(즉시) + 로그. M3 완료 기준(엔티티만 정지).
+// 콜백 실패 처리: hasError=true + ScriptErrorEvent(즉시) + 로그. 엔티티만 정지한다.
 void ReportError(EventBus* bus, ecs::Entity e, ScriptComponent& sc,
-                 std::string_view callbackName, const sol::error& err) {
+                 std::string_view callbackName, const char* message) {
     sc.hasError = true;
     if (bus) {
-        detail::ParsedError pe = detail::ParseLuaError(err.what(), callbackName);
+        detail::ParsedError pe = detail::ParseLuaError(message, callbackName);
         ScriptErrorEvent ev;
         ev.entity = e;
         ev.file = pe.file;
@@ -75,7 +72,7 @@ void ReportError(EventBus* bus, ecs::Entity e, ScriptComponent& sc,
         ev.callback = std::string(callbackName);
         bus->Publish(ev);   // 즉시 디스패치(std::string 포함 → Enqueue 불가).
     }
-    MYE_LOG_ERROR("Script", "callback {} failed: {}", callbackName, err.what());
+    MYE_LOG_ERROR("Script", "callback {} failed: {}", callbackName, message);
 }
 
 } // namespace
@@ -120,22 +117,16 @@ void ScriptSystem::RegisterComponent() {
             ScriptComponent* sc = m_impl->world.TryGet<ScriptComponent>(target);
             if (!sc || !sc->IsLive() || !sc->HasCallback(CallbackBit::OnEvent)) return false;
 
-            sol::state& lua = m_impl->runtime.State();
-            sol::table payload = lua.create_table();
-            payload["name"] = name;
-            payload["arg"] = strArg;
-            payload["value"] = floatArg;
-            payload["frame"] = frame;
-
-            sol::object fnObj = sc->instance[callbacks::kOnEvent];
-            if (IsFn(fnObj)) {
-                sol::protected_function fn = fnObj.as<sol::protected_function>();
-                sol::protected_function_result r =
-                    fn(sc->instance, std::string("animation"), payload);
-                if (!r.valid()) {
-                    sol::error err = r;
-                    ReportError(m_impl->worldBus, target, *sc, callbacks::kOnEvent, err);
-                }
+            lua_State* lua = m_impl->runtime.State();
+            LuaStackGuard stack(lua);
+            if (PushCallback(lua, sc->instance, callbacks::kOnEvent)) {
+                lua_pushliteral(lua, "animation");
+                lua_newtable(lua);
+                lua_pushlstring(lua, name.data(), name.size()); lua_setfield(lua, -2, "name");
+                lua_pushlstring(lua, strArg.data(), strArg.size()); lua_setfield(lua, -2, "arg");
+                lua_pushnumber(lua, floatArg); lua_setfield(lua, -2, "value");
+                lua_pushinteger(lua, frame); lua_setfield(lua, -2, "frame");
+                InvokeGuarded(target, *sc, callbacks::kOnEvent, 2);
             }
             return false;
         }));
@@ -163,7 +154,7 @@ void ScriptSystem::EnsureInstances() {
     std::vector<ecs::Entity> pending;
     m_impl->world.Query<ScriptComponent>().Each([&](ecs::Entity e, ScriptComponent& sc) {
         if (!sc.enabled || sc.hasError) return;
-        if (sc.instance.valid()) return;   // 이미 인스턴스화됨
+        if (sc.instance.Valid()) return;   // 이미 인스턴스화됨
         pending.push_back(e);
     });
 
@@ -178,7 +169,7 @@ void ScriptSystem::EnsureInstances() {
         }
 
         std::string chunk = asset && !asset->sourcePath.empty() ? asset->sourcePath : "object-script";
-        Expected<sol::table, ScriptError> cls =
+        Expected<LuaReference, ScriptError> cls =
             LoadClass(m_impl->runtime, sc->inlineSource.empty() ? asset->source : sc->inlineSource, chunk);
         if (!cls) {
             const ScriptError& err = cls.GetError();
@@ -204,11 +195,7 @@ void ScriptSystem::EnsureInstances() {
         m_impl->tracked[e] = { sc->instance, sc->HasCallback(CallbackBit::OnDestroy) };
 
         if (sc->HasCallback(CallbackBit::OnInit) && sc->IsLive()) {
-            sol::object fnObj = sc->instance[callbacks::kOnInit];
-            if (IsFn(fnObj)) {
-                InvokeGuarded(e, *sc, callbacks::kOnInit,
-                              fnObj.as<sol::protected_function>());
-            }
+            CallOnEntity(e, callbacks::kOnInit, {});
         }
     }
 }
@@ -234,23 +221,17 @@ void ScriptSystem::Update(float dt) {
         if (!sc->started) {
             sc->started = true;
             if (sc->HasCallback(CallbackBit::OnStart)) {
-                sol::object fnObj = sc->instance[callbacks::kOnStart];
-                if (IsFn(fnObj)) {
-                    if (!InvokeGuarded(e, *sc, callbacks::kOnStart,
-                                       fnObj.as<sol::protected_function>())) continue;
-                }
+                CallOnEntity(e, callbacks::kOnStart, {});
+                if (!sc->IsLive()) continue;
             }
         }
 
         if (sc->HasCallback(CallbackBit::OnUpdate) && sc->IsLive()) {
-            sol::object fnObj = sc->instance[callbacks::kOnUpdate];
-            if (IsFn(fnObj)) {
-                sol::protected_function fn = fnObj.as<sol::protected_function>();
-                sol::protected_function_result r = fn(sc->instance, dt);
-                if (!r.valid()) {
-                    sol::error err = r;
-                    ReportError(m_impl->worldBus, e, *sc, callbacks::kOnUpdate, err);
-                }
+            lua_State* lua = m_impl->runtime.State();
+            LuaStackGuard stack(lua);
+            if (PushCallback(lua, sc->instance, callbacks::kOnUpdate)) {
+                lua_pushnumber(lua, dt);
+                InvokeGuarded(e, *sc, callbacks::kOnUpdate, 1);
             }
         }
     }
@@ -260,14 +241,11 @@ void ScriptSystem::Update(float dt) {
         ScriptComponent* sc = m_impl->world.TryGet<ScriptComponent>(e);
         if (!sc || !sc->IsLive()) continue;
         if (!sc->HasCallback(CallbackBit::OnLateUpdate)) continue;
-        sol::object fnObj = sc->instance[callbacks::kOnLateUpdate];
-        if (IsFn(fnObj)) {
-            sol::protected_function fn = fnObj.as<sol::protected_function>();
-            sol::protected_function_result r = fn(sc->instance, dt);
-            if (!r.valid()) {
-                sol::error err = r;
-                ReportError(m_impl->worldBus, e, *sc, callbacks::kOnLateUpdate, err);
-            }
+        lua_State* lua = m_impl->runtime.State();
+        LuaStackGuard stack(lua);
+        if (PushCallback(lua, sc->instance, callbacks::kOnLateUpdate)) {
+            lua_pushnumber(lua, dt);
+            InvokeGuarded(e, *sc, callbacks::kOnLateUpdate, 1);
         }
     }
 
@@ -276,53 +254,43 @@ void ScriptSystem::Update(float dt) {
     m_impl->runtime.CollectGarbageStep();
 }
 
-void ScriptSystem::DispatchEvent(std::string_view name, const sol::object& payload) {
-    // 코루틴 wait_event 통지.
+void ScriptSystem::DispatchEvent(std::string_view name, const LuaReference& payload) {
     m_impl->runtime.Coroutines().NotifyEvent(name, payload);
-
-    // on_event(name, payload) 라우팅(정의된 컴포넌트 전부).
-    std::string nameStr(name);
     std::vector<ecs::Entity> targets;
     m_impl->world.Query<ScriptComponent>().Each([&](ecs::Entity e, ScriptComponent& sc) {
         if (sc.IsLive() && sc.HasCallback(CallbackBit::OnEvent)) targets.push_back(e);
     });
+    lua_State* lua = m_impl->runtime.State();
     for (ecs::Entity e : targets) {
-        ScriptComponent* sc = m_impl->world.TryGet<ScriptComponent>(e);
+        auto* sc = m_impl->world.TryGet<ScriptComponent>(e);
         if (!sc || !sc->IsLive()) continue;
-        sol::object fnObj = sc->instance[callbacks::kOnEvent];
-        if (!IsFn(fnObj)) continue;
-        sol::protected_function fn = fnObj.as<sol::protected_function>();
-        sol::protected_function_result r = fn(sc->instance, nameStr, payload);
-        if (!r.valid()) {
-            sol::error err = r;
-            ReportError(m_impl->worldBus, e, *sc, callbacks::kOnEvent, err);
+        LuaStackGuard stack(lua);
+        if (PushCallback(lua, sc->instance, callbacks::kOnEvent)) {
+            lua_pushlstring(lua, name.data(), name.size());
+            payload.Push(lua);
+            InvokeGuarded(e, *sc, callbacks::kOnEvent, 2);
         }
     }
 }
 
 void ScriptSystem::OnTriggerEnter(ecs::Entity self, ecs::Entity other) {
-    ScriptComponent* sc = m_impl->world.TryGet<ScriptComponent>(self);
+    auto* sc = m_impl->world.TryGet<ScriptComponent>(self);
     if (!sc || !sc->IsLive() || !sc->HasCallback(CallbackBit::OnTriggerEnter)) return;
-    sol::object fnObj = sc->instance[callbacks::kOnTriggerEnter];
-    if (!IsFn(fnObj)) return;
-    sol::protected_function fn = fnObj.as<sol::protected_function>();
-    sol::protected_function_result r = fn(sc->instance, other.Packed());
-    if (!r.valid()) {
-        sol::error err = r;
-        ReportError(m_impl->worldBus, self, *sc, callbacks::kOnTriggerEnter, err);
+    lua_State* lua = m_impl->runtime.State();
+    LuaStackGuard stack(lua);
+    if (PushCallback(lua, sc->instance, callbacks::kOnTriggerEnter)) {
+        lua_pushinteger(lua, static_cast<lua_Integer>(other.Packed()));
+        InvokeGuarded(self, *sc, callbacks::kOnTriggerEnter, 1);
     }
 }
-
 void ScriptSystem::OnTriggerExit(ecs::Entity self, ecs::Entity other) {
-    ScriptComponent* sc = m_impl->world.TryGet<ScriptComponent>(self);
+    auto* sc = m_impl->world.TryGet<ScriptComponent>(self);
     if (!sc || !sc->IsLive() || !sc->HasCallback(CallbackBit::OnTriggerExit)) return;
-    sol::object fnObj = sc->instance[callbacks::kOnTriggerExit];
-    if (!IsFn(fnObj)) return;
-    sol::protected_function fn = fnObj.as<sol::protected_function>();
-    sol::protected_function_result r = fn(sc->instance, other.Packed());
-    if (!r.valid()) {
-        sol::error err = r;
-        ReportError(m_impl->worldBus, self, *sc, callbacks::kOnTriggerExit, err);
+    lua_State* lua = m_impl->runtime.State();
+    LuaStackGuard stack(lua);
+    if (PushCallback(lua, sc->instance, callbacks::kOnTriggerExit)) {
+        lua_pushinteger(lua, static_cast<lua_Integer>(other.Packed()));
+        InvokeGuarded(self, *sc, callbacks::kOnTriggerExit, 1);
     }
 }
 
@@ -342,10 +310,10 @@ void ScriptSystem::HotReload(asset::AssetGuid scriptGuid) {
         if (!asset) continue;
 
         std::string chunk = asset->sourcePath.empty() ? "script" : asset->sourcePath;
-        Expected<sol::table, ScriptError> cls =
+        Expected<LuaReference, ScriptError> cls =
             LoadClass(m_impl->runtime, asset->source, chunk);
         if (!cls) {
-            // 문법 에러 — 기존 클래스 유지 + 에러 발행(게임 지속, docs/05).
+            // 문법 에러 — 기존 클래스 유지 + 에러 발행(게임 지속).
             const ScriptError& err = cls.GetError();
             if (m_impl->worldBus) {
                 ScriptErrorEvent ev;
@@ -359,47 +327,40 @@ void ScriptSystem::HotReload(asset::AssetGuid scriptGuid) {
 
         // 클래스 스왑 — self.state·self.entity 는 기존 인스턴스에서 보존.
         sc->classTable = cls.Value();
-        if (!sc->instance.valid()) {
+        if (!sc->instance.Valid()) {
             // 아직 인스턴스가 없던 경우(예: 에러 상태) 새로 만든다.
             sc->instance = MakeInstance(m_impl->runtime, sc->classTable, e,
                                         sc->properties.values);
         } else {
             // 인스턴스의 메타테이블 __index 를 새 클래스로 교체(self.state 유지).
-            sol::state& lua = m_impl->runtime.State();
-            sol::table meta = lua.create_table();
-            meta["__index"] = sc->classTable;
-            sc->instance[sol::metatable_key] = meta;
+            lua_State* lua = m_impl->runtime.State();
+            LuaStackGuard stack(lua);
+            sc->instance.Push(lua);
+            lua_newtable(lua);
+            sc->classTable.Push(lua); lua_setfield(lua, -2, "__index");
+            lua_setmetatable(lua, -2);
         }
         sc->callbacks = ScanCallbacks(sc->classTable);
-        sc->hasError = false;   // 리로드 성공 시 정지 해제(docs/05).
+        sc->hasError = false;   // 리로드 성공 시 정지 해제.
 
         // 추적 갱신(instance 재생성·on_destroy 유무 변경 반영).
         m_impl->tracked[e] = { sc->instance, sc->HasCallback(CallbackBit::OnDestroy) };
 
-        // on_hot_reload 호출(on_init 재호출 안 함, docs/05).
+        // on_hot_reload 호출(on_init 재호출 안 함).
         if (sc->HasCallback(CallbackBit::OnHotReload) && sc->IsLive()) {
-            sol::object fnObj = sc->instance[callbacks::kOnHotReload];
-            if (IsFn(fnObj)) {
-                InvokeGuarded(e, *sc, callbacks::kOnHotReload,
-                              fnObj.as<sol::protected_function>());
-            }
+            CallOnEntity(e, callbacks::kOnHotReload, {});
         }
     }
 }
 
-void ScriptSystem::CallOnEntity(ecs::Entity e, std::string_view callback,
-                                const sol::object& arg) {
-    ScriptComponent* sc = m_impl->world.TryGet<ScriptComponent>(e);
+void ScriptSystem::CallOnEntity(ecs::Entity e, std::string_view callback, const LuaReference& arg) {
+    auto* sc = m_impl->world.TryGet<ScriptComponent>(e);
     if (!sc || !sc->IsLive()) return;
-    sol::object fnObj = sc->instance[callback];
-    if (!IsFn(fnObj)) return;
-    sol::protected_function fn = fnObj.as<sol::protected_function>();
-
-    sol::protected_function_result r = arg.valid() ? fn(sc->instance, arg) : fn(sc->instance);
-    if (!r.valid()) {
-        sol::error err = r;
-        ReportError(m_impl->worldBus, e, *sc, callback, err);
-    }
+    lua_State* lua = m_impl->runtime.State();
+    LuaStackGuard stack(lua);
+    if (!PushCallback(lua, sc->instance, callback)) return;
+    if (arg.Valid()) arg.Push(lua);
+    InvokeGuarded(e, *sc, callback, arg.Valid() ? 1 : 0);
 }
 
 void ScriptSystem::ReconcileDestroyed() {
@@ -426,16 +387,11 @@ void ScriptSystem::ReconcileDestroyed() {
 
         // on_destroy 호출(정의돼 있고 인스턴스가 유효하면). 컴포넌트는 이미 없을 수 있으므로
         //   보관해 둔 instance 로 protected 호출(에러는 로그만 — 컴포넌트 격리 대상이 없음).
-        if (ti.hasOnDestroy && ti.instance.valid()) {
-            sol::object fnObj = ti.instance[callbacks::kOnDestroy];
-            if (IsFn(fnObj)) {
-                sol::protected_function fn = fnObj.as<sol::protected_function>();
-                sol::protected_function_result r = fn(ti.instance);
-                if (!r.valid()) {
-                    sol::error err = r;
-                    MYE_LOG_ERROR("Script", "on_destroy failed: {}", err.what());
-                }
-            }
+        if (ti.hasOnDestroy && ti.instance.Valid()) {
+            lua_State* lua = m_impl->runtime.State();
+            LuaStackGuard stack(lua);
+            if (PushCallback(lua, ti.instance, callbacks::kOnDestroy) && ProtectedCall(lua, 1, 0) != LUA_OK)
+                MYE_LOG_ERROR("Script", "on_destroy failed: {}", lua_tostring(lua, -1));
         }
 
         // 소유 코루틴 취소(파괴된 엔티티의 코루틴이 살아남지 않게).
@@ -444,14 +400,11 @@ void ScriptSystem::ReconcileDestroyed() {
 }
 
 bool ScriptSystem::InvokeGuarded(ecs::Entity e, ScriptComponent& sc,
-                                 std::string_view callbackName,
-                                 const sol::protected_function& fn) {
-    sol::protected_function_result r = fn(sc.instance);
-    if (r.valid()) return true;
-
-    sol::error err = r;
-    ReportError(m_impl->worldBus, e, sc, callbackName, err);
+                                 std::string_view callbackName, int arguments) {
+    lua_State* lua = m_impl->runtime.State();
+    if (ProtectedCall(lua, arguments + 1, 0) == LUA_OK) return true;
+    const char* message = lua_tostring(lua, -1);
+    ReportError(m_impl->worldBus, e, sc, callbackName, message ? message : "Lua callback failed");
     return false;
 }
-
 } // namespace mye::script

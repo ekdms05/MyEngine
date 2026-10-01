@@ -1,4 +1,4 @@
-// mye/runtime/RuntimeTypes.cpp — 공용 값 타입 헬퍼 구현 (M6-A 골격)
+// mye/runtime/RuntimeTypes.cpp — 공용 값 타입 헬퍼 구현
 #include "mye/runtime/RuntimeTypes.h"
 
 namespace mye::runtime {

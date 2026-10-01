@@ -29,7 +29,7 @@ namespace mye::editor {
 
 class EditorApp : private IWindowMessageHook {
 public:
-    enum class Workspace : std::uint8_t { Scene2D, Scene3D, Scenes, Dot, Lua };
+    enum class Workspace : std::uint8_t { Scene2D = 0, Scene3D = 1, Lua = 4 };
     enum class SceneElement : std::uint8_t { Object, Sprite, Character, Collider, Trigger, Interaction, Spawn, Lua };
     EditorApp();
     ~EditorApp() override;
@@ -75,12 +75,8 @@ public:
     Document* AnimationDocument();
     void SetAnimationFocused() { m_animationFocused = true; }
     void SelectAnimationDocument(DocumentId id) { m_animationId = id; }
-    Expected<void, Error> OpenDot(std::string_view path);
-    Document* DotDocumentForEditing();
-    void SelectDotDocument(DocumentId id) { m_dotId = id; }
-    void SetDotFocused() { m_dotFocused = true; }
     Expected<std::string, Error> BrowseImageFile();
-    Expected<std::string, Error> BrowseDotFile(bool save);
+    Expected<std::string, Error> BrowseAssetFile();
     void ActivateDocument(DocumentId id);
     void RefreshDocumentContext(); // Also called before the module renders/ticks a world.
     Workspace CurrentWorkspace() const { return m_workspace; }
@@ -99,6 +95,8 @@ private:
     void DrawMenuBar();             // File/Edit/View/... + 확장 메뉴 항목
     bool DrawToolbar(bool inMenuBar); // Centered workspaces and right-aligned playback.
     void DrawStatusBar();
+    void DrawProjectLauncher();
+    void ExpandEditorWindow();
     void HandleShortcuts();         // Ctrl+S/Z/Y/P 등(포커스 문서 기준)
 
     // 레이아웃 저장/복원(<project>/.myeditor/layout.ini · session.json).
@@ -145,8 +143,6 @@ private:
     std::string    m_templateDirectory;
     DocumentId     m_animationId{};
     bool           m_animationFocused = false;
-    DocumentId     m_dotId{};
-    bool           m_dotFocused = false;
     std::array<char, 128> m_newProjectName{};
     std::array<char, 4096> m_newProjectDirectory{};
     std::string    m_fileStatus;

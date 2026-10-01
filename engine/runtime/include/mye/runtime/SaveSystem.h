@@ -1,15 +1,7 @@
-// mye/runtime/SaveSystem.h — 세이브/로드(슬롯·버전 헤더·ISaveParticipant) (docs/06 §7, M6-A)
-//
-// 소유: 06 (M6-A). 파일 = 헤더{매직·버전·타임스탬프·플레이시간·(썸네일 후속)} + 페이로드
-//   (refl/ser JsonArchive 로 섹션별 기록). "게임이 무엇을 저장할지는 ISaveParticipant 등록으로
-//   결정하고 엔진은 배관만 제공"(docs/06). 쓰기는 user:// temp → rename 원자적 교체.
-//   버전 마이그레이션은 ISaveMigration 체인(구버전 세이브 단계적 승격).
-//
-// settings 슬롯(kSettingsSlot): 볼륨·키바인딩·언어. Config(User 스코프)·InputBindings 와
-//   중복되지 않게 — settings 는 참여자(AudioSettingsParticipant 등)가 Config 를 읽어 기록/복원한다.
-//
-// 확장 포인트(docs/06 확장 §6): ISaveParticipant 는 Lua 에서도 등록 가능(테이블 save/load) —
-//   05 바인딩이 LuaSaveParticipant 어댑터로 감싼다(그 어댑터는 05/구현 에이전트 몫).
+// Versioned save slots. Registered ISaveParticipant instances define payloads;
+// writes use a temporary file and rename, and ISaveMigration handles versions.
+// Lua exposes slot operations through RuntimeBindings. Participant registration
+// is a native C++ API; a Lua participant adapter is not currently supplied.
 #pragma once
 
 #include "mye/runtime/RuntimeTypes.h"

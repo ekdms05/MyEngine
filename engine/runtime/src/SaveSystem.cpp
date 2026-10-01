@@ -1,4 +1,4 @@
-// mye/runtime/SaveSystem.cpp — 세이브/로드(슬롯·버전 헤더·ISaveParticipant) 구현 (M6-A)
+// mye/runtime/SaveSystem.cpp — 세이브/로드(슬롯·버전 헤더·ISaveParticipant) 구현
 //
 // 파일 포맷(UTF-8 JSON 단일 오브젝트):
 //   { "__header": { magic, version, timestampUnix, playTimeSec, title, thumbnailVpath },

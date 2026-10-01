@@ -609,7 +609,11 @@ Expected<std::unique_ptr<Dx11Device>, Error> Dx11Device::Create(const DeviceCrea
 
     const D3D_FEATURE_LEVEL requested = D3D_FEATURE_LEVEL_11_0;
     D3D_FEATURE_LEVEL obtained{};
-    HRESULT hr = ::D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
+    wchar_t warpSetting[2]{};
+    const bool useWarp = ::GetEnvironmentVariableW(L"MYE_DX11_WARP", warpSetting, 2) == 1 && warpSetting[0] == L'1';
+    const auto driver = useWarp ? D3D_DRIVER_TYPE_WARP : D3D_DRIVER_TYPE_HARDWARE;
+    MYE_LOG_INFO(kLog, "DX11 driver selected: {}", useWarp ? "WARP (MYE_DX11_WARP=1)" : "HARDWARE");
+    HRESULT hr = ::D3D11CreateDevice(nullptr, driver, nullptr, flags,
                                      &requested, 1, D3D11_SDK_VERSION,
                                      device->m_device.ReleaseAndGetAddressOf(), &obtained,
                                      device->m_context.ReleaseAndGetAddressOf());
@@ -619,7 +623,7 @@ Expected<std::unique_ptr<Dx11Device>, Error> Dx11Device::Create(const DeviceCrea
                      "Install the 'Graphics Tools' optional feature to enable it.",
                      static_cast<uint32_t>(hr));
         flags &= ~static_cast<UINT>(D3D11_CREATE_DEVICE_DEBUG);
-        hr = ::D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
+        hr = ::D3D11CreateDevice(nullptr, driver, nullptr, flags,
                                  &requested, 1, D3D11_SDK_VERSION,
                                  device->m_device.ReleaseAndGetAddressOf(), &obtained,
                                  device->m_context.ReleaseAndGetAddressOf());

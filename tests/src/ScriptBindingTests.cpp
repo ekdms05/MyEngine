@@ -19,8 +19,9 @@
 #include "mye/scene/Transform.h"
 #include "mye/script/ScriptRuntime.h"
 #include "mye/script/bindings/EngineBindings.h"
+#include "mye/runtime/RuntimeBindings.h"
 
-#include <sol/sol.hpp>
+#include "LuaTest.h"
 
 using namespace mye;
 using namespace mye::script;
@@ -43,33 +44,33 @@ MYE_TEST(ScriptMathVec2) {
     rt.Initialize(DefaultPolicy(), nullptr, nullptr);
     rt.AddBindingModule(std::make_unique<MathBindingModule>());
 
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 생성·필드.
-    Vec2 a = lua.script("return mye.Vec2(3, 4)");
+    Vec2 a = luatest::Eval<Vec2>(lua, "return mye.Vec2(3, 4)");
     MYE_EXPECT(a.x == 3.0f && a.y == 4.0f);
 
     // 연산자.
-    Vec2 sum = lua.script("return mye.Vec2(1,2) + mye.Vec2(10,20)");
+    Vec2 sum = luatest::Eval<Vec2>(lua, "return mye.Vec2(1,2) + mye.Vec2(10,20)");
     MYE_EXPECT(sum == (Vec2{11.0f, 22.0f}));
-    Vec2 scaled = lua.script("return mye.Vec2(2,3) * 2.0");
+    Vec2 scaled = luatest::Eval<Vec2>(lua, "return mye.Vec2(2,3) * 2.0");
     MYE_EXPECT(scaled == (Vec2{4.0f, 6.0f}));
-    Vec2 rscaled = lua.script("return 2.0 * mye.Vec2(2,3)");
+    Vec2 rscaled = luatest::Eval<Vec2>(lua, "return 2.0 * mye.Vec2(2,3)");
     MYE_EXPECT(rscaled == (Vec2{4.0f, 6.0f}));
 
     // length / normalized / dot.
-    float len = lua.script("return mye.Vec2(3,4):length()");
+    float len = luatest::Eval<float>(lua, "return mye.Vec2(3,4):length()");
     MYE_EXPECT_NEAR(len, 5.0f, 1e-4f);
-    Vec2 n = lua.script("return mye.Vec2(0,8):normalized()");
+    Vec2 n = luatest::Eval<Vec2>(lua, "return mye.Vec2(0,8):normalized()");
     MYE_EXPECT_NEAR(n.x, 0.0f, 1e-4f);
     MYE_EXPECT_NEAR(n.y, 1.0f, 1e-4f);
-    float d = lua.script("return mye.Vec2(1,0):dot(mye.Vec2(0,1))");
+    float d = luatest::Eval<float>(lua, "return mye.Vec2(1,0):dot(mye.Vec2(0,1))");
     MYE_EXPECT_NEAR(d, 0.0f, 1e-4f);
 
     // Color / Rect 기본.
-    bool okColor = lua.script("local c = mye.Color(1,0,0,1); return c.r == 1.0 and c.a == 1.0");
+    bool okColor = luatest::Eval<bool>(lua, "local c = mye.Color(1,0,0,1); return c.r == 1.0 and c.a == 1.0");
     MYE_EXPECT(okColor);
-    bool okRect = lua.script(
+    bool okRect = luatest::Eval<bool>(lua,
         "local r = mye.Rect(0,0,10,10); return r:contains(mye.Vec2(5,5))");
     MYE_EXPECT(okRect);
 }
@@ -91,50 +92,51 @@ MYE_TEST(ScriptEcsComponents) {
     world.Add<phys::KinematicBody2D>(e);
     world.Add<anim::SpriteAnimator>(e);
 
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // LuaEntity 를 전역으로 주입(엔진이 핸들 발급하는 경로 모사).
     // usertype 은 EcsBindingModule 이 등록했으므로 mye.world.entity_from_packed 로 구성.
-    lua["ent"] = lua["mye"]["world"]["entity_from_packed"](e.Packed());
+    luatest::SetInteger(lua, "_entity", static_cast<lua_Integer>(e.Packed()));
+    luatest::Eval(lua, "ent = mye.world.entity_from_packed(_entity)");
 
     // Transform 위치 set → C++ 확인.
-    lua.script("ent:set_position(mye.Vec2(5, 7))");
+    luatest::Eval(lua, "ent:set_position(mye.Vec2(5, 7))");
     auto* lt = world.TryGet<scene::LocalTransform>(e);
     MYE_EXPECT(lt && lt->position.x == 5.0f && lt->position.y == 7.0f);
     MYE_EXPECT(lt && lt->dirty);
 
     // get_position 왕복.
-    Vec2 got = lua.script("return ent:get_position()");
+    Vec2 got = luatest::Eval<Vec2>(lua, "return ent:get_position()");
     MYE_EXPECT(got == (Vec2{5.0f, 7.0f}));
 
     // 속도 set/get.
-    lua.script("ent:set_velocity(mye.Vec2(-2, 3))");
+    luatest::Eval(lua, "ent:set_velocity(mye.Vec2(-2, 3))");
     auto* body = world.TryGet<phys::KinematicBody2D>(e);
     MYE_EXPECT(body && body->velocity == (Vec2{-2.0f, 3.0f}));
 
     // 애니메이터 파라미터 set → C++ 확인.
-    lua.script("ent:set_bool('isMoving', true)");
-    lua.script("ent:set_float('speed', 2.5)");
+    luatest::Eval(lua, "ent:set_bool('isMoving', true)");
+    luatest::Eval(lua, "ent:set_float('speed', 2.5)");
     auto* anim = world.TryGet<anim::SpriteAnimator>(e);
     MYE_EXPECT(anim && anim->GetBool("isMoving"));
     MYE_EXPECT(anim && anim->GetFloat("speed") == 2.5f);
 
     // Lua 에서 get_* 왕복.
-    bool moving = lua.script("return ent:get_bool('isMoving')");
+    bool moving = luatest::Eval<bool>(lua, "return ent:get_bool('isMoving')");
     MYE_EXPECT(moving);
 
     // facing: 이동 벡터로 갱신(오른쪽 → Dir8::Right=6).
-    lua.script("ent:face_move(mye.Vec2(1, 0))");
+    luatest::Eval(lua, "ent:face_move(mye.Vec2(1, 0))");
     MYE_EXPECT(anim && anim->facing == mye::anim::Dir8::Right);
-    int idx = lua.script("return ent:facing_index()");
+    int idx = luatest::Eval<int>(lua, "return ent:facing_index()");
     MYE_EXPECT(idx == static_cast<int>(mye::anim::Dir8::Right));
 
     // 존재 질의.
-    bool hasAnim = lua.script("return ent:has_animator()");
+    bool hasAnim = luatest::Eval<bool>(lua, "return ent:has_animator()");
     MYE_EXPECT(hasAnim);
 
     // is_valid.
-    bool valid = lua.script("return ent:is_valid()");
+    bool valid = luatest::Eval<bool>(lua, "return ent:is_valid()");
     MYE_EXPECT(valid);
 }
 
@@ -152,22 +154,22 @@ MYE_TEST(ScriptEcsSpawnDestroy) {
     EcsBindingModule* ecsRaw = ecsMod.get();
     rt.AddBindingModule(std::move(ecsMod));
 
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // spawn 은 즉시 유효 핸들 반환(예약). Flush 전이라도 Valid 여야 한다(CreateDeferred 계약).
-    lua.script("spawned = mye.world.spawn()");
-    bool validBeforeFlush = lua.script("return spawned:is_valid()");
+    luatest::Eval(lua, "spawned = mye.world.spawn()");
+    bool validBeforeFlush = luatest::Eval<bool>(lua, "return spawned:is_valid()");
     MYE_EXPECT(validBeforeFlush);
 
     ecsRaw->FlushDeferred();   // 앱/ScriptSystem 이 페이즈 경계에서 호출하는 경로.
 
-    bool validAfterFlush = lua.script("return spawned:is_valid()");
+    bool validAfterFlush = luatest::Eval<bool>(lua, "return spawned:is_valid()");
     MYE_EXPECT(validAfterFlush);
 
     // destroy → flush → 무효.
-    lua.script("mye.world.destroy(spawned)");
+    luatest::Eval(lua, "mye.world.destroy(spawned)");
     ecsRaw->FlushDeferred();
-    bool validAfterDestroy = lua.script("return spawned:is_valid()");
+    bool validAfterDestroy = luatest::Eval<bool>(lua, "return spawned:is_valid()");
     MYE_EXPECT(!validAfterDestroy);
 }
 
@@ -182,28 +184,28 @@ MYE_TEST(ScriptInput) {
     rt.AddBindingModule(std::make_unique<MathBindingModule>());
     rt.AddBindingModule(std::make_unique<InputBindingModule>(&input));
 
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 초기: 아무 키도 안 눌림.
-    bool downInit = lua.script("return mye.input.is_down(mye.Key.W)");
+    bool downInit = luatest::Eval<bool>(lua, "return mye.input.is_down(mye.Key.W)");
     MYE_EXPECT(!downInit);
 
     // D 를 누른 상태로 만든다(엣지 관측 위해 NewFrame 후 OnKey).
     input.NewFrame();
     input.OnKey(KeyCode::D, true);
 
-    bool downD = lua.script("return mye.input.is_down(mye.Key.D)");
+    bool downD = luatest::Eval<bool>(lua, "return mye.input.is_down(mye.Key.D)");
     MYE_EXPECT(downD);
-    bool pressedD = lua.script("return mye.input.was_pressed(mye.Key.D)");
+    bool pressedD = luatest::Eval<bool>(lua, "return mye.input.was_pressed(mye.Key.D)");
     MYE_EXPECT(pressedD);
 
     // move_axis(A, D, S, W): D 만 눌림 → x = +1.
-    Vec2 axis = lua.script(
+    Vec2 axis = luatest::Eval<Vec2>(lua,
         "return mye.input.move_axis(mye.Key.A, mye.Key.D, mye.Key.S, mye.Key.W)");
     MYE_EXPECT(axis.x == 1.0f && axis.y == 0.0f);
 
     // 잘못된 키 정수(범위 밖)는 크래시 없이 false.
-    bool bad = lua.script("return mye.input.is_down(99999)");
+    bool bad = luatest::Eval<bool>(lua, "return mye.input.is_down(99999)");
     MYE_EXPECT(!bad);
 }
 
@@ -212,22 +214,22 @@ MYE_TEST(ScriptInput) {
 // ---------------------------------------------------------------------------
 MYE_TEST(ScriptAudioBus) {
     audio::AudioEngine engine;
-    (void)engine.Initialize(nullptr);   // 무음 모드(백엔드 없음).
+    MYE_EXPECT(engine.Initialize(nullptr).HasValue());   // 무음 모드(백엔드 없음).
 
     ScriptRuntime rt;
     rt.Initialize(DefaultPolicy(), nullptr, nullptr);
     rt.AddBindingModule(std::make_unique<AudioBindingModule>(&engine));
 
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
-    lua.script("mye.audio.set_bus_volume(mye.Bus.SFX, 0.25)");
+    luatest::Eval(lua, "mye.audio.set_bus_volume(mye.Bus.SFX, 0.25)");
     MYE_EXPECT_NEAR(engine.GetBusVolume(audio::BusId::SFX), 0.25f, 1e-4f);
 
-    float roundtrip = lua.script("return mye.audio.get_bus_volume(mye.Bus.SFX)");
+    float roundtrip = luatest::Eval<float>(lua, "return mye.audio.get_bus_volume(mye.Bus.SFX)");
     MYE_EXPECT_NEAR(roundtrip, 0.25f, 1e-4f);
 
     // set_listener 는 크래시 없이 수행(공간화 기준). 값 확인.
-    lua.script("mye.audio.set_listener(3, 4)");
+    luatest::Eval(lua, "mye.audio.set_listener(3, 4)");
     MYE_EXPECT(engine.GetListener() == (Vec2{3.0f, 4.0f}));
 
     // 리졸버 미설치 시 play_cue 는 안전 no-op(크래시 없음).
@@ -242,7 +244,7 @@ MYE_TEST(ScriptAudioBus) {
 // ---------------------------------------------------------------------------
 MYE_TEST(ScriptAudioCueResolver) {
     audio::AudioEngine engine;
-    engine.Initialize(nullptr);
+    MYE_EXPECT(engine.Initialize(nullptr).HasValue());
 
     // 간단한 큐(빈 클립 목록 — PostCue 는 유효성 검사로 no-op 이지만 리졸버·경계는 검증).
     audio::AudioCue cue;
@@ -273,9 +275,9 @@ MYE_TEST(ScriptEvents) {
     rt.Initialize(DefaultPolicy(), nullptr, nullptr);
     rt.AddBindingModule(std::make_unique<EventBindingModule>());
 
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
-    int captured = lua.script(R"(
+    int captured = luatest::Eval<int>(lua, R"(
         local got = 0
         mye.events.on('score', function(amount) got = got + amount end)
         mye.events.emit('score', 10)
@@ -285,7 +287,7 @@ MYE_TEST(ScriptEvents) {
     MYE_EXPECT(captured == 15);
 
     // off 후 더 이상 수신 안 함.
-    int afterOff = lua.script(R"(
+    int afterOff = luatest::Eval<int>(lua, R"(
         local got = 0
         local id = mye.events.on('tick', function() got = got + 1 end)
         mye.events.emit('tick')
@@ -307,7 +309,7 @@ MYE_TEST(ScriptSafeErrors) {
     rt.AddBindingModule(std::make_unique<MathBindingModule>());
     rt.AddBindingModule(std::make_unique<EcsBindingModule>(&world));
 
-    // Vec2 생성자에 문자열 전달 → sol2 타입 에러(DoString Expected 에러). 프로세스는 계속.
+    // Vec2 생성자에 문자열 전달 → Lua 타입 에러(DoString Expected 에러). 프로세스는 계속.
     auto r1 = rt.DoString("return mye.Vec2('bad', 'args')", "err1");
     MYE_EXPECT(!r1.HasValue());
 
@@ -318,4 +320,22 @@ MYE_TEST(ScriptSafeErrors) {
     // 정상 스크립트는 성공(에러 격리가 이후 실행을 막지 않음).
     auto r3 = rt.DoString("return mye.Vec2(1,2).x", "ok");
     MYE_EXPECT(r3.HasValue());
+}
+
+MYE_TEST(ScriptNativeArgumentBounds) {
+    InputState input;
+    ScriptRuntime runtime;
+    runtime.Initialize({}, nullptr, nullptr);
+    runtime.AddBindingModule(std::make_unique<MathBindingModule>());
+    runtime.AddBindingModule(std::make_unique<InputBindingModule>(&input));
+    runtime.AddBindingModule(std::make_unique<runtime::RuntimeBindings>(nullptr, nullptr, nullptr, nullptr, nullptr));
+    MYE_EXPECT(luatest::Eval<bool>(runtime.State(), R"(
+        return not mye.input.pad_connected(4294967296)
+           and not mye.input.pad_down(mye.Pad.A, 4294967296)
+           and mye.input.left_stick(4294967296) == mye.Vec2()
+    )"));
+    // Large values must fail before narrowing into a different valid slot/index.
+    MYE_EXPECT(!runtime.DoString("mye.save.write(4294967296)", "slot.lua").HasValue());
+    MYE_EXPECT(!runtime.DoString("mye.dialogue.pick(4294967296)", "choice.lua").HasValue());
+    MYE_EXPECT(runtime.DoString("assert(mye.save.write(0) == false)", "missing-service.lua").HasValue());
 }

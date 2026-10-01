@@ -1,6 +1,6 @@
 # MyEngine MCP 서버
 
-AI 에이전트가 MyEngine 을 빌드·테스트·실행하고 **렌더링 결과를 이미지로 직접 보는** MCP(Model Context Protocol) 서버.
+AI 에이전트가 MyEngine을 빌드·테스트·실행·캡처하고 프로젝트·Lua API·에셋을 조회하는 MCP(Model Context Protocol) 서버.
 기능과 실행 계약: [docs/08-mcp.md](../../docs/08-mcp.md). 현재는 CLI와 파일을 통한 개발 도구이며, 에디터 원격 제어는 미구현이다.
 
 - TypeScript + 공식 `@modelcontextprotocol/sdk`, stdio 트랜스포트
@@ -15,17 +15,17 @@ npm install
 npm run build     # tsc → dist/
 ```
 
-## 등록 (Claude Code)
+## 클라이언트 등록
 
-리포 루트의 [`.mcp.json`](../../.mcp.json)에 등록되어 있다. 실제 연결 여부는 사용하는 클라이언트에서 확인한다:
+사용하는 MCP 클라이언트에 아래 설정을 저장한다. 경로를 자신의 설치 위치로 바꾸고 연결 여부는 클라이언트의 도구 목록에서 확인한다. 개인 경로가 들어간 설정은 공개 저장소에 올리지 않는다.
 
 ```json
 {
   "mcpServers": {
     "myengine": {
       "command": "node",
-      "args": ["E:/MyEngine/tools/mcp/dist/index.js"],
-      "env": { "MYE_ROOT": "E:/MyEngine", "MYE_BUILD_DIR": "build/dev" }
+      "args": ["C:/workspace/MyEngine/tools/mcp/dist/index.js"],
+      "env": { "MYE_ROOT": "C:/workspace/MyEngine", "MYE_BUILD_DIR": "build/dev" }
     }
   }
 }
@@ -44,21 +44,22 @@ npm run build     # tsc → dist/
 
 | 툴 | 요약 |
 |---|---|
-| `engine_build` | CMake 빌드(미구성 시 자동 configure — `Visual Studio 18 2026` / x64). 에러≤30·경고≤10 을 `파일(줄): 코드: 메시지`로 요약 |
+| `engine_build` | CMake 빌드(미구성 시 CMake 기본 제너레이터 / x64로 configure). 기존 cache의 제너레이터 유지. 에러≤30·경고≤10 을 `파일(줄): 코드: 메시지`로 요약 |
 | `engine_test` | `ctest --output-on-failure` 실행·요약(passed/failed/total + 실패 테스트 출력 꼬리). 자동 빌드는 하지 않음 |
-| `engine_run` | 샘플 exe 를 `--frames N` 으로 자동 종료 실행. exit 코드(NTSTATUS 크래시 해석 병기)·출력 꼬리 반환 |
-| `engine_capture_frame` | 샘플을 `--frames N --dump <bmp>` 로 실행 → BMP 디코드 → PNG → **MCP 이미지 콘텐츠** 반환 (AI의 눈). 최대 변 960px 다운스케일 |
+| `engine_run` | 실행 타깃을 `--frames N`으로 실행. MyEditor는 args에 --project 전달 |
+| `engine_capture_frame` | 프레임 BMP를 PNG MCP 이미지 콘텐츠로 반환. 최대 변 960px |
 | `engine_logs` | 최근 빌드/테스트/실행/캡처 원본 로그 tail + 레벨(warn/error)·정규식 필터 |
-| `project_status` | configure 상태·마지막 작업 요약·샘플 목록·최근 캡처·서버 버전. 항상 성공 |
-| `dot_write_sprite` | 픽셀 행 데이터·팔레트로 PNG 스프라이트를 작성 |
-| `dot_from_photo` | 입력 이미지를 축소·양자화하여 픽셀 PNG로 변환 |
+| `project_status` | configure 상태·마지막 작업 요약·앱 소스 목록·최근 캡처·서버 버전. 항상 성공 |
+| `project_inspect` | 프로젝트/씬의 계층·컴포넌트·에셋 GUID 조회, 검색·페이지 지원 |
+| `engine_reference` | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더 문서 검색·줄 범위 조회 |
+| `asset_import` | 에디터 CLI를 통한 에셋 복사·GUID/.meta 등록. assets 기준 대상 경로, 덮어쓰기 거부 |
 
 공통 규약: 반환 텍스트 ≤8KB(원문은 `.state/logs/`에 저장 후 경로 안내), 빌드·테스트·실행·캡처는
-전역 뮤텍스로 직렬화(사용 중이면 즉시 "다른 작업 진행 중" 에러), 실패는 `isError` + 원인 + 다음 행동 제안.
+전역 뮤텍스로 직렬화(사용 중이면 즉시 "다른 작업 진행 중" 에러). 임포트도 같은 gate를 사용한다. 실패는 `isError` + 원인 + 다음 행동 제안.
 
-## 샘플 CLI 계약 (엔진 쪽 요구)
+## 실행 CLI 계약
 
-샘플 실행·캡처 도구는 두 플래그를 사용한다 ([CLI 계약](../../docs/08-mcp.md) 참조):
+실행·캡처 도구는 두 플래그를 사용한다 ([CLI 계약](../../docs/08-mcp.md) 참조):
 
 | 플래그 | 의미 |
 |---|---|
@@ -77,7 +78,7 @@ npm run build     # tsc → dist/
 ## 스모크 테스트
 
 ```sh
-npm run smoke   # dist 서버를 띄워 initialize → tools/list → 3개 툴 호출 검증 (엔진 빌드 없이)
+npm run smoke   # 초기화·9개 도구·격리 프로젝트 조회/오류 경계 확인 (엔진 빌드 없이)
 ```
 
 ## 확장

@@ -18,6 +18,8 @@
 #include "mye/editor/EditorModule.h"
 #include "mye/editor/EditorApp.h"
 #include "mye/editor/PlayMode.h"
+#include "mye/editor/PlayWindow.h"
+#include "mye/runtime/ObjectComponents.h"
 #include "mye/editor/Viewport.h"
 
 #include "mye/scene/RenderExtract.h"
@@ -84,6 +86,7 @@ struct EditorModule::Impl final : public IEditorViewport {
     mye::imgui::DebugUi              debugUi;
     scene::RenderProxyList           proxies;
     mye::ScopedSubscription          onResized;
+    PlayWindow                       playWindow;
 
     // 뷰포트 상태(패널이 통지, 렌더가 소비).
     // Handles are released before the manager and device.
@@ -260,7 +263,6 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
 
     // 프로젝트 경로는 --project(EnginePaths.projectDir). frames/dump/headless CLI 는
     //   main.cpp(MyEditorApp)가 파싱해 SetCliControl 로 주입한다(headless 는 창 유무로도 판정).
-    if (s.projectPath.empty()) s.projectPath = ctx.GetPaths().projectDir;
 
     // 디바이스 생성(창이 없어도 오프스크린 렌더용으로 생성 — 헤드리스 덤프 지원).
     auto deviceResult = rhi::CreateDevice(rhi::Backend::DX11, {});
@@ -338,8 +340,15 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
     // 시뮬레이션은 고정 틱, 렌더·ImGui는 표현 단계에서 처리한다.
     ctx.Modules().AddTick(this, UpdatePhase::PreUpdate, [this](const TimeStep&) {
         auto& state = *m_impl;
-        if (state.input && state.app && state.app->PlayMode().InputEnabled() && state.app->PlayMode().State() == PlayState::Playing)
-            state.pendingInteract |= state.input->WasPressed(KeyCode::E);
+        if (state.playWindow.CloseRequested() && state.app) {
+            state.app->PlayMode().Stop();
+            state.playWindow.Close();
+        }
+        if (state.app && !state.headless)
+            state.app->PlayMode().SetInputEnabled(state.playWindow.HasFocus());
+        auto* input = state.playWindow.IsOpen() ? &state.playWindow.Input() : state.input;
+        if (input && state.app && state.app->PlayMode().InputEnabled() && state.app->PlayMode().State() == PlayState::Playing)
+            state.pendingInteract |= input->WasPressed(KeyCode::E);
         else state.pendingInteract = false;
     }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& t) {
@@ -372,9 +381,10 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
 
     const float dt = static_cast<float>(step.deltaSeconds > 0.0 ? step.deltaSeconds : (1.0 / 60.0));
     Vec2 movement;
-    if (s.input && pm.InputEnabled()) {
-        movement.x = static_cast<float>(s.input->IsDown(KeyCode::D) || s.input->IsDown(KeyCode::Right)) - static_cast<float>(s.input->IsDown(KeyCode::A) || s.input->IsDown(KeyCode::Left));
-        movement.y = static_cast<float>(s.input->IsDown(KeyCode::W) || s.input->IsDown(KeyCode::Up)) - static_cast<float>(s.input->IsDown(KeyCode::S) || s.input->IsDown(KeyCode::Down));
+    const auto* input = s.playWindow.IsOpen() ? &s.playWindow.Input() : s.input;
+    if (input && pm.InputEnabled()) {
+        movement.x = static_cast<float>(input->IsDown(KeyCode::D) || input->IsDown(KeyCode::Right)) - static_cast<float>(input->IsDown(KeyCode::A) || input->IsDown(KeyCode::Left));
+        movement.y = static_cast<float>(input->IsDown(KeyCode::W) || input->IsDown(KeyCode::Up)) - static_cast<float>(input->IsDown(KeyCode::S) || input->IsDown(KeyCode::Down));
     }
     auto tick = pm.Tick(dt, movement, std::exchange(s.pendingInteract, false), s.app->Project().RootDir());
     if (!tick) MYE_LOG_ERROR("Editor", "{}", tick.GetError().message);
@@ -420,27 +430,18 @@ void EditorModule::Frame(const TimeStep&) {
     rhi::TextureHandle backbuffer{};
     const bool haveWindow = s.swapChain && s.debugUi.IsInitialized();
     if (haveWindow) {
-        backbuffer = s.swapChain->GetCurrentBackBuffer();
-        const Vec2i winSize = s.swapChain->GetSize();
-
-        // 백버퍼 클리어(도킹 배경).
-        rhi::RenderPassColorAttachment clearColor{};
-        clearColor.texture = backbuffer;
-        clearColor.loadOp = rhi::LoadOp::Clear;
-        clearColor.clearColor = Color{0.05f, 0.05f, 0.06f, 1.0f};
-        rhi::RenderPassBeginDesc clearPass{};
-        clearPass.colorAttachments = {&clearColor, 1};
-        clearPass.debugName = "editor.clear";
-        cmd.BeginRenderPass(clearPass);
-        cmd.EndRenderPass();
-
-        // ImGui 프레임: 도킹·메뉴·패널 빌드 → 백버퍼에 렌더.
         s.debugUi.BeginFrame();
         s.app->OnFrame();
 
+        // Project activation and native dialogs can resize the window while building UI.
+        // Resize replaces the backbuffer, so acquire the render target only afterwards.
+        backbuffer = s.swapChain->GetCurrentBackBuffer();
+        const Vec2i winSize = s.swapChain->GetSize();
+
         rhi::RenderPassColorAttachment uiColor{};
         uiColor.texture = backbuffer;
-        uiColor.loadOp = rhi::LoadOp::Load;
+        uiColor.loadOp = rhi::LoadOp::Clear;
+        uiColor.clearColor = Color{0.05f, 0.05f, 0.06f, 1.0f};
         rhi::RenderPassBeginDesc uiPass{};
         uiPass.colorAttachments = {&uiColor, 1};
         uiPass.debugName = "editor.imgui";
@@ -456,9 +457,32 @@ void EditorModule::Frame(const TimeStep&) {
 
     ++s.frameCount;
 
+    if (!s.headless && s.app->PlayMode().IsPlaying()) {
+        auto opened = s.playWindow.Open(*s.device);
+        if (!opened) {
+            MYE_LOG_ERROR("Editor", "{}", opened.GetError().message);
+            s.app->PlayMode().Stop();
+        }
+    } else if (s.playWindow.IsOpen()) s.playWindow.Close();
+    if (s.playWindow.IsOpen()) {
+        Vec2 center{};
+        if (auto* playWorld = s.app->PlayMode().ActiveWorld()) {
+            scene::UpdateWorldTransforms(*playWorld);
+            scene::ExtractRenderItems(*playWorld, s.proxies);
+            playWorld->Query<runtime::CharacterController2D, scene::LocalTransform>().Each(
+                [&](ecs::Entity, const auto& controller, const auto& transform) {
+                    if (controller.enabled) center = {transform.position.x, transform.position.y};
+                });
+        }
+        s.playWindow.Render(s.hybrid, s.proxies, center, s.app->PlayMode().State() == PlayState::Paused, cmd);
+    }
+
     // 4) 덤프. 창이 있으면 ImGui 셸(스킨)까지 그려진 백버퍼를, 헤드리스면 오프스크린 RT 를 캡처.
-    s.dumpBackbuffer = haveWindow ? backbuffer : rhi::TextureHandle{};
+    s.dumpBackbuffer = s.playWindow.IsOpen() ? s.playWindow.Backbuffer() : haveWindow ? backbuffer : rhi::TextureHandle{};
     HandleDump();
+
+    if (s.playWindow.IsOpen()) s.playWindow.Present();
+    s.playWindow.Input().NewFrame();
 
     if (haveWindow) {
         s.swapChain->Present(s.app ? s.app->Vsync() : false);
@@ -495,6 +519,7 @@ void EditorModule::RequestExit() {
 void EditorModule::OnShutdown(EngineContext& ctx) {
     Impl& s = *m_impl;
     // 셧다운 순서: EditorApp → DebugUi → 렌더 타깃/렌더러 → 스왑체인 → 디바이스.
+    s.playWindow.Close();
     if (s.app) s.app->Shutdown();
     s.app.reset();
 

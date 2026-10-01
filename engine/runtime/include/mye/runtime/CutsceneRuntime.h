@@ -1,21 +1,8 @@
-// mye/runtime/CutsceneRuntime.h — 컷신 코루틴 프리미티브 백엔드 (docs/05 코루틴 + docs/06 §7, M6-A)
-//
-// 소유: 06 (M6-A). docs/05 코루틴 프리미티브(wait_seconds/wait_event) 위에 컷신 연출 프리미티브를
-//   쌓는다. Lua 스크립트가 컷신을 코루틴으로 절차적으로 기술한다:
-//     say(text)          → 대화창 표시하고 진행 입력까지 대기
-//     choose(options)    → 선택지 표시하고 선택까지 대기, 선택 인덱스 반환
-//     move_to(entity,pos)→ nav/이동을 시작하고 도착까지 대기
-//     camera.focus(target)→ 카메라 포커스 이동(완료까지 대기 옵션)
-//     wait(sec)          → 05 wait_seconds 위임
-//
-// 배선 모델(sol 경계 격리): 이 헤더는 sol.hpp 를 끌어오지 않는다. Lua 바인딩(05 에이전트)이
-//   `mye.cutscene.*` 를 등록할 때, 각 프리미티브를 "명령 시작 + 완료 조건 폴링(yield 루프)"으로
-//   구현한다. CutsceneRuntime 은 그 완료 조건 판정과 명령 시작을 담당하는 C++ 백엔드다.
-//   완료 폴링은 CoroutineScheduler 의 wait_event/조건 재개와 결합한다(구현 에이전트 배선).
-//
-// 이동 완료 판정: MoveController(아래) 가 대상 엔티티를 목표로 이동시키며(nav 경로 추종),
-//   IsMoveDone(entity) 로 코루틴 재개 조건을 제공한다. 카메라 포커스는 HybridRenderer/Camera2D
-//   소비(비소유 참조) — 구현 에이전트가 실제 카메라 API 로 배선한다.
+// Cutscene backends exposed by RuntimeBindings (docs/19-lua-api.md).
+// Lua wrappers start a command and yield until its completion condition.
+// MoveController updates LocalTransform XY along a straight line; navigation
+// and collision avoidance are not connected. Camera presentation is supplied
+// by an app callback. Service pointers are borrowed and must outlive bindings.
 #pragma once
 
 #include "mye/runtime/RuntimeTypes.h"
@@ -78,12 +65,12 @@ private:
 
 // ---------------------------------------------------------------------------
 // CameraFocusController — camera.focus(target) 백엔드. 카메라 관심점을 목표로 부드럽게 이동.
-//   실제 카메라(render::Camera2D/HybridRenderer)는 구현 에이전트가 콜백으로 주입(sol/render
+//   실제 카메라는 앱이 콜백으로 주입(Lua/render
 //   헤더 전파 회피). SetTarget 후 Update 로 현재 포커스를 lerp, IsFocusDone 로 완료 판정.
 // ---------------------------------------------------------------------------
 class CameraFocusController {
 public:
-    // 카메라에 관심점 위치를 적용하는 싱크(구현 에이전트가 Camera2D 로 배선). 비면 무동작.
+    // 카메라에 관심점 위치를 적용하는 싱크(앱이 Camera2D로 연결). 비면 무동작.
     using ApplyFocusFn = std::function<void(Vec2 worldPos)>;
 
     CameraFocusController();

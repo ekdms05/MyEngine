@@ -1,146 +1,100 @@
-// mye/runtime/NpcBindings.cpp — NPC 시스템 Lua 바인딩 (docs/05·06, M6-B)
-//
-// `mye.npc` 하위에 register/set_player/interact/is_interacting 등을 등록한다. 상호작용 개시는
-//   NpcSystem(C++) 이 InteractFn 콜백으로 Lua 디스패처를 호출하는 구조:
-//     - register 는 on_interact 함수를 lua 측 테이블(mye.npc.__handlers[id]) 에 보관한다.
-//     - NpcSystem 이 상호작용을 수락하면 InteractFn → Lua __begin(id) 호출 → on_interact 를
-//       mye.co.start 로 코루틴 실행(내부 pcall 로 감싸 busy 플래그를 반드시 정리).
-//     - InteractBusyFn → Lua __busy(id) 로 busy 플래그를 폴링. 코루틴이 끝나면 false → NpcSystem
-//       이 배회를 재개한다.
-//   on_interact 안에서는 mye.dialogue.say/choose(대기형) 를 자유롭게 쓸 수 있다(코루틴 컨텍스트).
 #include "mye/runtime/NpcBindings.h"
-
 #include "mye/runtime/NpcSystem.h"
-
 #include "mye/script/ScriptRuntime.h"
+#include "mye/script/LuaApi.h"
+#include "mye/core/Log.h"
 
-#include "mye/ecs/Entity.h"
-
-#include <sol/sol.hpp>
-
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace mye::runtime {
-
-NpcBindings::NpcBindings(NpcSystem* npc, script::ScriptRuntime* runtime)
-    : m_npc(npc), m_runtime(runtime) {}
-
+using namespace script;
 namespace {
-
-// Lua 테이블에서 옵션 float 읽기(없으면 def).
-float GetF(const sol::table& t, const char* key, float def) {
-    sol::optional<float> v = t[key];
-    return v ? *v : def;
+float NumberField(lua_State* L, int table, const char* key, float fallback) {
+    lua_getfield(L, table, key); const float value = static_cast<float>(luaL_optnumber(L, -1, fallback)); lua_pop(L, 1); return value;
 }
-
-// waypoints 테이블({{x,y},{x,y},..} 또는 {x=,y=} 배열) → Vec2 벡터.
-std::vector<Vec2> ParseWaypoints(const sol::object& obj) {
-    std::vector<Vec2> out;
-    if (!obj.is<sol::table>()) return out;
-    sol::table arr = obj.as<sol::table>();
-    for (auto& kv : arr) {
-        if (!kv.second.is<sol::table>()) continue;
-        sol::table p = kv.second.as<sol::table>();
-        // {x=,y=} 우선, 없으면 [1],[2].
-        sol::optional<float> x = p["x"];
-        sol::optional<float> y = p["y"];
-        if (!x) x = p[1];
-        if (!y) y = p[2];
-        out.push_back(Vec2{ x.value_or(0.0f), y.value_or(0.0f) });
+std::string StringField(lua_State* L, int table, const char* key, const char* fallback = "") {
+    lua_getfield(L, table, key); std::string value = luaL_optstring(L, -1, fallback); lua_pop(L, 1); return value;
+}
+bool BoolField(lua_State* L, int table, const char* key, bool fallback) {
+    lua_getfield(L, table, key);
+    if (!lua_isnil(L, -1)) luaL_checktype(L, -1, LUA_TBOOLEAN);
+    const bool value = lua_isnil(L, -1) ? fallback : lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1); return value;
+}
+std::vector<Vec2> ParseWaypoints(lua_State* L, int table) {
+    std::vector<Vec2> points;
+    if (lua_isnil(L, table)) return points;
+    luaL_checktype(L, table, LUA_TTABLE); table = lua_absindex(L, table);
+    const size_t count = lua_rawlen(L, table); points.reserve(count);
+    for (size_t i = 1; i <= count; ++i) {
+        lua_rawgeti(L, table, static_cast<lua_Integer>(i));
+        if (lua_istable(L, -1)) {
+            const int point = lua_gettop(L);
+            lua_getfield(L, point, "x"); if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_rawgeti(L, point, 1); }
+            const float x = static_cast<float>(luaL_optnumber(L, -1, 0)); lua_pop(L, 1);
+            lua_getfield(L, point, "y"); if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_rawgeti(L, point, 2); }
+            const float y = static_cast<float>(luaL_optnumber(L, -1, 0)); lua_pop(L, 1);
+            points.push_back({x, y});
+        }
+        lua_pop(L, 1);
     }
-    return out;
+    return points;
 }
-
-WanderMode ParseMode(const sol::table& t) {
-    sol::optional<std::string> m = t["mode"];
-    if (!m) return WanderMode::Patrol;
-    if (*m == "random") return WanderMode::Random;
-    if (*m == "none")   return WanderMode::None;
-    return WanderMode::Patrol;
+bool CallHandler(const LuaReference& handler, const std::string& id) {
+    if (!handler.Valid()) return false;
+    lua_State* L = handler.State(); LuaStackGuard stack(L);
+    handler.Push(); lua_pushlstring(L, id.data(), id.size());
+    if (ProtectedCall(L, 1, 1) != LUA_OK) { MYE_LOG_WARN("NpcBindings", "NPC callback failed: {}", lua_tostring(L, -1)); return false; }
+    return lua_toboolean(L, -1) != 0;
 }
-
 } // namespace
-
-void NpcBindings::Register(sol::state& lua) {
-    sol::table mye = lua["mye"].get_or_create<sol::table>();
-    sol::table npc = mye["npc"].get_or_create<sol::table>();
-
-    NpcSystem* sys = m_npc;
-
-    // on_interact 핸들러 보관 테이블 + busy 플래그(id → bool). VM 재생성마다 새로 만든다.
-    sol::table handlers = lua.create_table();
-    sol::table busy     = lua.create_table();
-    npc["__handlers"] = handlers;
-    npc["__busy"]     = busy;
-
-    // ---- register{ ... } : NPC 등록 ----
-    npc.set_function("register", [sys, handlers](sol::table t) mutable -> bool {
-        if (!sys) return false;
-        sol::optional<double> ent = t["entity"];
-        if (!ent) return false;
-
-        NpcDesc d;
-        d.entity = ecs::Entity::FromPacked(static_cast<uint64_t>(*ent));
-        sol::optional<std::string> id = t["id"];
-        d.id = id.value_or(std::string{});
-
-        // register 테이블에 on_interact 가 실렸으면 핸들러 테이블에 보관(id 키). 없으면 별도
-        //   mye.npc.on_interact(id, fn) 로 등록 가능.
-        sol::optional<sol::function> onInteract = t["on_interact"];
-        if (onInteract) handlers[d.id] = *onInteract;
-        d.mode = ParseMode(t);
-        d.waypoints = ParseWaypoints(t["waypoints"]);
-        sol::optional<bool> loop = t["loop"];
-        d.loop = loop.value_or(true);
-        d.moveSpeed      = GetF(t, "speed", d.moveSpeed);
-        d.waitMin        = GetF(t, "wait_min", d.waitMin);
-        d.waitMax        = GetF(t, "wait_max", d.waitMax);
-        d.wanderRadius   = GetF(t, "wander_radius", d.wanderRadius);
-        d.alertRadius    = GetF(t, "alert_radius", d.alertRadius);
-        d.interactRadius = GetF(t, "interact_radius", d.interactRadius);
-        sol::optional<bool> face = t["face_player"];
-        d.facePlayerOnAlert = face.value_or(true);
-
-        return sys->Register(d);
-    });
-
-    // on_interact 를 id 로 등록(register 와 분리 호출 가능). id 는 register 의 id 와 일치.
-    npc.set_function("on_interact", [handlers](const std::string& id, sol::function fn) mutable {
-        handlers[id] = fn;
-    });
-
-    npc.set_function("set_player", [sys](double packed) {
-        if (sys) sys->SetPlayer(ecs::Entity::FromPacked(static_cast<uint64_t>(packed)));
-    });
-    npc.set_function("unregister", [sys](double packed) {
-        if (sys) sys->Unregister(ecs::Entity::FromPacked(static_cast<uint64_t>(packed)));
-    });
-    npc.set_function("clear", [sys]() { if (sys) sys->Clear(); });
-    npc.set_function("count", [sys]() -> int { return sys ? static_cast<int>(sys->Count()) : 0; });
-
-    // 플레이어 입력·트리거가 호출: 가장 가까운/특정 NPC 상호작용 시도.
-    npc.set_function("interact", [sys]() -> double {
-        if (!sys) return 0.0;
-        ecs::Entity e = sys->TryInteractNearest();
-        return static_cast<double>(e.Packed());
-    });
-    npc.set_function("interact_with", [sys](double packed) -> bool {
-        if (!sys) return false;
-        return sys->TryInteract(ecs::Entity::FromPacked(static_cast<uint64_t>(packed)));
-    });
-    npc.set_function("is_interacting", [sys]() -> bool {
-        return sys && sys->IsAnyInteracting();
-    });
-    npc.set_function("interacting_npc", [sys]() -> double {
-        if (!sys) return 0.0;
-        return static_cast<double>(sys->InteractingNpc().Packed());
-    });
-
-    // ---- C++ ↔ Lua 상호작용 디스패처(내부) ----
-    //   NpcSystem.InteractFn → __begin(id): on_interact 를 코루틴으로 실행(pcall 로 busy 정리 보장).
-    //   NpcSystem.InteractBusyFn → __busy(id): busy 플래그 폴링.
-    lua.safe_script(R"LUA(
+NpcBindings::NpcBindings(NpcSystem* npc, script::ScriptRuntime* runtime) : m_npc(npc), m_runtime(runtime) {}
+void NpcBindings::Register(lua_State* L) {
+    LuaStackGuard stack(L);
+    lua_getglobal(L, "mye"); EnsureTable(L, -1, "npc"); const int npc = lua_gettop(L);
+    lua_newtable(L); lua_setfield(L, npc, "__handlers");
+    lua_newtable(L); lua_setfield(L, npc, "__busy");
+    lua_pushlightuserdata(L, this); lua_getfield(L, npc, "__handlers");
+    lua_pushcclosure(L, [](lua_State* L) -> int {
+        auto* sys = Context<NpcBindings>(L)->m_npc; luaL_checktype(L, 1, LUA_TTABLE);
+        lua_getfield(L, 1, "entity");
+        if (lua_isnil(L, -1) || !sys) { lua_pushboolean(L, false); return 1; }
+        NpcDesc desc; desc.entity = CheckEntity(L, -1); lua_pop(L, 1);
+        desc.id = StringField(L, 1, "id");
+        const std::string mode = StringField(L, 1, "mode", "patrol");
+        desc.mode = mode == "random" ? WanderMode::Random : mode == "none" ? WanderMode::None : WanderMode::Patrol;
+        lua_getfield(L, 1, "waypoints"); desc.waypoints = ParseWaypoints(L, -1); lua_pop(L, 1);
+        desc.loop = BoolField(L, 1, "loop", true);
+        desc.facePlayerOnAlert = BoolField(L, 1, "face_player", true);
+        desc.moveSpeed = NumberField(L, 1, "speed", desc.moveSpeed);
+        desc.waitMin = NumberField(L, 1, "wait_min", desc.waitMin);
+        desc.waitMax = NumberField(L, 1, "wait_max", desc.waitMax);
+        desc.wanderRadius = NumberField(L, 1, "wander_radius", desc.wanderRadius);
+        desc.alertRadius = NumberField(L, 1, "alert_radius", desc.alertRadius);
+        desc.interactRadius = NumberField(L, 1, "interact_radius", desc.interactRadius);
+        lua_getfield(L, 1, "on_interact");
+        if (!lua_isnil(L, -1)) {
+            luaL_checktype(L, -1, LUA_TFUNCTION); lua_pushlstring(L, desc.id.data(), desc.id.size());
+            lua_pushvalue(L, -2); lua_rawset(L, lua_upvalueindex(2));
+        }
+        lua_pop(L, 1); lua_pushboolean(L, sys->Register(desc)); return 1;
+    }, 2); lua_setfield(L, npc, "register");
+    lua_getfield(L, npc, "__handlers");
+    lua_pushcclosure(L, [](lua_State* L) -> int {
+        luaL_checktype(L, 1, LUA_TSTRING); luaL_checktype(L, 2, LUA_TFUNCTION);
+        lua_pushvalue(L, 1); lua_pushvalue(L, 2); lua_rawset(L, lua_upvalueindex(1)); return 0;
+    }, 1); lua_setfield(L, npc, "on_interact");
+    PushFunction(L, [](lua_State* L) -> int { auto* sys = Context<NpcBindings>(L)->m_npc; const auto entity = CheckEntity(L, 1); if (sys) sys->SetPlayer(entity); return 0; }, this); lua_setfield(L, npc, "set_player");
+    PushFunction(L, [](lua_State* L) -> int { auto* sys = Context<NpcBindings>(L)->m_npc; const auto entity = CheckEntity(L, 1); if (sys) sys->Unregister(entity); return 0; }, this); lua_setfield(L, npc, "unregister");
+    PushFunction(L, [](lua_State* L) -> int { auto* sys = Context<NpcBindings>(L)->m_npc; if (sys) sys->Clear(); return 0; }, this); lua_setfield(L, npc, "clear");
+    PushFunction(L, [](lua_State* L) -> int { const auto* sys = Context<NpcBindings>(L)->m_npc; lua_pushinteger(L, sys ? static_cast<lua_Integer>(sys->Count()) : 0); return 1; }, this); lua_setfield(L, npc, "count");
+    PushFunction(L, [](lua_State* L) -> int { auto* sys = Context<NpcBindings>(L)->m_npc; lua_pushinteger(L, sys ? static_cast<lua_Integer>(sys->TryInteractNearest().Packed()) : 0); return 1; }, this); lua_setfield(L, npc, "interact");
+    PushFunction(L, [](lua_State* L) -> int { auto* sys = Context<NpcBindings>(L)->m_npc; const auto entity = CheckEntity(L, 1); lua_pushboolean(L, sys && sys->TryInteract(entity)); return 1; }, this); lua_setfield(L, npc, "interact_with");
+    PushFunction(L, [](lua_State* L) -> int { const auto* sys = Context<NpcBindings>(L)->m_npc; lua_pushboolean(L, sys && sys->IsAnyInteracting()); return 1; }, this); lua_setfield(L, npc, "is_interacting");
+    PushFunction(L, [](lua_State* L) -> int { const auto* sys = Context<NpcBindings>(L)->m_npc; lua_pushinteger(L, sys ? static_cast<lua_Integer>(sys->InteractingNpc().Packed()) : 0); return 1; }, this); lua_setfield(L, npc, "interacting_npc");
+    constexpr const char* dispatch = R"LUA(
         local npc = mye.npc
         local handlers = npc.__handlers
         local busy = npc.__busy
@@ -166,26 +120,14 @@ void NpcBindings::Register(sol::state& lua) {
         function npc.__busy(id)
             return busy[id] == true
         end
-    )LUA", "mye.npc.dispatch");
-
-    // C++ NpcSystem 에 Lua 디스패처를 InteractFn/InteractBusyFn 으로 배선.
-    //   sol 함수는 VM 수명 동안 유효. VM 재생성 시 이 Register 가 다시 호출돼 재배선된다.
+    )LUA";
+    if (luaL_loadstring(L, dispatch) != LUA_OK || ProtectedCall(L, 0, 0) != LUA_OK) throw std::runtime_error(lua_tostring(L, -1));
     if (m_npc) {
-        sol::protected_function begin = npc["__begin"];
-        sol::protected_function isBusy = npc["__busy"];
+        lua_getfield(L, npc, "__begin"); LuaReference begin(L, -1); lua_pop(L, 1);
+        lua_getfield(L, npc, "__busy"); LuaReference busy(L, -1); lua_pop(L, 1);
         m_npc->SetInteractHandlers(
-            [begin](const std::string& id, ecs::Entity /*e*/) -> bool {
-                // __begin 이 핸들러 유무로 수락/거부(bool) 판정. 거부면 NpcSystem 이 배회 유지.
-                sol::protected_function_result r = begin(id);
-                if (!r.valid()) return false;
-                return r.get<bool>();
-            },
-            [isBusy](const std::string& id, ecs::Entity /*e*/) -> bool {
-                sol::protected_function_result r = isBusy(id);
-                if (!r.valid()) return false;
-                return r.get<bool>();
-            });
+            [begin](const std::string& id, ecs::Entity) { return CallHandler(begin, id); },
+            [busy](const std::string& id, ecs::Entity) { return CallHandler(busy, id); });
     }
 }
-
 } // namespace mye::runtime

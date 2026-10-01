@@ -74,19 +74,7 @@ constexpr Entry kTable[] = {
     {"panel.assets",    "에셋",        "Assets",    "アセット",       "资源"},
     {"panel.anim",      "애니메이션", "Animation", "アニメーション", "动画"},
     {"panel.console",   "콘솔",        "Console",   "コンソール",     "控制台"},
-    {"panel.doteditor", "닷 에디터",   "Dot Editor","ドットエディタ", "像素编辑器"},
 
-    // ---- 도트 에디터 ----
-    {"dot.brush",      "브러시",     "Brush",   "ブラシ",       "画笔"},
-    {"dot.eraser",     "지우개",     "Eraser",  "消しゴム",     "橡皮"},
-    {"dot.eyedropper", "스포이드",   "Picker",  "スポイト",     "取色"},
-    {"dot.bucket",     "채우기",     "Fill",    "塗りつぶし",   "填充"},
-    {"dot.grid",       "격자",       "Grid",    "グリッド",     "网格"},
-    {"dot.color",      "색",         "Color",   "色",           "颜色"},
-    {"dot.size",       "크기",       "Size",    "サイズ",       "大小"},
-    {"dot.clear",      "전체 지우기","Clear",   "全消去",       "清空"},
-    {"dot.name",       "이름",       "Name",    "名前",         "名称"},
-    {"dot.savepng",    "PNG 저장",   "Save PNG","PNG保存",      "保存PNG"},
 
     // ---- 기타 패널 문자열 ----
     {"inspector.empty",  "선택된 엔티티가 없습니다.", "No entity selected.", "選択されたエンティティがありません。", "未选择实体。"},

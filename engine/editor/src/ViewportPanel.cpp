@@ -123,7 +123,7 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         const bool open = ImGui::Begin(PanelWindowTitle("panel.viewport", "mye.viewport").c_str());
         ImGui::PopStyleVar();
-        if (!open) { if (ctx.playMode) ctx.playMode->SetInputEnabled(false); ImGui::End(); return; }
+        if (!open) { ImGui::End(); return; }
 
         IEditorViewport* vp = ctx.app ? ctx.app->Viewport() : nullptr;
         if (!vp) {
@@ -161,7 +161,7 @@ public:
                                ImGuiButtonFlags_MouseButtonMiddle);
         const bool hovered = ImGui::IsItemHovered();
         ImGuiIO& io = ImGui::GetIO();
-        if (ctx.playMode) ctx.playMode->SetInputEnabled(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput);
+        // The separate Play window owns gameplay input. Editor navigation stays independent.
         if (hovered && m_cam.perspective && ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
             m_cam.yaw = Clamp(m_cam.yaw + io.MouseDelta.x * .006f, -1.2f, 1.2f);
             m_cam.pitch = Clamp(m_cam.pitch + io.MouseDelta.y * .006f, -1.2f, 1.2f);

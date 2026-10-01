@@ -1,15 +1,6 @@
-// mye/runtime/DialogueSystem.h — 대화 진행 상태기계 + DialogueBox UI 배선 (docs/06 §7, M6-A)
-//
-// 소유: 06 (M6-A). 대화창(이름표·초상화·본문 한글 RichText·선택지 버튼)을 mye_ui 로 구성하고,
-//   대사 진행(라인 전진·선택 대기·분기 goto)을 상태기계로 관리한다. 컷신 코루틴 say/choose
-//   프리미티브(CutsceneRuntime)가 이 시스템을 구동한다 — Lua 는 코루틴으로 컷신을 기술.
-//
-// 시뮬/표현 분리(docs/06 §8): 대화 진행 상태(현재 라인·선택)는 상태이고, DialogueBox 렌더는
-//   표현이다. DialogueSystem 은 상태를 소유하고, UI 는 상태를 표시·입력을 되돌려줄 뿐이다.
-//
-// UI 는 UiDocument(대화창 레이아웃) + 스킨으로 정의(데이터). 위젯 이름 규약(find 키):
-//   "speaker"(Label) · "portrait"(Image) · "body"(Label) · "choices"(선택지 컨테이너).
-//   실제 위젯 바인딩은 구현 에이전트가 UiSystem/Widget 으로 채운다.
+// Dialogue progression and a widget-backed DialogueBox.
+// DialogueSystem owns line/choice state; the box displays it and reports input.
+// The app supplies UiSystem and the speaker/portrait/body/choices widgets.
 #pragma once
 
 #include "mye/runtime/RuntimeTypes.h"

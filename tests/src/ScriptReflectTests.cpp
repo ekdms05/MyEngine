@@ -9,7 +9,7 @@
 #include "mye/script/ScriptRuntime.h"
 #include "mye/script/bindings/EngineBindings.h"
 
-#include <sol/sol.hpp>
+#include "LuaTest.h"
 
 #include <cstdint>
 #include <string>
@@ -28,8 +28,14 @@ struct Widget {
     bool         GetFlag() const { return flag; }                         // const 반환
     void         SetLabel(std::string s) { label = std::move(s); }        // string 파라미터
 };
+struct Owner {
+    static inline int destroyed = 0;
+    Widget child;
+    ~Owner() { ++destroyed; }
+};
 }
 MYE_REFLECT(scriptrefltest::Widget);
+MYE_REFLECT(scriptrefltest::Owner);
 template <> void mye::refl::Reflect(TypeBuilder<scriptrefltest::Widget>& b) {
     b.Version(1)
      .Field("value", &scriptrefltest::Widget::value)
@@ -39,6 +45,9 @@ template <> void mye::refl::Reflect(TypeBuilder<scriptrefltest::Widget>& b) {
      .Method<&scriptrefltest::Widget::Toggle>("Toggle")
      .Method<&scriptrefltest::Widget::GetFlag>("GetFlag")
      .Method<&scriptrefltest::Widget::SetLabel>("SetLabel");
+}
+template <> void mye::refl::Reflect(TypeBuilder<scriptrefltest::Owner>& b) {
+    b.Field("child", &scriptrefltest::Owner::child);
 }
 
 namespace {
@@ -54,16 +63,16 @@ MYE_TEST(ScriptReflectFieldGetSet) {
     (void)refl::GetType<scriptrefltest::Widget>();
 
     ScriptRuntime rt; SetupRuntime(rt);
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 타입 존재 질의.
-    bool has = lua.script("return mye.reflect.has_type('scriptrefltest::Widget')");
+    bool has = luatest::Eval<bool>(lua, "return mye.reflect.has_type('scriptrefltest::Widget')");
     MYE_EXPECT(has);
-    bool noType = lua.script("return mye.reflect.has_type('nope::Missing')");
+    bool noType = luatest::Eval<bool>(lua, "return mye.reflect.has_type('nope::Missing')");
     MYE_EXPECT(!noType);
 
     // 원시형 필드 get/set(int·bool·string).
-    std::int64_t v = lua.script(R"(
+    std::int64_t v = luatest::Eval<std::int64_t>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         w:set('value', 42)
         w:set('flag', true)
@@ -72,14 +81,14 @@ MYE_TEST(ScriptReflectFieldGetSet) {
     )");
     MYE_EXPECT(v == 42);
 
-    bool flag = lua.script(R"(
+    bool flag = luatest::Eval<bool>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         w:set('flag', true)
         return w:get('flag')
     )");
     MYE_EXPECT(flag);
 
-    std::string label = lua.script(R"(
+    std::string label = luatest::Eval<std::string>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         w:set('label', 'hello')
         return w:get('label')
@@ -87,19 +96,19 @@ MYE_TEST(ScriptReflectFieldGetSet) {
     MYE_EXPECT(label == "hello");
 
     // type_name + 없는 필드 → nil.
-    std::string tn = lua.script("return mye.reflect.new('scriptrefltest::Widget'):type_name()");
+    std::string tn = luatest::Eval<std::string>(lua, "return mye.reflect.new('scriptrefltest::Widget'):type_name()");
     MYE_EXPECT(tn == "scriptrefltest::Widget");
-    bool nilGet = lua.script("return mye.reflect.new('scriptrefltest::Widget'):get('nope') == nil");
+    bool nilGet = luatest::Eval<bool>(lua, "return mye.reflect.new('scriptrefltest::Widget'):get('nope') == nil");
     MYE_EXPECT(nilGet);
 }
 
 MYE_TEST(ScriptReflectMethodCall) {
     (void)refl::GetType<scriptrefltest::Widget>();
     ScriptRuntime rt; SetupRuntime(rt);
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 반환+파라미터 메서드.
-    std::int64_t r = lua.script(R"(
+    std::int64_t r = luatest::Eval<std::int64_t>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         w:set('value', 10)
         return w:call('AddAndGet', 5)    -- value=15, 반환 15
@@ -107,7 +116,7 @@ MYE_TEST(ScriptReflectMethodCall) {
     MYE_EXPECT(r == 15);
 
     // void 메서드 + const 반환 메서드.
-    bool toggled = lua.script(R"(
+    bool toggled = luatest::Eval<bool>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         w:call('Toggle')                 -- flag=true
         return w:call('GetFlag')
@@ -115,7 +124,7 @@ MYE_TEST(ScriptReflectMethodCall) {
     MYE_EXPECT(toggled);
 
     // string 파라미터 메서드 → 필드 반영.
-    std::string lbl = lua.script(R"(
+    std::string lbl = luatest::Eval<std::string>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         w:call('SetLabel', '전설검')
         return w:get('label')
@@ -123,7 +132,7 @@ MYE_TEST(ScriptReflectMethodCall) {
     MYE_EXPECT(lbl == "전설검");
 
     // 상태 누적(같은 인스턴스에 연속 호출).
-    std::int64_t acc = lua.script(R"(
+    std::int64_t acc = luatest::Eval<std::int64_t>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         w:call('AddAndGet', 1)
         w:call('AddAndGet', 2)
@@ -135,13 +144,13 @@ MYE_TEST(ScriptReflectMethodCall) {
 MYE_TEST(ScriptReflectSafeOnMisuse) {
     (void)refl::GetType<scriptrefltest::Widget>();
     ScriptRuntime rt; SetupRuntime(rt);
-    sol::state& lua = rt.State();
+    lua_State* lua = rt.State();
 
     // 없는 타입 → nil (크래시 아님).
-    MYE_EXPECT((bool)lua.script("return mye.reflect.new('does::not::Exist') == nil"));
+    MYE_EXPECT(luatest::Eval<bool>(lua, "return mye.reflect.new('does::not::Exist') == nil"));
 
     // 없는 메서드/필드 → 안전(throw/행 없음): call→nil, set→false, has_*→false.
-    bool safe = lua.script(R"(
+    bool safe = luatest::Eval<bool>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         local a = w:call('NoSuchMethod')          -- nil (경고 로그, 크래시 아님)
         local ok = w:set('nope', 1)               -- false
@@ -151,7 +160,7 @@ MYE_TEST(ScriptReflectSafeOnMisuse) {
     MYE_EXPECT(safe);
 
     // 인자 개수/타입 불일치도 안전(nil).
-    bool argSafe = lua.script(R"(
+    bool argSafe = luatest::Eval<bool>(lua, R"(
         local w = mye.reflect.new('scriptrefltest::Widget')
         return w:call('AddAndGet') == nil          -- 인자 부족 → nil
     )");
@@ -160,4 +169,23 @@ MYE_TEST(ScriptReflectSafeOnMisuse) {
     // 진짜 Lua 런타임 에러는 DoString 이 격리(호스트 크래시 없음).
     auto err = rt.DoString("error('boom from script')", "@reflect_err");
     MYE_EXPECT(!err);
+}
+
+MYE_TEST(ScriptReflectBorrowedFieldRetainsOwner) {
+    (void)refl::GetType<scriptrefltest::Owner>();
+    scriptrefltest::Owner::destroyed = 0;
+    ScriptRuntime runtime; SetupRuntime(runtime);
+    MYE_EXPECT(runtime.DoString(R"(
+        local owner = mye.reflect.new('scriptrefltest::Owner')
+        _child = owner:get('child')
+        assert(getmetatable(owner) == false and owner.__gc == nil)
+        assert(getmetatable(_child) == false and _child.__gc == nil)
+        assert(_child:set('label', string.rep('x', 200)))
+    )", "owner.lua").HasValue());
+    lua_gc(runtime.State(), LUA_GCCOLLECT);
+    MYE_EXPECT(scriptrefltest::Owner::destroyed == 0);
+    MYE_EXPECT(luatest::Eval<int>(runtime.State(), "return #_child:get('label')") == 200);
+    MYE_EXPECT(runtime.DoString("_child = nil", "release.lua").HasValue());
+    lua_gc(runtime.State(), LUA_GCCOLLECT);
+    MYE_EXPECT(scriptrefltest::Owner::destroyed == 1);
 }

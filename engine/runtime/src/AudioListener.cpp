@@ -1,7 +1,4 @@
-// mye/runtime/AudioListener.cpp — 2.5D 리스너 배선 골격 (M6-A)
-//
-// 골격 범위: 관심점 소스(엔티티/수동) 선택과 AudioEngine::SetListener 호출 배선. 엔티티 Transform
-//   조회는 구현 에이전트가 World 컴포넌트 접근으로 채운다(현재는 manual 경로만 실동작).
+// Audio listener bridge: entity LocalTransform XY or an explicit position.
 #include "mye/runtime/AudioListener.h"
 
 #include "mye/audio/AudioEngine.h"

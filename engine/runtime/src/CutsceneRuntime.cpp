@@ -1,7 +1,4 @@
-// mye/runtime/CutsceneRuntime.cpp — 컷신 프리미티브 백엔드 골격 (M6-A)
-//
-// 골격 범위: MoveController(직선 이동 완료 판정)·CameraFocusController(lerp 완료 판정) 최소 동작
-//   + CutsceneRuntime 허브 배선. nav 경로 추종·Transform 실쓰기는 구현 에이전트가 World/nav 로.
+// Straight-line entity movement and camera focus controllers for Lua cutscenes.
 #include "mye/runtime/CutsceneRuntime.h"
 
 #include "mye/runtime/DialogueSystem.h"
@@ -32,7 +29,7 @@ void MoveController::Initialize(ecs::World* world, nav::NavSystem* nav) {
 void MoveController::Shutdown() { m_impl->cmds.clear(); m_impl->world = nullptr; m_impl->nav = nullptr; }
 
 void MoveController::MoveTo(ecs::Entity entity, Vec2 targetWorld, float speed) {
-    // nav 경로 추종은 후속(NavSource·grid 변환 배선 필요) — M6-A 는 직선 이동으로 Transform 전진.
+    // nav 경로 추종은 후속(NavSource·grid 변환 배선 필요) — 현재는 직선 이동으로 Transform 전진.
     //   speed<=0 이면 즉시 도착 처리(연출 스냅).
     m_impl->cmds[entity.Packed()] = Impl::Cmd{targetWorld, speed, MoveStatus::Moving};
 }

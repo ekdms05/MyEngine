@@ -1,6 +1,6 @@
 // mye/script/src/ScriptErrorParse.h — Lua 에러 메시지 파싱(내부 전용, 비공개 표면)
 //
-// Lua/sol2 에러 메시지는 관례적으로 "chunkname:line: message" 형식이다(traceback 이 붙기도).
+// Lua 에러 메시지는 관례적으로 "chunkname:line: message" 형식이다(traceback 이 붙기도).
 //   에디터 콘솔이 파일·라인 링크를 만들 수 있도록 file/line/message 로 분해한다. 실패 시
 //   line=0, file 은 fallback(청크명)으로 둔다. 이 헤더는 mye_script 내부 TU 만 포함한다.
 #pragma once
@@ -17,7 +17,7 @@ struct ParsedError {
     std::string message;   // 원문(traceback 포함) 그대로 유지
 };
 
-// raw: sol::error::what() 문자열. fallbackFile: 청크명(파싱 실패 시 사용).
+// raw: Lua 에러 객체 문자열. fallbackFile: 청크명(파싱 실패 시 사용).
 inline ParsedError ParseLuaError(std::string_view raw, std::string_view fallbackFile) {
     ParsedError out;
     out.message.assign(raw.begin(), raw.end());

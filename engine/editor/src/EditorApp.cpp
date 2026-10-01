@@ -21,6 +21,7 @@
 #include "mye/editor/Viewport.h"
 
 #include "imgui.h"
+#include <Windows.h>
 
 #include <algorithm>
 #include <filesystem>
@@ -69,13 +70,6 @@ Expected<void, Error> EditorApp::Initialize(EngineContext& engine, std::string_v
             ReportFileResult(result, "");
             RestoreLayout(); // Editor remains usable so the user can choose a valid project.
         }
-    } else if (!m_templateDirectory.empty()) {
-        const auto starter = Utf8Path(engine.GetPaths().userDir) / "projects" / "MeadowVillage";
-        std::error_code ec;
-        auto result = std::filesystem::exists(starter / "project.myeproj", ec)
-            ? OpenProject(Utf8String(starter / "project.myeproj"))
-            : CreateProject("초원마을", Utf8String(starter), false, true);
-        if (!result) { ReportFileResult(result, ""); RestoreLayout(); }
     } else RestoreLayout();
     m_window = MainWindowOrNull();
     if (m_window) m_window->AddMessageHook(this, -100);
@@ -94,8 +88,6 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->RegisterFactory(MakeTilemapEditorPanelFactory());
     m_panels->RegisterFactory(MakeTilePalettePanelFactory());
     m_panels->RegisterFactory(MakeAnimationEditorPanelFactory());
-    m_panels->RegisterFactory(MakeDotEditorPanelFactory());   // 도트(픽셀아트) 에디터
-    m_panels->RegisterFactory(MakeScenesPanelFactory());
     m_panels->RegisterFactory(MakeLuaPanelFactory());
 
     // 확장 경로(플러그인·MCP·Lua)로 등록된 패널 팩토리를 PanelManager로 위임(07 §확장:
@@ -112,7 +104,7 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->Open("mye.assets");
     m_panels->Open("mye.console");
     m_panels->Open("mye.anim");
-    // Dot and Lua workspaces open on demand; the scene starts visible.
+    // Lua opens on demand; the viewport starts visible.
 }
 
 void EditorApp::RestoreLayout() {
@@ -147,8 +139,7 @@ void EditorApp::RestoreLayout() {
             if (parsed) {
                 m_panels->DeserializeLayout(parsed.Value());
                 const auto* workspace = parsed.Value().IsObject() ? parsed.Value().Find("workspace") : nullptr;
-                if (workspace && workspace->IsInteger() && workspace->AsInt() >= 0 &&
-                    workspace->AsInt() <= static_cast<int64_t>(Workspace::Lua))
+                if (workspace && workspace->IsInteger() && (workspace->AsInt() == 0 || workspace->AsInt() == 1 || workspace->AsInt() == 4))
                     SelectWorkspace(static_cast<Workspace>(workspace->AsInt()));
             }
             else MYE_LOG_WARN("Editor", "Layout restore failed: {}", parsed.GetError().message);
@@ -185,6 +176,11 @@ Expected<void, Error> EditorApp::SaveLayout() {
 void EditorApp::OnFrame() {
     // 매 프레임 문서·커맨드 컨텍스트 갱신(포커스 문서 기준).
     RefreshDocumentContext();
+    if (!m_project->IsOpen()) {
+        DrawProjectLauncher();
+        DrawFileDialogs();
+        return;
+    }
 
     HandleShortcuts();
     DrawMenuBar();
@@ -215,10 +211,43 @@ void EditorApp::OnFrame() {
 
     DrawStatusBar();
     m_animationFocused = false;
-    m_dotFocused = false;
     if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
     DrawWorkspaceDialogs();
     DrawFileDialogs();
+}
+
+void EditorApp::DrawProjectLauncher() {
+    const auto* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::Begin("프로젝트###project_launcher", nullptr,
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking);
+    ImGui::Spacing();
+    ImGui::TextUnformatted("MyEngine");
+    ImGui::TextWrapped("프로젝트를 만들거나 불러오면 에디터가 열립니다.");
+    ImGui::Spacing();
+    const auto width = ImGui::GetContentRegionAvail().x;
+    if (ImGui::Button("프로젝트 만들기", ImVec2(width, ImGui::GetFrameHeight() * 1.6f))) RequestNewProject();
+    ImGui::TextWrapped("빈 프로젝트 또는 초원마을 기본 에셋으로 시작합니다.");
+    ImGui::Spacing();
+    if (ImGui::Button("프로젝트 불러오기", ImVec2(width, ImGui::GetFrameHeight() * 1.6f))) RequestOpenProject();
+    ImGui::TextWrapped(".myeproj 파일을 선택합니다. 원본 파일을 그대로 열며 새 복사본을 만들지 않습니다.");
+    if (m_fileError) { ImGui::Spacing(); ImGui::TextWrapped("%s", m_fileStatus.c_str()); }
+    ImGui::End();
+}
+
+void EditorApp::ExpandEditorWindow() {
+    auto* window = MainWindowOrNull();
+    if (!window || m_project->IsOpen() == false || window->GetClientSize().x >= 1000) return;
+    const auto handle = static_cast<HWND>(window->GetNativeHandle());
+    MONITORINFO monitor{sizeof(MONITORINFO)};
+    if (!GetMonitorInfoW(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), &monitor)) return;
+    RECT size{0, 0, 1600, 900};
+    if (!AdjustWindowRectExForDpi(&size, static_cast<DWORD>(GetWindowLongPtrW(handle, GWL_STYLE)), FALSE,
+        static_cast<DWORD>(GetWindowLongPtrW(handle, GWL_EXSTYLE)), GetDpiForWindow(handle))) return;
+    const auto width = std::min<LONG>(size.right - size.left, monitor.rcWork.right - monitor.rcWork.left);
+    const auto height = std::min<LONG>(size.bottom - size.top, monitor.rcWork.bottom - monitor.rcWork.top);
+    SetWindowPos(handle, nullptr, monitor.rcWork.left, monitor.rcWork.top, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 CommandStack& EditorApp::Commands() {
@@ -233,7 +262,6 @@ CommandStack* EditorApp::ActiveStack() {
     if (m_playMode && m_playMode->IsPlaying())
         return m_playMode->PlayCommandStack();
     if (m_animationFocused) if (auto* doc = AnimationDocument()) return &doc->Commands();
-    if (m_dotFocused || m_workspace == Workspace::Dot) if (auto* doc = DotDocumentForEditing()) return &doc->Commands();
     Document* active = m_project ? m_project->Active() : nullptr;
     return active ? &active->Commands() : nullptr;
 }
@@ -247,7 +275,6 @@ const char* PanelTitle(const PanelDesc& d) {
     if (id == "mye.inspector") return mye::i18n::T("panel.inspector");
     if (id == "mye.assets")    return mye::i18n::T("panel.assets");
     if (id == "mye.console")   return mye::i18n::T("panel.console");
-    if (id == "mye.doteditor") return mye::i18n::T("panel.doteditor");
     return d.title.c_str();
 }
 } // namespace
@@ -319,9 +346,7 @@ void EditorApp::DrawMenuBar() {
             for (const PanelDesc& d : m_panels->RegisteredPanels()) {
                 const bool open = m_panels->IsOpen(d.id);
                 if (ImGui::MenuItem(PanelTitle(d), nullptr, open)) {
-                    if (d.id == "mye.doteditor") SelectWorkspace(Workspace::Dot);
-                    else if (d.id == "mye.scenes") SelectWorkspace(Workspace::Scenes);
-                    else if (d.id == "mye.lua") SelectWorkspace(Workspace::Lua);
+                    if (d.id == "mye.lua") SelectWorkspace(Workspace::Lua);
                     else if (d.id == "mye.viewport") SelectWorkspace(m_viewport && m_viewport->Camera().perspective ? Workspace::Scene3D : Workspace::Scene2D);
                     else { if (!open) m_panels->Open(d.id); m_panels->Focus(d.id); }
                 }
@@ -387,7 +412,7 @@ void EditorApp::DrawMenuBar() {
 bool EditorApp::DrawToolbar(bool inMenuBar) {
     struct Tab { const char* label; Workspace workspace; };
     static constexpr Tab tabs[] = {{"2D", Workspace::Scene2D}, {"3D", Workspace::Scene3D},
-        {"씬", Workspace::Scenes}, {"도트메이커", Workspace::Dot}, {"Lua", Workspace::Lua}};
+        {"Lua", Workspace::Lua}};
     const float gap = ImGui::GetStyle().ItemSpacing.x;
     const auto padding = ImGui::GetStyle().FramePadding;
     const float verticalPadding = inMenuBar ? 0.0f : padding.y;
@@ -498,13 +523,6 @@ void EditorApp::NewScene() {
 void EditorApp::SaveActive() {
     if (m_playMode && m_playMode->IsPlaying()) {
         ReportFileResult(Error{mye::i18n::T("file.stopfirst"), 1}, "");
-        return;
-    }
-    if (!m_animationFocused && (m_dotFocused || m_workspace == Workspace::Dot)) {
-        if (auto* doc = DotDocumentForEditing()) {
-            if (doc->Path().empty()) RequestSaveAs();
-            else ReportFileResult(m_project->SaveDot(doc->Id(), doc->Path()), mye::i18n::T("file.saved"));
-        }
         return;
     }
     if (m_animationFocused) {

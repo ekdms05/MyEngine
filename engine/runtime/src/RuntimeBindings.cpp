@@ -1,225 +1,167 @@
-// mye/runtime/RuntimeBindings.cpp — 런타임 Lua 바인딩 (docs/05·06, M6-A)
-//
-// `mye` 하위에 dialogue/cutscene/camera/save/loc/scene 표면을 등록한다. 대기형 프리미티브
-//   (say/choose/move_to/camera focus/wait)는 05 코루틴과 결합해 coroutine.yield 루프로 감싼다:
-//   컷신을 Lua 코루틴으로 절차적으로 기술할 수 있다.
-//
-// 코루틴 결합 방식(05 계약): C-call 경계를 넘어 yield 할 수 없으므로, C++ 는 "명령 시작 함수"와
-//   "완료 폴링 함수"만 노출하고, 실제 yield 루프는 순수 Lua 래퍼(mye.co.yield 사용)로 정의한다.
-//   래퍼: 명령 시작 → while not done() do co.yield() end → 결과 반환. 스케줄러가 매 tick 재개.
 #include "mye/runtime/RuntimeBindings.h"
-
 #include "mye/runtime/DialogueSystem.h"
 #include "mye/runtime/DialogueData.h"
 #include "mye/runtime/CutsceneRuntime.h"
 #include "mye/runtime/SaveSystem.h"
 #include "mye/runtime/SceneTransition.h"
 #include "mye/runtime/Localization.h"
-
+#include "mye/script/LuaApi.h"
 #include "mye/core/Log.h"
 
-#include <sol/sol.hpp>
-
+#include <stdexcept>
+#include <limits>
 #include <string>
 #include <vector>
 
 namespace mye::runtime {
-
-RuntimeBindings::RuntimeBindings(DialogueSystem* dialogue, CutsceneRuntime* cutscene,
-                                 SaveSystem* save, SceneTransitionManager* sceneTransition,
-                                 LocalizationSystem* loc)
-    : m_dialogue(dialogue), m_cutscene(cutscene), m_save(save),
-      m_sceneTransition(sceneTransition), m_loc(loc) {}
-
+using namespace script;
 namespace {
-
-// Lua table(문자열 배열 또는 {text=..,goto=..} 테이블 배열)을 DialogueChoice 벡터로.
-std::vector<DialogueChoice> ParseChoices(const sol::table& options) {
+int32_t Int32Argument(lua_State* L, int index) {
+    const auto value = luaL_checkinteger(L, index);
+    luaL_argcheck(L, value >= std::numeric_limits<int32_t>::min() && value <= std::numeric_limits<int32_t>::max(), index, "integer is outside the signed 32-bit range");
+    return static_cast<int32_t>(value);
+}
+std::string TextField(lua_State* L, int table, const char* field) {
+    lua_getfield(L, table, field);
+    std::string result = lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "";
+    lua_pop(L, 1); return result;
+}
+std::vector<DialogueChoice> ParseChoices(lua_State* L, int table) {
+    luaL_checktype(L, table, LUA_TTABLE); table = lua_absindex(L, table);
     std::vector<DialogueChoice> choices;
-    for (auto& kv : options) {
-        DialogueChoice c;
-        if (kv.second.is<std::string>()) {
-            c.text = LocalizedText::Literal(kv.second.as<std::string>());
-        } else if (kv.second.is<sol::table>()) {
-            sol::table t = kv.second.as<sol::table>();
-            sol::optional<std::string> txt = t["text"];
-            sol::optional<std::string> key = t["key"];
-            sol::optional<std::string> g   = t["goto"];
-            if (key) c.text = LocalizedText::Key(*key);
-            else     c.text = LocalizedText::Literal(txt.value_or(std::string{}));
-            if (g) c.gotoId = *g;
+    const size_t count = lua_rawlen(L, table); choices.reserve(count);
+    for (size_t index = 1; index <= count; ++index) {
+        lua_rawgeti(L, table, static_cast<lua_Integer>(index));
+        DialogueChoice choice;
+        if (lua_type(L, -1) == LUA_TSTRING) choice.text = LocalizedText::Literal(lua_tostring(L, -1));
+        else if (lua_istable(L, -1)) {
+            const int option = lua_gettop(L);
+            const auto key = TextField(L, option, "key");
+            choice.text = key.empty() ? LocalizedText::Literal(TextField(L, option, "text")) : LocalizedText::Key(key);
+            choice.gotoId = TextField(L, option, "goto");
         }
-        choices.push_back(std::move(c));
+        choices.push_back(std::move(choice)); lua_pop(L, 1);
     }
     return choices;
 }
-
 } // namespace
-
-void RuntimeBindings::Register(sol::state& lua) {
-    sol::table mye = lua["mye"].get_or_create<sol::table>();
-
-    // ---- 저수준 C++ 명령/폴링 표면(내부용, __rt) — Lua 코루틴 래퍼가 소비 ----
-    sol::table rt = mye["__rt"].get_or_create<sol::table>();
-
-    // ---- mye.dialogue : 상태 질의 + 저수준 명령 ----
-    {
-        sol::table dlg = mye["dialogue"].get_or_create<sol::table>();
-        DialogueSystem* d = m_dialogue;
-
-        // 저수준(즉시반환) — 래퍼가 감싼다.
-        rt.set_function("say_begin", [d](const std::string& speaker, const std::string& body) {
-            if (!d) return;
-            DialogueLine line;
-            line.speaker = LocalizedText::Literal(speaker);
-            line.body = LocalizedText::Literal(body);
-            (void)d->Say(line);
-        });
-        rt.set_function("say_key", [d](const std::string& speakerKey, const std::string& bodyKey) {
-            if (!d) return;
-            DialogueLine line;
-            line.speaker = LocalizedText::Key(speakerKey);
-            line.body = LocalizedText::Key(bodyKey);
-            (void)d->Say(line);
-        });
-        rt.set_function("choose_begin", [d](sol::table options) {
-            if (!d) return;
-            (void)d->Choose(ParseChoices(options));
-        });
-        rt.set_function("dlg_is_active", [d]() { return d && d->IsActive(); });
-        rt.set_function("dlg_waiting_advance", [d]() { return d && d->IsWaitingAdvance(); });
-        rt.set_function("dlg_waiting_choice", [d]() { return d && d->IsWaitingChoice(); });
-        rt.set_function("dlg_picked", [d]() { return d ? d->PickedChoice() : -1; });
-
-        // 공개 즉시 API(비코루틴 경로 — 게임 로직/UI 콜백용).
-        dlg.set_function("advance", [d]() { if (d) d->Advance(); });
-        dlg.set_function("pick", [d](int32_t index) { if (d) d->Pick(index); });
-        dlg.set_function("is_active", [d]() { return d && d->IsActive(); });
-        dlg.set_function("picked", [d]() { return d ? d->PickedChoice() : -1; });
-    }
-
-    // ---- mye.cutscene : move_to / is_move_done (저수준 명령) ----
-    {
-        sol::table cs = mye["cutscene"].get_or_create<sol::table>();
-        CutsceneRuntime* c = m_cutscene;
-        rt.set_function("move_begin",
-            [c](double entityPacked, float x, float y, sol::optional<float> speed) {
-                if (!c || !c->Move()) return;
-                ecs::Entity e = ecs::Entity::FromPacked(static_cast<uint64_t>(entityPacked));
-                c->Move()->MoveTo(e, Vec2{x, y}, speed.value_or(3.0f));
-            });
-        rt.set_function("move_done", [c](double entityPacked) {
-            if (!c || !c->Move()) return true;
-            ecs::Entity e = ecs::Entity::FromPacked(static_cast<uint64_t>(entityPacked));
-            return c->Move()->IsMoveDone(e);
-        });
-        cs.set_function("is_move_done", [c](double entityPacked) {
-            if (!c || !c->Move()) return true;
-            ecs::Entity e = ecs::Entity::FromPacked(static_cast<uint64_t>(entityPacked));
-            return c->Move()->IsMoveDone(e);
-        });
-    }
-
-    // ---- mye.camera : focus / follow / is_focus_done ----
-    {
-        sol::table cam = mye["camera"].get_or_create<sol::table>();
-        CutsceneRuntime* c = m_cutscene;
-        rt.set_function("focus_begin", [c](float x, float y, sol::optional<float> speed) {
-            if (c && c->Camera()) c->Camera()->FocusWorld(Vec2{x, y}, speed.value_or(0.0f));
-        });
-        rt.set_function("focus_done", [c]() {
-            return !c || !c->Camera() || c->Camera()->IsFocusDone();
-        });
-        cam.set_function("focus", [c](float x, float y, sol::optional<float> speed) {
-            if (c && c->Camera()) c->Camera()->FocusWorld(Vec2{x, y}, speed.value_or(0.0f));
-        });
-        cam.set_function("follow", [c](double entityPacked, sol::optional<float> speed) {
-            if (!c || !c->Camera()) return;
-            ecs::Entity e = ecs::Entity::FromPacked(static_cast<uint64_t>(entityPacked));
-            c->Camera()->FocusEntity(e, speed.value_or(5.0f));
-        });
-        cam.set_function("clear_follow", [c]() { if (c && c->Camera()) c->Camera()->ClearFollow(); });
-        cam.set_function("is_focus_done", [c]() {
-            return !c || !c->Camera() || c->Camera()->IsFocusDone();
-        });
-    }
-
-    // ---- mye.save : write / read / exists ----
-    {
-        sol::table sv = mye["save"].get_or_create<sol::table>();
-        SaveSystem* s = m_save;
-        sv.set_function("exists", [s](int32_t slot) {
-            return s && s->Exists(SlotId{slot});
-        });
-        // 백엔드(SaveSystem) 미배선 시 조용한 false 대신 진단 로그(디버깅 함정 방지 — 리뷰 지적).
-        sv.set_function("write", [s](int32_t slot, sol::optional<std::string> title,
-                                     sol::optional<double> playTime) {
-            if (!s) { MYE_LOG_WARN("RuntimeBindings",
-                        "mye.save.write({}) no-op: SaveSystem 미배선(백엔드 없음)", slot); return false; }
-            SaveHeader h;
-            if (title) h.title = *title;
-            if (playTime) h.playTimeSec = *playTime;
-            return static_cast<bool>(s->WriteSlot(SlotId{slot}, h));
-        });
-        sv.set_function("read", [s](int32_t slot) {
-            if (!s) { MYE_LOG_WARN("RuntimeBindings",
-                        "mye.save.read({}) no-op: SaveSystem 미배선(백엔드 없음)", slot); return false; }
-            return static_cast<bool>(s->ReadSlot(SlotId{slot}));
-        });
-    }
-
-    // ---- mye.loc : text / set_locale / locale ----
-    {
-        sol::table lc = mye["loc"].get_or_create<sol::table>();
-        LocalizationSystem* l = m_loc;
-        lc.set_function("text", [l](const std::string& key, sol::optional<sol::table> args) {
-            if (!l) return key;
-            if (!args) return l->Get(key);
-            std::vector<FormatArg> fa;
-            for (auto& kv : *args) {
-                FormatArg a;
-                a.key = kv.first.as<std::string>();
-                a.value = kv.second.as<std::string>();
-                fa.push_back(std::move(a));
+RuntimeBindings::RuntimeBindings(DialogueSystem* dialogue, CutsceneRuntime* cutscene,
+                                 SaveSystem* save, SceneTransitionManager* sceneTransition,
+                                 LocalizationSystem* loc)
+    : m_dialogue(dialogue), m_cutscene(cutscene), m_save(save), m_sceneTransition(sceneTransition), m_loc(loc) {}
+void RuntimeBindings::Register(lua_State* L) {
+    LuaStackGuard stack(L);
+    lua_getglobal(L, "mye"); const int mye = lua_gettop(L);
+    EnsureTable(L, mye, "__rt"); const int rt = lua_gettop(L);
+    auto say = [](lua_State* L) -> int {
+        auto* dialogue = Context<RuntimeBindings>(L)->m_dialogue;
+        const char* speaker = luaL_checkstring(L, 1); const char* body = luaL_checkstring(L, 2);
+        if (!dialogue) { lua_pushboolean(L, false); return 1; }
+        DialogueLine line; line.speaker = LocalizedText::Literal(speaker); line.body = LocalizedText::Literal(body);
+        auto result = dialogue->Say(line);
+        if (!result) MYE_LOG_WARN("RuntimeBindings", "dialogue.say: {}", result.GetError().message);
+        lua_pushboolean(L, static_cast<bool>(result)); return 1;
+    };
+    PushFunction(L, say, this); lua_setfield(L, rt, "say_begin");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* dialogue = Context<RuntimeBindings>(L)->m_dialogue;
+        const char* speaker = luaL_checkstring(L, 1); const char* body = luaL_checkstring(L, 2);
+        if (!dialogue) { lua_pushboolean(L, false); return 1; }
+        DialogueLine line; line.speaker = LocalizedText::Key(speaker); line.body = LocalizedText::Key(body);
+        auto result = dialogue->Say(line);
+        if (!result) MYE_LOG_WARN("RuntimeBindings", "dialogue.say_key: {}", result.GetError().message);
+        lua_pushboolean(L, static_cast<bool>(result)); return 1;
+    }, this); lua_setfield(L, rt, "say_key");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* dialogue = Context<RuntimeBindings>(L)->m_dialogue; auto choices = ParseChoices(L, 1);
+        if (!dialogue) { lua_pushboolean(L, false); return 1; }
+        auto result = dialogue->Choose(choices);
+        if (!result) MYE_LOG_WARN("RuntimeBindings", "dialogue.choose: {}", result.GetError().message);
+        lua_pushboolean(L, static_cast<bool>(result)); return 1;
+    }, this); lua_setfield(L, rt, "choose_begin");
+    PushFunction(L, [](lua_State* L) -> int { const auto* d = Context<RuntimeBindings>(L)->m_dialogue; lua_pushboolean(L, d && d->IsActive()); return 1; }, this); lua_setfield(L, rt, "dlg_is_active");
+    PushFunction(L, [](lua_State* L) -> int { const auto* d = Context<RuntimeBindings>(L)->m_dialogue; lua_pushboolean(L, d && d->IsWaitingAdvance()); return 1; }, this); lua_setfield(L, rt, "dlg_waiting_advance");
+    PushFunction(L, [](lua_State* L) -> int { const auto* d = Context<RuntimeBindings>(L)->m_dialogue; lua_pushboolean(L, d && d->IsWaitingChoice()); return 1; }, this); lua_setfield(L, rt, "dlg_waiting_choice");
+    PushFunction(L, [](lua_State* L) -> int { const auto* d = Context<RuntimeBindings>(L)->m_dialogue; lua_pushinteger(L, d ? d->PickedChoice() : -1); return 1; }, this); lua_setfield(L, rt, "dlg_picked");
+    EnsureTable(L, mye, "dialogue");
+    PushFunction(L, [](lua_State* L) -> int { auto* d = Context<RuntimeBindings>(L)->m_dialogue; if (d) d->Advance(); return 0; }, this); lua_setfield(L, -2, "advance");
+    PushFunction(L, [](lua_State* L) -> int { auto* d = Context<RuntimeBindings>(L)->m_dialogue; const auto index = Int32Argument(L, 1); if (d) d->Pick(index); return 0; }, this); lua_setfield(L, -2, "pick");
+    lua_getfield(L, rt, "dlg_is_active"); lua_setfield(L, -2, "is_active");
+    lua_getfield(L, rt, "dlg_picked"); lua_setfield(L, -2, "picked"); lua_pop(L, 1);
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* c = Context<RuntimeBindings>(L)->m_cutscene; const auto entity = CheckEntity(L, 1);
+        const Vec2 p{static_cast<float>(luaL_checknumber(L, 2)), static_cast<float>(luaL_checknumber(L, 3))};
+        const float speed = static_cast<float>(luaL_optnumber(L, 4, 3));
+        if (c && c->Move()) c->Move()->MoveTo(entity, p, speed); return 0;
+    }, this); lua_setfield(L, rt, "move_begin");
+    PushFunction(L, [](lua_State* L) -> int {
+        const auto* c = Context<RuntimeBindings>(L)->m_cutscene; const auto entity = CheckEntity(L, 1);
+        lua_pushboolean(L, !c || !c->Move() || c->Move()->IsMoveDone(entity)); return 1;
+    }, this); lua_setfield(L, rt, "move_done");
+    EnsureTable(L, mye, "cutscene"); lua_getfield(L, rt, "move_done"); lua_setfield(L, -2, "is_move_done"); lua_pop(L, 1);
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* c = Context<RuntimeBindings>(L)->m_cutscene;
+        const Vec2 p{static_cast<float>(luaL_checknumber(L, 1)), static_cast<float>(luaL_checknumber(L, 2))};
+        const float speed = static_cast<float>(luaL_optnumber(L, 3, 0));
+        if (c && c->Camera()) c->Camera()->FocusWorld(p, speed); return 0;
+    }, this); lua_setfield(L, rt, "focus_begin");
+    PushFunction(L, [](lua_State* L) -> int { const auto* c = Context<RuntimeBindings>(L)->m_cutscene; lua_pushboolean(L, !c || !c->Camera() || c->Camera()->IsFocusDone()); return 1; }, this); lua_setfield(L, rt, "focus_done");
+    EnsureTable(L, mye, "camera");
+    lua_getfield(L, rt, "focus_begin"); lua_setfield(L, -2, "focus");
+    lua_getfield(L, rt, "focus_done"); lua_setfield(L, -2, "is_focus_done");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* c = Context<RuntimeBindings>(L)->m_cutscene; const auto entity = CheckEntity(L, 1); const float speed = static_cast<float>(luaL_optnumber(L, 2, 5));
+        if (c && c->Camera()) c->Camera()->FocusEntity(entity, speed); return 0;
+    }, this); lua_setfield(L, -2, "follow");
+    PushFunction(L, [](lua_State* L) -> int { auto* c = Context<RuntimeBindings>(L)->m_cutscene; if (c && c->Camera()) c->Camera()->ClearFollow(); return 0; }, this); lua_setfield(L, -2, "clear_follow"); lua_pop(L, 1);
+    EnsureTable(L, mye, "save");
+    PushFunction(L, [](lua_State* L) -> int { const auto* s = Context<RuntimeBindings>(L)->m_save; const auto slot = Int32Argument(L, 1); lua_pushboolean(L, s && s->Exists(SlotId{slot})); return 1; }, this); lua_setfield(L, -2, "exists");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* s = Context<RuntimeBindings>(L)->m_save; const auto slot = Int32Argument(L, 1);
+        const char* title = luaL_optstring(L, 2, ""); const double playTime = luaL_optnumber(L, 3, 0);
+        if (!s) { MYE_LOG_WARN("RuntimeBindings", "mye.save.write: no SaveSystem"); lua_pushboolean(L, false); return 1; }
+        SaveHeader header; header.title = title; header.playTimeSec = playTime;
+        auto result = s->WriteSlot(SlotId{slot}, header);
+        if (!result) MYE_LOG_WARN("RuntimeBindings", "mye.save.write: {}", result.GetError().message);
+        lua_pushboolean(L, static_cast<bool>(result)); return 1;
+    }, this); lua_setfield(L, -2, "write");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* s = Context<RuntimeBindings>(L)->m_save; const auto slot = Int32Argument(L, 1);
+        if (!s) { MYE_LOG_WARN("RuntimeBindings", "mye.save.read: no SaveSystem"); lua_pushboolean(L, false); return 1; }
+        auto result = s->ReadSlot(SlotId{slot});
+        if (!result) MYE_LOG_WARN("RuntimeBindings", "mye.save.read: {}", result.GetError().message);
+        lua_pushboolean(L, static_cast<bool>(result)); return 1;
+    }, this); lua_setfield(L, -2, "read"); lua_pop(L, 1);
+    EnsureTable(L, mye, "loc");
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* loc = Context<RuntimeBindings>(L)->m_loc; const char* key = luaL_checkstring(L, 1);
+        if (!lua_isnoneornil(L, 2)) luaL_checktype(L, 2, LUA_TTABLE);
+        std::vector<FormatArg> args;
+        if (lua_istable(L, 2)) {
+            lua_pushnil(L);
+            while (lua_next(L, 2)) {
+                if (lua_type(L, -2) == LUA_TSTRING && lua_type(L, -1) == LUA_TSTRING) args.push_back({lua_tostring(L, -2), lua_tostring(L, -1)});
+                lua_pop(L, 1);
             }
-            return l->Format(key, fa);
-        });
-        lc.set_function("set_locale", [l](const std::string& tag) {
-            if (l) l->SetLocale(LocaleFromTag(tag));
-        });
-        lc.set_function("locale", [l]() -> std::string {
-            return l ? LocaleTag(l->CurrentLocale()) : "ko";
-        });
-    }
-
-    // ---- mye.scene : change / is_transitioning ----
-    {
-        sol::table sc = mye["scene"].get_or_create<sol::table>();
-        SceneTransitionManager* st = m_sceneTransition;
-        rt.set_function("scene_begin", [st](const std::string& vpath) {
-            if (!st) return false;
-            TransitionDesc desc;
-            return static_cast<bool>(st->ChangeScene(SceneRef{vpath}, desc));
-        });
-        rt.set_function("scene_transitioning", [st]() {
-            return st && st->IsTransitioning();
-        });
-        sc.set_function("change", [st](const std::string& vpath) {
-            if (!st) { MYE_LOG_WARN("RuntimeBindings",
-                        "mye.scene.change('{}') no-op: SceneTransitionManager 미배선", vpath);
-                       return false; }
-            TransitionDesc desc;
-            return static_cast<bool>(st->ChangeScene(SceneRef{vpath}, desc));
-        });
-        sc.set_function("is_transitioning", [st]() {
-            return st && st->IsTransitioning();
-        });
-    }
-
-    // ---- 코루틴 래퍼(순수 Lua) — C-call 경계 넘는 yield 회피(05 계약) ----
-    //   mye.co.yield() 로 무대기 양보하고 매 tick C++ 폴링을 검사한다. mye.co 는 CoroutineScheduler
-    //   가 이미 등록(ScriptRuntime). 없으면(테스트 등) 폴백 co 를 만들어 최소 동작 보장.
-    lua.safe_script(R"LUA(
+        }
+        const std::string text = !loc ? key : args.empty() ? loc->Get(key) : loc->Format(key, args);
+        lua_pushlstring(L, text.data(), text.size()); return 1;
+    }, this); lua_setfield(L, -2, "text");
+    PushFunction(L, [](lua_State* L) -> int { auto* loc = Context<RuntimeBindings>(L)->m_loc; const char* tag = luaL_checkstring(L, 1); if (loc) loc->SetLocale(LocaleFromTag(tag)); return 0; }, this); lua_setfield(L, -2, "set_locale");
+    PushFunction(L, [](lua_State* L) -> int { const auto* loc = Context<RuntimeBindings>(L)->m_loc; const std::string tag = loc ? LocaleTag(loc->CurrentLocale()) : "ko"; lua_pushlstring(L, tag.data(), tag.size()); return 1; }, this); lua_setfield(L, -2, "locale"); lua_pop(L, 1);
+    PushFunction(L, [](lua_State* L) -> int {
+        auto* scene = Context<RuntimeBindings>(L)->m_sceneTransition; const char* path = luaL_checkstring(L, 1);
+        if (!scene) { MYE_LOG_WARN("RuntimeBindings", "mye.scene.change: no SceneTransitionManager"); lua_pushboolean(L, false); return 1; }
+        auto result = scene->ChangeScene(SceneRef{path}, TransitionDesc{});
+        if (!result) MYE_LOG_WARN("RuntimeBindings", "mye.scene.change: {}", result.GetError().message);
+        lua_pushboolean(L, static_cast<bool>(result)); return 1;
+    }, this); lua_setfield(L, rt, "scene_begin");
+    PushFunction(L, [](lua_State* L) -> int { const auto* scene = Context<RuntimeBindings>(L)->m_sceneTransition; lua_pushboolean(L, scene && scene->IsTransitioning()); return 1; }, this); lua_setfield(L, rt, "scene_transitioning");
+    EnsureTable(L, mye, "scene");
+    lua_getfield(L, rt, "scene_begin"); lua_setfield(L, -2, "change");
+    lua_getfield(L, rt, "scene_transitioning"); lua_setfield(L, -2, "is_transitioning"); lua_pop(L, 1);
+    // Yield remains in Lua; native callbacks only start work or poll its state.
+    constexpr const char* wrappers = R"LUA(
         mye.co = mye.co or {}
         if not mye.co.yield then
             function mye.co.yield() return coroutine.yield() end
@@ -229,17 +171,17 @@ void RuntimeBindings::Register(sol::state& lua) {
 
         -- say(speaker, body): 대화창 표시 후 진행 입력까지 yield.
         function mye.dialogue.say(speaker, body)
-            rt.say_begin(speaker or "", body or "")
+            if not rt.say_begin(speaker or "", body or "") then return false end
             while rt.dlg_waiting_advance() do co.yield() end
         end
         -- say_key(speakerKey, bodyKey): 로컬라이즈 키 버전.
         function mye.dialogue.say_key(speakerKey, bodyKey)
-            rt.say_key(speakerKey or "", bodyKey or "")
+            if not rt.say_key(speakerKey or "", bodyKey or "") then return false end
             while rt.dlg_waiting_advance() do co.yield() end
         end
         -- choose(options): 선택지 표시 후 선택까지 yield, 선택 인덱스(0-base) 반환.
         function mye.dialogue.choose(options)
-            rt.choose_begin(options)
+            if not rt.choose_begin(options) then return -1 end
             while rt.dlg_waiting_choice() do co.yield() end
             return rt.dlg_picked()
         end
@@ -266,7 +208,7 @@ void RuntimeBindings::Register(sol::state& lua) {
             while rt.scene_transitioning() do co.yield() end
             return true
         end
-    )LUA", "mye.runtime.coroutine_wrappers");
+    )LUA";
+    if (luaL_loadstring(L, wrappers) != LUA_OK || ProtectedCall(L, 0, 0) != LUA_OK) throw std::runtime_error(lua_tostring(L, -1));
 }
-
 } // namespace mye::runtime

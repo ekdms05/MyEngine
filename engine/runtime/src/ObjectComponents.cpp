@@ -10,14 +10,14 @@
 
 using namespace mye::runtime;
 template<> void mye::refl::Reflect(TypeBuilder<CharacterController2D>& b) {
-    b.Version(1).Field("enabled", &CharacterController2D::enabled).Field("speed", &CharacterController2D::speed)
-        .Field("idleAnimation", &CharacterController2D::idleAnimation).Field("walkAnimation", &CharacterController2D::walkAnimation);
+    b.Version(1).Field("enabled", &CharacterController2D::enabled).Attr(Attribute::MakeTooltip("이 기능의 활성 여부입니다. 캐릭터 조작을 끄면 이동 속도가 0으로 설정됩니다.")).Field("speed", &CharacterController2D::speed).Attr(Attribute::MakeTooltip("월드 단위/초. 기본 3은 48 PPU에서 초당 144 픽셀입니다. 허용 범위 0~100."))
+        .Field("idleAnimation", &CharacterController2D::idleAnimation).Attr(Attribute::MakeTooltip("대기할 때 재생할 .anim 에셋을 드래그하세요.")).Field("walkAnimation", &CharacterController2D::walkAnimation).Attr(Attribute::MakeTooltip("이동할 때 재생할 .anim 에셋을 드래그하세요."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<InteractionTarget>& b) {
-    b.Version(1).Field("enabled", &InteractionTarget::enabled).Field("radius", &InteractionTarget::radius).Field("prompt", &InteractionTarget::prompt);
+    b.Version(1).Field("enabled", &InteractionTarget::enabled).Attr(Attribute::MakeTooltip("E 키 상호작용 대상의 활성 여부입니다.")).Field("radius", &InteractionTarget::radius).Attr(Attribute::MakeTooltip("캐릭터와 대상의 상호작용 거리. 월드 단위이며 0보다 크고 100 이하입니다.")).Field("prompt", &InteractionTarget::prompt).Attr(Attribute::MakeTooltip("상호작용 안내 문자열. 자동 게임 HUD 표시는 아직 연결되지 않았습니다."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<ScenePortal>& b) {
-    b.Version(1).Field("scenePath", &ScenePortal::scenePath).Field("spawnName", &ScenePortal::spawnName).Field("onInteract", &ScenePortal::onInteract);
+    b.Version(1).Field("scenePath", &ScenePortal::scenePath).Attr(Attribute::MakeTooltip("프로젝트 기준 assets/scenes/*.scene 경로입니다. 프로젝트 밖으로 이동할 수 없습니다.")).Field("spawnName", &ScenePortal::spawnName).Attr(Attribute::MakeTooltip("목적지 씬의 ObjectName.value와 정확히 일치하는 고유 이름입니다.")).Field("onInteract", &ScenePortal::onInteract).Attr(Attribute::MakeTooltip("켜면 InteractionTarget + E, 끄면 트리거 Collider2D 진입으로 이동합니다."));
 }
 template<> void mye::refl::Reflect(EnumBuilder<ObjectEvent>& b) {
     b.Value("Start", ObjectEvent::Start).Value("Interact", ObjectEvent::Interact)
@@ -33,7 +33,7 @@ template<> void mye::refl::Reflect(TypeBuilder<ObjectConnection>& b) {
         .Field("x", &ObjectConnection::x).Field("y", &ObjectConnection::y).Field("visible", &ObjectConnection::visible);
 }
 template<> void mye::refl::Reflect(TypeBuilder<ObjectBehavior>& b) {
-    b.Version(1).Field("connections", &ObjectBehavior::connections).Field("luaSource", &ObjectBehavior::luaSource);
+    b.Version(1).Field("connections", &ObjectBehavior::connections).Attr(Attribute::MakeTooltip("발생 이벤트에서 실행할 행동 목록. 위에서 아래 순서로 처리합니다.")).Field("luaSource", &ObjectBehavior::luaSource).Attr(Attribute::MakeTooltip("return 테이블에 콜백을 작성합니다. 실행을 다시 시작하면 반영되며 씬에 저장됩니다."));
 }
 
 namespace mye::runtime {

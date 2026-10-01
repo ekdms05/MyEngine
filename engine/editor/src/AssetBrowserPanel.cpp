@@ -22,6 +22,8 @@
 #include "mye/editor/SceneSerializer.h"
 #include "mye/editor/Prefab.h"
 #include "mye/editor/Project.h"
+#include "mye/editor/ProjectAssetOperations.h"
+#include "mye/imgui/EditorWidgets.h"
 
 #include "mye/asset/FileSystem.h"
 #include "mye/asset/AssetDatabase.h"
@@ -38,8 +40,10 @@
 #include "mye/scene/Renderable.h"
 
 #include "imgui.h"
+#include <Windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
@@ -251,44 +255,40 @@ public:
     const PanelDesc& Desc() const override { return kAssetBrowserDesc; }
 
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin(PanelWindowTitle("panel.assets", "mye.assets").c_str())) {
-            ImGui::End();
-            return;
-        }
-
-        // assets 마운트의 OS 루트 = <projectRoot>/assets. 프로젝트가 없으면 표시 불가.
+        if (!ImGui::Begin(PanelWindowTitle("panel.assets", "mye.assets").c_str())) { ImGui::End(); return; }
         const std::string assetsRoot = AssetsRootOf(ctx);
-        if (assetsRoot.empty()) {
-            ImGui::TextDisabled("%s", mye::i18n::T("assets.noproject"));
-            ImGui::End();
-            return;
-        }
-
-        // 검색 바.
-        if (ImGui::Button("에셋 새로 고침") && ctx.app && ctx.app->Viewport()) {
-            auto result = ctx.app->Viewport()->RefreshAssetIndex();
-            if (!result) MYE_LOG_ERROR("Editor", "{}", result.GetError().message);
-        }
-        char buf[256];
-        std::snprintf(buf, sizeof(buf), "%s", m_search.c_str());
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::InputTextWithHint("##asset_search", "에셋 검색...", buf, sizeof(buf)))
-            m_search = buf;
-        ImGui::Separator();
-
-        // 좌: 폴더 트리 / 우: 파일 목록.
-        const float treeW = 200.0f;
-        if (ImGui::BeginChild("##asset_tree", ImVec2(treeW, 0), true)) {
-            DrawFolderNode(assetsRoot, "");   // 루트("assets://")부터.
-        }
-        ImGui::EndChild();
+        if (assetsRoot.empty() || !ctx.app) { ImGui::TextDisabled("프로젝트를 열면 에셋을 추가할 수 있습니다."); ImGui::End(); return; }
+        const std::string projectRoot(ctx.project->RootDir());
+        if (projectRoot != m_projectRoot) { m_projectRoot = projectRoot; m_status.clear(); m_deletePath.clear(); m_folderRequested = false; }
+        std::error_code ec;
+        const auto folder = Utf8Path(m_currentFolder);
+        bool safe = !folder.is_absolute() && !folder.has_root_name() && m_currentFolder.find(':') == std::string::npos;
+        for (const auto& segment : folder) if (segment == ".." || segment == ".") safe = false;
+        if (!safe || !std::filesystem::is_directory(Utf8Path(assetsRoot) / folder, ec)) m_currentFolder.clear();
+        const bool editing = !ctx.playMode || !ctx.playMode->IsPlaying();
+        ImGui::BeginDisabled(!editing);
+        if (imgui::EditorButton(imgui::EditorIcon::Open, "에셋 추가")) Import(ctx);
+        ImGui::EndDisabled();
+        if (!editing && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("플레이를 중지한 뒤 에셋 파일을 변경할 수 있습니다.");
         ImGui::SameLine();
-
-        if (ImGui::BeginChild("##asset_files", ImVec2(0, 0), true)) {
-            DrawFileList(ctx, assetsRoot);
+        if (ImGui::Button("새로 고침")) Refresh(ctx);
+        ImGui::Spacing();
+        char search[256]; std::snprintf(search, sizeof(search), "%s", m_search.c_str());
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::InputTextWithHint("##asset_search", "파일 이름 검색", search, sizeof(search))) m_search = search;
+        if (!m_currentFolder.empty()) {
+            if (ImGui::SmallButton("상위 폴더")) { m_currentFolder = Utf8String(Utf8Path(m_currentFolder).parent_path()); m_search.clear(); }
         }
+        ImGui::TextWrapped("%s", m_currentFolder.empty() ? "assets://" : ("assets://" + m_currentFolder).c_str());
+        ImGui::TextDisabled("우클릭으로 추가·폴더 만들기·삭제");
+        if (!m_status.empty()) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", m_status.c_str());
+        }
+        ImGui::Separator();
+        if (ImGui::BeginChild("##asset_files", ImVec2(0, 0))) DrawFileList(ctx, assetsRoot, editing);
         ImGui::EndChild();
-
+        DrawDialogs(ctx);
         ImGui::End();
     }
 
@@ -315,65 +315,123 @@ private:
         return Utf8String(p);
     }
 
-    // dir = assets 마운트 기준 상대 폴더("" = 루트, "chars/npc" 등).
-    void DrawFolderNode(const std::string& assetsRoot, const std::string& dir) {
-        const std::string label = dir.empty() ? "assets://" : LeafName(dir);
-
-        std::vector<std::string> subdirs;
-        EnumerateDir(assetsRoot, dir, /*wantDirs*/ true, subdirs);
-
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
-                                   ImGuiTreeNodeFlags_SpanAvailWidth;
-        if (subdirs.empty()) flags |= ImGuiTreeNodeFlags_Leaf;
-        if (dir == m_currentFolder) flags |= ImGuiTreeNodeFlags_Selected;
-        if (dir.empty()) flags |= ImGuiTreeNodeFlags_DefaultOpen;
-
-        ImGui::PushID(dir.c_str());
-        const bool open = ImGui::TreeNodeEx(label.c_str(), flags);
-        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-            m_currentFolder = dir;
-        if (open) {
-            for (const std::string& sd : subdirs) {
-                std::string child = dir.empty() ? sd : (dir + "/" + sd);
-                DrawFolderNode(assetsRoot, child);
-            }
-            ImGui::TreePop();
-        }
-        ImGui::PopID();
+    void SetResult(const Expected<void, Error>& result, const char* success) {
+        m_status = result ? success : result.GetError().message;
+        if (!result) MYE_LOG_ERROR("Editor", "{}", m_status);
     }
-
-    void DrawFileList(EditorContext& ctx, const std::string& assetsRoot) {
-        ImGui::TextDisabled("%s", m_currentFolder.empty()
-                                      ? "assets://"
-                                      : ("assets://" + m_currentFolder).c_str());
-        ImGui::Separator();
-
-        std::vector<std::string> files;
-        EnumerateDir(assetsRoot, m_currentFolder, /*wantDirs*/ false, files);
-
-        for (const std::string& fname : files) {
-            if (!m_search.empty() && !ContainsCI(fname, m_search)) continue;
-            const std::string ext = ExtOf(fname);
-            const std::string vpath = MakeVpath(m_currentFolder, fname);
-
-            ImGui::PushID(fname.c_str());
-            ImGui::Selectable((std::string(IconFor(ext)) + " " + fname).c_str());
+    void Refresh(EditorContext& ctx) {
+        if (!ctx.app->Viewport()) { m_status = "에셋 인덱스가 아직 준비되지 않았습니다."; return; }
+        SetResult(ctx.app->Viewport()->RefreshAssetIndex(), "에셋 목록을 새로 읽었습니다.");
+    }
+    void Import(EditorContext& ctx) {
+        auto source = ctx.app->BrowseAssetFile();
+        if (!source) { m_status = source.GetError().message; return; }
+        if (source.Value().empty()) return;
+        const auto name = Utf8String(Utf8Path(source.Value()).filename());
+        const auto destination = m_currentFolder.empty() ? name : m_currentFolder + "/" + name;
+        auto imported = ImportProjectAsset(ctx.project->RootDir(), source.Value(), destination);
+        SetResult(imported, "에셋을 추가했습니다.");
+        if (imported) Refresh(ctx);
+    }
+    void FolderActions(EditorContext& ctx, const std::string& folder, bool editing) {
+        ImGui::BeginDisabled(!editing);
+        if (ImGui::MenuItem("에셋 추가...")) { m_currentFolder = folder; Import(ctx); }
+        if (ImGui::MenuItem("새 폴더...")) { m_currentFolder = folder; m_folderRequested = true; m_folderName[0] = '\0'; m_dialogError.clear(); }
+        ImGui::EndDisabled();
+        if (ImGui::MenuItem("탐색기에서 열기")) SetResult(RevealProjectAssetFolder(ctx.project->RootDir(), folder), "탐색기에서 폴더를 열었습니다.");
+    }
+    void DrawFileList(EditorContext& ctx, const std::string& assetsRoot, bool editing) {
+        std::vector<std::string> directories, files;
+        EnumerateDir(assetsRoot, m_currentFolder, true, directories);
+        EnumerateDir(assetsRoot, m_currentFolder, false, files);
+        size_t displayed = 0;
+        std::string nextFolder;
+        bool navigate = false;
+        for (const auto& directory : directories) {
+            if (!ContainsCI(directory, m_search)) continue;
+            ++displayed;
+            ImGui::PushID(directory.c_str());
+            const auto path = m_currentFolder.empty() ? directory : m_currentFolder + "/" + directory;
+            if (ImGui::Selectable(("폴더  " + directory + "/").c_str(), false)) { nextFolder = path; navigate = true; }
+            if (ImGui::BeginPopupContextItem("folder_context")) { FolderActions(ctx, path, editing); ImGui::EndPopup(); }
+            ImGui::PopID();
+        }
+        for (const auto& name : files) {
+            if (!ContainsCI(name, m_search)) continue;
+            ++displayed;
+            const auto extension = ExtOf(name);
+            const auto vpath = MakeVpath(m_currentFolder, name);
+            ImGui::PushID(name.c_str());
+            ImGui::Selectable((std::string(IconFor(extension)) + "  " + name).c_str());
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                Expected<void, Error> opened;
-                if (ext == "anim") opened = ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath));
-                else if (ext == "dot") opened = ctx.app->OpenDot(VpathToOsPath(ctx, vpath));
-                else if (ext == "scene") opened = ctx.app->OpenScene(VpathToOsPath(ctx, vpath));
-                if (!opened) MYE_LOG_ERROR("Editor", "{}", opened.GetError().message);
+                if (extension == "anim") SetResult(ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath)), "애니메이션을 열었습니다.");
+                else if (extension == "scene") SetResult(ctx.app->OpenScene(VpathToOsPath(ctx, vpath)), "씬을 열었습니다.");
             }
-
-
-            // 드래그 소스 — 페이로드 = vpath 문자열(널 종단 포함).
-            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+            if (ImGui::BeginPopupContextItem("file_context")) {
+                if (extension == "anim" && ImGui::MenuItem("애니메이션 열기")) SetResult(ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath)), "애니메이션을 열었습니다.");
+                if (extension == "scene" && ImGui::MenuItem("씬 열기")) SetResult(ctx.app->OpenScene(VpathToOsPath(ctx, vpath)), "씬을 열었습니다.");
+                FolderActions(ctx, m_currentFolder, editing);
+                ImGui::Separator();
+                ImGui::BeginDisabled(!editing);
+                if (ImGui::MenuItem("휴지통으로 이동...")) {
+                    m_deletePath = m_currentFolder.empty() ? name : m_currentFolder + "/" + name;
+                    m_deleteRequested = true;
+                    auto checked = CheckProjectAssetDeletion(*ctx.project, m_deletePath);
+                    m_dialogError = checked ? std::string{} : checked.GetError().message;
+                }
+                ImGui::EndDisabled();
+                ImGui::EndPopup();
+            }
+            if (ImGui::BeginDragDropSource()) {
                 ImGui::SetDragDropPayload("MYE_ASSET", vpath.c_str(), vpath.size() + 1);
-                ImGui::Text("%s %s", IconFor(ext), fname.c_str());
-                ImGui::EndDragDropSource();
+                ImGui::TextUnformatted(name.c_str()); ImGui::EndDragDropSource();
             }
             ImGui::PopID();
+        }
+        if (displayed == 0) ImGui::TextWrapped("%s", m_search.empty() ? "에셋이 없습니다. 우클릭 또는 에셋 추가를 사용하세요." : "검색과 일치하는 파일이 없습니다.");
+        if (ImGui::BeginPopupContextWindow("asset_context", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) { FolderActions(ctx, m_currentFolder, editing); ImGui::EndPopup(); }
+        if (navigate) { m_currentFolder = std::move(nextFolder); m_search.clear(); }
+    }
+    void DrawDialogs(EditorContext& ctx) {
+        if (m_folderRequested) { ImGui::OpenPopup("폴더 만들기###asset_new_folder"); m_folderRequested = false; }
+        ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 27, 0), ImGuiCond_Appearing);
+        if (ImGui::BeginPopupModal("폴더 만들기###asset_new_folder", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("현재 에셋 폴더에 새 폴더를 만듭니다.");
+            ImGui::Spacing();
+            if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+            ImGui::SetNextItemWidth(-1);
+            const bool enter = ImGui::InputTextWithHint("##folder_name", "폴더 이름", m_folderName.data(), m_folderName.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+            if (!m_dialogError.empty()) ImGui::TextWrapped("%s", m_dialogError.c_str());
+            ImGui::Spacing();
+            const bool create = ImGui::Button("만들기"); ImGui::SameLine();
+            if (ImGui::Button("취소") || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+            if (create || enter) {
+                const std::string name(m_folderName.data());
+                Expected<void, Error> result = name.find_first_of("/\\:") != std::string::npos ? Expected<void, Error>(Error{"폴더 이름에는 경로 구분자를 사용할 수 없습니다.", 1})
+                    : CreateProjectAssetFolder(ctx.project->RootDir(), m_currentFolder.empty() ? name : m_currentFolder + "/" + name);
+                m_dialogError = result ? std::string{} : result.GetError().message;
+                if (result) { m_status = "폴더를 만들었습니다."; ImGui::CloseCurrentPopup(); }
+            }
+            ImGui::EndPopup();
+        }
+        if (m_deleteRequested) { ImGui::OpenPopup("에셋 삭제###asset_delete"); m_deleteRequested = false; }
+        ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 30, 0), ImGuiCond_Appearing);
+        if (ImGui::BeginPopupModal("에셋 삭제###asset_delete", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("%s", m_deletePath.c_str());
+            ImGui::Spacing();
+            ImGui::TextWrapped("파일과 .meta를 함께 휴지통으로 이동합니다. 복구는 Windows 휴지통에서 진행하세요.");
+            if (!m_dialogError.empty()) ImGui::TextWrapped("%s", m_dialogError.c_str());
+            ImGui::Spacing();
+            ImGui::BeginDisabled(!m_dialogError.empty() || (ctx.playMode && ctx.playMode->IsPlaying()));
+            const bool remove = ImGui::Button("휴지통으로 이동"); ImGui::EndDisabled(); ImGui::SameLine();
+            if (ImGui::Button("취소") || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+            if (remove) {
+                auto result = RecycleProjectAsset(*ctx.project, m_deletePath);
+                SetResult(result, "에셋을 휴지통으로 이동했습니다.");
+                if (result) { Refresh(ctx); ImGui::CloseCurrentPopup(); }
+                else m_dialogError = result.GetError().message;
+            }
+            ImGui::EndPopup();
         }
     }
 
@@ -386,6 +444,8 @@ private:
         if (!std::filesystem::exists(base, ec)) return;
         for (const auto& e : std::filesystem::directory_iterator(base, ec)) {
             if (ec) break;
+            const DWORD attributes = GetFileAttributesW(e.path().c_str());
+            if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT)) continue;
             const bool isDir = e.is_directory(ec);
             std::string name = Utf8String(e.path().filename());
             if (name.empty() || name.front() == '.' || e.path().extension() == ".meta") continue;   // .meta·숨김 스킵.
@@ -395,14 +455,17 @@ private:
         std::sort(out.begin(), out.end());
     }
 
-    static std::string LeafName(const std::string& path) {
-        const std::size_t slash = path.find_last_of('/');
-        return slash == std::string::npos ? path : path.substr(slash + 1);
-    }
     static std::string MakeVpath(const std::string& dir, const std::string& fname) {
         return dir.empty() ? ("assets://" + fname) : ("assets://" + dir + "/" + fname);
     }
 
+    std::string m_projectRoot;
+    std::string m_status;
+    std::string m_dialogError;
+    std::string m_deletePath;
+    std::array<char, 128> m_folderName{};
+    bool m_folderRequested = false;
+    bool m_deleteRequested = false;
     std::string m_search;
     std::string m_currentFolder;   // assets 마운트 기준 상대 폴더
 };

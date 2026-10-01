@@ -1,7 +1,7 @@
 /**
- * engine_run — 샘플 실행(--frames N 으로 자동 종료, 크래시 코드 해석).
- * exe 탐색: <buildDir>/samples/<sample>/<config>/<sample>.exe 우선,
- * 폴백 재귀 탐색 <buildDir> 하위의 <config>/<sample>.exe.
+ * engine_run — 앱 실행(--frames N 자동 종료, 크래시 코드 해석).
+ * 실행 산출물은 <buildDir> 하위의 <config>/<target>.exe에서 찾는다.
+ * sample 입력 이름은 기존 MCP 클라이언트 호환을 위해 유지한다.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -26,13 +26,13 @@ export function registerRunTool(server: McpServer, ctx: ServerContext): void {
     "engine_run",
     {
       description:
-        "샘플 exe 를 --frames N 으로 실행해 자동 종료시키고, exit 코드(크래시 시 NTSTATUS 해석 병기)와 " +
+        "앱 실행 파일을 --frames N 으로 실행해 자동 종료시키고, exit 코드(크래시 시 NTSTATUS 해석 병기)와 " +
         "출력 꼬리를 반환한다. 전체 로그는 engine_logs(source=\"run\")로.",
       inputSchema: {
-        sample: z.string().min(1).describe('샘플 이름(예: "hello_triangle")'),
+        sample: z.string().min(1).describe('실행 타깃(예: "MyEditor"). MyEditor의 --project는 args로 전달'),
         config: z.enum(["Debug", "Release"]).default("Debug").describe("빌드 구성"),
         frames: z.number().int().min(1).default(120).describe("렌더할 프레임 수(--frames N 전달)"),
-        args: z.array(z.string()).optional().describe("샘플에 넘길 추가 인자"),
+        args: z.array(z.string()).optional().describe("앱에 넘길 추가 인자"),
         timeoutSec: z.number().int().min(1).max(600).default(30).describe("타임아웃(초)"),
       },
     },
@@ -46,10 +46,8 @@ export function registerRunTool(server: McpServer, ctx: ServerContext): void {
   );
 }
 
-/** 샘플 exe 탐색. 없으면 null. buildDir 부재는 별도 판단. */
-export function findSampleExe(ctx: ServerContext, sample: string, config: string): string | null {
-  const primary = path.join(ctx.buildDir, "samples", sample, config, `${sample}.exe`);
-  if (fs.existsSync(primary)) return primary;
+/** 구성에 해당하는 실행 산출물을 찾는다. 없으면 null. */
+export function findTargetExe(ctx: ServerContext, sample: string, config: string): string | null {
   // 폴백: <buildDir>/**/<config>/<sample>.exe (깊이 제한 글롭)
   const target = `${sample}.exe`.toLowerCase();
   const configLower = config.toLowerCase();
@@ -87,28 +85,16 @@ export function missingExeError(ctx: ServerContext, sample: string, config: stri
       `빌드 디렉터리가 없습니다: ${ctx.buildDir}\n다음 행동: engine_build 를 먼저 실행하세요.`,
     );
   }
-  let known = "";
-  try {
-    const samplesDir = path.join(ctx.root, "samples");
-    const names = fs
-      .readdirSync(samplesDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
-    if (names.length > 0) known = `\n리포의 샘플 목록: ${names.join(", ")}`;
-  } catch {
-    /* samples/ 없음 — 무시 */
-  }
   return errorResult(
-    `샘플 실행 파일을 찾지 못했습니다: ${sample} (${config}) — ` +
-      `${ctx.buildDirRel}/samples/${sample}/${config}/${sample}.exe 및 하위 글롭 탐색 실패.${known}\n` +
-      `다음 행동: engine_build 를 먼저 실행하거나 sample 이름·config 를 확인하세요.`,
+    `실행 파일을 찾지 못했습니다: ${sample} (${config}) — ${ctx.buildDirRel} 하위 구성 산출물 없음.\n` +
+      `다음 행동: engine_build(target="${sample}", config="${config}")를 실행하거나 sample 입력의 타깃 이름을 확인하세요.`,
   );
 }
 
 async function doRun(ctx: ServerContext, p: RunParams): Promise<CallToolResult> {
-  assertSafeName(p.sample, "샘플");
+  assertSafeName(p.sample, "타깃");
 
-  const exe = findSampleExe(ctx, p.sample, p.config);
+  const exe = findTargetExe(ctx, p.sample, p.config);
   if (exe === null) return missingExeError(ctx, p.sample, p.config);
 
   const args = ["--frames", String(p.frames), ...(p.args ?? [])];

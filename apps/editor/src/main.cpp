@@ -18,6 +18,8 @@
 #include "mye/editor/EditorApp.h"
 #include "mye/editor/Selection.h"
 #include "mye/editor/PlayMode.h"
+#include "mye/editor/ProjectAssetOperations.h"
+#include "mye/editor/Viewport.h"
 #include "mye/ecs/World.h"
 #include "mye/scene/Renderable.h"
 
@@ -61,8 +63,12 @@ public:
                 m_dumpPath = a[++i];
             } else if (a[i] == "--animation" && i + 1 < a.size()) {
                 m_animationPath = a[++i];
-            } else if (a[i] == "--dot" && i + 1 < a.size()) {
-                m_dotPath = a[++i];
+            } else if (a[i] == "--import-asset" && i + 1 < a.size()) {
+                m_importSource = a[++i];
+            } else if (a[i] == "--asset-destination" && i + 1 < a.size()) {
+                m_importDestination = a[++i];
+            } else if (a[i] == "--add-element-dialog") {
+                m_addElementDialog = true;
             } else if (a[i] == "--workspace" && i + 1 < a.size()) {
                 m_workspace = a[++i];
             } else if (a[i] == "--view3d") {
@@ -96,11 +102,28 @@ public:
     void OnStart(EngineContext& ctx) override {
         // EditorModule 에 CLI 제어를 주입(프레임 한도 도달 시 이 Application 을 종료).
         if (auto* em = ctx.GetService<editor::EditorModule>()) {
-            if (m_view3d) em->SetPerspectiveView(true);
-            if (em->App() && !m_dotPath.empty()) {
-                const auto opened = em->App()->OpenDot(m_dotPath);
-                if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); }
+            const bool automatedStartup = !ctx.GetServiceRaw(kMainWindowServiceId) ||
+                m_frameLimit || m_dumpEnabled || m_startPlaying || m_view3d || m_addElementDialog ||
+                !m_importSource.empty() || !m_importDestination.empty() || !m_animationPath.empty() ||
+                !m_workspace.empty() || !m_selectName.empty();
+            // File associations and interactive --project opens recover in the launcher.
+            // Scripted operations must not report success after opening the wrong project.
+            if (automatedStartup && !m_projectPath.empty() && (!em->App() || !em->App()->Project().IsOpen())) {
+                RequestExit(1); return;
             }
+            if (!m_importSource.empty() || !m_importDestination.empty()) {
+                if (!em->App() || !em->App()->Project().IsOpen() || m_importSource.empty() || m_importDestination.empty()) {
+                    MYE_LOG_ERROR("MyEditor", "Asset import requires --project, --import-asset and --asset-destination");
+                    RequestExit(1); return;
+                }
+                auto imported = editor::ImportProjectAsset(em->App()->Project().RootDir(), m_importSource, m_importDestination);
+                if (!imported) { MYE_LOG_ERROR("MyEditor", "{}", imported.GetError().message); RequestExit(1); return; }
+                auto refreshed = em->App()->Viewport()->RefreshAssetIndex();
+                if (!refreshed) { MYE_LOG_ERROR("MyEditor", "{}", refreshed.GetError().message); RequestExit(1); return; }
+                MYE_LOG_INFO("MyEditor", "Imported asset: {}", m_importDestination);
+            }
+            if (em->App() && m_addElementDialog) em->App()->RequestAddElement();
+            if (m_view3d) em->SetPerspectiveView(true);
             if (em->App() && !m_animationPath.empty()) {
                 const auto opened = em->App()->OpenAnimation(m_animationPath);
                 if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); }
@@ -109,8 +132,6 @@ public:
                 using Workspace = editor::EditorApp::Workspace;
                 if (m_workspace == "2d") em->App()->SelectWorkspace(Workspace::Scene2D);
                 else if (m_workspace == "3d") em->App()->SelectWorkspace(Workspace::Scene3D);
-                else if (m_workspace == "scenes") em->App()->SelectWorkspace(Workspace::Scenes);
-                else if (m_workspace == "dot") em->App()->SelectWorkspace(Workspace::Dot);
                 else if (m_workspace == "lua") em->App()->SelectWorkspace(Workspace::Lua);
                 else { MYE_LOG_ERROR("MyEditor", "Unknown workspace: {}", m_workspace); RequestExit(1); }
             }
@@ -135,7 +156,9 @@ public:
     void OnStop(EngineContext& /*ctx*/) override {}
 
 private:
-    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_dotPath, m_selectName, m_workspace;
+    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_selectName, m_workspace;
+    std::string   m_importSource, m_importDestination;
+    bool          m_addElementDialog = false;
     bool m_view3d = false;
     bool          m_startPlaying = false;
     bool          m_frameLimit = false;
@@ -167,7 +190,7 @@ int main(int /*argc*/, char** /*argv*/) {
         launch.projectPath = project.has_parent_path() ? mye::Utf8String(project.parent_path()) : ".";
     }
     launch.mainWindow.title = "MyEngine — MyEditor";
-    launch.mainWindow.clientSize = {1920, 1080};
+    launch.mainWindow.clientSize = launch.projectPath.empty() ? mye::Vec2i{640, 420} : mye::Vec2i{1600, 900};
     launch.mainWindow.resizable = true;
     return mye::GuardedMain(launch);
 }

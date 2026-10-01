@@ -30,7 +30,7 @@ Expected<fs::path, Error> ScenePath(const fs::path& root, std::string_view text,
     const auto relative = path.lexically_relative(root);
     if (relative.empty() || relative.is_absolute() || *relative.begin() == "..")
         return Error{"Scene files must be inside the current project", 1};
-    if (extension == ".anim" || extension == ".dot") {
+    if (extension == ".anim") {
         const auto assetRoot = fs::weakly_canonical(root / "assets", ec);
         if (ec) return Error{"Asset folder is unavailable: " + ec.message(), ec.value()};
         const auto assetRelative = path.lexically_relative(assetRoot);
@@ -56,7 +56,7 @@ bool SameFile(std::string_view path, const fs::path& target) {
 
 // ---- Document ----
 Document::Document(DocumentId id, Kind kind, std::string path)
-    : m_id(id), m_kind(kind), m_path(std::move(path)), m_commands(nullptr, kind == Kind::Dot ? 24 : 512),
+    : m_id(id), m_kind(kind), m_path(std::move(path)), m_commands(nullptr, 512),
       m_worldEvents(std::make_unique<EventBus>()), m_world(std::make_unique<ecs::World>()) {
     scene::RegisterCoreComponentReflection();
     gameplay::RegisterProgressionReflection();
@@ -245,7 +245,7 @@ Expected<void, Error> ProjectContext::Save() {
         if (doc->Path().empty()) return Error{"Choose a file name for each unsaved scene first", 1};
     for (const auto& doc : m_impl->documents) {
         auto saved = doc->GetKind() == Document::Kind::Scene ? SaveScene(doc->Id(), doc->Path())
-            : doc->GetKind() == Document::Kind::Dot ? SaveDot(doc->Id(), doc->Path()) : SaveAnimation(doc->Id(), doc->Path());
+            : SaveAnimation(doc->Id(), doc->Path());
         if (!saved) return saved.GetError();
     }
     auto metadata = m_impl->metadata.AsObject();
@@ -382,39 +382,6 @@ Expected<void, Error> ProjectContext::SaveAnimation(DocumentId id, std::string_v
     doc->SetPath(Utf8String(resolved.Value()));
     doc->Commands().MarkSaved();
     return {};
-}
-
-Document* ProjectContext::NewDot() {
-    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::Dot, std::string{});
-    auto* raw = doc.get();
-    m_impl->documents.push_back(std::move(doc)); m_impl->RefreshPtrs();
-    return raw;
-}
-
-Expected<Document*, Error> ProjectContext::OpenDot(std::string_view path) {
-    if (!IsOpen()) return Error{"Open a project first", 1};
-    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".dot");
-    if (!resolved) return resolved.GetError();
-    for (auto& doc : m_impl->documents) if (SameFile(doc->Path(), resolved.Value())) return doc.get();
-    auto value = ReadJsonFile(resolved.Value()); if (!value) return value.GetError();
-    auto data = DotDocument::FromJson(value.Value()); if (!data) return data.GetError();
-    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::Dot, Utf8String(resolved.Value()));
-    doc->Dot() = std::move(data).Value(); auto* raw = doc.get();
-    m_impl->documents.push_back(std::move(doc)); m_impl->RefreshPtrs(); return raw;
-}
-
-Expected<void, Error> ProjectContext::SaveDot(DocumentId id, std::string_view path) {
-    if (!IsOpen()) return Error{"Open a project first", 1};
-    auto* doc = m_impl->Find(id);
-    if (!doc || doc->GetKind() != Document::Kind::Dot) return Error{"No dot document", 1};
-    auto valid = doc->Dot().Validate(); if (!valid) return valid.GetError();
-    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".dot"); if (!resolved) return resolved.GetError();
-    for (const auto& other : m_impl->documents) if (other->Id() != id && SameFile(other->Path(), resolved.Value()))
-        return Error{"That dot file is already open", 1};
-    std::error_code ec; fs::create_directories(resolved.Value().parent_path(), ec);
-    if (ec) return Error{"Cannot create dot folder: " + ec.message(), ec.value()};
-    auto saved = WriteJsonFile(resolved.Value(), doc->Dot().ToJson()); if (!saved) return saved.GetError();
-    doc->SetPath(Utf8String(resolved.Value())); doc->Commands().MarkSaved(); return {};
 }
 
 void ProjectContext::CloseDocument(DocumentId id) {

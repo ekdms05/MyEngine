@@ -1,7 +1,4 @@
-// mye/runtime/RuntimeModule.cpp — 런타임 모듈 라이프사이클 배선 골격 (M6-A)
-//
-// 골격 범위: 서브시스템 소유·생성·서비스 등록·의존성 선언. 교차 배선(ui/audio/scene/script 서비스
-//   조회)·페이즈 틱 등록은 실서비스 접근이 필요하므로 구현 에이전트가 OnPostInitialize 에서 채운다.
+// Runtime services, cross-module initialization, and simulation/view ticks.
 #include "mye/runtime/RuntimeModule.h"
 
 #include "mye/runtime/Localization.h"
@@ -89,8 +86,7 @@ void RuntimeModule::OnPostInitialize(EngineContext& ctx) {
     // MoveController: World 필요(nav 없음 → 직선 이동). World 미존재 시 미배선(무동작).
     if (s.move && world) s.move->Initialize(world, nullptr);
 
-    // CameraFocusController: 실제 카메라 적용 콜백은 앱이 소유(표현). 여기선 no-op 포커스로 초기화해
-    //   컷신 코루틴(camera.focus_wait)이 즉시 완료되도록 한다(헤드리스 안전).
+    // CameraFocusController: 실제 카메라 적용 콜백은 앱이 소유(표현). 여기선 화면 적용 없는 포커스로 초기화한다.
     if (s.camera) s.camera->Initialize([](Vec2) {}, Vec2{});
 
     // CutsceneRuntime: dialogue/move/camera 조합.

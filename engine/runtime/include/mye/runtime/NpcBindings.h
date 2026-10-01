@@ -1,9 +1,9 @@
-// mye/runtime/NpcBindings.h — NPC 시스템 Lua 바인딩 모듈 (docs/05 바인딩 + docs/06 §7, M6-B)
+// mye/runtime/NpcBindings.h — NPC 시스템 Lua 바인딩 모듈 (docs/19-lua-api.md)
 //
 // `mye.npc` 표면을 ScriptRuntime 에 심어 NPC 배회·상호작용을 Lua 로 기술한다:
 //     mye.npc.register{ entity=, id=, waypoints={{x,y},..}, mode="patrol"|"random"|"none",
 //                       speed=, wait_min=, wait_max=, alert_radius=, interact_radius=,
-//                       on_interact=function(npc) ... end }
+//                       on_interact=function() ... end }
 //     mye.npc.set_player(entity)
 //     mye.npc.interact()            -- 가장 가까운 NPC 상호작용 시도(플레이어 입력 배선)
 //     mye.npc.interact_with(entity) -- 특정 NPC 상호작용
@@ -18,7 +18,7 @@
 // 에러 격리(05): on_interact 코루틴이 던져도 CoroutineScheduler 가 격리한다(다른 NPC 무영향).
 //   VM 재생성 시 Register 가 재호출되므로 Lua 측 등록 테이블도 재구축한다(IBindingModule 계약).
 //
-// 이 헤더는 sol.hpp 를 끌어오지 않는다(IBindingModule 은 sol/forward.hpp). 구현 .cpp 가 sol.hpp 포함.
+// Lua C API는 구현 파일에서만 포함한다.
 #pragma once
 
 #include "mye/script/IBindingModule.h"
@@ -38,7 +38,7 @@ public:
     NpcBindings(NpcSystem* npc, script::ScriptRuntime* runtime);
 
     std::string_view Name() const override { return "npc"; }
-    void Register(sol::state& lua) override;
+    void Register(lua_State* lua) override;
 
 private:
     NpcSystem*             m_npc = nullptr;

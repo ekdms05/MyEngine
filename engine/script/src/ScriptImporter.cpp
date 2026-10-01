@@ -1,4 +1,4 @@
-// mye/script/ScriptImporter.cpp — .lua → ScriptAsset 임포터 (M3-C 골격 스텁)
+// mye/script/ScriptImporter.cpp — .lua → ScriptAsset 임포터
 #include "mye/script/ScriptImporter.h"
 
 #include "mye/core/Base.h"   // HashFnv1a64

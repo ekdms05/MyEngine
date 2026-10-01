@@ -97,7 +97,7 @@ bool WidgetPrimitive(const refl::TypeInfo& type, const refl::FieldInfo* field, v
     }
 
     ImGui::TextUnformatted(label.c_str());
-    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
 
     if (n == "bool") return ImGui::Checkbox(id.c_str(), static_cast<bool*>(ptr));
     if (n == "f32") {
@@ -183,7 +183,7 @@ bool WidgetEnum(const refl::TypeInfo& type, void* ptr, const std::string& label)
     for (auto& s : names) cstrs.push_back(s.c_str());
 
     ImGui::TextUnformatted(label.c_str());
-    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
     const std::string id = "##" + label;
     int sel = curIdx;
     bool ch = ImGui::Combo(id.c_str(), &sel, cstrs.data(), static_cast<int>(cstrs.size()));
@@ -202,8 +202,8 @@ bool WidgetAssetRef(EditorContext& ctx, void* ptr, const std::string& label) {
     auto* db = ctx.engine ? ctx.engine->GetService<asset::AssetDatabase>() : nullptr;
     const auto path = db ? db->PathFromGuid(ref.guid) : std::string{};
     const auto caption = path.empty() ? (ref.guid.IsValid() ? ref.guid.ToString() : std::string("에셋 드롭")) : path;
-    ImGui::TextUnformatted(label.c_str()); ImGui::SameLine();
-    ImGui::Button((caption + "##" + label).c_str());
+    ImGui::TextUnformatted(label.c_str()); ImGui::SetNextItemWidth(-1);
+    ImGui::Button((caption + "##" + label).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0));
     bool changed = false;
     if (ImGui::BeginDragDropTarget()) {
         if (const auto* payload = ImGui::AcceptDragDropPayload("MYE_ASSET")) {
@@ -218,7 +218,7 @@ bool WidgetAssetRef(EditorContext& ctx, void* ptr, const std::string& label) {
         }
         ImGui::EndDragDropTarget();
     }
-    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
     if (ImGui::SmallButton(("비우기##" + label).c_str())) { ref = {}; changed = true; }
     return changed;
 }
@@ -229,7 +229,7 @@ bool WidgetSpecialStruct(const refl::TypeInfo& type, void* ptr, const std::strin
     handled = true;
     const std::string id = "##" + label;
     ImGui::TextUnformatted(label.c_str());
-    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
     if (IsNamed(type, "Vec2")) return ImGui::DragFloat2(id.c_str(), &static_cast<Vec2*>(ptr)->x, 0.1f);
     if (IsNamed(type, "Vec3")) return ImGui::DragFloat3(id.c_str(), &static_cast<Vec3*>(ptr)->x, 0.1f);
     if (IsNamed(type, "Vec4")) return ImGui::DragFloat4(id.c_str(), &static_cast<Vec4*>(ptr)->x, 0.1f);
@@ -268,7 +268,8 @@ struct InspectorRenderer::Impl {
         // 리프 후보는 위젯 호출 전에 현재(편집 이전) 값을 스냅샷한다 —
         //   단발 변경(Checkbox/Combo)·드래그 시작의 before 를 정확히 얻기 위함.
         const bool leafKind = (type.GetKind() == refl::Kind::Primitive ||
-                               type.GetKind() == refl::Kind::Enum);
+                               type.GetKind() == refl::Kind::Enum ||
+                               type.GetKind() == refl::Kind::AssetRef);
         ValueBlob beforeFrame;
         if ((leafKind || type.GetKind() == refl::Kind::Struct) && rootComp)
             beforeFrame = ReadLeafBlob(rootType, rootComp, path);
@@ -333,8 +334,19 @@ struct InspectorRenderer::Impl {
         if (readOnly) { ImGui::EndDisabled(); return; }
 
         // 리프 값 편집 커밋(before/after blob). beforeFrame = 위젯 호출 직전 값.
-        if (isLeaf)
-            TrackAndCommit(ctx, target, rootType, rootComp, path, label, changed, beforeFrame);
+        if (isLeaf) {
+            if (!drawer && type.GetKind() == refl::Kind::AssetRef) {
+                // Drop and clear are complete actions, independent of the final button's active state.
+                if (changed && rootComp && ctx.commands) {
+                    const auto after = ReadLeafBlob(rootType, rootComp, path);
+                    if (beforeFrame.json != after.json)
+                        ctx.commands->Push(std::make_unique<PropertyEditCommand>(
+                            target, path, beforeFrame, after, std::string("Edit ") + label));
+                }
+            } else {
+                TrackAndCommit(ctx, target, rootType, rootComp, path, label, changed, beforeFrame);
+            }
+        }
     }
 
     // ImGui 활성 상태로 편집 세션을 추적하고, 세션 종료 시 PropertyEditCommand를 발행한다.

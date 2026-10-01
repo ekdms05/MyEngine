@@ -1,11 +1,11 @@
 // mye/runtime/Localization.h — 키 기반 문자열 테이블·LocalizedText (docs/06 §7 로컬라이제이션)
 //
-// 소유: 06 (M6-A). StringTable 에셋(locale별, key → 문자열) + LocalizedText 참조 타입.
+// StringTable 에셋(locale별, key → 문자열) + LocalizedText 참조 타입.
 //   UI·툴팁·대사가 소비. 포맷 자리표시자 {0}/{name} 치환. 폴백 체인 ko → en → key(문자 그대로).
 //   로케일 전환 시 LocaleChangedEvent 발행 → UI 전체 텍스트 리플로우(구독은 소비자 몫).
 //
 // 확장 포인트(docs/06 확장 §7): 한국어 조사 처리 훅 {name:이/가} — 로케일별 후처리 함수 주입점.
-//   M6-A 는 자리표시자 치환까지 구현, 조사 훅은 인터페이스 자리만(FormatterHook).
+//   자리표시자를 치환한 뒤 앱이 주입한 FormatterHook으로 후처리한다.
 #pragma once
 
 #include "mye/runtime/RuntimeTypes.h"
@@ -37,7 +37,7 @@ struct FormatArg {
 };
 
 // 로케일별 후처리 훅(조사 처리 {name:이/가} 등). loc·치환 후 문자열을 받아 변형해 반환.
-//   M6-A: 인터페이스 자리만. 미설정이면 무변형(항등).
+//   미설정이면 무변형(항등).
 using FormatterHook = std::function<std::string(Locale loc, std::string_view formatted)>;
 
 // ---------------------------------------------------------------------------

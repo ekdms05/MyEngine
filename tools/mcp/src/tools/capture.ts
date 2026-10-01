@@ -1,6 +1,6 @@
 /**
- * engine_capture_frame — 프레임 캡처(AI의 눈).
- * 샘플을 `--frames <frame> --dump <임시.bmp>` 로 실행 → BMP 디코드(24/32bpp,
+ * engine_capture_frame — 앱 프레임 캡처.
+ * 앱을 `--frames <frame> --dump <임시.bmp>` 로 실행 → BMP 디코드(24/32bpp,
  * top-down·bottom-up 모두) → 필요 시 최대 변 960px 다운스케일 → PNG 인코드 →
  * MCP 이미지 콘텐츠(base64) 반환.
  */
@@ -15,7 +15,7 @@ import { runProcess, describeExitCode } from "../proc.js";
 import { selectTailWithPriority } from "../summarize.js";
 import { assertSafeName } from "../root.js";
 import { type ServerContext, errorResult, caughtResult, clampText } from "../state.js";
-import { findSampleExe, missingExeError } from "./run.js";
+import { findTargetExe, missingExeError } from "./run.js";
 
 const MAX_SIDE = 960;
 
@@ -32,13 +32,13 @@ export function registerCaptureTool(server: McpServer, ctx: ServerContext): void
     "engine_capture_frame",
     {
       description:
-        "샘플을 N프레임 실행해 마지막 프레임 백버퍼를 PNG 이미지로 캡처해 반환한다(AI의 눈). " +
-        "샘플 CLI 계약 --frames/--dump 를 사용한다.",
+        "앱을 N프레임 실행해 마지막 프레임 백버퍼를 PNG 이미지로 캡처해 반환한다. " +
+        "앱 CLI 계약 --frames/--dump 를 사용한다.",
       inputSchema: {
-        sample: z.string().min(1).default("hello_triangle").describe("샘플 이름"),
+        sample: z.string().min(1).default("MyEditor").describe("실행 타깃(기존 입력 이름 sample). 프로젝트 경로는 args의 --project로 전달"),
         config: z.enum(["Debug", "Release"]).default("Debug").describe("빌드 구성"),
         frame: z.number().int().min(1).default(60).describe("캡처할 프레임 번호(--frames N)"),
-        args: z.array(z.string()).optional().describe("샘플에 넘길 추가 인자"),
+        args: z.array(z.string()).optional().describe("앱에 넘길 추가 인자"),
         timeoutSec: z.number().int().min(1).max(600).default(30).describe("타임아웃(초)"),
       },
     },
@@ -53,9 +53,9 @@ export function registerCaptureTool(server: McpServer, ctx: ServerContext): void
 }
 
 async function doCapture(ctx: ServerContext, p: CaptureParams): Promise<CallToolResult> {
-  assertSafeName(p.sample, "샘플");
+  assertSafeName(p.sample, "타깃");
 
-  const exe = findSampleExe(ctx, p.sample, p.config);
+  const exe = findTargetExe(ctx, p.sample, p.config);
   if (exe === null) return missingExeError(ctx, p.sample, p.config);
 
   ctx.state.ensureDirs();

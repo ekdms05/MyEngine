@@ -1,7 +1,4 @@
-// mye/runtime/Localization.cpp — StringTable·LocalizedText 골격 (M6-A)
-//
-// 골격 범위: Set/Get/현재 로케일/폴백 체인 + 자리표시자 치환({name}/{0})의 최소 동작 구현.
-//   JSON 로드·VFS 로드·후처리 훅은 계약 스텁(구현 에이전트가 core json 파서로 채운다).
+// Locale tables, JSON/VFS loading, fallback lookup, and placeholder formatting.
 #include "mye/runtime/Localization.h"
 
 #include "mye/core/Events.h"

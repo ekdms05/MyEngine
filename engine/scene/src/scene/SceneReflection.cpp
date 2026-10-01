@@ -104,28 +104,28 @@ void SerFloorLevel(IArchive& ar, void* inst) {
 
 template <> void mye::refl::Reflect<mye::scene::LocalTransform>(TypeBuilder<mye::scene::LocalTransform>& b) {
     b.Version(1).CustomSerialize(&SerLocalTransform)
-        .Field("position", &mye::scene::LocalTransform::position)
-        .Field("rotation", &mye::scene::LocalTransform::rotation)
-        .Field("scale", &mye::scene::LocalTransform::scale);
+        .Field("position", &mye::scene::LocalTransform::position).Attr(Attribute::MakeTooltip("부모 기준 위치. 월드 단위, +Y 위쪽. 최상위 조작 캐릭터는 지면 XY를 사용합니다."))
+        .Field("rotation", &mye::scene::LocalTransform::rotation).Attr(Attribute::MakeTooltip("회전 쿼터니언 x/y/z/w. 단위 회전은 0,0,0,1입니다."))
+        .Field("scale", &mye::scene::LocalTransform::scale).Attr(Attribute::MakeTooltip("축별 크기 배율. 기본 1,1,1입니다."));
 }
 template <> void mye::refl::Reflect<mye::scene::SpriteRenderer>(TypeBuilder<mye::scene::SpriteRenderer>& b) {
     b.Version(1).CustomSerialize(&SerSpriteRenderer)
-        .Field("sprite", &mye::scene::SpriteRenderer::sprite)
-        .Field("srcUV", &mye::scene::SpriteRenderer::srcUV)
-        .Field("pivotPx", &mye::scene::SpriteRenderer::pivotPx)
-        .Field("tint", &mye::scene::SpriteRenderer::tint)
-        .Field("visible", &mye::scene::SpriteRenderer::visible)
-        .Field("flipX", &mye::scene::SpriteRenderer::flipX)
-        .Field("flipY", &mye::scene::SpriteRenderer::flipY);
+        .Field("sprite", &mye::scene::SpriteRenderer::sprite).Attr(Attribute::MakeTooltip("표시할 PNG 에셋입니다. 에셋 브라우저에서 드래그하여 지정하세요."))
+        .Field("srcUV", &mye::scene::SpriteRenderer::srcUV).Attr(Attribute::MakeTooltip("이미지에서 사용할 영역. 0~1 정규화 값이며 전체 이미지는 0,0,1,1입니다."))
+        .Field("pivotPx", &mye::scene::SpriteRenderer::pivotPx).Attr(Attribute::MakeTooltip("잘라낸 영역의 좌상단 기준 피벗(픽셀). 캐릭터는 발밑에 맞추세요."))
+        .Field("tint", &mye::scene::SpriteRenderer::tint).Attr(Attribute::MakeTooltip("이미지 색에 곱할 RGBA 값입니다. 흰색이면 원본 색을 사용합니다."))
+        .Field("visible", &mye::scene::SpriteRenderer::visible).Attr(Attribute::MakeTooltip("스프라이트 표시 여부. 충돌 컴포넌트의 활성 여부와 별개입니다."))
+        .Field("flipX", &mye::scene::SpriteRenderer::flipX).Attr(Attribute::MakeTooltip("이미지를 좌우로 반전합니다."))
+        .Field("flipY", &mye::scene::SpriteRenderer::flipY).Attr(Attribute::MakeTooltip("이미지를 위아래로 반전합니다."));
 }
 template <> void mye::refl::Reflect<mye::scene::FloorLevel>(TypeBuilder<mye::scene::FloorLevel>& b) {
-    b.Version(1).CustomSerialize(&SerFloorLevel).Field("level", &mye::scene::FloorLevel::level);
+    b.Version(1).CustomSerialize(&SerFloorLevel).Field("level", &mye::scene::FloorLevel::level).Attr(Attribute::MakeTooltip("높이 층 번호. 일반 지면은 0입니다."));
 }
 
 template <> void mye::refl::Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::anim::SpriteAnimator>& b) {
-    b.Version(1).Field("animation", &mye::anim::SpriteAnimator::animation)
-        .Field("speed", &mye::anim::SpriteAnimator::speed)
-        .Field("playing", &mye::anim::SpriteAnimator::playing);
+    b.Version(1).Field("animation", &mye::anim::SpriteAnimator::animation).Attr(Attribute::MakeTooltip(".anim 에셋을 드래그하세요. 원본 이미지는 애니메이션 에셋에서 지정합니다."))
+        .Field("speed", &mye::anim::SpriteAnimator::speed).Attr(Attribute::MakeTooltip("모션 재생 배율. 1은 원래 속도입니다. 이동 speed와는 별개입니다."))
+        .Field("playing", &mye::anim::SpriteAnimator::playing).Attr(Attribute::MakeTooltip("실행 중 모션을 자동 재생합니다."));
 }
 
 MYE_REFLECT_NAME(mye::scene::ObjectName, "ObjectName");
@@ -137,20 +137,20 @@ template<> void mye::refl::Reflect(EnumBuilder<mye::phys::ShapeKind>& b) {
     b.Value("Box", mye::phys::ShapeKind::AABB).Value("Circle", mye::phys::ShapeKind::Circle);
 }
 template<> void mye::refl::Reflect(TypeBuilder<mye::phys::Shape2D>& b) {
-    b.Version(1).Field("kind", &mye::phys::Shape2D::kind).Field("half", &mye::phys::Shape2D::half);
+    b.Version(1).Field("kind", &mye::phys::Shape2D::kind).Attr(Attribute::MakeTooltip("Box는 박스, Circle은 원입니다. 원은 half.x를 반지름으로 사용합니다.")).Field("half", &mye::phys::Shape2D::half).Attr(Attribute::MakeTooltip("박스 반폭·반높이(월드 단위). 48 픽셀 전체 폭은 half.x=0.5입니다."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<mye::scene::ObjectName>& b) {
-    b.Version(1).Field("value", &mye::scene::ObjectName::value);
+    b.Version(1).Field("value", &mye::scene::ObjectName::value).Attr(Attribute::MakeTooltip("이벤트 대상·포털 도착 지점에서 사용하는 고유 오브젝트 이름입니다."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<mye::phys::Collider2D>& b) {
     using C = mye::phys::Collider2D;
-    b.Version(1).Field("shape", &C::shape).Field("offset", &C::offset).Field("isTrigger", &C::isTrigger)
-        .Field("layerMask", &C::layerMask).Field("collidesWith", &C::collidesWith)
-        .Field("floorMask", &C::floorMask).Field("triggerId", &C::triggerId);
+    b.Version(1).Field("shape", &C::shape).Attr(Attribute::MakeTooltip("충돌 모양과 크기. 뷰포트의 충돌 영역 표시로 확인하세요.")).Field("offset", &C::offset).Attr(Attribute::MakeTooltip("오브젝트 위치에서 충돌 중심까지의 XY 오프셋(월드 단위).")).Field("isTrigger", &C::isTrigger).Attr(Attribute::MakeTooltip("켜면 이동을 막지 않고 TriggerEnter/TriggerExit 이벤트를 보냅니다."))
+        .Field("layerMask", &C::layerMask).Attr(Attribute::MakeTooltip("이 충돌체가 속한 그룹의 비트 마스크입니다.")).Field("collidesWith", &C::collidesWith).Attr(Attribute::MakeTooltip("충돌할 상대 그룹의 비트 마스크입니다."))
+        .Field("floorMask", &C::floorMask).Attr(Attribute::MakeTooltip("충돌을 허용할 높이 층의 비트 마스크입니다.")).Field("triggerId", &C::triggerId).Attr(Attribute::MakeTooltip("트리거 식별 번호입니다. 서로 다른 이벤트 영역을 구분할 때 사용합니다."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<mye::phys::KinematicBody2D>& b) {
     using C = mye::phys::KinematicBody2D;
-    b.Version(1).Field("snapToGround", &C::snapToGround).Field("skin", &C::skin).Field("maxSlideIters", &C::maxSlideIters);
+    b.Version(1).Field("snapToGround", &C::snapToGround).Attr(Attribute::MakeTooltip("바닥 높이 판정에 맞춥니다. 바닥 판정 서비스 연결이 필요합니다.")).Field("skin", &C::skin).Attr(Attribute::MakeTooltip("충돌면과 유지하는 작은 간격(월드 단위). 0~1 범위를 사용합니다.")).Field("maxSlideIters", &C::maxSlideIters).Attr(Attribute::MakeTooltip("한 고정 틱의 최대 벽면 미끄러짐 횟수. 1~16 범위입니다."));
 }
 
 namespace mye::scene {

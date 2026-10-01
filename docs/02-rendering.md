@@ -2,6 +2,8 @@
 
 현재 렌더 경로는 `mye_rhi`의 DX11 백엔드와 `mye_render`의 `HybridRenderer`·`SpriteBatch`·`PixelPerfectTarget`이다. 이 문서는 공용 좌표·픽셀·깊이 계약을 소유한다. API의 실제 정의는 [Rhi.h](../engine/rhi/include/mye/rhi/Rhi.h)와 [render 헤더](../engine/render/include/mye/render)에 있다.
 
+기본 장치는 하드웨어 DX11이다. GPU를 보장하지 않는 Windows CI에서는 테스트 프로세스에 `MYE_DX11_WARP=1`을 지정해 Microsoft WARP 소프트웨어 래스터라이저를 명시적으로 선택한다. 다른 값이나 미설정은 하드웨어 경로를 유지하며, 드라이버 선택은 로그에 표시한다. 디버그 레이어 재시도도 같은 드라이버를 사용한다. WARP 렌더 회귀는 실제 GPU 성능 측정을 대신하지 않는다. Release 패키지의 드라이버 기본값은 바꾸지 않는다.
+
 ## 좌표계·단위
 
 | 항목 | 계약 |
@@ -63,7 +65,7 @@ depth = clamp(band.base + t * band.width - orderBias,
 
 World의 기본 밴드 수는 8이고 높은 층일수록 base가 작다. 현재 값은 [DepthEncoder.h](../engine/render/include/mye/render/DepthEncoder.h)의 컴파일 상수이며 런타임 프로젝트 설정으로 조절되는 기능은 아니다. 렌더의 층 변환은 0~7로 제한한다. 씬 추출의 층 매핑과 렌더 변환이 서로 다른 상한을 갖는 점은 별도 정합 검토 대상이다.
 
-다리 상판과 위층 캐릭터는 상위 World 밴드, 아래 길·캐릭터는 하위 밴드를 사용한다. 층 변경의 원인은 월드·충돌 로직이며 렌더러는 전달받은 층과 정렬 값을 소비한다. MyGame의 물리·층 전이는 아직 전체 연결되지 않았으므로 `bridge_demo`의 검증을 모든 게임 이동 경로의 완성으로 해석하지 않는다.
+다리 상판과 위층 캐릭터는 상위 World 밴드, 아래 길·캐릭터는 하위 밴드를 사용한다. 층 변경의 원인은 월드·충돌 로직이며 렌더러는 전달받은 층과 정렬 값을 소비한다. MyGame은 공용 오브젝트 충돌을 사용하지만 층 전이까지 전체 연결되지는 않았으므로 깊이 테스트를 모든 게임 이동 경로의 완성으로 해석하지 않는다.
 
 ## 삽입 3D 메시
 
@@ -92,7 +94,7 @@ depth = anchorDepth + (0.5 - n) * biasEps
 
 프레임 캡처는 DX11의 `CaptureBackbuffer` 경로를 쓴다. 일반 GPU readback의 `CopyTextureToBuffer`·`EnqueueReadback`·`TryGetReadback`은 아직 stub이므로 완성된 ID 버퍼 픽킹·썸네일 비동기 경로로 설명하지 않는다. `WriteTimestamp`·`ResolveTimestamps`도 현재 DX11 stub이며 GPU 측정 완료 기능으로 설명하지 않는다.
 
-검증은 `bridge_demo`의 다리 위/아래·3D 가림, `sprite_demo`의 픽셀 출력과 `mye_tests`의 깊이·카메라·R8 글리프 출력 검사로 수행한다. 조명·파티클 계산 데이터의 존재는 GPU 합성 완료가 아니다. 실루엣·오버헤드 페이드·라이트맵·포스트·다른 그래픽 API는 [개선 목록](14-development-priorities.md)에 따라 실제 수요와 장면 측정으로 결정한다.
+검증은 `mye_tests`의 깊이·카메라·R8 글리프 픽셀 검사와 현재 마을의 MyEditor 2D/3D·플레이 캡처로 수행한다. 삭제한 과거 렌더 데모는 현재 실행 항목으로 표시하지 않는다. 조명·파티클 계산 데이터의 존재는 GPU 합성 완료가 아니다. 실루엣·오버헤드 페이드·라이트맵·포스트·다른 그래픽 API는 [개선 목록](14-development-priorities.md)에 따라 실제 수요와 장면 측정으로 결정한다.
 
 문서의 깊이 수식은 현재 코드 호출 경로에 맞춰 정정했다. 이번 문서 정리는 좌표·PPU·밴드 상수·실행 알고리즘을 변경하지 않았다.
 

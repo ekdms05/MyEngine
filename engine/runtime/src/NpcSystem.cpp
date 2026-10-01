@@ -1,4 +1,4 @@
-// mye/runtime/NpcSystem.cpp — NPC 배회·상호작용 시스템 구현 (M6-B)
+// mye/runtime/NpcSystem.cpp — NPC 배회·상호작용 시스템 구현
 //
 // 배회 상태기계(고정틱):
 //   Idle → (대기타이머 만료) → 다음 웨이포인트 선택 → MoveController.MoveTo → Moving

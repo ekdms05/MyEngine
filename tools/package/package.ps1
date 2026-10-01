@@ -1,100 +1,147 @@
-# package.ps1 — MyEngine 배포 번들 생성 (docs/mmorpg/09, M11)
-#
-# 정적 링크(별도 DLL 불필요)라서 배포는 exe + 에셋 .pak + 기본 서버 설정을 한 폴더로 묶고
-# zip 으로 압축하면 된다. 클라(MyGame)·서버(MyServer)·에디터(MyEditor)를 함께 담는다.
-#
-# 사용:
-#   pwsh tools/package/package.ps1                       # Release, build/dev 기준, dist/ 로 출력
-#   pwsh tools/package/package.ps1 -Config Debug         # 이미 빌드된 Debug 바이너리로 번들
-#   pwsh tools/package/package.ps1 -Version 0.2.0 -OutDir C:\out
+# Packages reviewed Release artifacts only; never deletes an existing stage.
 param(
-    [string]$Config  = "Release",
-    [string]$BuildDir = "build/dev",
-    [string]$OutDir  = "dist",
-    [string]$Version = "0.1.0",
-    [switch]$NoZip
+    [ValidateSet('Release')][string]$Config = 'Release',
+    [string]$BuildDir = 'build/dev',
+    [string]$OutDir = 'build/packages',
+    [string]$Version = '',
+    [switch]$NoZip,
+    [switch]$AllowDirtyForReview
 )
 
-$ErrorActionPreference = "Stop"
-$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)   # tools/package → repo 루트
-Set-Location $repo
-Write-Host "[package] repo=$repo config=$Config version=$Version"
+$ErrorActionPreference = 'Stop'
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$productVersion = (Get-Content -LiteralPath (Join-Path $repo 'VERSION') -Raw).Trim()
+if (-not $Version) { $Version = $productVersion }
+if ($Version -ne $productVersion -or $Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must match VERSION (major.minor.patch)' }
+$mcpVersion = (Get-Content -LiteralPath (Join-Path $repo 'tools/mcp/package.json') -Raw | ConvertFrom-Json).version
+if ($mcpVersion -ne $Version) { throw 'MCP version must match VERSION' }
+$sourceModified = [bool](& git -C $repo status --porcelain --untracked-files=normal)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read source status' }
+if ($sourceModified -and -not $AllowDirtyForReview) { throw 'Commit the reviewed source before packaging, or use -AllowDirtyForReview for a local candidate.' }
+$revision = (& git -C $repo rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read source revision' }
 
-# apps 폴더명(game/server/editor/paktool)과 타깃명(MyGame 등)이 다르므로 경로를 직접 해석한다:
-#   $BuildDir/apps/<folder>/<Config>/<Target>.exe
-function Resolve-Bin([string]$folder, [string]$target) {
-    $p = Join-Path $repo "$BuildDir/apps/$folder/$Config/$target.exe"
-    if (-not (Test-Path $p)) { throw "실행파일 없음: $p" }
-    return $p
+function Repo-File([string]$relative) {
+    $file = Join-Path $repo $relative
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required package input missing: $relative" }
+    return $file
+}
+function Write-Utf8([string]$file, [string]$text) {
+    [IO.File]::WriteAllText($file, $text, [Text.UTF8Encoding]::new($false))
 }
 
-$gameExe    = Resolve-Bin "game"    "MyGame"
-$serverExe  = Resolve-Bin "server"  "MyServer"
-$editorExe  = Resolve-Bin "editor"  "MyEditor"
-$paktoolExe = Resolve-Bin "paktool" "paktool"
-
-# 출력 스테이징 폴더(OutDir 이 절대경로면 그대로, 상대면 repo 기준).
-$stageName = "MyEngine-$Version-$Config"
-if ([System.IO.Path]::IsPathRooted($OutDir)) { $outRoot = $OutDir }
-else { $outRoot = Join-Path $repo $OutDir }
+$editor = Repo-File "$BuildDir/apps/editor/$Config/MyEditor.exe"
+$player = Repo-File "$BuildDir/apps/game/$Config/MyGame.exe"
+$outRoot = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $repo $OutDir }))
+$stageName = "MyEngine-$Version-windows-x64"
 $stage = Join-Path $outRoot $stageName
-if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
-New-Item -ItemType Directory -Force -Path $stage | Out-Null
-
-# 실행파일 복사.
-Copy-Item $gameExe   (Join-Path $stage "MyGame.exe")
-Copy-Item $serverExe (Join-Path $stage "MyServer.exe")
-Copy-Item $editorExe (Join-Path $stage "MyEditor.exe")
-Write-Host "[package] 실행파일 3종 복사 완료"
-
-# 에셋을 .pak 으로 쿡(있으면).
-$assets = Join-Path $repo "assets"
-if (Test-Path $assets) {
-    $pak = Join-Path $stage "game.pak"
-    & $paktoolExe pack $assets $pak
-    if ($LASTEXITCODE -ne 0) { throw "paktool pack 실패 (exit $LASTEXITCODE)" }
-    Write-Host "[package] 에셋 → game.pak 쿡 완료"
-} else {
-    Write-Host "[package] assets/ 없음 — .pak 건너뜀"
+$zip = "$stage.zip"
+if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip) -or (Test-Path -LiteralPath "$zip.sha256")) {
+    throw 'Package output already exists. Choose a fresh output directory; existing files are preserved.'
 }
 
-# 기본 서버 설정(운영자가 조정할 시작점).
-$cfgDir = Join-Path $stage "server_data"
-New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
-$defaultConfig = @'
-{
-  "cvars": { "tickrate": 20, "move_speed": 6.0, "max_violations": 10, "max_backups": 10 },
-  "flags": { "maintenance": false }
+$publicDocs = @('README.md','01-core-platform.md','02-rendering.md','03-scene-world.md','04-asset-pipeline.md',
+    '06-runtime-systems.md','07-editor-ui.md','08-mcp.md','13-architecture-and-features.md',
+    '14-development-priorities.md','15-skills-and-agents.md','16-foundation-worklog.md',
+    '17-object-workflow.md','19-lua-api.md','20-components.md','release-notes.md')
+foreach ($name in $publicDocs) { $null = Repo-File "docs/$name" }
+$null = Repo-File 'docs/guide/index.html'
+$null = Repo-File 'game/starter/meadow_village/project.myeproj'
+
+New-Item -ItemType Directory -Path $stage -Force | Out-Null
+Copy-Item -LiteralPath $editor -Destination (Join-Path $stage 'MyEditor.exe')
+Copy-Item -LiteralPath $player -Destination (Join-Path $stage 'MyGame.exe')
+New-Item -ItemType Directory -Path (Join-Path $stage 'templates') | Out-Null
+Copy-Item -LiteralPath (Join-Path $repo 'game/starter/meadow_village') -Destination (Join-Path $stage 'templates/meadow_village') -Recurse
+$templateReadme = Join-Path $stage 'templates/meadow_village/README.md'
+Write-Utf8 $templateReadme ([IO.File]::ReadAllText($templateReadme).Replace('../../../docs/', '../../docs/'))
+New-Item -ItemType Directory -Path (Join-Path $stage 'docs') | Out-Null
+Copy-Item -LiteralPath (Join-Path $repo 'docs/guide') -Destination (Join-Path $stage 'docs/guide') -Recurse
+Copy-Item -LiteralPath (Join-Path $repo 'docs/images') -Destination (Join-Path $stage 'docs/images') -Recurse
+foreach ($name in $publicDocs) { Copy-Item -LiteralPath (Repo-File "docs/$name") -Destination (Join-Path $stage "docs/$name") }
+Copy-Item -LiteralPath (Repo-File 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
+Copy-Item -LiteralPath (Repo-File 'README.md') -Destination (Join-Path $stage 'README.md')
+
+# Source references remain useful without adding source/build trees to the binary ZIP.
+$documentationFiles = @((Join-Path $stage 'README.md')) + @($publicDocs | ForEach-Object { Join-Path $stage "docs/$_" }) +
+    @(Get-ChildItem -LiteralPath (Join-Path $stage 'docs/guide') -Filter '*.html' -File -Recurse | ForEach-Object FullName)
+foreach ($file in $documentationFiles) {
+    $text = [IO.File]::ReadAllText($file)
+    $sourceLinks = '(?<open>\]\(|(?:href|src)=["''])(?:\.\./)*(?<path>(?:engine|apps|tools|tests|\.github)/[^)"'']+)(?<close>\)|["''])'
+    $converted = [Text.RegularExpressions.Regex]::Replace($text, $sourceLinks, [Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        $sourcePath = $match.Groups['path'].Value
+        $kind = if (Test-Path -LiteralPath (Join-Path $repo $sourcePath) -PathType Container) { 'tree' } else { 'blob' }
+        return $match.Groups['open'].Value + "https://github.com/ekdms05/MyEngine/$kind/$revision/$sourcePath" + $match.Groups['close'].Value
+    })
+    Write-Utf8 $file $converted
 }
+
+# License notices are read from the linked vendored sources, not vendor build trees.
+$licenseDir = Join-Path $stage 'licenses'
+New-Item -ItemType Directory -Path $licenseDir | Out-Null
+Copy-Item -LiteralPath (Repo-File 'third_party/imgui/LICENSE.txt') -Destination (Join-Path $licenseDir 'imgui.txt')
+Copy-Item -LiteralPath (Repo-File 'third_party/freetype/LICENSE.TXT') -Destination (Join-Path $licenseDir 'freetype-license-selection.txt')
+Copy-Item -LiteralPath (Repo-File 'tools/package/licenses/FTL.TXT') -Destination (Join-Path $licenseDir 'FTL.TXT')
+function Copy-LicenseBlock([string]$source, [string]$marker, [string]$name) {
+    $text = [IO.File]::ReadAllText((Repo-File $source))
+    $start = $text.LastIndexOf($marker, [StringComparison]::Ordinal)
+    if ($start -lt 0) { throw "License marker missing: $source" }
+    Write-Utf8 (Join-Path $licenseDir $name) $text.Substring($start)
+}
+Copy-LicenseBlock 'third_party/lua/lua.h' 'Copyright (C) 1994-2024 Lua.org, PUC-Rio.' 'lua.txt'
+Copy-LicenseBlock 'third_party/cgltf/cgltf.h' 'cgltf is distributed under MIT license:' 'cgltf.txt'
+Copy-LicenseBlock 'third_party/stb/stb_image.h' 'This software is available under 2 licenses' 'stb-image.txt'
+Copy-LicenseBlock 'third_party/stb_vorbis/stb_vorbis.c' 'This software is available under 2 licenses' 'stb-vorbis.txt'
+foreach ($name in @('imstb_truetype.h','imstb_rectpack.h','imstb_textedit.h')) {
+    Copy-LicenseBlock "third_party/imgui/$name" 'This software is available under 2 licenses' ($name + '.txt')
+}
+Copy-LicenseBlock 'third_party/miniaudio/miniaudio.h' 'This software is available as a choice of the following licenses.' 'miniaudio.txt'
+$zlibNotice = [IO.File]::ReadAllText((Repo-File 'third_party/freetype/src/gzip/zlib.h'))
+$zlibEnd = $zlibNotice.IndexOf('*/', [StringComparison]::Ordinal)
+if ($zlibEnd -lt 0) { throw 'FreeType gzip license notice missing' }
+Write-Utf8 (Join-Path $licenseDir 'freetype-zlib.txt') $zlibNotice.Substring(0, $zlibEnd + 2)
+foreach ($name in @('src/base/fthash.c','src/autofit/ft-hb.c')) {
+    $text = [IO.File]::ReadAllText((Repo-File "third_party/freetype/$name"))
+    $end = $text.IndexOf('#include', [StringComparison]::Ordinal)
+    if ($end -lt 0) { throw "FreeType notice boundary missing: $name" }
+    Write-Utf8 (Join-Path $licenseDir ((Split-Path $name -Leaf) + '.txt')) $text.Substring(0, $end)
+}
+Write-Utf8 (Join-Path $licenseDir 'NOTICE.txt') @'
+This software is based in part on the work of the FreeType Team.
+Portions are copyright (C) 1996-2024 The FreeType Project (https://www.freetype.org).
+ImGui (including embedded stb), Lua, cgltf, stb and miniaudio notices are included beside this file.
+FreeType's embedded zlib, X11 and Old MIT notices are retained with its selected FreeType License.
+Windows system fonts are loaded from the user's OS installation and are not redistributed.
+Starter content source/provenance is retained with templates/meadow_village.
 '@
-Set-Content -Path (Join-Path $cfgDir "config.json") -Value $defaultConfig -Encoding utf8
 
-# 버전/실행 안내.
-$readme = @"
-MyEngine $Version ($Config)
+Write-Utf8 (Join-Path $stage 'README.txt') @"
+MyEngine $Version - Windows x64
 
-포함:
-  MyGame.exe    — 게임 클라이언트/런타임 (사용법: MyGame.exe --project <dir> --scene <name>)
-  MyServer.exe  — 헤드리스 게임 서버   (사용법: MyServer.exe --data server_data --port 27015)
-  MyEditor.exe  — 에디터
-  game.pak      — 쿡된 에셋 아카이브
-  server_data/config.json — 서버 CVar/피처플래그/점검모드(핫리로드)
+Run MyEditor.exe, then create or open a project in the project launcher.
+The meadow village template and the offline guide (docs/guide/index.html) are included.
+Play opens the project in a separate game window; pause/stop remain in the editor toolbar.
+To play an existing project directly: MyGame.exe --project "path/to/project.myeproj".
 
-서버 계정 등록:  MyServer.exe --data server_data --register <user> <pass>
-서버 실행:       MyServer.exe --data server_data
-빌드: $(Get-Date -Format 'yyyy-MM-dd')
+Requirements: Windows 10/11 x64, DirectX 11 device/driver, latest Microsoft Visual C++ v14 x64 Redistributable.
+Official runtime download: https://aka.ms/vc14/vc_redist.x64.exe
+Korean/Japanese/Chinese text uses installed Windows language fonts. Install the language fonts if missing.
+This package contains the editor, local project player and starter, not a finished MMORPG or a game export installer.
+License notices: LICENSE and licenses/. File integrity: release-manifest.json and the ZIP SHA256 sidecar.
 "@
-Set-Content -Path (Join-Path $stage "README.txt") -Value $readme -Encoding utf8
-Set-Content -Path (Join-Path $stage "version.txt") -Value "$Version $Config" -Encoding utf8
 
-Write-Host "[package] 스테이징 완료 → $stage"
-
-# zip 압축.
+$files = @(Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
+    @{ path = $_.FullName.Substring($stage.Length + 1).Replace('\','/'); bytes = $_.Length;
+       sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+})
+$manifest = @{ version = $Version; platform = 'windows-x64'; configuration = $Config; sourceRevision = $revision;
+    sourceModified = $sourceModified; files = $files }
+Write-Utf8 (Join-Path $stage 'release-manifest.json') ($manifest | ConvertTo-Json -Depth 5)
 if (-not $NoZip) {
-    $zip = "$stage.zip"
-    if (Test-Path $zip) { Remove-Item -Force $zip }
-    Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
-    Write-Host "[package] 압축 완료 → $zip"
+    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
+    $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Utf8 "$zip.sha256" "$hash  $([IO.Path]::GetFileName($zip))`n"
+    Write-Host "Package: $zip"
 }
-
-Write-Host "[package] 완료."
+Write-Host "Stage: $stage ($($files.Count) files)"

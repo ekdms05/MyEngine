@@ -27,6 +27,7 @@
 
 #include "mye/core/Module.h"
 #include "mye/core/Log.h"
+#include "mye/core/JsonFile.h"
 
 #include "mye/ecs/World.h"
 #include "mye/ecs/ComponentType.h"
@@ -303,9 +304,9 @@ private:
         std::string root(ctx.project->RootDir());
         if (root.empty()) return {};
         std::error_code ec;
-        std::filesystem::path p = std::filesystem::path(root) / "assets";
+        const auto p = Utf8Path(root) / "assets";
         if (!std::filesystem::exists(p, ec)) return {};
-        return p.string();
+        return Utf8String(p);
     }
 
     // dir = assets 마운트 기준 상대 폴더("" = 루트, "chars/npc" 등).
@@ -366,13 +367,13 @@ private:
     static void EnumerateDir(const std::string& assetsRoot, const std::string& dir,
                              bool wantDirs, std::vector<std::string>& out) {
         std::error_code ec;
-        std::filesystem::path base = std::filesystem::path(assetsRoot);
-        if (!dir.empty()) base /= std::filesystem::path(dir);
+        auto base = Utf8Path(assetsRoot);
+        if (!dir.empty()) base /= Utf8Path(dir);
         if (!std::filesystem::exists(base, ec)) return;
         for (const auto& e : std::filesystem::directory_iterator(base, ec)) {
             if (ec) break;
             const bool isDir = e.is_directory(ec);
-            std::string name = e.path().filename().string();
+            std::string name = Utf8String(e.path().filename());
             if (name.empty() || name.front() == '.') continue;   // .meta·숨김 스킵.
             if (isDir != wantDirs) continue;
             out.push_back(std::move(name));

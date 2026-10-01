@@ -68,6 +68,12 @@ void SelectionManager::Clear() {
     Select(std::span<const SelectableRef>{}, SelectMode::Replace);
 }
 
+void SelectionManager::Reset() {
+    Clear();
+    m_impl->history.clear();
+    m_impl->historyCursor = 0;
+}
+
 std::span<const SelectableRef> SelectionManager::Current() const { return m_impl->current; }
 SelectableRef SelectionManager::Primary() const { return m_impl->primary; }
 

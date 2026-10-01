@@ -316,7 +316,7 @@ MYE_TEST(PlayModeStateMachine) {
         [&](const PlayStateChangedEvent& ev) { ++changes; last = ev.current; return false; }));
 
     MYE_EXPECT(h.playMode.State() == PlayState::Edit);
-    h.playMode.Play();
+    MYE_EXPECT(h.playMode.Play());
     MYE_EXPECT(h.playMode.State() == PlayState::Playing);
     MYE_EXPECT(last == PlayState::Playing);
 
@@ -330,7 +330,7 @@ MYE_TEST(PlayModeStateMachine) {
     MYE_EXPECT(changes == 4);   // Playing·Paused·Playing·Edit.
 
     // Play 중 별도 Undo 스택 존재, Stop 후 파기.
-    h.playMode.Play();
+    MYE_EXPECT(h.playMode.Play());
     MYE_EXPECT(h.playMode.PlayCommandStack() != nullptr);
     h.playMode.Stop();
     MYE_EXPECT(h.playMode.PlayCommandStack() == nullptr);
@@ -343,7 +343,7 @@ MYE_TEST(PlayModeSnapshotRoundtrip) {
     h.world.Add<edtest::Health>(e).hp = 100;
 
     // Play — 편집 World 스냅샷 → Play World. ActiveWorld는 이제 Play World.
-    h.playMode.Play();
+    MYE_EXPECT(h.playMode.Play());
     ecs::World* playWorld = h.playMode.ActiveWorld();
     MYE_EXPECT(playWorld != nullptr && playWorld != &h.world);
 

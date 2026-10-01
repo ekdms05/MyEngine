@@ -23,6 +23,7 @@
 | P0-04 | 자체 FNV·예측 토큰·만료 없음, 평문 UDP 자격증명 | CNG PBKDF2-SHA256/난수 salt·토큰/24시간 만료. 구형 계정 로그인 이관 검증. 루프백 바인드로 노출 제한 | **부분 수정 / 최우선 미완성**: 보호되는 인증 채널·세션 패킷 인증·로그인 속도 제한 필요 |
 | P1-01 | 절단·과거 seq 입력 적용, 대각선 속도 증가 | v1·메시지 종류·길이·varuint 범위·순서 검사, 공통 이동 정규화, 스냅샷 64명 상한·서버 발신자 검사 | 입력 경계 수정. 패킷 세션 nonce·재전송·틱 협상은 미완성 |
 | P1-03 | MyGame 무음 초기화·메뉴 중복 라벨·잘못된 글리프 출력 | AudioModule 재사용, 항목 라벨·정수 배율 클릭 좌표, R8 마스크·UI +Y 아래·painter 순서 수정 | 타이틀/설정 캡처·GPU 출력 회귀·장치 초기화 확인. 청취·다양한 DPI·설정 마우스 UX는 미검증/미완성 |
+| P1-05 기본 파일 흐름 | 프로젝트 경로만 기록하고 씬을 읽지 않음, 모든 문서가 하나의 편집 World 사용 | 버전 있는 .myeproj, 후보 로드 후 교체, 문서별 World·Undo, 메뉴·파일 선택·단축키, 원자적 씬 쓰기와 미저장 확인 | 한글 프로젝트 생성→편집→저장→재열기→Play 및 실패 보존 검증. 최근 목록·복구·DPI·게임 플레이 시스템은 후속 범위 |
 | P2-03 일부 | User 설정 로드 누락, 글꼴 드라이브 고정 | 코어 User 스코프 로드, 게임 설정 저장·복원 경로, 시스템 Windows 폰트 경로 사용 | 기본 경로 연결. 프로젝트 배포 글꼴·fallback·UiDocument 컨트롤러 통합 필요 |
 
 근거: [GameServer](../engine/gameserver/src/GameServer.cpp), [NetGameServer](../engine/gameserver/src/NetGameServer.cpp), [저장](../engine/persist/src/PersistenceService.cpp), [계정](../engine/persist/src/AccountStore.cpp), [프로토콜](../engine/net/include/mye/net/Protocol.h), [게임](../apps/game/main.cpp), [스프라이트 배치](../engine/render/src/SpriteBatch.cpp).
@@ -37,11 +38,13 @@ PBKDF2 회수는 [OWASP 비밀번호 저장 기준](https://cheatsheetseries.owa
 | 2 · P0-02 확장 | 영속성 | 저장 실패·복구 감사, ID/계정/원장 교차 참조 정책, 운영 내구성·동시성 결정. 장애 주입·백업 무결성·복구 범위 검증. 용량/운영 요구가 확정되면 DB·마이그레이션 선택 |
 | 3 · P1-02 | 접속 수명 | 네트워크 admit와 Join 실패 취소, heartbeat/timeout, 캐릭터 없음·중복 접속·강제 종료에서 유령 엔티티 없음. 거부와 일시 장애를 UI에 구분 |
 | 4 · P1-04 | 이동 계약 | 고정 틱 로컬 이동에 기존 물리·층 판정 연결. 클라이언트/서버의 이동·충돌·속도·틱 설정 공통화. 벽·경사·다리 위/아래·프레임률·서버 설정 변경 검사 |
-| 5 · P1-05 | 에디터 파일 흐름 | ProjectContext::Open/OpenScene의 실제 해석·로드 TODO 해결. 기존 SceneSerializer·문서·PlayWorld 사용. 열기→편집→저장→재열기→플레이, 실패 시 현재 문서 보존 |
+| 5 · P1-05 잔여 | 에디터 제품 흐름 | 기본 create/open/save는 연결했다. 파일 선택·미저장 확인의 다양한 DPI/키보드 접근 검사, 저장 충돌·잔여 tmp 복구 절차. P1-06 후 동일 에셋·물리·Lua/runtime 플레이 연결; 현재 씬 실행/시작 씬 실행 구분 검증 |
 | 6 · P1-06 | 에셋 흐름 | 앱 경로 GUID·PNG 선로딩을 기존 GUID/.meta/VFS/AssetManager에 수렴. watcher·import 설정·필요한 에셋만 로딩. 이동/재임포트 실패에서 참조·이전 자원 보존 |
 | 7 · P2-01/02 | 코드 경계 | AudioModule 중복은 제거. main의 UI·씬·네트워크를 수명/변경 이유가 다른 책임에서만 분리. render가 PRIVATE include로 scene 구현을 읽는 결합을 순수 렌더 입력 계약으로 정리 |
 | 8 · P2-03/04 | UI·진단 | 설정 마우스·키보드·배율 UX, 배포 폰트, UiDocument 위젯/스크립트 연결. ConfigChangedEvent EventBus·minidump·초기화 오류 경계 검증 |
 | 9 · P2-05/06 | 측정·배포 | 동일 Release 장면의 CPU/GPU·할당·배치·에셋·바이트 기준선. GPU 타임스탬프와 일반 readback은 DX11 stub이므로 연결 전 완료 주장 금지. pak/글꼴/스크립트 배포·새 PC 실행 확인 |
+
+Godot 공식 자료와 채택·보류 근거는 [에디터 문서](07-editor-ui.md#godot에서-참고한-계약)에 기록한다. 최근 프로젝트·문서 재개는 P2, 자동 저장·크래시 복구는 데이터 보존 정책과 실패 주입 검증을 선행하는 P2 항목이다. 구현된 DX11 외의 렌더러 선택이나 별도 런처는 현재 요구가 없어 보류한다.
 
 ## 새 개발·제품 통합
 

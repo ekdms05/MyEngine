@@ -13,6 +13,7 @@
 #include "mye/editor/Project.h"
 #include "mye/core/Module.h"
 #include "mye/core/Log.h"
+#include "mye/core/JsonFile.h"
 #include "mye/core/I18n.h"
 #include "mye/core/Window.h"
 #include "mye/ecs/World.h"
@@ -47,12 +48,6 @@ Expected<void, Error> EditorApp::Initialize(EngineContext& engine, std::string_v
 
     m_playMode->SetEventBus(m_events);
 
-    // 프로젝트 오픈(--project). 실패 시 상위(모듈)가 처리(런처는 P2).
-    if (!projectPath.empty()) {
-        auto r = m_project->Open(projectPath);
-        if (!r) return r.GetError();
-    }
-
     RegisterBuiltinPanels();
 
     // 프레임 컨텍스트 정적 배선(문서·커맨드·World는 매 프레임 갱신).
@@ -64,7 +59,15 @@ Expected<void, Error> EditorApp::Initialize(EngineContext& engine, std::string_v
     m_ctx.extensions = m_extensions.get();
     m_ctx.project    = m_project.get();
 
-    RestoreLayout();
+    if (!projectPath.empty()) {
+        auto result = OpenProject(projectPath);
+        if (!result) {
+            ReportFileResult(result, "");
+            RestoreLayout(); // Editor remains usable so the user can choose a valid project.
+        }
+    } else RestoreLayout();
+    m_window = MainWindowOrNull();
+    if (m_window) m_window->AddMessageHook(this, -100);
     return {};
 }
 
@@ -104,66 +107,65 @@ void EditorApp::RestoreLayout() {
     //   사용자가 조절한 레이아웃이 저장/복원된다(첫 실행은 기본 배치, 이후엔 저장된 배치).
     std::error_code ec;
     if (m_project && m_project->IsOpen()) {
-        std::filesystem::create_directories(m_project->EditorStateDir(), ec);
+        std::filesystem::create_directories(Utf8Path(m_project->EditorStateDir()), ec);
         m_layoutIniPath = m_project->LayoutIniPath();
     } else if (m_engine) {
-        std::filesystem::path userDir(m_engine->GetPaths().userDir);
+        const auto userDir = Utf8Path(m_engine->GetPaths().userDir);
         std::filesystem::create_directories(userDir, ec);
-        m_layoutIniPath = (userDir / "editor_layout.ini").string();
+        m_layoutIniPath = Utf8String(userDir / "editor_layout.ini");
     }
 
     // ImGui가 존재하는 프레임에서만 IO 접근(테스트 경로는 ImGui 미초기화).
     if (ImGui::GetCurrentContext() && !m_layoutIniPath.empty()) {
-        ImGui::GetIO().IniFilename = m_layoutIniPath.c_str();
-        if (std::filesystem::exists(m_layoutIniPath, ec))
-            ImGui::LoadIniSettingsFromDisk(m_layoutIniPath.c_str());   // 저장된 도킹 레이아웃 즉시 복원
+        ImGui::GetIO().IniFilename = nullptr; // Native ImGui fopen does not accept all UTF-8 Windows paths.
+        std::ifstream in(Utf8Path(m_layoutIniPath), std::ios::binary);
+        if (in) {
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            ImGui::LoadIniSettingsFromMemory(text.data(), text.size());
+        }
     }
 
     // 열린 패널 목록(session.json) 복원 — 프로젝트가 있을 때만.
     if (m_project && m_project->IsOpen()) {
         const std::string sessionPath = m_project->SessionJsonPath();
-        if (std::filesystem::exists(sessionPath, ec)) {
-            std::ifstream in(sessionPath, std::ios::binary);
-            if (in) {
-                std::string text((std::istreambuf_iterator<char>(in)),
-                                 std::istreambuf_iterator<char>());
-                auto parsed = json::Parse(text);
-                if (parsed) m_panels->DeserializeLayout(parsed.Value());
-            }
+        if (std::filesystem::exists(Utf8Path(sessionPath), ec)) {
+            auto parsed = ReadJsonFile(Utf8Path(sessionPath));
+            if (parsed) m_panels->DeserializeLayout(parsed.Value());
+            else MYE_LOG_WARN("Editor", "Layout restore failed: {}", parsed.GetError().message);
         }
     }
 }
 
-void EditorApp::SaveLayout() {
+Expected<void, Error> EditorApp::SaveLayout() {
     // 도킹 레이아웃(ImGui ini)은 프로젝트 유무와 무관하게 저장 — 그냥 실행한 경우도 유저 스코프
     //   경로에 사용자가 조절한 배치를 남긴다.
-    if (ImGui::GetCurrentContext() && !m_layoutIniPath.empty())
-        ImGui::SaveIniSettingsToDisk(m_layoutIniPath.c_str());
+    if (ImGui::GetCurrentContext() && !m_layoutIniPath.empty()) {
+        std::size_t size = 0;
+        const char* text = ImGui::SaveIniSettingsToMemory(&size);
+        std::ofstream out(Utf8Path(m_layoutIniPath), std::ios::binary | std::ios::trunc);
+        out.write(text, static_cast<std::streamsize>(size));
+        out.flush();
+        if (!out) return Error{"Could not save editor layout", 1};
+    }
 
     // 열린 패널 목록(session.json)은 프로젝트가 있을 때만.
-    if (!m_project || !m_project->IsOpen()) return;
+    if (!m_project || !m_project->IsOpen()) return {};
     json::Value session;
     m_panels->SerializeLayout(session);
-    const std::string text = json::Stringify(session);
     const std::string sessionPath = m_project->SessionJsonPath();
     std::error_code ec;
-    std::filesystem::create_directories(m_project->EditorStateDir(), ec);
-    std::ofstream out(sessionPath, std::ios::binary | std::ios::trunc);
-    if (out) out.write(text.data(), static_cast<std::streamsize>(text.size()));
+    std::filesystem::create_directories(Utf8Path(m_project->EditorStateDir()), ec);
+    if (ec) return Error{"Could not create editor state folder: " + ec.message(), ec.value()};
+    return WriteJsonFile(Utf8Path(sessionPath), session);
 }
 
 void EditorApp::OnFrame() {
     // 매 프레임 문서·커맨드 컨텍스트 갱신(포커스 문서 기준).
-    Document* active = m_project ? m_project->Active() : nullptr;
-    m_ctx.activeDocument = active;
-    m_ctx.commands = active ? &active->Commands() : nullptr;
-    // 활성 문서 스택에 컨텍스트 배선(Execute/Undo가 이 ctx를 커맨드에 전달).
-    if (active) active->Commands().SetContext(&m_ctx);
-    if (m_playMode && m_playMode->PlayCommandStack())
-        m_playMode->PlayCommandStack()->SetContext(&m_ctx);
+    RefreshDocumentContext();
 
     HandleShortcuts();
     DrawMenuBar();
+    RefreshDocumentContext();
 
     // 에디터 호스트 윈도우: 메인 메뉴바 아래 작업영역 전체를 덮고, 그 안에 [툴바 행][도크스페이스]
     //   를 세로로 쌓는다. 이렇게 하면 툴바가 도크스페이스(씬 뷰포트 탭 포함) 위를 덮지 않아,
@@ -184,10 +186,12 @@ void EditorApp::OnFrame() {
     ImGui::PopStyleVar(3);
 
     DrawToolbar();                                   // 툴바 행(인라인)
+    DrawDocumentTabs();
     if (m_panels) m_panels->SetupDockspace(m_ctx);   // 남은 영역에 도크스페이스 + 최초 1회 기본 배치
     ImGui::End();                                    // 호스트 종료
 
     if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
+    DrawFileDialogs();
 }
 
 CommandStack& EditorApp::Commands() {
@@ -238,10 +242,19 @@ void EditorApp::DrawMenuBar() {
 
     using mye::i18n::T;
     if (ImGui::BeginMenu(T("menu.file"))) {
-        if (ImGui::MenuItem(T("file.newscene"), "Ctrl+N")) NewScene();
-        if (ImGui::MenuItem(T("file.save"), "Ctrl+S")) SaveActive();
+        const bool editing = m_playMode && !m_playMode->IsPlaying();
+        const bool open = m_project && m_project->IsOpen();
+        if (ImGui::MenuItem(T("file.newproject"), "Ctrl+Shift+N", false, editing)) RequestNewProject();
+        if (ImGui::MenuItem(T("file.openproject"), "Ctrl+Shift+O", false, editing)) RequestOpenProject();
+        if (ImGui::MenuItem(T("file.openfolder"), nullptr, false, editing)) RequestOpenProject(true);
+        if (ImGui::MenuItem(T("file.saveproject"), "Ctrl+Alt+S", false, editing && open)) RequestSaveProject();
         ImGui::Separator();
-        if (ImGui::MenuItem(T("file.savelayout"))) SaveLayout();
+        if (ImGui::MenuItem(T("file.newscene"), "Ctrl+N", false, editing && open)) NewScene();
+        if (ImGui::MenuItem(T("file.openscene"), "Ctrl+O", false, editing && open)) RequestOpenScene();
+        if (ImGui::MenuItem(T("file.save"), "Ctrl+S", false, editing && m_project->Active())) SaveActive();
+        if (ImGui::MenuItem(T("file.saveas"), "Ctrl+Shift+S", false, editing && m_project->Active())) RequestSaveAs();
+        ImGui::Separator();
+        if (ImGui::MenuItem(T("file.savelayout"))) ReportFileResult(SaveLayout(), T("file.savelayout"));
         ImGui::EndMenu();
     }
 
@@ -335,10 +348,18 @@ void EditorApp::DrawToolbar() {
 
     const bool playing = m_playMode && m_playMode->IsPlaying();
     ImGui::BeginDisabled(playing);
+    if (ImGui::Button(T("file.newproject"))) RequestNewProject();
+    ImGui::SameLine();
+    if (ImGui::Button(T("file.openproject"))) RequestOpenProject();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!m_project || !m_project->IsOpen());
+    if (ImGui::Button(T("file.saveproject"))) RequestSaveProject();
+    ImGui::SameLine();
     if (ImGui::Button(T("toolbar.newscene"))) NewScene();
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_project || !m_project->Active() || !m_ctx.activeWorld());
     if (ImGui::Button(T("toolbar.save"))) SaveActive();
+    ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::SameLine();
@@ -377,6 +398,10 @@ void EditorApp::DrawToolbar() {
     }
 
     ImGui::Unindent(6.0f);
+    if (!m_fileStatus.empty()) {
+        if (m_fileError) ImGui::TextWrapped("%s: %s", T("file.error"), m_fileStatus.c_str());
+        else ImGui::TextWrapped("%s", m_fileStatus.c_str());
+    }
     ImGui::Dummy(ImVec2(0, 2));
     ImGui::Separator();
     ImGui::PopStyleVar();
@@ -386,13 +411,18 @@ void EditorApp::HandleShortcuts() {
     if (!ImGui::GetCurrentContext()) return;
     ImGuiIO& io = ImGui::GetIO();
     // 텍스트 입력 위젯 포커스 중에는 편집 단축키를 가로채지 않는다.
-    if (io.WantTextInput) return;
+    if (io.WantTextInput || m_showNewProject || ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId)) return;
     const bool ctrl = io.KeyCtrl;
     const bool shift = io.KeyShift;
     const bool alt = io.KeyAlt;
 
-    if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_N, false)) NewScene();
-    if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_S, false)) SaveActive();
+    if (ctrl && shift && ImGui::IsKeyPressed(ImGuiKey_N, false)) RequestNewProject();
+    if (ctrl && shift && ImGui::IsKeyPressed(ImGuiKey_O, false)) RequestOpenProject();
+    if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_N, false)) NewScene();
+    if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_O, false)) RequestOpenScene();
+    if (ctrl && !shift && !alt && ImGui::IsKeyPressed(ImGuiKey_S, false)) SaveActive();
+    if (ctrl && shift && !alt && ImGui::IsKeyPressed(ImGuiKey_S, false)) RequestSaveAs();
+    if (ctrl && alt && !shift && ImGui::IsKeyPressed(ImGuiKey_S, false)) RequestSaveProject();
 
     if (CommandStack* s = ActiveStack()) {
         if (ctrl && !shift && ImGui::IsKeyPressed(ImGuiKey_Z, false)) s->Undo();
@@ -421,75 +451,36 @@ void EditorApp::HandleShortcuts() {
 }
 
 void EditorApp::NewScene() {
-    if (!m_project || (m_playMode && m_playMode->IsPlaying())) return;
-    Document* doc = m_project->NewScene();
-    (void)doc;
+    if (!m_project || !m_project->IsOpen() || (m_playMode && m_playMode->IsPlaying())) return;
+    m_project->NewScene();
+    RefreshDocumentContext();
+    m_selectDocumentTab = true;
 }
 
 void EditorApp::SaveActive() {
     Document* active = m_project ? m_project->Active() : nullptr;
     if (!active) return;
 
-    // 07 §3: 저장 대상은 편집 World. 플레이 중에는 Play World가 표시되므로 저장을 막는다
-    //   (편집 상태를 덮어쓰지 않도록 — Stop 후 저장).
-    if (m_playMode && m_playMode->IsPlaying()) {
-        MYE_LOG_WARN("Editor", "플레이 중에는 저장할 수 없습니다. ■ 정지 후 저장하세요.");
-        return;
-    }
-
-    ecs::World* world = m_ctx.activeWorld();
-    if (!world) {
-        MYE_LOG_WARN("Editor", "저장 실패: 활성 씬 World 없음");
-        return;
-    }
-
-    // 저장 경로: 문서 경로가 있으면 그대로, 없으면 프로젝트 기본 경로(대화상자 대신).
-    std::string path(active->Path());
-    if (path.empty()) {
-        path = DefaultScenePath();
-        if (path.empty()) {
-            MYE_LOG_WARN("Editor", "저장 실패: 저장 경로를 결정할 수 없음(프로젝트 미오픈)");
-            return;
-        }
-        active->SetPath(path);
-    }
-
-    // 상위 디렉터리 보장.
-    std::error_code ec;
-    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
-
-    SceneSerializer ser;
-    auto r = ser.SaveToFile(*world, path);
-    if (!r) {
-        MYE_LOG_ERROR("Editor", "씬 저장 실패({}): {}", path, r.GetError().message);
-        return;
-    }
-
-    active->Commands().MarkSaved();   // dirty 클리어(탭 '*' 제거).
-    SaveLayout();
-    MYE_LOG_INFO("Editor", "씬 저장 완료: {}", path);
-}
-
-// 미저장 새 씬의 기본 저장 경로(<projectRoot>/assets/scenes/untitled.scene).
-std::string EditorApp::DefaultScenePath() const {
-    if (!m_project || !m_project->IsOpen()) return {};
-    std::string root(m_project->RootDir());
-    if (root.empty()) return {};
-    std::filesystem::path p = std::filesystem::path(root) / "assets" / "scenes" / "untitled.scene";
-    return p.string();
+    if (active->Path().empty()) RequestSaveAs();
+    else ReportFileResult(SaveScene(active->Path()), mye::i18n::T("file.saved"));
 }
 
 void EditorApp::TogglePlay() {
     if (!m_playMode) return;
-    // 07 §3: SetEditWorld는 EditorModule이 SceneModule::World()로 배선. 편집 World가 없으면
-    //   Play는 빈 Play World로 진입(상태 전이만).
     if (m_playMode->IsPlaying()) m_playMode->Stop();
-    else m_playMode->Play();
+    else {
+        auto started = m_playMode->Play();
+        if (!started) ReportFileResult(started, "");
+    }
+    RefreshDocumentContext();
 }
 
 void EditorApp::Shutdown() {
     // 레이아웃 저장(세션·ini). 셧다운 데드락 규약: 디바이스/윈도우 파괴 전에 UI 상태만 정리.
-    SaveLayout();
+    auto layout = SaveLayout();
+    if (!layout) MYE_LOG_WARN("Editor", "{}", layout.GetError().message);
+    if (m_window) m_window->RemoveMessageHook(this);
+    m_window = nullptr;
 
     // 서브시스템 파괴는 선언 역순.
     m_inspector.reset();

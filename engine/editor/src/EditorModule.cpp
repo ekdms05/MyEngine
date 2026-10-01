@@ -14,13 +14,12 @@
 // 검증 CLI: --headless(창 없이), --frames N(N 프레임 후 종료), --dump path.bmp(오프스크린 RT 덤프).
 //
 // 셧다운 순서(데드락·수명 규약): EditorApp Shutdown → DebugUi Shutdown(윈도우/디바이스보다 먼저)
-//   → 렌더 타깃/렌더러 → 스왑체인 → 디바이스. World 는 SceneModule 소유(여기서 파괴 금지).
+//   UI shuts down before GPU resources; each Document owns its edit World.
 #include "mye/editor/EditorModule.h"
 #include "mye/editor/EditorApp.h"
 #include "mye/editor/PlayMode.h"
 #include "mye/editor/Viewport.h"
 
-#include "mye/scene/SceneModule.h"
 #include "mye/scene/RenderExtract.h"
 #include "mye/scene/Transform.h"
 
@@ -67,7 +66,6 @@ struct EditorModule::Impl final : public IEditorViewport {
     std::string projectPath;
 
     EngineContext*         engine = nullptr;
-    scene::SceneModule*    sceneModule = nullptr;
     InputState*            input = nullptr;
 
     // 렌더 자원.
@@ -144,7 +142,9 @@ struct EditorModule::Impl final : public IEditorViewport {
 };
 
 // -----------------------------------------------------------------------------
-EditorModule::EditorModule() : m_impl(std::make_unique<Impl>()) {}
+EditorModule::EditorModule(std::string projectPath) : m_impl(std::make_unique<Impl>()) {
+    m_impl->projectPath = std::move(projectPath);
+}
 EditorModule::~EditorModule() = default;
 
 std::span<const char* const> EditorModule::GetDependencies() const {
@@ -163,7 +163,7 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
 
     // 프로젝트 경로는 --project(EnginePaths.projectDir). frames/dump/headless CLI 는
     //   main.cpp(MyEditorApp)가 파싱해 SetCliControl 로 주입한다(headless 는 창 유무로도 판정).
-    s.projectPath = ctx.GetPaths().projectDir;
+    if (s.projectPath.empty()) s.projectPath = ctx.GetPaths().projectDir;
 
     // 디바이스 생성(창이 없어도 오프스크린 렌더용으로 생성 — 헤드리스 덤프 지원).
     auto deviceResult = rhi::CreateDevice(rhi::Backend::DX11, {});
@@ -218,7 +218,7 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
         hrd.alphaCutoff = 0.5f;
         s.hybrid.Init(*s.device, hrd);
         // 텍스처 해석기: 에디터 에셋 파이프라인(에셋 브라우저 에이전트)과 공유 예정.
-        //   M4-B 는 미배선 — 텍스처 미해석 스프라이트는 렌더 스킵(그리드·기즈모·픽킹은 정상 동작).
+        // Texture resolution is not wired yet; unresolved sprites are skipped.
     }
 
     s.app = std::make_unique<EditorApp>();
@@ -230,10 +230,7 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
         auto r = s.app->Initialize(ctx, s.projectPath);
         if (!r) MYE_LOG_ERROR("Editor", "EditorApp 초기화 실패: {}", r.GetError().message);
 
-        // 07 §3: 편집 World = SceneModule 의 active World.
-        s.sceneModule = ctx.GetService<scene::SceneModule>();
-        if (s.sceneModule)
-            s.app->PlayMode().SetEditWorld(&s.sceneModule->World());
+        s.app->RefreshDocumentContext();
 
         // 뷰포트 렌더러 배선(ViewportPanel 이 ctx.app->Viewport() 로 접근).
         s.app->SetViewport(&s);
@@ -268,6 +265,7 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
 void EditorModule::Frame(const TimeStep& step) {
     Impl& s = *m_impl;
     if (!s.app || !s.device) return;
+    s.app->RefreshDocumentContext();
 
     // 1) 플레이 tick 게이팅.
     TickPlayWorld(step);

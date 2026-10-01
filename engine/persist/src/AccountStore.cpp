@@ -5,6 +5,7 @@
 
 #include <format>
 #include <span>
+#include <Windows.h>
 #include <bcrypt.h>
 #include <charconv>      // from_chars (hex 파싱)
 

@@ -16,9 +16,13 @@
 #include "mye/editor/PlayMode.h"
 #include "mye/editor/SceneSerializer.h"
 #include "mye/editor/Selection.h"
+#include "mye/editor/EditorApp.h"
+#include "mye/editor/Project.h"
 
 #include "mye/core/Events.h"
 #include "mye/core/Json.h"
+#include "mye/core/JsonFile.h"
+#include "mye/core/Module.h"
 #include "mye/ecs/World.h"
 #include "mye/refl/TypeBuilder.h"
 #include "mye/refl/TypeRegistry.h"
@@ -26,6 +30,7 @@
 #include "mye/scene/Renderable.h"
 
 #include <cstdio>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -234,7 +239,7 @@ MYE_TEST(WorkflowPlayTickStopRestore) {
     h.world.Add<ewtest::Xform>(e).x = 0.0f;   // 편집 상태 위치.
 
     // ▶Play — 편집 World 스냅샷 → Play World.
-    h.playMode.Play();
+    MYE_EXPECT(h.playMode.Play());
     ecs::World* pw = h.playMode.ActiveWorld();
     MYE_EXPECT(pw != nullptr && pw != &h.world);
 
@@ -383,4 +388,206 @@ MYE_TEST(WorkflowDestroyUndoRelinksDescendantSelection) {
     h.commands.Undo();
     MYE_EXPECT(h.world.Valid(child));
     MYE_EXPECT(h.selection.IsSelected(SelectableRef::OfEntity(child)));
+}
+
+namespace {
+std::filesystem::path ProjectTestDirectory(const char* name) {
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto path = Utf8Path(MYE_TEST_DATA_DIR) / "editor-projects" / (std::string(name) + std::to_string(stamp));
+    std::error_code ec;
+    std::filesystem::create_directories(path, ec);
+    MYE_EXPECT(!ec);
+    return path;
+}
+
+class EditorTestContext final : public EngineContext {
+public:
+    EventBus events;
+    EnginePaths paths;
+    std::unordered_map<ServiceId, void*> services;
+    explicit EditorTestContext(const std::filesystem::path& root) {
+        paths.userDir = Utf8String(root / "user");
+        services[HashFnv1a64("EventBus")] = &events;
+    }
+    void* GetServiceRaw(ServiceId id) override {
+        auto it = services.find(id);
+        return it == services.end() ? nullptr : it->second;
+    }
+    void RegisterServiceRaw(ServiceId id, void* service) override { services[id] = service; }
+    void UnregisterServiceRaw(ServiceId id) override { services.erase(id); }
+    uint32_t GetEngineVersion() const override { return 1; }
+    const EnginePaths& GetPaths() const override { return paths; }
+};
+}
+
+MYE_TEST(EditorProjectCreateEditSaveReopenPlay) {
+    const auto root = ProjectTestDirectory("roundtrip");
+    const auto project = root / Utf8Path("한글 프로젝트");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    auto created = app.CreateProject("한글 프로젝트", Utf8String(project));
+    MYE_EXPECT(created);
+    if (!created) return;
+    MYE_EXPECT(std::filesystem::exists(project / "project.myeproj"));
+    auto* doc = app.Project().Active();
+    MYE_EXPECT(doc && !doc->IsDirty());
+    MYE_EXPECT(app.Context().activeWorld() == &doc->World());
+    auto createParent = std::make_unique<CreateEntityCommand>();
+    auto* parentCommand = createParent.get();
+    app.Commands().Push(std::move(createParent));
+    const auto parent = parentCommand->Created();
+    auto createChild = std::make_unique<CreateEntityCommand>(parent);
+    auto* childCommand = createChild.get();
+    app.Commands().Push(std::move(createChild));
+    const auto child = childCommand->Created();
+    doc->World().TryGet<scene::LocalTransform>(child)->position.x = 7.0f;
+    MYE_EXPECT(doc->IsDirty());
+    MYE_EXPECT(app.SaveProject());
+    MYE_EXPECT(!doc->IsDirty());
+    auto opened = app.OpenProject(Utf8String(project / "project.myeproj"));
+    MYE_EXPECT(opened);
+    if (!opened) return;
+    auto* world = app.Context().activeWorld();
+    int count = 0, parentLinks = 0;
+    world->Query<scene::LocalTransform>().Each([&](ecs::Entity, scene::LocalTransform&) { ++count; });
+    world->Query<scene::Parent, scene::LocalTransform>().Each(
+        [&](ecs::Entity, scene::Parent& p, scene::LocalTransform& t) {
+            if (!p.parent.IsNull()) { ++parentLinks; MYE_EXPECT(world->Valid(p.parent)); MYE_EXPECT(t.position.x == 7.0f); }
+        });
+    MYE_EXPECT(count == 2 && parentLinks == 1);
+    MYE_EXPECT(app.PlayMode().Play());
+    app.RefreshDocumentContext();
+    MYE_EXPECT(app.Context().activeWorld() != world);
+    int playLinks = 0;
+    app.Context().activeWorld()->Query<scene::Parent>().Each(
+        [&](ecs::Entity, scene::Parent& p) { if (!p.parent.IsNull()) ++playLinks; });
+    MYE_EXPECT(playLinks == 1);
+    MYE_EXPECT(!app.SaveProject());
+    app.PlayMode().Stop();
+    app.RefreshDocumentContext();
+    MYE_EXPECT(app.Context().activeWorld() == world);
+    ecs::Entity loadedParent{}, loadedChild{};
+    world->Query<scene::Parent>().Each([&](ecs::Entity e, scene::Parent& p) {
+        if (!p.parent.IsNull()) { loadedParent = p.parent; loadedChild = e; }
+    });
+    world->Add<scene::Parent>(loadedParent).parent = loadedChild;
+    MYE_EXPECT(!app.PlayMode().Play());
+    MYE_EXPECT(app.PlayMode().State() == PlayState::Edit && app.PlayMode().ActiveWorld() == world);
+    world->TryGet<scene::Parent>(loadedParent)->parent = {};
+    MYE_EXPECT(app.SaveScene("assets/scenes/renamed.scene"));
+    MYE_EXPECT(!app.Project().Active()->IsDirty() && app.Project().HasUnsavedChanges());
+    MYE_EXPECT(!app.OpenProject(Utf8String(project / "project.myeproj")));
+    const auto projectStaging = project / "project.myeproj.tmp";
+    MYE_EXPECT(WriteJsonFile(projectStaging, json::Value(std::string("project recovery data"))));
+    MYE_EXPECT(!app.SaveProject() && app.Project().HasUnsavedChanges());
+    const auto oldMetadata = ReadJsonFile(project / "project.myeproj");
+    MYE_EXPECT(oldMetadata && oldMetadata.Value().Find("mainScene")->AsString() == "assets/scenes/main.scene");
+    std::error_code ec;
+    std::filesystem::remove(projectStaging, ec);
+    MYE_EXPECT(app.SaveProject());
+    MYE_EXPECT(!app.Project().HasUnsavedChanges());
+    MYE_EXPECT(app.OpenProject(Utf8String(project / "project.myeproj")));
+    MYE_EXPECT(Utf8Path(app.Project().Active()->Path()).filename() == "renamed.scene");
+    app.Shutdown();
+}
+
+MYE_TEST(EditorProjectDocumentsAndFailedWritesPreserveData) {
+    const auto root = ProjectTestDirectory("preservation");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(app.CreateProject("A", Utf8String(root / "A")));
+    auto* first = app.Project().Active();
+    if (!first) return;
+    const auto firstId = first->Id();
+    const std::string firstPath(first->Path());
+    const auto original = ReadJsonFile(Utf8Path(firstPath));
+    MYE_EXPECT(original);
+    app.Commands().Push(std::make_unique<CreateEntityCommand>());
+    MYE_EXPECT(first->IsDirty());
+    std::error_code ec;
+    const auto staging = Utf8Path(firstPath + ".tmp");
+    std::filesystem::create_directory(staging, ec);
+    MYE_EXPECT(!app.SaveScene(firstPath));
+    MYE_EXPECT(first->IsDirty() && first->Path() == firstPath);
+    auto unchanged = ReadJsonFile(Utf8Path(firstPath));
+    MYE_EXPECT(unchanged && json::Stringify(unchanged.Value()) == json::Stringify(original.Value()));
+    std::filesystem::remove(staging, ec);
+    MYE_EXPECT(WriteJsonFile(staging, json::Value(std::string("existing temporary data"))));
+    MYE_EXPECT(!app.SaveScene(firstPath));
+    auto temporary = ReadJsonFile(staging);
+    MYE_EXPECT(temporary && temporary.Value().AsString() == "existing temporary data");
+    std::filesystem::remove(staging, ec);
+    MYE_EXPECT(!app.CreateProject("overwrite", Utf8String(root / "A"), true));
+    MYE_EXPECT(!app.OpenProject(Utf8String(root / "missing"), true));
+    MYE_EXPECT(app.Project().Active() == first && first->IsDirty());
+
+    auto* second = app.Project().NewScene();
+    app.ActivateDocument(second->Id());
+    MYE_EXPECT(app.Context().activeWorld() == &second->World());
+    int count = 0;
+    second->World().Query<scene::LocalTransform>().Each([&](ecs::Entity, scene::LocalTransform&) { ++count; });
+    MYE_EXPECT(count == 0);
+    MYE_EXPECT(!app.SaveProject()); // Name selection is required before any project save.
+    MYE_EXPECT(!app.SaveScene(firstPath)); // Another document owns this file.
+    MYE_EXPECT(!app.SaveScene("assets/scenes/MAIN.scene")); // Windows case aliases share ownership.
+    MYE_EXPECT(!app.SaveScene(Utf8String(root / "outside.scene")));
+    MYE_EXPECT(second->Path().empty() && second->IsDirty());
+    MYE_EXPECT(app.SaveScene("assets/scenes/second.scene"));
+    app.Selection().Select(SelectableRef::OfEntity(ecs::Entity{0, 1}));
+    app.ActivateDocument(firstId);
+    MYE_EXPECT(app.Context().activeWorld() == &first->World());
+    MYE_EXPECT(app.Selection().Empty() && !app.Selection().CanNavigateBack());
+    MYE_EXPECT(first->IsDirty() && !second->IsDirty());
+    MYE_EXPECT(app.SaveProject());
+    const auto duplicate = app.Project().OpenScene("assets/scenes/./main.scene");
+    MYE_EXPECT(duplicate && duplicate.Value() == first);
+    const auto caseDuplicate = app.Project().OpenScene("assets/scenes/MAIN.scene");
+    MYE_EXPECT(caseDuplicate && caseDuplicate.Value() == first);
+    MYE_EXPECT(app.Project().Documents().size() == 2);
+    const auto layoutStaging = Utf8Path(app.Project().SessionJsonPath() + ".tmp");
+    MYE_EXPECT(WriteJsonFile(layoutStaging, json::Value(std::string("layout recovery data"))));
+    app.Commands().Push(std::make_unique<CreateEntityCommand>());
+    MYE_EXPECT(app.SaveProject()); // Content succeeds even if local layout preferences cannot be written.
+    MYE_EXPECT(!app.Project().HasUnsavedChanges());
+    auto layoutRecovery = ReadJsonFile(layoutStaging);
+    MYE_EXPECT(layoutRecovery && layoutRecovery.Value().AsString() == "layout recovery data");
+    std::filesystem::remove(layoutStaging, ec);
+    app.Shutdown();
+}
+
+MYE_TEST(EditorProjectRejectsBrokenSceneAndMetadata) {
+    const auto root = ProjectTestDirectory("invalid");
+    ProjectContext project;
+    auto created = project.Create("Valid", Utf8String(root / "valid"));
+    MYE_EXPECT(created);
+    if (!created) return;
+    auto* original = project.Active();
+    const auto scenePath = root / "valid" / "assets" / "scenes" / "broken.scene";
+    const std::string invalid[] = {
+        "{",
+        R"({"__version":2,"entities":[]})",
+        R"({"__version":1,"entities":[{"id":1,"components":{"UnknownComponent":{}}}]})",
+        R"({"__version":1,"entities":[{"id":1,"components":{"LocalTransform":42}}]})",
+        R"({"__version":1,"entities":[{"id":1,"parent":2,"components":{}},{"id":2,"parent":1,"components":{}}]})",
+        R"({"__version":1,"entities":[{"id":1,"parent":7,"components":{}}]})",
+        R"({"__version":1,"entities":[{"id":1,"components":{}},{"id":1,"components":{}}]})"
+    };
+    for (const auto& text : invalid) {
+        { std::ofstream file(scenePath, std::ios::binary | std::ios::trunc); file << text; }
+        auto opened = project.OpenScene(Utf8String(scenePath));
+        MYE_EXPECT(!opened);
+        MYE_EXPECT(project.Active() == original && project.Documents().size() == 1);
+    }
+    MYE_EXPECT(!project.OpenScene("../outside.scene"));
+    const auto metadata = root / "valid" / "bad.myeproj";
+    MYE_EXPECT(WriteJsonFile(metadata, json::Value(json::Value::Object{
+        {"version", json::Value(int64_t{2})}, {"name", json::Value(std::string("Future"))},
+        {"mainScene", json::Value(std::string(""))}})));
+    MYE_EXPECT(!project.Open(Utf8String(metadata)));
+    MYE_EXPECT(project.Active() == original);
+    project.NewScene();
+    MYE_EXPECT(!project.Open(Utf8String(root / "valid" / "project.myeproj")));
+    MYE_EXPECT(project.HasUnsavedChanges());
 }

@@ -1,7 +1,7 @@
 // MyEditor — 에디터 실행 파일 진입점 (docs/07 §1, §2)
 //
 // L5의 얇은 앱. 게임과 동일한 엔진 모듈 스택 위에 EditorModule을 얹는다. 프로젝트는 커맨드라인
-//   `--project path/to/Game.myeproj`로 연다(런처 UI는 P2). EditorModule 이 RHI 디바이스·스왑체인·
+//   메뉴 또는 `--project path/to/Game.myeproj`로 연다. EditorModule 이 RHI 디바이스·스왑체인·
 //   DebugUi(도킹 셸)·씬 뷰포트 오프스크린 렌더·플레이 tick 게이팅을 소유·오케스트레이션한다.
 //
 // 자동 검증 CLI(EditorModule 로 전달):
@@ -11,6 +11,7 @@
 #include "mye/core/App.h"
 #include "mye/core/Log.h"
 #include "mye/core/I18n.h"
+#include "mye/core/JsonFile.h"
 
 #include "mye/scene/SceneModule.h"
 #include "mye/editor/EditorModule.h"
@@ -22,13 +23,23 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace mye {
+namespace {
+std::string ProjectArgument(const std::vector<std::string>& args) {
+    for (std::size_t i = 1; i < args.size(); ++i) {
+        if (args[i].starts_with("--project=")) return args[i].substr(10);
+        if (args[i] == "--project" && i + 1 < args.size()) return args[i + 1];
+    }
+    return {};
+}
+}
 
 // 에디터 앱 — 씬 + 에디터 모듈을 등록한다. RHI·렌더·imgui 배선은 EditorModule 내부에서 수행.
 class MyEditorApp final : public Application {
 public:
-    explicit MyEditorApp(const LaunchArgs& args) {
+    explicit MyEditorApp(const LaunchArgs& args) : m_projectPath(ProjectArgument(args.args)) {
         const auto& a = args.args;
         for (std::size_t i = 0; i < a.size(); ++i) {
             if (a[i] == "--frames" && i + 1 < a.size()) {
@@ -53,7 +64,7 @@ public:
 
     void OnRegisterModules(ModuleRegistry& modules) override {
         modules.Register(std::make_unique<scene::SceneModule>());
-        modules.Register(std::make_unique<editor::EditorModule>());
+        modules.Register(std::make_unique<editor::EditorModule>(m_projectPath));
     }
 
     void OnStart(EngineContext& ctx) override {
@@ -69,6 +80,7 @@ public:
     void OnStop(EngineContext& /*ctx*/) override {}
 
 private:
+    std::string   m_projectPath;
     bool          m_frameLimit = false;
     std::uint64_t m_maxFrames = 0;
     bool          m_dumpEnabled = false;
@@ -89,15 +101,13 @@ int main(int /*argc*/, char** /*argv*/) {
     if (LPWSTR* wideArgv = ::CommandLineToArgvW(::GetCommandLineW(), &wideArgc); wideArgv) {
         launch.args.reserve(static_cast<std::size_t>(wideArgc));
         for (int i = 0; i < wideArgc; ++i) launch.args.emplace_back(mye::Narrow(wideArgv[i]));
-        // --project / --project=<path> 파싱(GuardedMain(LaunchArgs) 는 projectPath 만 소비).
-        for (int i = 1; i < wideArgc; ++i) {
-            const std::string& s = launch.args[static_cast<std::size_t>(i)];
-            constexpr std::string_view kPrefix = "--project=";
-            if (s.rfind(std::string(kPrefix), 0) == 0) launch.projectPath = s.substr(kPrefix.size());
-            else if (s == "--project" && i + 1 < wideArgc)
-                launch.projectPath = launch.args[static_cast<std::size_t>(i + 1)];
-        }
         ::LocalFree(wideArgv);
+    }
+    launch.projectPath = mye::ProjectArgument(launch.args);
+    const auto project = mye::Utf8Path(launch.projectPath);
+    if (project.extension() == ".myeproj") {
+        // Core settings consume a directory; the editor still opens the selected manifest.
+        launch.projectPath = project.has_parent_path() ? mye::Utf8String(project.parent_path()) : ".";
     }
     launch.mainWindow.title = "MyEngine — MyEditor";
     launch.mainWindow.clientSize = {1920, 1080};

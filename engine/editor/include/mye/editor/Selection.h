@@ -34,6 +34,7 @@ public:
     void Select(std::span<const SelectableRef> refs, SelectMode mode = SelectMode::Replace);
     void Select(SelectableRef ref, SelectMode mode = SelectMode::Replace);
     void Clear();
+    void Reset(); // Scene switch: clear selection and history so old entity IDs cannot be reused.
 
     // 현재 선택(선택 순서 유지). primary=마지막에 추가/설정된 주 선택.
     std::span<const SelectableRef> Current() const;

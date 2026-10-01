@@ -1,7 +1,6 @@
 // mye/editor/Project.h — 프로젝트 컨텍스트 + 열린 문서 (docs/07 §2, §6)
 //
-// 07 §2: 런처 없이 --project 인자로 프로젝트를 연다(P0 유일 진입). 프로젝트 루트 = 04 에셋 DB
-//   루트. 07 §6: 에디터 상태는 <project>/.myeditor/(layout.ini·session.json)에 저장, 씬 파일엔
+// 프로젝트 루트 = 에셋 DB 루트. 에디터 상태는 <project>/.myeditor/(layout.ini·session.json)에 저장, 씬 파일엔
 //   저장 금지(.gitignore 대상 — 규약 확정).
 //
 // 문서(Document): 열린 씬/에셋 하나. 문서별 CommandStack·dirty를 소유. Ctrl+Z·저장은 포커스
@@ -33,14 +32,18 @@ public:
     void             SetPath(std::string p) { m_path = std::move(p); }
 
     CommandStack&    Commands() { return m_commands; }
-    bool             IsDirty() const { return m_commands.IsDirty(); }
+    bool             IsDirty() const { return m_path.empty() || m_commands.IsDirty(); }
     std::string      TabTitle() const;                        // 파일명 + dirty '*'
+    ecs::World&      World() { return *m_world; }
+    const ecs::World& World() const { return *m_world; }
 
 private:
     DocumentId   m_id;
     Kind         m_kind;
     std::string  m_path;
     CommandStack m_commands;
+    std::unique_ptr<EventBus> m_worldEvents;
+    std::unique_ptr<ecs::World> m_world;
 };
 
 // 프로젝트 컨텍스트 — 경로·에디터 상태 디렉터리·열린 문서 목록.
@@ -51,9 +54,15 @@ public:
     ProjectContext(const ProjectContext&) = delete;
     ProjectContext& operator=(const ProjectContext&) = delete;
 
-    // --project 경로로 오픈(.myeproj 또는 프로젝트 디렉터리). 실패 시 Error(런처 복귀 근거).
-    Expected<void, Error> Open(std::string_view projectPath);
+    // Validate/load a candidate before replacing the current project. Discard is explicit.
+    Expected<void, Error> Open(std::string_view projectPath, bool discardUnsaved = false);
+    Expected<void, Error> Create(std::string_view name, std::string_view directory,
+                                 bool discardUnsaved = false);
+    Expected<void, Error> Save(); // All named scenes, then project metadata.
     bool IsOpen() const;
+    bool HasUnsavedChanges() const;
+    std::string_view Name() const;
+    std::string_view ProjectFilePath() const;
 
     std::string_view RootDir() const;       // 프로젝트 루트(에셋 DB 루트)
     std::string      EditorStateDir() const; // <root>/.myeditor
@@ -62,7 +71,8 @@ public:
 
     // ---- 문서 관리 ----
     Document* NewScene();                              // 빈 새 씬 문서(미저장)
-    Document* OpenScene(std::string_view path);        // 씬 파일 열기(중복이면 기존 반환)
+    Expected<Document*, Error> OpenScene(std::string_view path); // Failure preserves all documents.
+    Expected<void, Error> SaveScene(DocumentId id, std::string_view path);
     void      CloseDocument(DocumentId id);
     Document* Active() const;                           // 포커스 문서(null 가능)
     void      SetActive(DocumentId id);

@@ -16,7 +16,9 @@
 #include "mye/editor/ExtensionRegistry.h"
 #include "mye/editor/Project.h"
 #include "mye/editor/Inspector.h"
+#include "mye/core/Window.h"
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -25,10 +27,10 @@ namespace mye::editor { class IEditorViewport; }
 
 namespace mye::editor {
 
-class EditorApp {
+class EditorApp : private IWindowMessageHook {
 public:
     EditorApp();
-    ~EditorApp();
+    ~EditorApp() override;
     EditorApp(const EditorApp&) = delete;
     EditorApp& operator=(const EditorApp&) = delete;
 
@@ -61,6 +63,15 @@ public:
     // 디스플레이 옵션 — EditorModule 이 Present(vsync) 로 소비.
     bool Vsync() const { return m_vsync; }
 
+    Expected<void, Error> CreateProject(std::string_view name, std::string_view directory,
+                                        bool discardUnsaved = false);
+    Expected<void, Error> OpenProject(std::string_view path, bool discardUnsaved = false);
+    Expected<void, Error> OpenScene(std::string_view path);
+    Expected<void, Error> SaveProject();
+    Expected<void, Error> SaveScene(std::string_view path);
+    void ActivateDocument(DocumentId id);
+    void RefreshDocumentContext(); // Also called before the module renders/ticks a world.
+
 private:
     void RegisterBuiltinPanels();   // 하이어라키·인스펙터·씬 뷰포트·콘솔 등 내장 패널
     void DrawMenuBar();             // File/Edit/View/... + 확장 메뉴 항목
@@ -69,7 +80,7 @@ private:
 
     // 레이아웃 저장/복원(<project>/.myeditor/layout.ini · session.json).
     void RestoreLayout();
-    void SaveLayout();
+    Expected<void, Error> SaveLayout();
 
     // 편집 대상 커맨드 스택(플레이 중=플레이 스택, 아니면 포커스 문서 스택). null 가능.
     CommandStack* ActiveStack();
@@ -78,18 +89,33 @@ private:
     void NewScene();
     void SaveActive();
     void TogglePlay();
+    void DrawFileDialogs();
+    void DrawDocumentTabs();
+    void RequestNewProject();
+    void RequestOpenProject(bool folder = false);
+    void RequestOpenScene();
+    void RequestSaveAs();
+    void RequestSaveProject();
+    bool ConfirmProjectChange();
+    void ReportFileResult(const Expected<void, Error>& result, std::string_view success);
+    bool OnMessage(void* hwnd, uint32_t msg, uint64_t wparam, int64_t lparam) override;
 
     // 디스플레이: 창 접근(헤드리스면 null) + 전체화면 토글.
     IWindow* MainWindowOrNull();
     void     ToggleFullscreen();
 
-    // 미저장 새 씬의 기본 저장 경로(<projectRoot>/assets/scenes/untitled.scene). 미오픈 시 빈.
-    std::string DefaultScenePath() const;
-
     EngineContext*   m_engine = nullptr;
     EventBus*        m_events = nullptr;
     IEditorViewport* m_viewport = nullptr;   // EditorModule 소유(비소유 포인터)
-    std::string    m_layoutIniPath;   // ImGui IniFilename로 지정하는 프로젝트별 경로(수명 유지)
+    std::string    m_layoutIniPath;   // UTF-8 path; ini is read/written through native filesystem paths.
+    IWindow*       m_window = nullptr; // Message hook is detached before editor teardown.
+    ecs::World*    m_boundWorld = nullptr;
+    bool           m_selectDocumentTab = false;
+    bool           m_showNewProject = false;
+    std::array<char, 128> m_newProjectName{};
+    std::array<char, 4096> m_newProjectDirectory{};
+    std::string    m_fileStatus;
+    bool           m_fileError = false;
 
     std::unique_ptr<ProjectContext>          m_project;
     std::unique_ptr<PanelManager>            m_panels;

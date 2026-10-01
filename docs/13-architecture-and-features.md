@@ -12,7 +12,7 @@ MyEngine은 C++20·DirectX 11 기반의 2.5D 픽셀아트 엔진이다. 2D 캐�
 | `game/` | `social`, `mmo` 라이브러리 2개 | 소셜·경제 서비스와 직업·사냥 콘텐츠 |
 | `apps/` | `MyEditor`, `MyGame`, `MyServer`, `paktool` | 서비스를 조합하는 실행 진입점 |
 | `samples/` | CMake 실행 샘플 6개 | 개별 기능과 통합 시나리오 검증 |
-| `tests/` | 자체 프레임워크 `mye_tests` | 등록된 테스트 511개 |
+| `tests/` | 자체 프레임워크 `mye_tests` | 등록된 테스트 514개 |
 | `tools/mcp/` | TypeScript 개발 도구 서버 | 빌드·테스트·실행·프레임 캡처 등 |
 | `third_party/` | vendored 라이브러리 | 별도 라이선스와 플랫폼 의존성 |
 
@@ -110,12 +110,14 @@ Lua·DDC·리플렉션·플러그인 기능도 라이브러리와 테스트가 �
 
 | 실행 파일 | 직접 링크한 주요 모듈 | 현재 경로 | 중요한 미연결 부분 |
 |---|---|---|---|
-| [MyEditor](../apps/editor/CMakeLists.txt) | core, scene, editor | ImGui 패널, 선택·Inspector·Undo, 플레이 월드 | 프로젝트 파일 해석·실제 OpenScene 로딩, 게임과 동일한 플레이 시스템 |
+| [MyEditor](../apps/editor/CMakeLists.txt) | core, scene, editor | 프로젝트·씬 생성/열기/저장, 독립 문서 World·Undo, ImGui 패널, 플레이 월드 | 에셋 해석·게임과 동일한 플레이 시스템, 최근 목록·크래시 복구 |
 | [MyGame](../apps/game/CMakeLists.txt) | core, rhi, asset, render, audio, scene, net, ui | 타이틀·설정·캐릭터 선택, 씬 로딩, 로컬 이동, 서버 접속·예측·보간 | script/runtime/gameplay/social/mmo 통합, 고정 틱 물리·층 판정 |
 | [MyServer](../apps/server/CMakeLists.txt) | core, net, persist, liveops, gameserver, gameplay | 계정 인증, 세션, 권위 이동, 자동 저장, 운영 명령·메트릭, 봇 | social/mmo 연결, 암호화 전송·신뢰성 있는 게임 메시지 |
 | [paktool](../apps/paktool/CMakeLists.txt) | core, asset | pak 패키징 CLI | 프로젝트 배포 흐름에 통합·검증 |
 
 `village_demo`는 대화·컷신·NPC·Lua·물리·한글 UI·오디오를 조합하는 현재의 참고 실행 경로다. 지도·스폰은 C++로 구성하며 로컬라이즈 JSON·Lua는 시작 시 로드한다. 파일 감시·JSON 지도 자동 반영은 연결되지 않았다. 기능을 게임 앱에 연결할 때 이 경로와 기존 모듈을 먼저 재사용한다.
+
+MyEditor의 편집 World는 각 Document가 소유하고 EditorModule이 활성 문서 또는 PlayWorld를 직접 렌더한다. 앱은 공용 CommandBuffer reparent hook 등 기존 씬 초기화를 위해 SceneModule 등록을 유지한다. SceneModule의 별도 World·스케줄러가 편집 문서의 월드나 완성된 게임 플레이 루프를 대신하지 않는다.
 
 ## 7. 기능 상태표
 
@@ -131,7 +133,7 @@ Lua·DDC·리플렉션·플러그인 기능도 라이브러리와 테스트가 �
 | Lua·코루틴·핫 리로드 | 기반·샘플 검증 | character_demo 오류 격리·핫 리로드, village_demo 콘텐츠; MyGame 미연결 |
 | UI·한글 텍스트 | 기반·샘플 검증 | FreeType·레이아웃·입력·R8 출력 회귀 테스트, 타이틀/설정 프레임 확인; UiDocument의 위젯 속성 적용·컨트롤러 연결 잔여 |
 | 대화·컷신·NPC·세이브·로컬라이즈 | 기반·샘플 검증 | runtime 테스트와 village_demo; MyGame 미연결 |
-| 에디터 문서·Undo·직렬화 기반 | 기반 검증 / 통합 필요 | serializer와 workflow 테스트는 존재; ProjectContext 실제 파일 열기 경로에 TODO |
+| 에디터 프로젝트·문서·Undo·직렬화 | 앱 연결 / 기반 검증 | 실제 create/open/save와 문서별 World, 한글 경로·저장 실패·재열기·Play 왕복 회귀 검증. 네이티브 UI·DPI·에셋/플레이 시스템 범위는 [07](07-editor-ui.md) 참조 |
 | 리플렉션·DDC·DLL 플러그인 | 기반 검증 | 전용 테스트·DLL fixture; 사용자 프로젝트에서의 조합·배포 흐름 별도 |
 | RPG 전투·인벤토리·퀘스트·제작 | 기반 검증 | gameplay 테스트; MyGame 플레이와 네트워크 명령 미연결 |
 | UDP 접속·권위 이동·예측·보간 | 기반·앱 연결 | 루프백 테스트와 앱 경로; v1·길이/순서/대각 이동 검증·64명 상한; 전송 보안·타임아웃·틱 협상 필요 |
@@ -154,6 +156,6 @@ Lua·DDC·리플렉션·플러그인 기능도 라이브러리와 테스트가 �
 
 [MCP 서버](../tools/mcp/src/index.ts)의 도구는 `build`, `test`, `run`, `capture_frame`, `logs`, `project_status`, `dot_write_sprite`, `dot_from_photo` 8개다. stdio 프로토콜, 실행 직렬화, 자식 프로세스 시간 제한·종료, 프로젝트 경로 검사가 있다. 에디터 내부 원격 조작은 이후 설계 범위다.
 
-2026-10-01 검증: 전체 Debug/Release 빌드와 양쪽 CTest 13/13 통과, 내부 테스트 511/511 통과. MCP build/smoke에서 8개 도구 확인. 서버 앱의 등록·활성 봇 자동/종료 저장·재시작·손상 저장 거부는 `tools/verify-foundation.ps1`로 확인했다. 게임 타이틀·설정·플레이와 에디터 오프스크린 프레임을 캡처했다. 일반 실행에서는 오디오 장치 초기화 로그와 BGM import를 확인했으며 실제 청취 판정은 수행하지 않았다.
+2026-10-01 검증: 전체 Debug/Release 빌드와 양쪽 CTest 13/13 통과, 내부 테스트 514/514 통과. MCP build/smoke에서 8개 도구 확인. 서버 앱의 등록·활성 봇 자동/종료 저장·재시작·손상 저장 거부는 `tools/verify-foundation.ps1`로 확인했다. 게임 타이틀·설정·플레이와 에디터 오프스크린 프레임을 캡처했다. 일반 실행에서는 오디오 장치 초기화 로그와 BGM import를 확인했으며 실제 청취 판정은 수행하지 않았다.
 
 검증 환경·성능 수치·남은 경고·시각/보안 한계는 [작업 기록](16-foundation-worklog.md)을 참조한다. 테스트 통과는 제품 전체 UI·콘텐츠 통합이나 온라인 서비스 완성을 뜻하지 않는다.

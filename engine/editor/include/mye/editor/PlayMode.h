@@ -9,6 +9,7 @@
 #pragma once
 
 #include "mye/editor/EditorTypes.h"
+#include "mye/core/Base.h"
 
 #include <cstdint>
 #include <memory>
@@ -33,12 +34,12 @@ public:
     PlayModeController(const PlayModeController&) = delete;
     PlayModeController& operator=(const PlayModeController&) = delete;
 
-    // 편집 World를 배선(에디터 부팅 시 SceneModule::World()). Play/Stop 스냅샷 원본.
+    // 활성 문서의 편집 World를 배선. Play/Stop 스냅샷 원본.
     void SetEditWorld(ecs::World* world) { m_editWorld = world; }
     void SetEventBus(EventBus* events) { m_events = events; }
 
     // 편집 World → 메모리 스냅샷 → Play World 생성 후 Playing. 이미 Playing이면 no-op.
-    void Play();
+    Expected<void, Error> Play();
     void Pause();      // Playing → Paused
     void Resume();     // Paused → Playing
     void StepFrame();  // Paused에서 1프레임 진행(F10)
@@ -58,7 +59,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 
-    ecs::World* m_editWorld = nullptr;   // 비소유(SceneModule 소유)
+    ecs::World* m_editWorld = nullptr;   // 비소유(Document 소유)
     EventBus*   m_events = nullptr;
     PlayState   m_state = PlayState::Edit;
 };

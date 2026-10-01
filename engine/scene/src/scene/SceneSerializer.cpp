@@ -13,6 +13,7 @@
 #include "mye/scene/SceneSerializer.h"
 
 #include "mye/core/Log.h"
+#include "mye/core/JsonFile.h"
 #include "mye/ecs/ComponentPool.h"
 #include "mye/ecs/ComponentType.h"
 #include "mye/ecs/World.h"
@@ -25,7 +26,7 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <fstream>
+#include <limits>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -193,7 +194,7 @@ json::Value RemapEntityRefsToLocal(const refl::TypeInfo& type, const json::Value
 }
 
 // 한 엔티티를 json 오브젝트로. id·parent(로컬 ID)·components{name→값}.
-json::Value WriteEntity(const ecs::World& world, ecs::Entity e, LocalIdMap& ids,
+Expected<json::Value, Error> WriteEntity(const ecs::World& world, ecs::Entity e, LocalIdMap& ids,
                         const std::vector<const refl::TypeInfo*>& types) {
     json::Value::Object obj;
     obj["id"] = json::Value(static_cast<std::int64_t>(ids.IdFor(e)));
@@ -219,7 +220,7 @@ json::Value WriteEntity(const ecs::World& world, ecs::Entity e, LocalIdMap& ids,
         if (!raw) continue;
         auto wr = ser::JsonArchive::ForWrite();
         auto r = ser::SerializeDynamic(wr, *t, const_cast<void*>(raw));
-        if (!r) continue;
+        if (!r) return r.GetError();
         json::Value remapped = RemapEntityRefsToLocal(*t, wr.Root(), world, ids);
         comps.emplace(std::string(t->Name()), std::move(remapped));
     }
@@ -240,8 +241,11 @@ Expected<json::Value, Error> SceneSerializer::WriteWorld(const ecs::World& world
     const std::vector<const refl::TypeInfo*> types = CollectComponentTypes(world);
     LocalIdMap ids;
     json::Value::Array entities;
-    for (ecs::Entity e : EnumerateEntities(world, types))
-        entities.push_back(WriteEntity(world, e, ids, types));
+    for (ecs::Entity e : EnumerateEntities(world, types)) {
+        auto entity = WriteEntity(world, e, ids, types);
+        if (!entity) return entity.GetError();
+        entities.push_back(std::move(entity).Value());
+    }
 
     json::Value::Object root;
     root["__version"] = json::Value(kSceneVersion);
@@ -274,7 +278,9 @@ SceneSerializer::WriteSubtree(const ecs::World& world, ecs::Entity root) const {
 
     json::Value::Array entities;
     for (ecs::Entity e : subtree) {
-        json::Value ev = WriteEntity(world, e, ids, types);
+        auto written = WriteEntity(world, e, ids, types);
+        if (!written) return written.GetError();
+        json::Value ev = std::move(written).Value();
         if (e == root && ev.IsObject()) {
             json::Value::Object obj = ev.AsObject();
             obj.erase("parent");
@@ -298,6 +304,42 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
     const json::Value* entsV = in.Find("entities");
     if (!entsV || !entsV->IsArray())
         return Error{"ReadInto: missing entities array", 2};
+
+    const auto* version = in.Find("__version");
+    if (!version || !version->IsInteger() || version->AsInt() != kSceneVersion)
+        return Error{"ReadInto: unsupported scene version", 2};
+    // Reject unsupported content instead of loading a scene that a later save would erase.
+    std::unordered_map<std::uint32_t, std::uint32_t> parents;
+    for (const auto& ev : entsV->AsArray()) {
+        const auto* id = ev.Find("id");
+        const auto* components = ev.Find("components");
+        const auto* parent = ev.Find("parent");
+        constexpr auto maxId = std::numeric_limits<std::uint32_t>::max();
+        if (!ev.IsObject() || !id || !id->IsInteger() || id->AsInt() <= 0 || id->AsInt() > maxId ||
+            !components || !components->IsObject() ||
+            (parent && (!parent->IsInteger() || parent->AsInt() < 0 || parent->AsInt() > maxId)))
+            return Error{"ReadInto: invalid entity record", 2};
+        if (!parents.emplace(static_cast<uint32_t>(id->AsInt()),
+                             parent ? static_cast<uint32_t>(parent->AsInt()) : 0).second)
+            return Error{"ReadInto: duplicate entity ID", 2};
+        for (const auto& [name, value] : components->AsObject()) {
+            const auto* type = refl::TypeRegistry::Get().Find(name);
+            if (!type || !world.IsRegistered(ComponentIdOf(*type)))
+                return Error{"ReadInto: unsupported component '" + name + "'", 2};
+            if (!value.IsObject()) return Error{"ReadInto: component must be an object", 2};
+        }
+    }
+    std::unordered_map<std::uint32_t, uint8_t> visited;
+    for (const auto& [id, parent] : parents) {
+        std::vector<std::uint32_t> chain;
+        for (auto current = id; current != 0 && visited[current] != 2; current = parents.at(current)) {
+            if (!parents.contains(current)) return Error{"ReadInto: missing parent entity", 2};
+            if (visited[current] == 1) return Error{"ReadInto: cyclic scene hierarchy", 2};
+            visited[current] = 1;
+            chain.push_back(current);
+        }
+        for (auto current : chain) visited[current] = 2;
+    }
 
     std::unordered_map<std::uint32_t, ecs::Entity> localToEntity;
     std::vector<PendingEntity> pending;
@@ -336,17 +378,11 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
         if (pe.components && pe.components->IsObject()) {
             for (const auto& [name, compValue] : pe.components->AsObject()) {
                 const refl::TypeInfo* t = refl::TypeRegistry::Get().Find(std::string_view(name));
-                if (!t) {
-                    MYE_LOG_WARN("SceneSerializer",
-                                 "ReadInto: 미등록 컴포넌트 '{}' 스킵(데이터 손실) — "
-                                 "리플렉션 이름/등록 규약 확인",
-                                 name);
-                    continue;
-                }
                 void* raw = world.AddDynamic(pe.entity, ComponentIdOf(*t));
-                if (!raw) continue;
+                if (!raw) return Error{"ReadInto: cannot construct component '" + name + "'", 2};
                 auto rd = ser::JsonArchive::ForRead(compValue);
-                (void)ser::SerializeDynamic(rd, *t, raw);
+                auto restored = ser::SerializeDynamic(rd, *t, raw);
+                if (!restored) return restored.GetError();
                 RelinkEntityRefs(*t, raw, localToEntity);
             }
         }
@@ -354,9 +390,7 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
         if (pe.parentLocalId != 0) {
             auto it = localToEntity.find(pe.parentLocalId);
             if (it != localToEntity.end()) {
-                auto* parent = static_cast<scene::Parent*>(
-                    world.AddDynamic(pe.entity, scene::Parent::kComponentTypeId));
-                if (parent) parent->parent = it->second;
+                world.Add<scene::Parent>(pe.entity).parent = it->second;
             }
         } else {
             roots.push_back(pe.entity);
@@ -372,20 +406,12 @@ Expected<void, Error>
 SceneSerializer::SaveToFile(const ecs::World& world, std::string_view path) const {
     auto tree = WriteWorld(world);
     if (!tree) return tree.GetError();
-    const std::string text = json::Stringify(tree.Value());
-    std::ofstream out(std::string(path), std::ios::binary | std::ios::trunc);
-    if (!out) return Error{"SaveToFile: cannot open '" + std::string(path) + "'", 3};
-    out.write(text.data(), static_cast<std::streamsize>(text.size()));
-    if (!out) return Error{"SaveToFile: write failed", 4};
-    return {};
+    return WriteJsonFile(Utf8Path(path), tree.Value());
 }
 
 Expected<std::vector<ecs::Entity>, Error>
 SceneSerializer::LoadFromFile(ecs::World& world, std::string_view path) const {
-    std::ifstream in(std::string(path), std::ios::binary);
-    if (!in) return Error{"LoadFromFile: cannot open '" + std::string(path) + "'", 3};
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    auto parsed = json::Parse(text);
+    auto parsed = ReadJsonFile(Utf8Path(path));
     if (!parsed) return parsed.GetError();
     return ReadInto(world, parsed.Value());
 }

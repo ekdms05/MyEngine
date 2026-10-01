@@ -20,8 +20,8 @@
 namespace mye::editor {
 
 struct PlayModeController::Impl {
-    std::unique_ptr<ecs::World>   playWorld;      // Playing/Paused 동안만 유효.
     std::unique_ptr<EventBus>     playEvents;     // Play World 전용 월드-로컬 버스(Stop 시 파기).
+    std::unique_ptr<ecs::World>   playWorld;      // 버스보다 먼저 파괴.
     std::unique_ptr<CommandStack> playCommands;   // 플레이 중 Undo(Stop 시 파기).
 };
 
@@ -55,37 +55,38 @@ static void MirrorComponentPools(const ecs::World& src, ecs::World& dst) {
     }
 }
 
-void PlayModeController::Play() {
+Expected<void, Error> PlayModeController::Play() {
     if (m_state != PlayState::Edit) {
         if (m_state == PlayState::Paused) Resume();
-        return;   // 이미 Playing이면 no-op.
+        return {};   // 이미 Playing이면 no-op.
     }
     const PlayState prev = m_state;
 
     // 07 §3: 편집 World를 인메모리 스냅샷으로 직렬화 → 새 World로 역직렬화.
-    m_impl->playWorld = std::make_unique<ecs::World>();
+    auto world = std::make_unique<ecs::World>();
     if (m_editWorld) {
         // 역직렬화 전 컴포넌트 풀 미러링(AddDynamic이 풀 없으면 no-op이므로 필수).
-        MirrorComponentPools(*m_editWorld, *m_impl->playWorld);
+        MirrorComponentPools(*m_editWorld, *world);
         SceneSerializer ser;
         auto snap = ser.Snapshot(*m_editWorld);
-        if (snap) {
-            auto r = ser.Restore(*m_impl->playWorld, snap.Value());
-            (void)r;   // 실패 시 빈 Play World(엔진 로그는 상위 계층). 상태 전이는 계속.
-        }
+        if (!snap) return snap.GetError();
+        auto restored = ser.Restore(*world, snap.Value());
+        if (!restored) return restored.GetError();
         // Play World 전용 월드-로컬 이벤트 버스(Stop 시 파기). 편집 World 버스를 공유하면
         //   플레이 중 publish가 편집-World 구독자로 새고, 스크립트/리스너 구독이 Stop 후
         //   dangling된다. 게임플레이 이벤트는 Play World 안에서 자족적으로 흐르게 한다
         //   (의도한 이벤트만 필요 시 상위에서 브리지).
         m_impl->playEvents = std::make_unique<EventBus>();
-        m_impl->playWorld->SetEventBus(m_impl->playEvents.get());
+        world->SetEventBus(m_impl->playEvents.get());
     }
+    m_impl->playWorld = std::move(world);
 
     // 플레이 전용 Undo 스택(Stop 시 파기). 문서 스택과 분리(07 §3).
     m_impl->playCommands = std::make_unique<CommandStack>();
 
     m_state = PlayState::Playing;
     PublishStateChange(m_events, prev, m_state);
+    return {};
 }
 
 void PlayModeController::Pause() {

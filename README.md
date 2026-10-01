@@ -11,7 +11,7 @@ The design favors clear ownership, small modules and measured performance.
 
 | Application | Purpose | Current behavior |
 |-------------|---------|------------------|
-| `MyEditor` | Edit scenes and content | Docking panels, selection, inspector, undo, tile/animation tools and an isolated play world |
+| `MyEditor` | Edit scenes and content | Project/scene create, open and save; independent scene tabs, docking panels, inspector, undo and an isolated play world |
 | `MyGame` | Run a game project | Title/settings, scene loading, local movement, audio and loopback multiplayer movement |
 | `MyServer` | Host local multiplayer | Account authentication, authoritative movement, session snapshots, backups and metrics |
 | `paktool` | Package assets | Build and inspect pak files through the asset/VFS layer |
@@ -71,7 +71,7 @@ integration work.
   snapshots, backup/restore and PBKDF2-SHA256 password storage through Windows CNG.
 - Save format: versioned `state.json`; complete legacy three-file saves are read
   and converted on the next save. One writer per directory, 64 MiB ceiling.
-- Online combat/social integration, complete editor file-open workflow, encrypted
+- Online combat/social integration, editor asset/play-system integration, encrypted
   transport and production operations remain in the [backlog](docs/14-development-priorities.md).
   The current UDP server binds to loopback because its credentials are unencrypted.
 
@@ -101,7 +101,10 @@ build/dev/apps/game/Release/MyGame.exe
 
 `MyGame` uses `samples/mmo_demo` by default. `--project <directory>` selects
 another project; `--auto-start` opens gameplay and `--settings` opens settings.
-The complete editor project/scene file-open workflow is still being integrated.
+`MyEditor` creates and opens projects through the File menu or
+`--project <folder-or-myeproj>`. Ctrl+Shift+N creates a project, Ctrl+Shift+O opens
+one, Ctrl+S saves the current scene, and Ctrl+Alt+S saves all open scenes and the
+project. See [editor workflows and file contracts](docs/07-editor-ui.md).
 
 Run a demo (from the build tree):
 

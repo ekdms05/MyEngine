@@ -222,3 +222,56 @@ build에는 dev·foundation·docs-audit만 남겼다. dev의 Debug·Release 실�
 - README·AGENTS·docs 29개의 UTF-8 읽기와 실제 로컬 링크 556개 확인: 누락 0개. git diff --check 통과. archive와 CMakeUserPresets.json의 Git 제외도 확인했다.
 
 빌드·테스트 로그는 build/docs-audit/cleanup-configure.log, cleanup-debug-build.log, cleanup-debug-ctest.log, cleanup-release-build.log, cleanup-release-ctest.log에 남겼다. 보관본과 검증 산출물은 Git에 포함하지 않는다.
+
+## 2026-10-01 — MyEditor 프로젝트·씬 파일 흐름
+
+기준 소스는 `2939a46`이다. 요구는 에디터에서 프로젝트 만들기·불러오기·저장하기를 실제로 연결하고 이후 기능은 Godot를 벤치마킹하는 것이다. 문서의 예정 기능을 완료로 표시하는 대신 메뉴→파일 경계→문서 World→씬 직렬화→재열기→Play 소비 경로를 확인했다.
+
+### 발견한 문제와 선택 근거
+
+| 재현·소스 근거 | 변경 | 이유·경계 |
+|---|---|---|
+| ProjectContext::Open은 경로만 기록하고 OpenScene도 실제 LoadFromFile을 호출하지 않았다. | 버전 1 `.myeproj`와 기본 씬 생성, 파일/폴더 열기, 시작 씬 후보 로드 후 프로젝트 교체 | 기존 SceneSerializer와 JSON을 재사용한다. 실패한 프로젝트 로드가 현재 편집 문서를 잃게 하지 않는다. 레거시 assets 폴더는 열기만으로 수정하지 않는다. |
+| Document는 Undo만 소유하고 EditorModule이 모든 문서에 SceneModule::World를 배선했다. | 문서별 World·월드 EventBus·Undo 스택, 활성 문서와 패널/렌더/명령 컨텍스트 함께 전환 | 탭별 씬이 실제로 분리된다. World를 버스보다 먼저 파괴하며 이전 월드의 선택·선택 이력을 비운다. |
+| SaveActive는 이름 없는 씬의 임의 기본 경로를 사용했다. 프로젝트 선택 UI가 없었다. | 파일 메뉴·툴바·단축키, 새 프로젝트 폼, Windows IFileDialog 파일/폴더 선택, Save As, 문서 탭 | 현재 ImGui와 운영체제 대화상자를 사용한다. 새 UI 라이브러리·파일 선택 프레임워크를 추가하지 않는다. COM 수명은 해당 호출 범위에서 관리한다. |
+| SceneSerializer의 저장은 대상 파일을 먼저 truncate했다. persist 내부에 별도 JSON 원자적 쓰기 경로가 있었다. | persist의 공용 경계를 core/JsonFile로 옮기고 씬·프로젝트·세션 저장에서 재사용 | engine/scene이나 editor가 persist를 역참조하지 않는다. UTF-8 경로·64 MiB 제한·flush 후 교체를 한 경계에서 관리한다. CREATE_NEW로 기존 staging 파일의 내용을 보호한다. |
+| SceneSerializer는 미등록 컴포넌트와 직렬화 오류를 건너뛰어 이후 저장에서 내용이 사라질 수 있었다. | 버전·레코드·ID·부모·순환 계층·컴포넌트 구조 사전 검사, 직렬화/역직렬화 실패 전파 | 지원하지 않는 데이터를 성공한 빈 씬처럼 저장하지 않는다. ProjectContext는 별도 후보 World를 읽는다. ReadInto 자체를 모든 기존 호출자에 대한 트랜잭션으로 바꾸지는 않았다. |
+| Parent는 리플렉션 열거와 별도로 기록되며 PlayWorld의 동적 Parent 풀이 없을 수 있었다. | 검증한 부모 연결을 World::Add<Parent>로 복원 | 기존 네이티브 자동 등록 경로를 재사용하여 Play 왕복에서 부모 관계가 유실되지 않게 한다. |
+| PlayModeController::Play는 Restore 실패를 버리고 Playing으로 진행했다. | Play를 Expected로 반환하고 후보 World 복원 성공 후 상태 변경; 모든 호출자 갱신 | 잘못된 계층의 Play 진입을 거부하며 편집 World와 Edit 상태를 보존한다. 임시 이벤트 버스도 World 뒤에 파괴한다. |
+| 시작 씬 Save As 후 문서 dirty만 해제하면 프로젝트의 이전 mainScene 경로로 재실행할 수 있었다. | 메타데이터 dirty 별도 추적, 성공한 프로젝트 저장에서만 해제 | 창 닫기/프로젝트 전환에서 씬 내용뿐 아니라 시작 경로 변경도 저장·버리기·취소로 처리한다. |
+| 같은 Windows 파일의 대소문자 별칭이 문자열 비교에서 서로 다른 문서로 취급될 수 있었다. | filesystem::equivalent로 이미 열린 파일 확인 | 중복 문서와 다른 문서의 저장 대상 덮어쓰기를 공통 파일 경계에서 막는다. |
+| CLI `.myeproj`를 코어 projectDir로 전달하면 `file.myeproj/config/project.json`을 조회했다. | 앱의 프로젝트 인자 해석을 한 함수로 모으고 코어에는 폴더, EditorModule에는 선택한 프로젝트 경로 전달 | 설정 경로는 디렉터리 계약을 지키며 여러 프로젝트 파일 중 직접 선택한 파일도 유지한다. 공용 코어에 에디터 파일 형식을 추가하지 않았다. |
+| 레이아웃 저장 실패와 콘텐츠 저장 성공이 하나의 결과로 섞일 수 있었다. | 콘텐츠 저장 결과를 반환하고 이후 로컬 레이아웃 실패는 콘솔 경고로 명시 | 이미 저장된 씬·프로젝트를 저장 실패로 잘못 안내하지 않는다. 프로젝트 전환 전 레이아웃 오류와 종료 시 오류도 별도로 처리한다. |
+
+주요 구현은 `engine/editor/src/Project.cpp`, `EditorApp.cpp`, `EditorFileActions.cpp`, `EditorModule.cpp`, `PlayMode.cpp`, `engine/scene/src/scene/SceneSerializer.cpp`, `engine/core/src/JsonFile.cpp`, `apps/editor/src/main.cpp`다. AssetBrowser의 파일 경로·파일명도 같은 UTF-8 변환을 사용한다. 새 파일 EditorFileActions는 네이티브 대화상자 수명과 파일 작업 UI를 맡으며 새 서비스·인터페이스·팩토리를 만들지 않았다. CMake는 core와 editor의 실제 소스 및 PRIVATE Windows COM 링크만 추가했다.
+
+persist의 중복 ReadJsonFile/WriteJsonFile 구현은 호출자를 확인한 뒤 공용 함수 별칭으로 대체했다. 기존 계정·캐릭터·원장 스키마와 호출 인터페이스는 유지한다. 이 과정에서 Windows 헤더의 전이 include가 사라져 AccountStore의 bcrypt 빌드가 실패했다. 실제 플랫폼 소비자인 AccountStore에 Windows.h를 명시하여 해결했다. PlayMode의 Error/Expected include 이름을 확인하지 않고 추가한 빌드 실패도 기존 Base.h 정의를 확인하여 수정했다. 제거한 EditorModule의 미사용 sceneModule 필드·include·편집 World 연결은 새 문서 소유권과 충돌하므로 삭제했다. 다시 앱 공용 월드가 필요하면 문서와 별도 런타임 수명을 명시하여 연결해야 한다.
+
+### Godot 참고와 적용 범위
+
+확인일 2026-10-01. [Project Manager](https://docs.godotengine.org/en/stable/tutorials/editor/project_manager.html)에서 이름·빈 폴더 생성과 파일/폴더 import, [File paths](https://docs.godotengine.org/en/stable/tutorials/io/data_paths.html)에서 프로젝트 루트·로컬 데이터 분리, [Nodes and Scenes](https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html)에서 씬 문서·저장·프로젝트 내부 Save As, [Project organization](https://docs.godotengine.org/en/stable/tutorials/best_practices/project_organization.html)에서 관련 씬·에셋의 프로젝트 내부 배치를 참고했다. 채택·차이는 docs/07에 표로 기록했다. 단축키는 MyEditor의 기존 입력과 충돌을 피하도록 정했으며 조회가 실패한 Godot 단축키 문서를 근거로 삼지 않았다.
+
+MyEngine의 ECS·C++20·DX11·GUID/VFS·좌표/깊이 계약을 유지한다. Godot 코드는 복사하지 않았다. 별도 런처·렌더러 선택·새 res:// 해석기는 현재 요구나 구현된 두 번째 백엔드가 없어 추가하지 않았다. 최근 목록·문서 재개와 크래시 복구는 사용 이력·저장 정책·장애 검증을 갖춘 후속 항목이다. 게임 시작 씬과 현재 씬 실행 구분은 에셋·게임 플레이 시스템 연결 후 검증한다. AGENTS.md에 이후 기능도 공식 자료·실제 호출 경로·차이·보류 이유를 기록하도록 반영했다.
+
+### 검증
+
+기존 자체 테스트 프레임워크의 EditorWorkflowTests에 3개 회귀 시나리오를 추가했다. 실제 EditorApp 파일 작업 API와 프로젝트/문서/명령/직렬화/Play 경계를 호출하며 사용자 데이터 대신 `build/dev/test-data/editor-projects`의 새 경로를 쓴다.
+
+- 한글 이름·폴더 생성, 엔티티·부모 관계 편집, 전체 저장·프로젝트 재열기·Play/Stop 왕복과 편집 월드 보존.
+- 이름 없는 문서의 저장 거부, 문서별 World·Undo·선택 이력 분리, 정규 경로 및 Windows 대소문자 파일 별칭 중복 방어, 프로젝트 외부 Save As 거부.
+- 기존 staging 디렉터리·파일에 따른 씬 저장 실패에서 기존 파일·문서 경로·dirty와 임시 데이터 보존. 프로젝트 메타데이터 저장 실패에서 이전 mainScene·미저장 상태 보존. 로컬 레이아웃 실패는 콘텐츠 저장 성공과 구분.
+- 손상 JSON, 미래 버전, 알 수 없는 컴포넌트, 잘못된 컴포넌트 구조, 중복 ID, 없는 부모·순환 계층에서 현재 문서 보존. Play 복원 실패는 Edit 유지.
+
+Debug/Release 전체 빌드와 양쪽 CTest 13/13, 내부 검사 514/514 통과했다. 빌드·테스트 로그는 `build/docs-audit/editor-project-{debug,release}-{build,ctest}.log`, 상세 내부 결과는 `editor-project-{debug,release}-details.log`에 보관한다. 기존 sol2 C5321·테스트의 C4996 경고는 범위 밖으로 유지했다. MCP 소스는 이번 변경에서 수정하지 않았으며 직전 경로 정리 검증과 구분한다.
+
+실제 Release MyEditor를 한글 `.myeproj` 경로로 실행하여 재열린 renamed.scene·Hierarchy·프로젝트 이름·메뉴/툴바를 1920×1080, DPI 1.00에서 캡처하고 정상 종료(exit 0)했다. 로그에서 코어 projectDir가 프로젝트 폴더로 지정되는 것도 확인했다. `docs/images/editor-project.png`는 실제 BMP 캡처를 PNG로 변환한 자료다. 한글 문서의 부모 엔티티는 접힌 상태로 표시된다. 에디터의 스프라이트 텍스처 해석기는 아직 연결되지 않았으므로 이 화면을 완성된 게임 장면 렌더로 주장하지 않는다.
+
+숨긴 창에 Win32 마우스 메시지를 보낸 대화상자 자동화는 네이티브 파일 창을 열지 못했다. 이 시도는 통과가 아니며 실제 파일 선택/취소·미저장 메시지 버튼 조작·여러 DPI·완전한 마우스/키보드 경로는 추가 검증이 필요하다. `build/docs-audit/editor-native-dialog-check.ps1/.log`와 `editor-project-native-dialog.log`에 실패한 시도를 남겼다. 위 회귀 테스트를 네이티브 UI 조작 완료로 확대하지 않는다.
+
+기존 imgui-ui-ux-engineering·cpp-coding-standards 지침을 읽고 적용했으며 새 패키지는 설치하지 않았다. 스킬 quality suite의 구조/의미 참조 검사는 30/30 통과하고 공식 v1.92.0/master 조회도 성공했으나 g++/c++만 찾는 컴파일 게이트는 MSVC 환경에서 실패했다. 제품은 현재 vendored ImGui와 MSVC로 실제 빌드했다. 별도 정적 검사에서 EditorApp/AssetBrowser는 통과했지만 EditorFileActions의 BeginPopupModal은 존재하지 않는 EndPopupModal을 요구하여 실패했다. 실제 vendored imgui.h의 854~858행 계약은 BeginPopupModal→EndPopup이며 구현은 이를 따른다. 검사 결과를 전체 PASS로 표시하거나 올바른 API를 검사기에 맞춰 바꾸지 않았다. 결과는 `editor-project-imgui-quality.log`, `editor-project-imgui-static.log`에 있다.
+
+### 남은 한계
+
+파일별 저장은 원자적 교체를 사용하지만 프로젝트의 여러 씬·메타데이터 전체는 단일 트랜잭션이 아니다. 뒤 파일 실패 전에 앞 파일이 저장될 수 있다. 한 파일에 한 작성자, 64 MiB 상한이며 기존 tmp는 자동 복구·삭제하지 않는다. 실제 정전·디스크 장애·동시 에디터 쓰기를 검증하지 않았다. 최근 목록·자동 저장·문서 탭 재개/닫기 UX, 게임 전용 컴포넌트 등록, 에셋 해석, 물리·Lua/runtime의 동일 Play 조합은 후속 작업이다. 이 변경을 온라인 게임이나 엔진 전체 완성으로 표시하지 않는다.
+
+마지막 문서 검사는 README·AGENTS·docs 29개의 UTF-8 읽기와 코드 블록을 제외한 로컬 링크 562개에서 누락 0개였다. 처음 링크 정규식이 C++ lambda의 `[&](float dt)`를 링크로 오인한 결과는 코드 블록 제외 후 다시 확인했다. git diff --check도 통과했다. SceneModule 등록은 CommandBuffer reparent hook의 공용 초기화가 존재하므로 유지하고, 그 별도 World를 문서 편집 World로 설명하지 않도록 구조 문서에 명시했다.

@@ -143,3 +143,7 @@ MyEngine에서는 확장자·날짜·같은 파일명만으로 삭제하지 않�
 후속 소스·빌드 경로 정리에서는 사용자 전역에 이미 설치된 `C:/Users/harun/.codex/skills/file-organizer/SKILL.md`와 프로젝트의 `.agents/skills/cmake/SKILL.md`를 읽고 적용했다. 추가 다운로드는 하지 않았다. file-organizer의 목록 조사·보관 계획·해시 대조·수정 시각 보존·작업 기록을 적용하고, CMake 의존성·현재 실행 경로 확인은 저장소 계약에 따라 별도로 수행했다.
 
 빌드 명령은 별도 래퍼 없이 CMake의 기본 preset으로 통일했다. 실제 정리는 PowerShell의 경로 검증·파일 복사·이동·삭제로 수행했으며 `build/dev`와 검증 자료는 유지했다. 보관 목록과 SHA-256은 로컬 `archive/build-cleanup-2026-10-01/manifest.json`, 정리 범위·재사용 제약·검증 결과는 [작업 기록](16-foundation-worklog.md)에 있다.
+
+### 프로젝트·씬 파일 작업에 적용한 스킬
+
+에디터 create/open/save 연결에는 프로젝트에 이미 설치된 imgui-ui-ux-engineering과 cpp-coding-standards를 읽고 적용했다. 기존 ImGui·Windows 파일 선택 API·공용 직렬화를 사용하므로 추가 패키지를 설치하지 않았다. Godot의 공식 자료를 기능 벤치마킹 근거로 사용하며 전문 역할의 별도 병렬 실행은 하지 않았다. 스킬 정적 검사 오탐과 g++/c++ 전용 컴파일 게이트의 MSVC 제약, 제품 자체 빌드·테스트·실제 캡처의 범위는 [작업 기록](16-foundation-worklog.md)에 구분해서 기록했다.

@@ -93,6 +93,7 @@ add_executable(mye_tests
 
 target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_social mye_mmo mye_audio mye_script mye_editor mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
+target_compile_definitions(mye_tests PRIVATE MYE_TEST_DATA_DIR="${PROJECT_BINARY_DIR}/test-data")
 
 # ScriptBindingTests 는 sol2 로 Lua 반환값을 직접 읽는다 → sol2 헤더 경로·정의 필요(벤더 경계).
 target_link_libraries(mye_tests PRIVATE mye_thirdparty_sol2)

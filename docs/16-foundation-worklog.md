@@ -106,3 +106,42 @@ build/foundation/bench-reconcile.exe
 문서 참조 검사에서 초기 MMO 설계의 존재하지 않는 참조 152건을 발견했다. 같은 주제를 다루는 현재 파일이 있는 112건은 실제 파일로 연결하고, 독립 서버 토폴로지 등 작성되지 않은 문서 40건은 미작성으로 표시했다. 빈 문서나 존재하지 않는 기능을 만들어 링크를 채우지 않았다. 코드 블록의 파일명 예시는 링크 검사에서 제외한다. 샘플 에셋 README의 상용명·역할 분담 주석도 실제 데이터/로딩 설명으로 바꿨다.
 
 최종 정적 확인: README/AGENTS/docs 29개 UTF-8 읽기와 실제 로컬 링크 검사에서 깨진 링크 0건, `git diff --check` 통과. 자체 문서·코드·샘플/도구의 상용 게임명 검색 결과 0건. 사용자 도구 두 파일은 `node --check`로 구문만 확인하고 에셋을 재생성하지 않았다. 저장소 전역/제3자 코드의 명명·재포맷은 하지 않았다.
+
+## build 정리 조사 (2026-10-01)
+
+요청은 구 빌드 파일 정리에 사용할 스킬 탐색이다. [스킬 비교](15-skills-and-agents.md)의 원문을 검토하고 현재 실행 경로·CMake cache·추적 파일의 경로 참조·빌드 내부의 별도 소스/데이터를 읽기 전용으로 확인했다. 파일 삭제·이동·추가 스킬 설치는 수행하지 않았다.
+
+크기는 junction/symlink를 따라가지 않고 일반 파일의 길이를 합산한 논리 크기다. 디스크 할당량·실제 회수 가능한 공간과 같다고 보장하지 않는다. 조사 시 재분석점을 발견하지 않았고 Git 추적 대상 `build/` 파일은 0개였다.
+
+| 분류 | 실측 | 근거·처리 기준 |
+|---|---|---|
+| build 전체 | 31,235,064,416 bytes, 약 29.09GiB | 날짜만으로 사용 여부를 판단하지 않음 |
+| 현재 `build/dev` | 2,272,315,768 bytes, 약 2.12GiB | README·AGENTS·프로젝트 `.mcp.json`·package/verify 도구의 사용 경로. Debug/Release MyEditor.exe 모두 존재하므로 유지 |
+| 구 CMake 트리 57개 | 28,770,158,400 bytes, 약 26.80GiB | 모두 MyEngine을 source로 하는 VS 18 2026 cache가 있음. 아래 범위의 추적 파일에서 직접 경로 참조는 없었지만 비추적 smoke 프로젝트의 의존성은 발견됨. 정리 후보이며 전부 불필요하다는 판정은 아님 |
+| `build/foundation`, `build/docs-audit` | 각각 63,363,823 / 2,486 bytes | 이전 수정 patch·검증 로그·벤치마크·서버 재현 데이터. 특히 foundation/preexisting.patch와 문서의 재현 경로를 보존 |
+| 기타 디렉터리·루트 파일 | 루트 29개 파일 87,523,729 bytes 등 | 캡처·보조 스크립트·서버 저장 데이터·독립 smoke 소스가 섞임. 생성 산출물과 별도 분류 |
+
+구 CMake 트리 후보 목록:
+
+```text
+finish, hangfix, impl-diag, impl-events, impl-math, impl-platform, impl-rhi, scaffold
+m1, m1-asset, m1-input, m1-review, m1b, m1b-imgui, m1b-render
+m2-review, m2a, m2a-async, m2a-ecs, m2a-jobs, m2b, m2b-phys, m2b-tilemap, m2c, m2c-gltf, m2c-render
+m3-review, m3a, m3a-ase, m3a-hot, m3a-refl, m3b, m3b-anim, m3b-audio, m3c, m3c-bind, m3c-runtime
+m4-review, m4a, m4a-inspect, m4a-shell, m4b, m4b-panels, m4b-viewport
+m5-review, m5a, m5a-text, m5a-ui, m5b, m5b-nav, m5b-tools
+m6-review, m6a, m6a-dialogue, m6a-world, m6b, m6b-npc
+```
+
+참조 조사는 Git 추적 UTF-8 텍스트에서 위 경로의 `build/이름`·`build\이름` 표기를 검색했으며 third_party·assets·samples/assets와 바이너리는 제외했다. 프로젝트 MCP는 `MYE_BUILD_DIR=build/dev`지만 MCP 구현 자체의 환경변수 없는 기본값은 `build`다. 새로운 정리 규칙에서 기본값과 프로젝트 설정을 혼동하면 안 된다. 조사 당시 build 하위 exe 경로를 가진 실행 프로세스는 발견되지 않았다. 외부 IDE/바로가기·다른 사용자의 참조까지 확인한 것은 아니다.
+
+보존 검토가 필요한 실제 사례:
+
+- `build/m3b_smoke/CMakeLists.txt`와 `smoke.cpp`는 독립 소스다. CMakeLists가 `build/m3b`의 Debug 라이브러리를 직접 참조하므로 m3b 산출물을 지우면 기존 smoke 구성은 다시 사용할 수 없다. 소스 보관과 현행 빌드 연결/대체 여부를 먼저 정한다.
+- `build/m4b/testproj`에는 `.myeditor/session.json`과 `assets/chars/hero.png`가 있다. CMake 생성 파일로 취급하지 않는다.
+- `build/m6b/final_verify.ps1`은 `build/m6b/dumps`를 읽는다. 스크립트와 필요한 캡처를 함께 보관할지 판단한다. 구 트리에서 별도 확인할 소스·스크립트·JSON·이미지 후보를 74개 발견했으며 전체 파일 유형의 보존 판정을 완료한 것은 아니다.
+- `_netdemo`, `_nete2e`, `_nete2e2`에는 계정·캐릭터·원장·백업 JSON이 있다. 폴더 이름이나 오래된 날짜만으로 폐기하지 않는다.
+
+정리 순서는 현재 dev 유지 → 필요한 비생성 소스·데이터·증거 보관 → 확인된 구 산출물만 경로별 정리 → dev 빌드/CTest 확인이다. 재귀 삭제/이동 전 실제 절대 경로가 MyEngine/build 내부인지와 재분석점 여부를 다시 검사한다. `build/*` 일괄 삭제·CMake cache가 있는 디렉터리의 무조건 삭제·현재 dev의 clean은 이번 조사에 포함하지 않았다.
+
+이번 변경은 조사 문서뿐이다. UTF-8 읽기·문서 링크·diff 형식만 확인하고 앱 빌드/CTest를 새로 실행하지 않았다. 이전 실행 결과를 정리 후 검증 결과로 재사용하지 않는다.

@@ -116,3 +116,24 @@ superpowers의 `requesting-code-review/code-reviewer.md`와 구현·검토 프�
 | 에셋 피벗·방향·시트·메타·pak·씬 참조 | [에셋 설계](04-asset-pipeline.md), 실제 import 경로 | 콘텐츠 생산에 같은 검사가 반복됨 |
 
 필요한 스킬 설치와 실제 결함 수정까지 진행했다. 전문 에이전트 등록·자동 병렬 실행은 하지 않았으며 기존 협업/리뷰 도구와 이 역할 제안을 필요할 때 사용한다.
+
+## 7. build 산출물 정리 스킬 조사
+
+2026-10-01에 `find-skills`로 leaderboard와 `build cleanup`, `file organizer`, `cmake clean`, `repository cleanup` 검색 결과를 확인했다. 설치 수는 skills.sh 조회값, 별 수와 revision은 GitHub 조회값이며 품질을 보장하는 지표로 취급하지 않는다.
+
+| 후보 | 조회 결과 | MyEngine 적용 판단 |
+|---|---|---|
+| 기존 `cmake` | 프로젝트에 설치됨 | 현재 빌드 경로·generator·구성별 산출물 판단에 재사용. 실제 파일 정리는 PowerShell 기본 기능으로 충분 |
+| [file-organizer](https://www.skills.sh/composiohq/awesome-claude-skills/file-organizer) | ComposioHQ, 약 6.3K 설치·76,183 stars | 일반 파일 정리 보조 후보로 추천. 구조/용량 조사·보존/보관 계획·작업 기록이 유용하나 CMake 의존성·재생성 가능 여부는 별도로 확인해야 함 |
+| [repo-cleanup 원문](https://github.com/nickcrew/claude-cortex/blob/bb47af79ad3befe01ae01940fcf5f16e30a1b6df/skills/repo-cleanup/SKILL.md) | NickCrew, 166 설치·47 stars | 사용처·재생성 여부 확인은 적합하지만 [참조 문서](https://github.com/nickcrew/claude-cortex/blob/bb47af79ad3befe01ae01940fcf5f16e30a1b6df/skills/repo-cleanup/references/code-cleanup.md)에 `build/` 전체 삭제 예제와 웹 프로젝트 가정이 있다. 현재 실행 파일·검증 기록이 함께 있는 MyEngine에 그대로 적용하지 않음 |
+| project-workspace-cleaner | 검색 결과 161 설치 | 원본 GitHub 저장소 조회가 404로 실패하여 원문 검증·추천·설치에서 제외 |
+
+file-organizer 원문은 `ComposioHQ/awesome-claude-skills` revision `be2a406907dbc61b73e6827ded415c96139d13a2`의 `file-organizer/SKILL.md`를 확인했다. 일반 파일 정리용 설치 명령은 다음과 같다. **이번에는 추가 설치하지 않았다.** 기존 CMake 지침·현재 저장소 계약·PowerShell로 빌드 정리 범위를 판단할 수 있어 중복 도구를 늘리지 않았다.
+
+```powershell
+npx.cmd skills add https://github.com/ComposioHQ/awesome-claude-skills --skill file-organizer --agent codex --yes
+```
+
+MyEngine에서는 확장자·날짜·같은 파일명만으로 삭제하지 않는다. `build/dev`의 Debug/Release 실행 파일을 유지하고, 구 빌드 안의 독립 스크립트·테스트 프로젝트·캡처와 서버 저장 데이터는 먼저 별도로 확인한다. CMake 트리 자체를 이동하면 cache의 절대 경로가 맞지 않으므로 필요한 증거/소스만 보관하고 재생성 가능한 산출물을 정리한다.
+
+[CMake 공식 문서](https://cmake.org/cmake/help/latest/manual/cmake.1.html#build-a-project)에 따르면 `--target clean`은 정리만 하고 `--clean-first`는 정리 후 다시 빌드한다. 이 명령은 지정한 빌드 트리에 적용되므로 다른 구 트리 전체 정리의 대체 수단이 아니다. 현재 사용 중인 `build/dev`에 정리 명령을 실행하지 않았다. 실측 분류와 보존 근거는 [작업 기록](16-foundation-worklog.md)에 남겼다.

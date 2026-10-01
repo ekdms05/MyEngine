@@ -67,3 +67,9 @@ MCP build·smoke 19개 검사와 외부 제작 루트의 실제 에디터 GLB �
 나눔스퀘어라운드의 배포 근거는 [네이버 공식 글꼴 모음](https://hangeul.naver.com/font)과 [OFL 1.1 전문](https://help.naver.com/service/30016/contents/18088?lang=ko&osType=PC)이다. 2026-10-02 확인한 Regular TTF는 1,063,276 bytes이며 SHA-256은 `52862fdf05b55ba886ca21998222d9598ef84c975e68046b9a8d8f1af09228a0`이다. 폰트 내부 데이터를 변경하지 않았다.
 
 폰트 교체 후 Debug·Release 빌드와 CTest 각각 541/541, MCP build·smoke를 확인했다. 에디터 구현에 등장하는 한글 515종과 현대 한글 11,172자의 지원을 확인하고 실제 Release 화면 및 ZIP에서 꺼낸 에디터의 메뉴·탭·요소 추가 창을 캡처했다. 로컬 검토 패키지의 76개 파일·폰트/OFL/내장 보완 폰트 고지·ZIP 해시가 원본과 일치했다. 다양한 DPI·별도 PC·게임 프로젝트의 런타임 폰트 교체는 이 검증에 포함하지 않는다.
+
+## 0.2.2 배포 검증
+
+[공식 릴리즈](https://github.com/ekdms05/MyEngine/releases/tag/v0.2.2)는 소스 `6859372110556214506b044dc5c6dddb20622c12`의 [태그 전 CI](https://github.com/ekdms05/MyEngine/actions/runs/36918744670)에서 검증한 산출물을 사용한다. Windows Server 2025의 `windows-2025-vs2026/20260925.250`, MSVC 19.51.36260.0에서 빌드·명시적 WARP CTest·기존 앱 통합·MCP smoke·패키징을 통과했다. 사용자 README의 2D/3D 소개 변경을 합친 커밋이며 공개 태그를 덮어쓰지 않았다.
+
+공개 ZIP 18,133,855 bytes의 SHA-256은 `0c586eb3d12e27629288cdf2e859d088b75b02d50c878b1342e06225c7b874a6`이다. 공개 배포물을 다시 내려받아 sidecar와 내부 76개 파일 해시를 검증했다. 새 폴더의 공식 바이너리로 여섯 renderer 로딩·GLB 임포트·저장 카메라의 Play/MyGame 픽셀 일치·잘못된 near의 오류 종료를 확인했다. 로컬 추출본의 에디터 셸·한글·요소 추가, 별도 네이티브 3D Play 창도 캡처했다. 별도 새 PC·키 입력 수동 플레이·게임 아트 승인·3D 물리/온라인은 이 검증에 포함하지 않는다.

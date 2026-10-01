@@ -71,6 +71,8 @@ add_library(mye_editor STATIC
 
     # ---- 도트(픽셀아트) 에디터 패널 ----
     src/DotEditorPanel.cpp
+    include/mye/editor/DotEditing.h
+    src/DotEditing.cpp
 )
 
 target_include_directories(mye_editor PUBLIC

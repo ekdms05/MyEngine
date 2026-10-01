@@ -19,14 +19,15 @@ MyEditor는 C++20·ECS·DX11·ImGui로 구성한 Windows 에디터다. 실행 �
 | 화면 | 현재 동작 |
 |---|---|
 | Hierarchy | ObjectName 표시·선택·생성·삭제·재부모화. Terrain 그룹과 독립 Player |
-| Inspector | 등록된 컴포넌트·콜라이더·컨트롤러·포털, 이벤트→동작·Lua·GUID 드롭 편집 |
+| Inspector | 기본 이동 구성 버튼·등록 컴포넌트·콜라이더·포털·이벤트→동작·Lua·GUID 드롭 편집 |
 | Viewport | 2D/3D 전환·PNG 렌더·팬/줌/회전·선택·충돌 영역. 2D 이동 기즈모, 3D 수치는 Inspector |
-| Asset Browser | 프로젝트 에셋 탐색, PNG 드래그, .scene/.anim 더블 클릭, 에셋 새로 고침. .meta는 숨김 |
+| Asset Browser | 프로젝트 에셋 탐색, PNG 드래그, .scene/.anim/.dot 더블 클릭, 에셋 새로 고침. .meta는 숨김 |
 | Animation | 독립 애니메이션 문서·Undo, 실제 시트 미리보기·프레임·타임라인·이벤트·저장·씬 지정 |
-| Dot Editor·Tile Editing | 창 메뉴의 별도 도구. 기본 배경을 자동으로 지형 타일로 변환하지 않음 |
+| Dot Editor | .dot 문서·Undo·PNG 참조·줌/팬·그리기·파츠 뼈·포즈 키·프레임/모션·PNG/.anim/.meta 내보내기·씬 모션 연결 |
+| Tile Editing | 창 메뉴의 별도 도구. 기본 배경을 자동으로 지형 타일로 변환하지 않음 |
 | Console | 파싱·임포트·저장·실행 오류 |
 
-[ProjectContext·Document](../engine/editor/include/mye/editor/Project.h)는 씬과 애니메이션 문서를 소유한다. 씬마다 독립 World·EventBus·Undo가 있고, 애니메이션마다 독립 데이터·Undo가 있다. 씬 탭과 애니메이션 문서 선택은 별개다. 문서 이름의 `*`는 미저장 상태다. 애니메이션 패널에 포커스가 있으면 Undo/Redo·Ctrl+S는 그 문서를 대상으로 한다.
+[ProjectContext·Document](../engine/editor/include/mye/editor/Project.h)는 씬·애니메이션·도트 문서를 소유한다. 씬마다 독립 World·EventBus·Undo가 있고, 애니메이션마다 독립 데이터·Undo가 있다. 씬 탭과 애니메이션 문서 선택은 별개다. 문서 이름의 `*`는 미저장 상태다. 애니메이션 또는 도트 패널에 포커스가 있으면 Undo/Redo·Ctrl+S는 그 문서를 대상으로 한다.
 
 [CommandStack](../engine/editor/include/mye/editor/CommandStack.h)을 통해 구조·필드·애니메이션을 수정한다. 스프라이트에 클립을 지정하는 작업은 씬 Undo로 기록한다. 기존 컴포넌트 값을 복원하고 새로 추가한 Animator는 Undo 시 제거한다. 기즈모와 Inspector의 Transform 수정·Undo는 월드 행렬을 다시 갱신한다.
 
@@ -122,3 +123,7 @@ Computer Use의 네이티브 sky RPC가 설정되어 있지 않아 마우스·�
 게임 UI는 engine/ui의 Widget·텍스트 경로로 처리한다. 에디터 ImGui를 게임 HUD로 재사용하지 않는다. MCP는 실행·캡처 도구이며 에디터 내부 원격 편집 명령은 아직 없다. 변경 이유·실행 근거·제한은 [작업 기록](16-foundation-worklog.md), 우선순위는 [14](14-development-priorities.md)에 기록한다.
 
 오브젝트·맵 연결 후속 작업에서도 새 공식 페이지 접근은 기존 보안 정책 거부로 확인하지 못했다. 이를 우회 조회하거나 추가 벤치마킹 완료로 표시하지 않았다. 현재 동작은 저장소의 ECS·PhysicsWorld2D·ScriptSystem·SceneTransitionManager 계약을 근거로 구현했다.
+
+## 도트·모션·테마 제작
+
+하단 상태 영역과 중립 회색 테마, 직접 그린 벡터 아이콘·텍스트 버튼으로 메뉴·상태·선택을 구분한다. 기본 이동은 필요한 컴포넌트를 한 트랜잭션으로 추가한다. 도트 원본/리깅/모션 내보내기와 공식 Godot/PixelOver 근거, 한계·검증 범위는 [18](18-editor-authoring.md), 제작 순서는 [웹 가이드](guide/index.html)에 있다. 새 기본 프로젝트에 편집 가능한 novice.dot을 제공한다.

@@ -16,6 +16,7 @@
 #include "mye/editor/Command.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/editor/PlayMode.h"
+#include "mye/editor/AnimEditing.h"
 #include "mye/core/I18n.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/ser/JsonArchive.h"
@@ -173,6 +174,14 @@ public:
         ImGui::Text("Entity #%u", entity.index);
         ImGui::Separator();
 
+        ImGui::BeginDisabled(ctx.playMode && ctx.playMode->IsPlaying());
+        if (ImGui::Button("캐릭터 기본 이동 구성")) {
+            auto result = SetupCharacterMovement(ctx, entity);
+            m_movementStatus = result ? "WASD / 방향키로 이동합니다. 아래에서 속도·충돌 크기와 대기/걷기 모션을 지정하세요." : result.GetError().message;
+        }
+        ImGui::EndDisabled();
+        if (!m_movementStatus.empty()) ImGui::TextWrapped("%s", m_movementStatus.c_str());
+
         // 리플렉션 자동 인스펙터 — 컴포넌트별 헤더·필드 위젯·PropertyEditCommand 발행.
         //   컴포넌트 제거 버튼을 각 헤더 옆에 겹쳐 그리기 위해, DrawEntity 대신 여기서 컴포넌트를
         //   직접 순회한다(DrawReflected 재사용).
@@ -191,6 +200,7 @@ public:
     }
 
 private:
+    std::string m_movementStatus;
     void DrawComponents(EditorContext& ctx, ecs::World& world, ecs::Entity entity) {
         InspectorRenderer* insp = ctx.app ? &ctx.app->Inspector() : nullptr;
 

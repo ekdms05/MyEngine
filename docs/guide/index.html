@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#191919">
+  <meta name="description" content="MyEngine에서 프로젝트, 맵, 캐릭터, 픽셀 애니메이션을 만드는 오프라인 제작 가이드">
+  <title>MyEngine · 게임 제작 가이드</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="guide.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 이동</a>
+  <header><a class="brand" href="#start"><span aria-hidden="true">▧</span> <span translate="no">MyEngine</span></a><span>게임 제작 가이드</span><a href="../18-editor-authoring.md">설계·검증 기록</a></header>
+  <div class="layout">
+    <aside aria-label="가이드 탐색">
+      <label for="search">작업 찾기</label>
+      <input id="search" name="q" type="search" placeholder="이동, 리깅, 저장…" autocomplete="off">
+      <p id="search-status" class="muted" aria-live="polite"></p>
+      <nav aria-label="제작 순서">
+        <a href="#start" data-keywords="시작 설치 실행 경로 초원 마을 프로젝트">01 첫 프로젝트</a>
+        <a href="#scene" data-keywords="씬 저장 불러오기 오브젝트 건물 맵 에셋">02 씬과 오브젝트</a>
+        <a href="#movement" data-keywords="캐릭터 이동 조작 충돌 컴포넌트 WASD">03 캐릭터 조작</a>
+        <a href="#events" data-keywords="상호작용 이벤트 Lua 맵 연결 포털">04 이벤트와 맵 연결</a>
+        <a href="#dot" data-keywords="도트 픽셀 이미지 참조 가져오기 확대 축소 PNG">05 픽셀 그리기</a>
+        <a href="#rig" data-keywords="리깅 뼈 모션 연결 애니메이션 프레임 키 포즈 내보내기">06 리깅과 모션</a>
+        <a href="#viewport" data-keywords="뷰포트 2D 3D 카메라 Play 테스트">07 플레이 확인</a>
+        <a href="#recovery" data-keywords="오류 콘솔 Undo 저장 복구 빌드">08 저장과 오류 해결</a>
+      </nav>
+      <p class="muted">인터넷 연결 없이 열 수 있습니다.<br>기준: 2026-10-01 구현</p>
+    </aside>
+    <main id="main" tabindex="-1">
+      <section id="start">
+        <p class="eyebrow">만들고 · 저장하고 · 플레이하기</p>
+        <h1>초원 마을에서 첫 게임을 시작하세요.</h1>
+        <p class="lead">기본 프로젝트를 만들면 개별 건물·지형 오브젝트와 레벨 1 캐릭터가 준비됩니다. 장면을 수정하고 저장한 뒤 Play로 바로 확인할 수 있습니다.</p>
+        <figure><img src="media/editor.png" width="960" height="540" alt="회색 에디터의 중앙 마을 뷰포트, 왼쪽 오브젝트 계층, 오른쪽 인스펙터와 하단 콘솔" fetchpriority="high"><figcaption>실제 MyEditor 화면. 메뉴와 상태 메시지는 별도 영역을 사용합니다.</figcaption></figure>
+        <ol><li><code>build/dev/apps/editor/Release/MyEditor.exe</code>를 실행합니다.</li><li><strong>파일 → 새 프로젝트</strong>에서 이름·폴더를 지정하고 기본 콘텐츠 사용을 선택합니다.</li><li>프로젝트를 저장하고 Play를 누릅니다. WASD 또는 방향키로 걷고 E로 상호작용합니다.</li></ol>
+        <details><summary>왜 기본 프로젝트로 시작하나요?</summary><p>씬·에셋 GUID·충돌·캐릭터 구성의 연결을 실제로 확인할 수 있습니다. 새 프로젝트는 원본 템플릿을 복사하므로 제작 중 변경이 다른 프로젝트에 전파되지 않습니다.</p><p>근거: <code>ProjectContext::Create</code>, <code>game/starter/meadow_village</code>.</p></details>
+      </section>
+      <section id="scene">
+        <p class="eyebrow">장면 구성</p><h2>건물과 지형을 오브젝트별로 편집하세요.</h2>
+        <p class="lead">계층에서 개별 오브젝트를 선택하면 위치·스프라이트·충돌·행동을 인스펙터에서 바꿀 수 있습니다.</p>
+        <ol><li>계층에서 건물 또는 지형을 선택합니다. 새 오브젝트는 계층의 생성 기능으로 만듭니다.</li><li>인스펙터에서 위치와 스케일을 수정합니다. 에셋 브라우저의 이미지는 뷰포트로 끌어 배치합니다.</li><li><kbd>Ctrl</kbd> + <kbd>S</kbd>로 활성 씬을 저장합니다. 전체 문서는 파일 메뉴의 프로젝트 저장을 사용합니다.</li></ol>
+        <details><summary>저장 구조와 이유</summary><p>씬은 <code>assets/scenes/*.scene</code>, 이미지와 모션은 GUID 및 <code>.meta</code>로 연결됩니다. 에디터 배치 상태는 <code>.myeditor</code>에 따로 저장됩니다. 같은 오브젝트에 대한 변경은 기존 문서 Undo 스택을 사용합니다.</p></details>
+      </section>
+      <section id="movement">
+        <p class="eyebrow">플레이어 구성</p><h2>버튼 하나로 기본 이동을 구성하세요.</h2>
+        <p class="lead">최상위 오브젝트를 선택하고 <strong>캐릭터 기본 이동 구성</strong>을 누르면 스프라이트·발밑 충돌·이동 본체·조작 컴포넌트가 추가됩니다.</p>
+        <ol><li>기존 조작 캐릭터가 있으면 그 캐릭터를 편집하거나 <code>enabled</code>를 먼저 끕니다. 한 씬에는 활성 조작 캐릭터 1명을 사용합니다.</li><li>최상위 캐릭터를 선택하고 이동 구성 버튼을 누릅니다. 기존 컴포넌트 값은 유지됩니다.</li><li><code>CharacterController2D.speed</code>를 조절합니다. 대기·걷기 모션을 지정하고 Play로 충돌을 확인합니다.</li></ol>
+        <details><summary>왜 이동 설정을 묶었나요?</summary><p>조작에 필요한 컴포넌트 누락을 막고 한 번의 Undo로 구성을 되돌리기 위해서입니다. 이동은 렌더 프레임과 분리된 고정 틱에서 계산합니다. 새 발밑 박스는 반폭 0.2, 반높이 0.12 월드 단위이며 이미지에 맞게 조정하세요.</p><p>근거: <code>SetupCharacterMovement</code>, <code>ObjectSystem::Tick</code>.</p></details>
+      </section>
+      <section id="events">
+        <p class="eyebrow">게임 규칙</p><h2>이벤트를 행동에 연결하고 맵을 이동하세요.</h2>
+        <p class="lead">코드 없이 메시지·표시 전환·위치 이동·맵 변경을 연결할 수 있습니다. 추가 규칙은 오브젝트의 Lua 콜백으로 작성합니다.</p>
+        <ol><li>인스펙터에서 <code>ObjectBehavior</code>를 추가하고 연결을 만듭니다. <code>Start</code>, <code>Interact</code>, <code>TriggerEnter</code>, <code>TriggerExit</code> 중 이벤트를 고릅니다.</li><li>행동과 대상을 지정합니다. 대상 이름은 씬에서 유일해야 합니다. 빈 대상은 현재 오브젝트입니다.</li><li>E 상호작용에는 <code>InteractionTarget</code>, 접촉 이벤트에는 트리거 <code>Collider2D</code>를 구성합니다.</li><li>출입구에 <code>ScenePortal</code>을 추가합니다. <code>scenePath</code>는 <code>assets/scenes/cottage.scene</code> 같은 프로젝트 내부 경로, <code>spawnName</code>은 목적지의 고유 오브젝트 이름입니다.</li></ol>
+        <details><summary>Lua와 컴포넌트의 역할</summary><p>반복되는 이동·충돌은 공유 컴포넌트로 처리하고 콘텐츠 고유 행동만 Lua에 둡니다. 이벤트 연결은 순서대로 실행되는 목록입니다. 범용 노드 그래프나 시각 스크립트 전체를 구현한 기능은 아닙니다.</p><p>기본 마을의 표지판과 오두막 출입구에서 작동 예를 확인하세요.</p></details>
+      </section>
+      <section id="dot">
+        <p class="eyebrow">픽셀 제작</p><h2>참조 이미지를 보며 픽셀을 그리세요.</h2>
+        <p class="lead">도트 에디터에서 PNG를 가져와 반투명 참조로 표시하고, 확대·이동하면서 픽셀을 편집할 수 있습니다. 원본은 <code>.dot</code> 문서로 저장합니다.</p>
+        <figure><img src="media/dot.png" width="960" height="540" loading="lazy" alt="도트 에디터의 픽셀 캔버스, 그리기 도구와 프레임 타임라인"><figcaption>새 기본 프로젝트의 편집 가능한 도트 문서. 에셋 브라우저에서 더블클릭해 엽니다.</figcaption></figure>
+        <ol><li><strong>창 → 도트 에디터</strong>를 열고 새 도트 문서를 만듭니다. 제공 예제는 <code>assets/sprites/novice.dot</code>입니다.</li><li>참조 이미지의 PNG 선택 버튼이나 에셋 끌어놓기로 가져옵니다. 불투명도·표시 여부를 조절합니다.</li><li>휠로 확대·축소, 마우스 가운데 버튼으로 이동합니다. <strong>맞춤</strong>과 <strong>1:1</strong> 버튼으로 배율을 복원합니다.</li><li>브러시·지우개·스포이트·채우기·영역 선택을 사용합니다. 참조를 현재 프레임에 복사하면 가장 가까운 픽셀 방식으로 크기를 맞춥니다.</li><li><code>assets/sprites/hero.dot</code>처럼 저장합니다. 이미 존재하는 다른 파일에 저장할 때는 덮어쓰기를 확인합니다.</li></ol>
+        <details><summary>원본과 내보내기를 나누는 이유</summary><p><code>.dot</code>에는 참조·픽셀·뼈·키·모션이 함께 들어갑니다. 런타임용 PNG와 <code>.anim</code>은 내보내기 결과이므로 다시 생성할 수 있습니다. 참조 입력은 PNG만 지원하며 최대 한 변 4096, 총 4,194,304 픽셀입니다. 편집 프레임은 한 변 512, 최대 64장입니다.</p></details>
+      </section>
+      <section id="rig">
+        <p class="eyebrow">움직임 제작</p><h2>부위를 뼈에 연결하고 포즈를 모션으로 내보내세요.</h2>
+        <p class="lead">영역 선택으로 부위를 나누고 부모·자식 뼈를 만들면, 위치·회전 포즈를 키로 저장해 보간할 수 있습니다. 완성한 모션은 대기·걷기 또는 다음 모션에 연결합니다.</p>
+        <ol><li>그리기 모드의 영역 선택으로 머리·몸통·다리 등 겹치지 않는 부위를 지정합니다.</li><li>리깅에서 부모를 선택한 뒤 뼈를 추가합니다. <strong>기본 자세</strong>에서 피벗과 배치를 정합니다.</li><li><strong>포즈</strong> 모드에서 프레임을 선택합니다. 뼈를 움직이거나 위치·회전을 입력하고 키를 기록합니다.</li><li>모션의 이름·시작/끝 프레임·반복·방향을 정합니다. 다음 모션을 지정하면 종료 후 이어집니다.</li><li>재생으로 확인하고 모션을 내보냅니다. 씬의 캐릭터를 선택해 대기 또는 걷기 지정 버튼으로 연결한 뒤 씬도 저장합니다.</li></ol>
+        <figure><video controls playsinline preload="metadata" poster="media/motion.png" width="768" height="576"><source src="media/motion.mp4" type="video/mp4"><p><a href="media/motion.gif">모션 GIF 보기</a></p></video><figcaption>실제 내보내기 PNG의 프레임 순서로 만든 걷기 모션. 소리 없음. <a href="media/motion.gif">GIF 내려받기</a>. 구간별 다리 회전과 부모 뼈의 영향을 확인할 수 있습니다.</figcaption></figure>
+        <details><summary>구현 범위와 제작 시 주의점</summary><p>분리 영역의 강체 이동·회전과 부모 계층을 픽셀로 베이크합니다. 메시 변형·IK·3D 모델 리깅은 지원하지 않습니다. 겹친 영역은 중복해서 그려질 수 있으므로 부위를 분리하고 가려진 픽셀을 보완하세요. 뼈 삭제는 자식부터, 목록의 마지막 뼈 순서로 진행합니다.</p><p>최대 뼈 64개·모션 32개. 키는 모션 구간 안에 기록합니다. 총 프레임 픽셀 4M, 참조 포함 6M을 넘으면 저장 전에 거부합니다. Undo는 최근 24개 편집을 보관하므로 최대 크기 문서는 메모리 사용이 큽니다.</p></details>
+      </section>
+      <section id="viewport">
+        <p class="eyebrow">결과 확인</p><h2>2D와 3D에서 같은 장면을 확인하세요.</h2>
+        <p class="lead">뷰포트의 2D/3D 전환은 같은 씬을 다른 카메라로 보여줍니다. Play는 편집 씬의 복제본에서 실행되어 Stop 뒤 원본 배치로 돌아갑니다.</p>
+        <ol><li>뷰포트에서 2D 또는 3D를 선택합니다. 캐릭터의 발 위치·건물 가림·충돌 범위를 확인합니다.</li><li>Play로 이동·상호작용·출입구·모션 전환을 확인합니다. Pause와 Step으로 진행을 관찰합니다.</li><li>Stop 후 필요한 변경을 편집 씬에 적용하고 저장합니다.</li></ol>
+        <figure><img src="media/3d.png" width="960" height="540" loading="lazy" alt="같은 초원 마을을 기울어진 3D 카메라로 렌더링한 화면"><figcaption>동일한 씬의 3D 카메라 렌더 결과.</figcaption></figure>
+        <details><summary>좌표와 화질 기준</summary><p>왼손 좌표계, +Y 위, 기본 PPU 48, 렌더 타깃 960×540을 사용합니다. 3D 카메라 전환으로 2D 이미지가 입체 모델로 바뀌지는 않습니다. 깊이와 알파 컷아웃 계약은 <a href="../02-rendering.md">렌더 문서</a>에 있습니다.</p></details>
+      </section>
+      <section id="recovery">
+        <p class="eyebrow">작업 보존</p><h2>오류는 하단 상태와 콘솔에서 확인하세요.</h2>
+        <p class="lead">상단 메뉴를 가리는 긴 오류 문구는 하단 한 줄 상태 영역으로 이동했습니다. 전체 내용은 툴팁과 콘솔에서 확인합니다.</p>
+        <ul><li><kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Ctrl</kbd> + <kbd>Y</kbd>: 포커스 문서의 Undo/Redo. 도트 편집과 씬의 모션 연결은 서로 다른 문서에 기록됩니다.</li><li>저장 실패: 경로·권한·남은 디스크 공간을 확인합니다. 실패한 저장은 dirty 상태를 유지하고 기존 JSON 파일을 교체하지 않습니다.</li><li>모션이 안 보임: 내보내기 성공·에셋 새로고침·캐릭터 모션 지정·씬 저장을 차례로 확인합니다.</li><li>캐릭터가 움직이지 않음: Play 상태, 활성 조작 캐릭터 수, 최상위 배치, 이동 속도·충돌 컴포넌트를 확인합니다.</li></ul>
+        <details><summary>소스 빌드와 검증</summary><pre><code>cmake --build build/dev --config Debug
+ctest --test-dir build/dev -C Debug --output-on-failure</code></pre><p>직접 마우스·파일 선택창 조작, 다양한 DPI, 청취 테스트는 자동 API·프레임 캡처와 구분해 확인해야 합니다. 구현 상태와 우선순위는 <a href="../14-development-priorities.md">개발 우선순위</a>를 참고하세요.</p></details>
+      </section>
+      <footer>MyEngine 제작 가이드 · <a href="../18-editor-authoring.md">변경 근거와 벤치마킹</a> · <a href="https://github.com/ekdms05/MyEngine">소스 저장소</a></footer>
+    </main>
+  </div>
+</body>
+</html>

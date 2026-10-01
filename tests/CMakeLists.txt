@@ -81,6 +81,7 @@ add_executable(mye_tests
     src/StarterEditorTests.cpp
     src/ObjectWorkflowTests.cpp
     src/EditorWorkflowTests.cpp       # M4-B: 배치·편집·저장·플레이·Undo 엔드투엔드 워크플로우
+    src/DotEditorTests.cpp
     src/UiSmokeTests.cpp              # M5-A: 인게임 UI + 텍스트 골격 계약 스모크(헤드리스)
     src/UiLayoutTests.cpp             # M5-A: 앵커·레이아웃·히트테스트·이벤트·직렬화·9slice·BMP 덤프
     src/UiPhase2Tests.cpp             # M7 렌더 잔여: TextInput/ScrollView/ListView 로직

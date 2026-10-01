@@ -7,10 +7,79 @@
 #include "mye/scene/Renderable.h"
 #include "mye/refl/TypeRegistry.h"
 #include "mye/ser/JsonArchive.h"
+#include "mye/scene/Transform.h"
+#include "mye/phys/Collision.h"
+#include "mye/runtime/ObjectComponents.h"
 
 #include <algorithm>
 
 namespace mye::editor {
+
+Expected<void, Error> SetupCharacterMovement(EditorContext& ctx, ecs::Entity entity) {
+    auto* world = ctx.activeWorld();
+    if ((ctx.playMode && ctx.playMode->IsPlaying()) || !world || !world->Valid(entity) || !ctx.commands)
+        return Error{"편집 중인 씬에서 캐릭터를 선택하세요.", 1};
+    if (const auto* parent = world->TryGet<scene::Parent>(entity); parent && !parent->parent.IsNull())
+        return Error{"조작 캐릭터는 하이어라키의 최상위에 배치하세요.", 1};
+    bool anotherPlayer = false;
+    world->Query<runtime::CharacterController2D>().Each([&](ecs::Entity e, const auto& controller) {
+        anotherPlayer |= e != entity && controller.enabled;
+    });
+    if (anotherPlayer) return Error{"씬에는 조작 캐릭터 한 명만 설정할 수 있습니다. 기존 캐릭터 조작을 먼저 끄세요.", 1};
+    if (!world->TryGet<scene::LocalTransform>(entity) || !world->TryGet<scene::WorldTransform>(entity))
+        return Error{"하이어라키에서 만든 오브젝트를 선택하세요.", 1};
+    const char* names[] = {"SpriteRenderer", "Collider2D", "KinematicBody2D", "CharacterController2D"};
+    std::vector<const refl::TypeInfo*> missing;
+    for (const auto* name : names) {
+        const auto* type = refl::TypeRegistry::Get().Find(name);
+        if (!type || !world->IsRegistered(static_cast<ecs::ComponentTypeId>(type->Id())))
+            return Error{"이 씬에는 캐릭터 컴포넌트가 등록되지 않았습니다.", 1};
+        if (!world->TryGetDynamic(entity, static_cast<ecs::ComponentTypeId>(type->Id()))) missing.push_back(type);
+    }
+    if (missing.empty()) return {};
+    const bool addCollider = !world->TryGet<phys::Collider2D>(entity);
+    ValueBlob colliderBefore, colliderAfter;
+    const auto* colliderType = refl::TypeRegistry::Get().Find("Collider2D");
+    if (addCollider) {
+        phys::Collider2D before, after;
+        after.shape = phys::Shape2D::MakeBox(.2f, .12f); after.offset = {0, .12f};
+        auto oldValue = ser::JsonArchive::ForWrite(), newValue = ser::JsonArchive::ForWrite();
+        auto oldResult = refl::ReadValue(*colliderType, &before, {}, oldValue);
+        auto newResult = refl::ReadValue(*colliderType, &after, {}, newValue);
+        if (!oldResult || !newResult) return Error{"캐릭터 충돌 크기를 구성할 수 없습니다.", 1};
+        colliderBefore = {json::Stringify(oldValue.Root())}; colliderAfter = {json::Stringify(newValue.Root())};
+    }
+    ctx.commands->BeginTransaction("캐릭터 이동 구성");
+    for (const auto* type : missing) ctx.commands->Push(std::make_unique<AddComponentCommand>(entity, *type));
+    if (addCollider) ctx.commands->Push(std::make_unique<PropertyEditCommand>(ObjectRef::Component(entity, *colliderType), refl::PropertyPath{}, colliderBefore, colliderAfter));
+    ctx.commands->EndTransaction();
+    return {};
+}
+
+Expected<void, Error> AssignCharacterMotion(EditorContext& ctx, ecs::Entity entity,
+                                           asset::AssetRef animation, bool walking) {
+    auto* world = ctx.activeWorld();
+    const auto* type = refl::TypeRegistry::Get().Find("CharacterController2D");
+    const auto* controller = world && world->Valid(entity) ? world->TryGet<runtime::CharacterController2D>(entity) : nullptr;
+    if ((ctx.playMode && ctx.playMode->IsPlaying()) || !controller || !type || !ctx.commands || !animation.guid.IsValid())
+        return Error{"이동 구성을 마친 캐릭터를 선택하고 모션을 내보내세요.", 1};
+    if (!world->TryGet<scene::SpriteRenderer>(entity) || (!walking && (!refl::TypeRegistry::Get().Find("SpriteAnimator") || !world->IsRegistered(anim::SpriteAnimator::kComponentTypeId))))
+        return Error{"이 씬에는 SpriteAnimator가 등록되지 않았습니다.", 1};
+    auto before = walking ? controller->walkAnimation : controller->idleAnimation;
+    auto oldValue = ser::JsonArchive::ForWrite(); oldValue.Value(before);
+    auto newValue = ser::JsonArchive::ForWrite(); newValue.Value(animation);
+    auto path = refl::PropertyPath::Parse(walking ? "walkAnimation" : "idleAnimation");
+    if (!path) return path.GetError();
+    ctx.commands->BeginTransaction(walking ? "걷기 모션 연결" : "대기 모션 연결");
+    ctx.commands->Push(std::make_unique<PropertyEditCommand>(ObjectRef::Component(entity, *type), path.Value(),
+        ValueBlob{json::Stringify(oldValue.Root())}, ValueBlob{json::Stringify(newValue.Root())}));
+    if (!walking) {
+        auto assigned = AssignAnimationToEntity(ctx, entity, animation);
+        if (!assigned) { ctx.commands->EndTransaction(); ctx.commands->Undo(); return assigned.GetError(); }
+    }
+    ctx.commands->EndTransaction();
+    return {};
+}
 
 Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation) {
     auto* world = ctx.activeWorld();

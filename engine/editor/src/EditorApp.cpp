@@ -17,9 +17,11 @@
 #include "mye/core/I18n.h"
 #include "mye/core/Window.h"
 #include "mye/ecs/World.h"
+#include "mye/imgui/EditorWidgets.h"
 
 #include "imgui.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -180,7 +182,8 @@ void EditorApp::OnFrame() {
     //   뷰포트 상단도 정상적으로 클릭된다. 도크스페이스에 도킹되는 패널들은 호스트 End 후 그린다.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
-    ImGui::SetNextWindowSize(vp->WorkSize);
+    const float statusHeight = ImGui::GetFrameHeightWithSpacing();
+    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, std::max(1.0f, vp->WorkSize.y - statusHeight)));
     ImGui::SetNextWindowViewport(vp->ID);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -198,7 +201,9 @@ void EditorApp::OnFrame() {
     if (m_panels) m_panels->SetupDockspace(m_ctx);   // 남은 영역에 도크스페이스 + 최초 1회 기본 배치
     ImGui::End();                                    // 호스트 종료
 
+    DrawStatusBar();
     m_animationFocused = false;
+    m_dotFocused = false;
     if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
     DrawFileDialogs();
 }
@@ -212,9 +217,10 @@ CommandStack& EditorApp::Commands() {
 
 // 현재 편집 대상 스택(플레이 중이면 플레이 스택).
 CommandStack* EditorApp::ActiveStack() {
-    if (m_animationFocused) if (auto* doc = AnimationDocument()) return &doc->Commands();
     if (m_playMode && m_playMode->IsPlaying())
         return m_playMode->PlayCommandStack();
+    if (m_dotFocused) if (auto* doc = DotDocumentForEditing()) return &doc->Commands();
+    if (m_animationFocused) if (auto* doc = AnimationDocument()) return &doc->Commands();
     Document* active = m_project ? m_project->Active() : nullptr;
     return active ? &active->Commands() : nullptr;
 }
@@ -317,6 +323,11 @@ void EditorApp::DrawMenuBar() {
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("도움말")) {
+        if (ImGui::MenuItem("게임 제작 가이드")) OpenUserGuide();
+        ImGui::EndMenu();
+    }
+
     // 언어 메뉴 — ko/en/ja/zh 전환. 선택 시 도킹 레이아웃이 재구성된다(Version 관찰).
     if (ImGui::BeginMenu(T("menu.language"))) {
         using mye::i18n::Lang;
@@ -358,17 +369,11 @@ void EditorApp::DrawToolbar() {
 
     const bool playing = m_playMode && m_playMode->IsPlaying();
     ImGui::BeginDisabled(playing);
-    if (ImGui::Button(T("file.newproject"))) RequestNewProject();
-    ImGui::SameLine();
-    if (ImGui::Button(T("file.openproject"))) RequestOpenProject();
-    ImGui::SameLine();
     ImGui::BeginDisabled(!m_project || !m_project->IsOpen());
-    if (ImGui::Button(T("file.saveproject"))) RequestSaveProject();
-    ImGui::SameLine();
-    if (ImGui::Button(T("toolbar.newscene"))) NewScene();
+    if (imgui::EditorButton(imgui::EditorIcon::NewFile,T("toolbar.newscene"))) NewScene();
     ImGui::SameLine();
     ImGui::BeginDisabled(!m_project || !m_project->Active() || !m_ctx.activeWorld());
-    if (ImGui::Button(T("toolbar.save"))) SaveActive();
+    if (imgui::EditorButton(imgui::EditorIcon::Save,T("toolbar.save"))) SaveActive();
     ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::EndDisabled();
@@ -376,19 +381,17 @@ void EditorApp::DrawToolbar() {
     ImGui::TextDisabled("|");
     ImGui::SameLine();
 
-    const std::string playLabel = std::string(playing ? "■ " : "▶ ") + T(playing ? "toolbar.stop" : "toolbar.play");
-    if (ImGui::Button(playLabel.c_str()))
+    if (imgui::EditorButton(playing ? imgui::EditorIcon::Stop : imgui::EditorIcon::Play,T(playing ? "toolbar.stop" : "toolbar.play")))
         TogglePlay();
     ImGui::SameLine();
     if (playing) {
         const bool paused = m_playMode->State() == PlayState::Paused;
-        const std::string pauseLabel = std::string(paused ? "▶ " : "❚❚ ") + T(paused ? "play.toggle" : "play.pause");
-        if (ImGui::Button(pauseLabel.c_str())) {
+        if (imgui::EditorButton(paused ? imgui::EditorIcon::Play : imgui::EditorIcon::Pause,T(paused ? "play.toggle" : "play.pause"))) {
             if (paused) m_playMode->Resume(); else m_playMode->Pause();
         }
         ImGui::SameLine();
         ImGui::BeginDisabled(!paused);
-        if (ImGui::Button(T("play.step"))) m_playMode->StepFrame();
+        if (imgui::EditorButton(imgui::EditorIcon::Step,T("play.step"))) m_playMode->StepFrame();
         ImGui::EndDisabled();
     }
 
@@ -408,12 +411,28 @@ void EditorApp::DrawToolbar() {
     }
 
     ImGui::Unindent(6.0f);
-    if (!m_fileStatus.empty()) {
-        if (m_fileError) ImGui::TextWrapped("%s: %s", T("file.error"), m_fileStatus.c_str());
-        else ImGui::TextWrapped("%s", m_fileStatus.c_str());
-    }
     ImGui::Dummy(ImVec2(0, 2));
     ImGui::Separator();
+    ImGui::PopStyleVar();
+}
+
+void EditorApp::DrawStatusBar() {
+    const auto* vp = ImGui::GetMainViewport();
+    const float height = ImGui::GetFrameHeightWithSpacing();
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x, vp->WorkPos.y + vp->WorkSize.y - height));
+    ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x, height));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 2));
+    const auto flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoSavedSettings;
+    if (ImGui::Begin("##EditorStatus", nullptr, flags)) {
+        if (ImGui::SmallButton(m_fileError ? "오류 / 콘솔" : "콘솔")) m_panels->Open("mye.console");
+        ImGui::SameLine();
+        // One clipped row keeps long paths/errors from resizing the workspace.
+        ImGui::TextUnformatted(m_fileStatus.empty() ? "준비" : m_fileStatus.c_str());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", m_fileStatus.c_str());
+    }
+    ImGui::End();
     ImGui::PopStyleVar();
 }
 
@@ -468,6 +487,17 @@ void EditorApp::NewScene() {
 }
 
 void EditorApp::SaveActive() {
+    if (m_playMode && m_playMode->IsPlaying()) {
+        ReportFileResult(Error{mye::i18n::T("file.stopfirst"), 1}, "");
+        return;
+    }
+    if (m_dotFocused) {
+        if (auto* doc = DotDocumentForEditing()) {
+            if (doc->Path().empty()) RequestSaveAs();
+            else ReportFileResult(m_project->SaveDot(doc->Id(), doc->Path()), mye::i18n::T("file.saved"));
+        }
+        return;
+    }
     if (m_animationFocused) {
         if (auto* doc = AnimationDocument()) {
             auto saved = m_project->SaveAnimation(doc->Id(), doc->Path());

@@ -8,6 +8,8 @@ add_library(mye_imgui STATIC
     include/mye/imgui/ImGuiFonts.h
     src/DebugUi.cpp
     src/ImGuiSkin.cpp
+    include/mye/imgui/EditorWidgets.h
+    src/EditorWidgets.cpp
     src/ImGuiFonts.cpp
 
     ${IMGUI_CORE_SOURCES}

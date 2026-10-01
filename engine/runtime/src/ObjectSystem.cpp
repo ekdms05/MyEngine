@@ -146,12 +146,13 @@ void ObjectSystem::Tick(float dt, Vec2 movement, bool interact) {
     s.prompt.clear();
     auto nearest = ecs::Entity::Null();
     float nearestDistance = 10000.0f;
-    s.world.Query<CharacterController2D, phys::KinematicBody2D>().Each([&](ecs::Entity player, const CharacterController2D& c, const phys::KinematicBody2D& body) {
+    s.world.Query<CharacterController2D, phys::KinematicBody2D>().Each([&](ecs::Entity player, CharacterController2D& c, const phys::KinematicBody2D& body) {
         if (!c.enabled) return;
         if (auto* animator = s.world.TryGet<anim::SpriteAnimator>(player)) {
             const bool moving = body.lastMove.x * body.lastMove.x + body.lastMove.y * body.lastMove.y > 0.000001f;
             const auto& ref = moving ? c.walkAnimation : c.idleAnimation;
-            if (ref.guid.IsValid() && animator->animation.guid != ref.guid) {
+            if (ref.guid.IsValid() && c.requestedMotion != ref.guid) {
+                c.requestedMotion = ref.guid;
                 animator->animation = ref; animator->sheet = nullptr; animator->directClip = nullptr; animator->cursor = {}; animator->started = false;
             }
         }

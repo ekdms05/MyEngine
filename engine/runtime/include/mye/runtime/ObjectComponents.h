@@ -14,6 +14,7 @@ struct CharacterController2D {
     bool enabled = true;
     float speed = 3.0f;
     asset::AssetRef idleAnimation, walkAnimation;
+    asset::AssetGuid requestedMotion; // Runtime only: successors must not restart the movement state's entry clip.
 };
 
 struct InteractionTarget {

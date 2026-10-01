@@ -9,9 +9,13 @@ target_link_libraries(MyEditor PRIVATE
     mye_core mye_scene mye_editor
 )
 
-add_custom_command(TARGET MyEditor POST_BUILD
+add_custom_target(MyEditorContent
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/game/starter/meadow_village"
         "$<TARGET_FILE_DIR:MyEditor>/templates/meadow_village"
-    COMMENT "Copying editor starter assets"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/docs"
+        "$<TARGET_FILE_DIR:MyEditor>/docs"
+    COMMENT "Copying editor starter assets and offline guides"
 )
+add_dependencies(MyEditor MyEditorContent)

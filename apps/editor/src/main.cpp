@@ -61,6 +61,8 @@ public:
                 m_dumpPath = a[++i];
             } else if (a[i] == "--animation" && i + 1 < a.size()) {
                 m_animationPath = a[++i];
+            } else if (a[i] == "--dot" && i + 1 < a.size()) {
+                m_dotPath = a[++i];
             } else if (a[i] == "--view3d") {
                 m_view3d = true;
             } else if (a[i] == "--select" && i + 1 < a.size()) {
@@ -92,6 +94,10 @@ public:
     void OnStart(EngineContext& ctx) override {
         // EditorModule 에 CLI 제어를 주입(프레임 한도 도달 시 이 Application 을 종료).
         if (auto* em = ctx.GetService<editor::EditorModule>()) {
+            if (em->App() && !m_dotPath.empty()) {
+                const auto opened = em->App()->OpenDot(m_dotPath);
+                if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); }
+            }
             if (em->App() && !m_animationPath.empty()) {
                 const auto opened = em->App()->OpenAnimation(m_animationPath);
                 if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); }
@@ -118,7 +124,7 @@ public:
     void OnStop(EngineContext& /*ctx*/) override {}
 
 private:
-    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_selectName;
+    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_dotPath, m_selectName;
     bool m_view3d = false;
     bool          m_startPlaying = false;
     bool          m_frameLimit = false;

@@ -60,6 +60,12 @@
       "sourceType": "github",
       "skillPath": "skills/disciplines/shader-programming/SKILL.md",
       "computedHash": "19fbb1bc4715179388a9c8fcf92f2534cb821f655ca76120c19f3c6bb86de4bf"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "computedHash": "d8e7d3afe37dcc8a97b99ffb5afdb4d0919ae0092ea8b68f44eb201f035e33ac"
     }
   }
 }

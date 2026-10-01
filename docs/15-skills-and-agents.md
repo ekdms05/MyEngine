@@ -161,3 +161,24 @@ Computer Use 스킬(`C:/Users/harun/.codex/plugins/cache/openai-bundled/computer
 이번 작업은 사용자 전역 clean-code(`C:/Users/harun/.codex/skills/clean-code/SKILL.md`)와 lua(`C:/Users/harun/.codex/skills/lua/SKILL.md`)를 읽고 적용했다. 설치된 cpp-coding-standards·imgui-ui-ux-engineering·픽셀 아트 스킬의 기존 계약도 유지한다. game-ui-ux는 확인했으나 이번 직접 ImGui 컴포넌트 편집에 맞는 범위만 참고했다. 기존 ECS·물리·Lua·씬 직렬화·전환으로 요구를 충족하므로 새 패키지나 범용 그래프 라이브러리를 설치하지 않았다. 병렬 에이전트도 실행하지 않았다.
 
 MCP는 공식 SDK를 통한 8개 기존 도구 연결과 실제 MyEditor 프레임 캡처를 사용한다. 직접 세션 도구 노출·에디터 내부 원격 편집을 새로 제공한 것은 아니다. Computer Use의 네이티브 RPC 미구성 및 Godot 페이지 접근 거부는 계속 적용되며 우회 입력/조회 없이 API 회귀와 실제 렌더 검증을 구분한다.
+
+## UI·제작 가이드 스킬 평가와 설치
+
+2026-10-01: find-skills로 skills.sh와 `imgui ui ux design` 검색을 확인하고 원문·실제 프레임워크·검증 지원·중복·의존성으로 판단했다. 설치 수는 참고 수치이며 품질 근거로 쓰지 않았다.
+
+| 후보 | 판단 | 실제 적용 |
+|---|---|---|
+| 기존 imgui-ui-ux-engineering | Dear ImGui 작업에 직접 맞음. 버전 주의 문서까지 확인 | 문서 상태·도킹·작업 계층·중립 테마·vector+text·클리핑·정적 scope 검사 |
+| 기존 game-ui-ux | 게임 HUD/입력/정보 계층 지침은 유효, 웹/React 예제를 네이티브 셸로 대체할 이유 없음 | 콘텐츠 작업 흐름·포커스 원칙만 참고 |
+| 기존 Pixel Art creator/professional/animator/exporter | 참조·분리 부위·프레임 시간·PNG 시트와 소스/출력 구분에 적합 | MyEngine 자체 제작 API에 적용. Aseprite 도구 연결/실행은 확인되지 않음 |
+| [Vercel web-design-guidelines](https://skills.sh/vercel-labs/agent-skills/web-design-guidelines) | 공식 원문·명확한 접근성/포커스/미디어/레이아웃 리뷰 기준. HTML 제작 가이드에 필요한 중복 없는 검사 | 새로 설치하고 원문 및 최신 guideline을 읽음. label/alt/크기/skip link/focus-visible/video controls/자동재생 제외 반영 |
+| 기존 frontend-design 플러그인 | 이미 설치되어 있어 중복 다운로드 필요 없음 | 이번 네이티브 UI에 웹 컴포넌트 라이브러리 추가하지 않음 |
+| minimalist-ui / ui-ux-pro-max 등 폭넓은 웹 스킬 | 검색 노출·대규모 설치가 자체 C++ 도킹에 적합하다는 뜻은 아님 | 기존 ImGui 지침과 정적 웹 가이드로 충족하여 추가 설치하지 않음 |
+
+```powershell
+npx.cmd skills add https://github.com/vercel-labs/agent-skills --skill web-design-guidelines --agent codex -y
+```
+
+설치 위치는 프로젝트 .agents/skills/web-design-guidelines, 원본/해시는 skills-lock.json에 기록한다. 설치 파일은 ignored이며 실행 중 세션의 자동 도구 등록과 동일하지 않다. 필요한 지침을 직접 읽고 적용했으며 에이전트 정의·병렬 실행·React/폰트/아이콘/영상 인코더 패키지는 추가하지 않았다. 영상은 이미 설치된 OpenCV→Windows Media Foundation H.264, GIF는 Pillow로 기존 출력 프레임을 인코딩했다.
+
+ImGui scope 정적 검사는 4개 변경 UI 파일 모두 통과했다. 스킬 quality_suite의 semantic checks 30/30과 공식 header 확인은 통과했으나 전체 게이트는 g++/c++를 찾지 못해 FAIL이다. 제품은 별도 MSVC Debug/Release 빌드·CTest로 검증하며 이 결과로 스킬 전체 FAIL을 성공으로 바꾸지 않는다. 로컬 가이드 브라우저 접근은 권한 거부되었고 UI/비디오 브라우저 검증을 우회하지 않았다.

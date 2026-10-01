@@ -443,3 +443,42 @@ Edit this original meadow village art into a game-ready transparent object sprit
 보정에서는 셀을 넘던 가장자리를 이유로 같은 여섯 개체를 2열×3행 각 512셀 중앙에 완전히 넣고, 주변 투명 여백과 최대 380픽셀 실루엣을 명시했다. 지형은 동일한 광원·색조의 풀/흙/물/돌 네 개 셀로 분리하도록 지정했다. 실제 사용 여부는 지시문이 아니라 alpha·셀 경계와 앱 렌더 결과로 결정했다.
 
 최종 전체 Debug/Release 빌드는 모두 성공했다. 양쪽 CTest는 각각 13/13, 내부 검사는 각각 524/524 통과했다. 일반 float 필드의 초과 범위 차단까지 반영한 최종 상세 로그를 build/object-validation/{debug,release}-details.log에 보관했다. 문서 301개 로컬 링크 대상의 누락은 0개였고 git diff --check가 통과했다. 신규 PNG 두 개는 생성 원본과 SHA256이 같아 이미지 파일 보존을 확인했다. 네이티브 수동 UI 조작·성능 전후 측정은 실행한 검증으로 표시하지 않는다.
+
+## 2026-10-01 · 도트 제작·모션 연결·중립 UI·제작 가이드
+
+### 변경의 이유와 범위
+
+상단 파일 상태의 긴 오류가 메뉴·툴바를 밀던 원인을 EditorApp 공통 셸에서 수정했다. 상태는 고정 하단 한 줄·툴팁·콘솔로 이동하고 도킹 호스트 높이에서 제외한다. 회색 표면·파란 선택 강조는 공용 ImGuiSkin에 모았다. 새 씬/저장/Play/Stop/Pause/Step·도트 파일 버튼은 공용 벡터 도형+텍스트를 사용한다. 타사 아이콘 팩·별도 글꼴을 복사/설치하지 않는다. Godot 공식 source/문서와 PixelOver 작업 흐름의 확인 URL·채택/제외 범위는 [18](18-editor-authoring.md)에 있다.
+
+Inspector의 기본 이동 구성은 기존 트랜잭션·AddComponent·PropertyEdit로 SpriteRenderer/Collider2D/KinematicBody2D/CharacterController2D 누락만 추가한다. 기존 값과 Transform을 보존하며 새 충돌만 발밑 박스로 정한다. 최상위·한 명 규칙과 등록/WorldTransform을 mutation 전에 확인한다. Runtime의 이동 상태 진입 GUID를 transient로 기억하여 후속 모션을 매 틱 초기화하지 않는다.
+
+이전 DotEditorPanel의 패널 전역 픽셀과 cwd 기준 PNG 저장을 제거했다. 이유는 프로젝트·문서·Undo·원본 보존과 연결되지 않았기 때문이다. 사용자가 저장한 기존 PNG는 삭제하지 않았다. DotDocument는 제작 데이터/버전·검증, Project는 문서 수명·저장, Panel은 조작·미리보기로 책임을 나눴다. 공유 I/O·TextureImporter·GUID/meta·AnimationAsset·ClipPlayback을 재사용한다. STB 이미지 쓰기 구현은 중복 없이 DotEditing.cpp 한곳으로 이동했다.
+
+참조 PNG→픽셀/프레임→분리 영역의 부모 계층·피벗·기본 자세/포즈 키→모션/후속→PNG/.anim/.meta→DB→씬→Play 경로를 연결했다. 외부 파일은 크기를 먼저 확인하고 잘못된 버전·범위·키·계층·다음 이름을 거부한다. 새 GUID 폴더로 내보내며 실패 시 해당 호출이 만든 파일과 빈 폴더만 회수한다. 저장 실패는 원본과 dirty 상태를 보존한다. 확대 anchor 좌표·연속 선·채우기·클리핑된 가로 구간 그리기와 Undo 후 캐시 무효화를 적용했다.
+
+첫 실제 Dot UI 캡처에서 도킹 초기 영역의 임시 크기를 한 번만 맞춤 처리해 이미지가 구석에서 너무 작게 나타났다. 맞춤 모드가 현재 영역 크기에 계속 대응하고 1배 미만도 fractional 비율을 사용하도록 공통 DotCanvasView::Fit에서 고쳤다. 사용자 줌/팬/슬라이더/1:1 조작은 맞춤을 해제한다. 작은 배율/영역 변경 검사와 재캡처로 확인했다.
+
+원본 novice.png·씬·GUID는 유지하고 새 기본 프로젝트에 편집 가능한 novice.dot만 추가했다. 기존 첫 프레임을 제작 API로 nearest 축소/배치해 만든 128×288, 12프레임, 4파츠, idle/walk/greet 예제다. 완성된 8방향·고급 보행 아트로 표시하지 않는다. 스냅샷 Undo의 메모리 상한, 강체 파츠의 절단 경계, IK/메시/3D 리깅 미지원과 다른 앱 소비 조건은 18/14에 기록한다. 측정 없는 성능 향상 수치를 주장하지 않는다.
+
+### 스킬·가이드·빌드
+
+기존 ImGui/C++/clean-code/Lua/픽셀 스킬과 저장소 계약을 재사용한다. find-skills의 skills.sh 검색·원문 평가 후 Vercel web-design-guidelines만 추가 설치했다. 공식 출처·설치 명령·hash·기존 스킬을 유지/제외한 이유는 [15](15-skills-and-agents.md)와 skills-lock.json에 있다. 새 에이전트·웹 프레임워크·아이콘/폰트/영상 패키지를 추가하지 않았다.
+
+가이드는 정적 HTML/CSS/JS로 결과→단계→이유/근거 순서, 검색·작업 목차·앵커·skip link·명시적 label/alt/크기·focus-visible·비디오 controls를 제공한다. 자동 재생하지 않고 GIF는 내려받기 링크로 둔다. 이미지 4종은 기존 공식 MCP SDK/서버의 실제 UI/2D Play/3D 캡처, MP4/GIF는 실제 제작 API의 walk 시트·타임라인 인코딩이다. MP4는 이미 설치된 OpenCV와 Windows Media Foundation H.264, GIF는 Pillow로 인코딩했다. 마우스 제작 녹화라고 설명하지 않는다.
+
+MyEditorContent CMake 타깃은 실행 파일 빌드의 의존성으로 starter/docs를 복사한다. 소스 링크가 생략되는 문서 전용 변경에서도 가이드가 갱신되도록 이전 POST_BUILD를 대체했다. 도움말은 EnginePaths.engineDir/docs/guide/index.html을 존재 검사 후 ShellExecute로 연다. 실패는 하단 상태로 전달한다. 현재 한글 도움말 라벨의 다국어 번역은 남아 있다.
+
+### 실제 검증
+
+- 전체 Debug/Release 빌드 성공. 순차 CTest 각각 **13/13**, 내부 각각 **529/529**. 최소 회귀 5개는 기존 TestFramework/CMake에 추가했다. 최종 Play 편집 경계까지 포함한 Debug CTest 33.95초, Release CTest 28.44초였다. 헤더 주석·unused include·공백·콘텐츠 복사 갱신도 양쪽 빌드로 확인했다. 샘플 hotreload 때문에 두 CTest를 동시에 실행하지 않았다.
+- 저장 실패 보존/한글·경로/버전·Undo, PNG 로드, 원본 왕복, 뼈 계층·각도/보간/맞춤, 프레임 삭제 키·구간, 반복/후속 GUID, 재내보내기 보존, 이동 구성의 idempotence/Undo/한 명/모션 상태, 제공 프로젝트 복사→도트 저장→export→씬 저장을 검사했다. 새 build/dev/test-data 경로만 사용했다.
+- 공식 MCP SDK로 8개 도구를 확인하고 Debug/Release 각각 MyEditor UI·Dot UI·2D Play·3D frame40을 캡처했다. 원본 UI 1920×1080, MCP 결과 960×540, 모두 exit0. 근거 로그는 build/dot-{release-,}captures.log, 서버 로그/원본은 tools/mcp/.state에 있다.
+- 후속 모션의 실제 Play 통합은 새 build/object-validation/successor-check 3프로젝트로 확인했다. 시작 대기, 짧은 greet→idle 연결, 연결을 제거한 greet 마지막 포즈를 각각 Release/headless/Play frame600 캡처했다. 대기와 연결 후 영상의 다른 픽셀 **0**, 연결 없는 마지막 포즈와 대기의 다른 픽셀 **424**. 포즈가 원래 같아서 우연히 통과하지 않도록 다른 마지막 포즈 대조를 사용했다. 검사 로그는 build/dot-successor-check.log와 해당 PNG다.
+- ImGui scope 검사 변경 UI 파일 4개 PASS. 스킬 quality_suite semantic 30/30·공식 header 확인은 통과했지만 전체 결과는 g++/c++ 미발견으로 FAIL이다. 별도 MSVC 제품 빌드를 이 실패의 대체 성공으로 표시하지 않는다.
+- node --check guide.js PASS. 정적 HTML의 로컬 참조·앵커·이미지 alt/실제 크기·video controls와 자동재생 부재 확인. H.264 MP4 768×576/24프레임/20fps, GIF 8프레임 확인. Markdown 코드 블록/인라인 코드를 제외한 로컬 링크 **587개 누락0**, git diff --check PASS. 이전 링크 검사에서 C++ lambda를 링크로 오인한 검증기 규칙을 고쳤으며 문서를 임의로 바꾸지 않았다.
+
+### 미완료 검증과 한계
+
+네이티브 Computer Use RPC 미구성으로 파일 선택/드롭/키보드/모션 키 입력/DPI 수동 흐름은 미검증이다. 가이드 브라우저 주소 http://127.0.0.1:8765 접근은 Browser Use 보안 정책이 사용자 권한 거부로 차단했다. 다른 surface/CDP/직접 입력으로 우회하지 않았다. 정적 파일·디코더 검증과 브라우저의 화면/키보드/비디오/오프라인/도움말 직접 클릭 검증은 구분한다. 테스트용 HTTP 서버는 종료했다. 자동 저장/크래시 복구·MyGame 통합·대규모 Undo 메모리 측정·고급 리깅과 P0 온라인 인증/영속성 조건은 별도 잔여다.
+
+최종 공통 명령 경계 검토에서 Play 중 포커스된 제작 문서의 Undo를 선택할 수 있는 순서 문제를 고쳤다. ActiveStack은 Play 스택을 먼저 선택하고 SaveActive는 Stop 안내를 전달한다. Dot 문서 파일/저장/Undo 버튼도 Play 중 비활성화한다. 기존 이동 회귀에 Play 중 구성/모션 지정 거부 검사를 추가했고 전체 양쪽 13/13·529/529 통과를 재확인했다. 최종 Markdown 로컬 링크 589개 누락0으로 확인했다.

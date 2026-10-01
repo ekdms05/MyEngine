@@ -164,3 +164,9 @@ MyEditor의 편집 World는 각 Document가 소유하고 EditorModule이 활성 
 검증 환경·성능 수치·남은 경고·시각/보안 한계는 [작업 기록](16-foundation-worklog.md)을 참조한다. 테스트 통과는 제품 전체 UI·콘텐츠 통합이나 온라인 서비스 완성을 뜻하지 않는다.
 
 오브젝트 컴포넌트·저장·Play 수명·2D/3D 카메라의 상세 호출 경로는 [17](17-object-workflow.md)을 따른다. 3D 뷰는 XY 스프라이트 평면을 원근 투영하며 물리는 2D 그대로다. 기본 지형의 개별 스프라이트 저장은 청크 TileEditing 저장/브러시 통합과 구분한다.
+
+## 에디터 제작 UI의 현재 연결
+
+2026-10-01: 중립 회색/파랑 테마와 벡터 아이콘+텍스트 버튼, 별도 하단 상태 영역, Inspector 기본 이동 구성, .dot 문서별 저장·Undo·PNG 참조·캔버스 줌/팬·파츠 계층·키/모션 편집·PNG/.anim/.meta 내보내기를 연결했다. 다음 모션 GUID는 MyEditor Play의 기존 resolver가 소비하며 조작 상태 변화만 진입 모션을 재지정한다. MyGame 자원 조합까지 연결된 기능으로 설명하지 않는다. 원본/파생 데이터의 소유권과 실제 경로는 [18](18-editor-authoring.md)에 있다.
+
+도움말의 제작 가이드는 실행 파일 옆 docs/guide/index.html이다. 빌드 시 docs를 복사한다. 새 기본 프로젝트에는 assets/sprites/novice.dot 편집 예제를 복사하고 기존 사용자 프로젝트는 덮어쓰지 않는다. 실제 MCP UI/2D Play/3D 캡처와 라이브러리 테스트는 확인했으나 네이티브 UI 입력·브라우저 가이드 검증은 권한/환경 제약으로 미완료다.

@@ -10,6 +10,7 @@
 #include "mye/editor/EditorTypes.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/asset/AnimationAsset.h"
+#include "mye/editor/DotEditing.h"
 
 #include <memory>
 #include <span>
@@ -19,10 +20,10 @@
 
 namespace mye::editor {
 
-// 열린 씬 또는 애니메이션 에셋. 문서별 Undo 스택 소유.
+// 열린 씬·애니메이션·도트 원본. 문서별 데이터와 Undo 스택 소유.
 class Document {
 public:
-    enum class Kind : std::uint8_t { Scene, Asset };
+    enum class Kind : std::uint8_t { Scene, Asset, Dot };
 
     Document(DocumentId id, Kind kind, std::string path);
     ~Document();
@@ -39,9 +40,12 @@ public:
     const ecs::World& World() const { return *m_world; }
     asset::AnimationAsset& Animation() { return m_animation; }
     const asset::AnimationAsset& Animation() const { return m_animation; }
+    DotDocument& Dot() { return m_dot; }
+    const DotDocument& Dot() const { return m_dot; }
 
 private:
     asset::AnimationAsset m_animation;
+    DotDocument m_dot;
     DocumentId   m_id;
     Kind         m_kind;
     std::string  m_path;
@@ -62,7 +66,7 @@ public:
     Expected<void, Error> Open(std::string_view projectPath, bool discardUnsaved = false);
     Expected<void, Error> Create(std::string_view name, std::string_view directory,
                                  bool discardUnsaved = false, std::string_view templateDirectory = {});
-    Expected<void, Error> Save(); // All named scene/animation documents, then project metadata.
+    Expected<void, Error> Save(); // All named documents, then project metadata.
     bool IsOpen() const;
     bool HasUnsavedChanges() const;
     std::string_view Name() const;
@@ -80,6 +84,9 @@ public:
     Document* NewAnimation();
     Expected<Document*, Error> OpenAnimation(std::string_view path);
     Expected<void, Error> SaveAnimation(DocumentId id, std::string_view path);
+    Document* NewDot();
+    Expected<Document*, Error> OpenDot(std::string_view path);
+    Expected<void, Error> SaveDot(DocumentId id, std::string_view path);
     void      CloseDocument(DocumentId id);
     Document* Active() const;                           // 포커스 문서(null 가능)
     void      SetActive(DocumentId id);

@@ -167,6 +167,14 @@ struct EditorModule::Impl final : public IEditorViewport {
             [&](ecs::Entity, anim::SpriteAnimator& animator, scene::SpriteRenderer& sprite) {
                 if (!animator.animation.guid.IsValid()) { animator.sheet = nullptr; animator.directClip = nullptr; return; }
                 const auto* data = ResolveAnimation(animator.animation.guid);
+                if (data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
+                    const auto* next = ResolveAnimation(data->nextAnimation.guid);
+                    const auto* image = next ? ResolveTexture(next->sheet.texture.guid) : nullptr;
+                    if (next && image && next->imageSize.x == static_cast<int32_t>(image->width) && next->imageSize.y == static_cast<int32_t>(image->height)) {
+                        animator.animation = data->nextAnimation;
+                        animator.cursor = {}; animator.started = false; data = next;
+                    }
+                }
                 const auto* texture = data ? ResolveTexture(data->sheet.texture.guid) : nullptr;
                 if (!data || !texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
                     animator.sheet = nullptr; animator.directClip = nullptr;

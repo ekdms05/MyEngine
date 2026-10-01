@@ -9,9 +9,12 @@ The design favors clear ownership, small modules and measured performance.
 
 ## Applications
 
+Start with the offline [game-making guide](docs/guide/index.html). MyEditor opens
+the bundled copy from **Help → Game-making guide** (currently labeled in Korean).
+
 | Application | Purpose | Current behavior |
 |-------------|---------|------------------|
-| `MyEditor` | Edit scenes and content | Project/scene create, open and save; meadow village starter with a level-1 character; animation editing, object components/Lua/event links, collision/controls/map portals, undo and 2D/3D views |
+| `MyEditor` | Edit scenes and content | Project/scene/dot source save; meadow village starter; pixel drawing/reference/zoom, part rigs and motion export; object components/Lua/event links, controls/map portals, undo and 2D/3D views |
 | `MyGame` | Run a game project | Title/settings, scene loading, local movement, audio and loopback multiplayer movement |
 | `MyServer` | Host local multiplayer | Account authentication, authoritative movement, session snapshots, backups and metrics |
 | `paktool` | Package assets | Build and inspect pak files through the asset/VFS layer |

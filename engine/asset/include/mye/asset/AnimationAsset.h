@@ -10,6 +10,7 @@ struct AnimationAsset {
     SpriteSheet sheet;
     Vec2i imageSize{};
     AnimationClipData clip;
+    AssetRef nextAnimation; // Optional successor after a non-looping clip finishes.
 
     Expected<void, Error> Validate() const;
     static Expected<AnimationAsset, Error> FromJson(const json::Value& value);

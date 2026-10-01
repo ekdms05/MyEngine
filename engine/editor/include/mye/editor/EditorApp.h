@@ -73,6 +73,12 @@ public:
     Document* AnimationDocument();
     void SetAnimationFocused() { m_animationFocused = true; }
     void SelectAnimationDocument(DocumentId id) { m_animationId = id; }
+    Expected<void, Error> OpenDot(std::string_view path);
+    Document* DotDocumentForEditing();
+    void SelectDotDocument(DocumentId id) { m_dotId = id; }
+    void SetDotFocused() { m_dotFocused = true; }
+    Expected<std::string, Error> BrowseImageFile();
+    Expected<std::string, Error> BrowseDotFile(bool save);
     void ActivateDocument(DocumentId id);
     void RefreshDocumentContext(); // Also called before the module renders/ticks a world.
 
@@ -80,6 +86,7 @@ private:
     void RegisterBuiltinPanels();   // 하이어라키·인스펙터·씬 뷰포트·콘솔 등 내장 패널
     void DrawMenuBar();             // File/Edit/View/... + 확장 메뉴 항목
     void DrawToolbar();             // New/Save · 기즈모 · Play/Stop/Step · 확장 버튼
+    void DrawStatusBar();
     void HandleShortcuts();         // Ctrl+S/Z/Y/P 등(포커스 문서 기준)
 
     // 레이아웃 저장/복원(<project>/.myeditor/layout.ini · session.json).
@@ -99,6 +106,7 @@ private:
     void RequestOpenProject(bool folder = false);
     void RequestOpenScene();
     void RequestSaveAs();
+    void OpenUserGuide();
     void RequestSaveProject();
     bool ConfirmProjectChange();
     void ReportFileResult(const Expected<void, Error>& result, std::string_view success);
@@ -120,6 +128,8 @@ private:
     std::string    m_templateDirectory;
     DocumentId     m_animationId{};
     bool           m_animationFocused = false;
+    DocumentId     m_dotId{};
+    bool           m_dotFocused = false;
     std::array<char, 128> m_newProjectName{};
     std::array<char, 4096> m_newProjectDirectory{};
     std::string    m_fileStatus;

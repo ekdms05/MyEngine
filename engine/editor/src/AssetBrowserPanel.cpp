@@ -361,6 +361,7 @@ private:
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 Expected<void, Error> opened;
                 if (ext == "anim") opened = ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath));
+                else if (ext == "dot") opened = ctx.app->OpenDot(VpathToOsPath(ctx, vpath));
                 else if (ext == "scene") opened = ctx.app->OpenScene(VpathToOsPath(ctx, vpath));
                 if (!opened) MYE_LOG_ERROR("Editor", "{}", opened.GetError().message);
             }

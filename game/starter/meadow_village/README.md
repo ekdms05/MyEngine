@@ -20,3 +20,7 @@ Hierarchy 이름으로 선택하거나 뷰포트에서 선택해 위치·배율�
 건물·우물·나무의 `Collider2D`는 세계 좌표 단위의 발밑 AABB다. 아트의 투명 영역과 물리 경계를 구분하며 뷰포트 **충돌 영역**에서 확인한다. 캐릭터는 `CharacterController2D`·`KinematicBody2D`·`Collider2D`로 움직이고 실제 이동 결과에 따라 대기/걷기 `.anim`을 선택한다.
 
 동작 편집과 Lua 예제는 [제작 안내](../../../docs/17-object-workflow.md), 아트·설계·검증 근거는 [작업 기록](../../../docs/16-foundation-worklog.md)에 있다. PNG와 `.meta`를 함께 옮겨 GUID를 보존한다. 원본 시트는 자르거나 리샘플링하지 않고 UV로 영역을 사용한다. 타사 게임·캐릭터·로고·외부 에셋 팩을 사용하지 않았다.
+
+## 편집 가능한 도트·모션 예제
+
+새 기본 프로젝트의 assets/sprites/novice.dot을 에셋 브라우저에서 더블클릭해 연다. 기존 novice.png의 첫 영역을 제작 API로 nearest 축소한 128×288/12프레임 원본이며 불변 참조, 몸통/머리/다리 4개 파츠, idle/walk/greet 모션을 제공한다. 기존 PNG·GUID·씬·기본 모션을 교체하지 않는다. 회전으로 드러나는 절단 경계·가려진 픽셀은 실제 아트 제작에서 보완한다. 8방향·완성된 보행 아트를 제공하는 것은 아니다. 제작 순서는 [도트·모션 안내](../../../docs/18-editor-authoring.md)와 [가이드 페이지](../../../docs/guide/index.html)에 있다.

@@ -76,6 +76,12 @@ Expected<AnimationAsset, Error> AnimationAsset::FromJson(const json::Value& v) {
     out.clip.name = name->AsString();
     out.clip.loop = loop->AsBool();
     out.clip.direction = static_cast<AnimationClipData::Direction>(direction);
+    if (const auto* next = v.Find("nextAnimation")) {
+        if (!next->IsString()) return Error{"Invalid next animation GUID", 1};
+        auto nextGuid = AssetGuid::FromString(next->AsString());
+        if (!nextGuid || !nextGuid.Value().IsValid()) return Error{"Invalid next animation GUID", 1};
+        out.nextAnimation.guid = nextGuid.Value();
+    }
     for (const auto& f : frames->AsArray()) {
         SpriteFrame frame;
         if (!Int32(f, "x", frame.rect.x) || !Int32(f, "y", frame.rect.y) ||
@@ -131,9 +137,11 @@ json::Value AnimationAsset::ToJson() const {
     for (const auto& e : clip.events)
         events.emplace_back(V::Object{{"frame", V(static_cast<int64_t>(e.frameIndex))},
             {"name", V(e.name)}, {"text", V(e.stringArg)}, {"value", V(static_cast<double>(e.floatArg))}});
-    return V(V::Object{{"version", V(int64_t{1})}, {"texture", V(sheet.texture.guid.ToString())},
+    V::Object value{{"version", V(int64_t{1})}, {"texture", V(sheet.texture.guid.ToString())},
         {"width", V(int64_t{imageSize.x})}, {"height", V(int64_t{imageSize.y})}, {"name", V(clip.name)},
         {"loop", V(clip.loop)}, {"direction", V(static_cast<int64_t>(clip.direction))},
-        {"frames", V(std::move(frames))}, {"timeline", V(std::move(timeline))}, {"events", V(std::move(events))}});
+        {"frames", V(std::move(frames))}, {"timeline", V(std::move(timeline))}, {"events", V(std::move(events))}};
+    if (nextAnimation.guid.IsValid()) value["nextAnimation"] = V(nextAnimation.guid.ToString());
+    return V(std::move(value));
 }
 } // namespace mye::asset

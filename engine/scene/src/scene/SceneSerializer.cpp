@@ -25,6 +25,8 @@
 #include "mye/ser/Serialize.h"
 
 #include <algorithm>
+#include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <string_view>
@@ -228,6 +230,61 @@ Expected<json::Value, Error> WriteEntity(const ecs::World& world, ecs::Entity e,
     return json::Value(std::move(obj));
 }
 
+// Validate before construction: the permissive config archive must not turn malformed
+// component fields or unknown event names into successful default-valued scene data.
+Expected<void, Error> ValidateComponentValue(const refl::TypeInfo& type, const json::Value& value, unsigned depth = 0) {
+    if (depth > 64) return Error{"Scene component nesting exceeds 64 levels", 2};
+    switch (type.GetKind()) {
+    case refl::Kind::Primitive: {
+        const auto name = type.Name();
+        if (name == "string") { if (value.IsString()) return {}; }
+        else if (name == "bool") { if (value.IsBool()) return {}; }
+        else if (name == "f32" || name == "f64") {
+            if (value.IsNumber() && std::isfinite(value.AsDouble()) &&
+                (name == "f64" || std::abs(value.AsDouble()) <= std::numeric_limits<float>::max())) return {};
+        }
+        else if (value.IsNumber() && std::isfinite(value.AsDouble()) && std::trunc(value.AsDouble()) == value.AsDouble()) {
+            const double number = value.AsDouble();
+            const bool unsignedType = name.starts_with("u");
+            const int bits = static_cast<int>(type.Size() * 8);
+            const double lower = unsignedType ? 0.0 : -std::ldexp(1.0, bits - 1);
+            const double upper = std::ldexp(1.0, unsignedType ? bits : bits - 1);
+            if (number >= lower && number < upper) return {};
+        }
+        return Error{"Invalid component field type or range: " + std::string(type.Name()), 2};
+    }
+    case refl::Kind::Enum: {
+        if (!value.IsString()) return Error{"Component enum must be a name", 2};
+        int64_t integer = 0;
+        if (type.AsEnum()->ValueOf(value.AsString(), integer)) return {};
+        const auto name = value.AsString();
+        const auto parsed = std::from_chars(name.data(), name.data() + name.size(), integer);
+        if (parsed.ec == std::errc{} && parsed.ptr == name.data() + name.size() && (type.Size() >= 8 || (integer >= -std::ldexp(1.0, static_cast<int>(type.Size() * 8 - 1)) && integer < std::ldexp(1.0, static_cast<int>(type.Size() * 8))))) return {};
+        return Error{"Unknown component enum name: " + std::string(name), 2};
+    }
+    case refl::Kind::Vector:
+        if (!value.IsArray()) return Error{"Component vector must be an array", 2};
+        for (const auto& element : value.AsArray()) {
+            auto valid = ValidateComponentValue(*type.ElementType(), element, depth + 1);
+            if (!valid) return valid.GetError();
+        }
+        return {};
+    case refl::Kind::Struct:
+        if (!value.IsObject()) return Error{"Component structure must be an object", 2};
+        if (const auto* version = value.Find("__version"); version && (!version->IsNumber() || std::trunc(version->AsDouble()) != version->AsDouble() || version->AsDouble() < 0 || version->AsDouble() > type.Version()))
+            return Error{"Unsupported component version", 2};
+        if (type.CustomSerialize()) return {}; // custom hooks define their own flattened keys
+        for (const auto& field : type.Fields()) {
+            if (const auto* child = value.Find(field.Name())) {
+                auto valid = ValidateComponentValue(field.Type(), *child, depth + 1);
+                if (!valid) return valid.GetError();
+            }
+        }
+        return {};
+    default: return {};
+    }
+}
+
 struct PendingEntity {
     ecs::Entity        entity;
     std::uint32_t      parentLocalId = 0;   // 0 = 루트
@@ -327,6 +384,8 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
             if (!type || !world.IsRegistered(ComponentIdOf(*type)))
                 return Error{"ReadInto: unsupported component '" + name + "'", 2};
             if (!value.IsObject()) return Error{"ReadInto: component must be an object", 2};
+            auto valid = ValidateComponentValue(*type, value);
+            if (!valid) return valid.GetError();
         }
     }
     std::unordered_map<std::uint32_t, uint8_t> visited;

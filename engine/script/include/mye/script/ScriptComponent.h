@@ -55,6 +55,8 @@ struct ScriptComponent {
     asset::AssetHandle<ScriptAsset> script;   // 04 가 로드하는 .lua 에셋
     ScriptPropertyBag               properties;
     bool enabled = true;
+    // Scene-owned source uses the same protected class/callback path as .lua assets.
+    std::string inlineSource;
 
     // ---- 런타임 전용(직렬화 제외) ----
     // 클래스 테이블(스크립트가 return 한 테이블 — 함수들). 핫 리로드 시 이 참조를 교체.

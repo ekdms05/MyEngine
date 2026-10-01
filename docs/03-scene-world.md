@@ -34,7 +34,7 @@
 
 [AnimationSystem](../engine/scene/include/mye/anim/AnimationSystem.h)·SpriteAnimator·ClipPlayback은 클립·방향 세트·상태·이벤트를 처리한다. 발소리·공격 타이밍 같은 이벤트의 최종 소비자는 게임/오디오/스크립트 시스템이다.
 
-공용 [SceneSerializer](../engine/scene/include/mye/scene/SceneSerializer.h)는 리플렉션 기반 씬 데이터를 다룬다. 에디터 직렬화 경로와 런타임 앱의 로드가 존재하며, 이것이 프로젝트 OpenScene·SceneTransition·스트리밍 전체의 연결 완료를 뜻하지 않는다. 자동 씬 스트리밍·중첩 프리팹·분산 World는 현재 사용 경로에 포함하지 않는다.
+공용 [SceneSerializer](../engine/scene/include/mye/scene/SceneSerializer.h)는 리플렉션 기반 씬 데이터를 다룬다. 에디터의 프로젝트 OpenScene·Play 복제·검증된 맵 전환 후보와 런타임 앱의 로드가 이 경로를 사용한다. 오브젝트 이름·충돌·조작·포털·동작의 저장 계약은 [17](17-object-workflow.md)을 따른다. 자동 스트리밍까지 연결된 것은 아니다. 자동 씬 스트리밍·중첩 프리팹·분산 World는 현재 사용 경로에 포함하지 않는다.
 
 ## 검증과 개선
 

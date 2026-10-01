@@ -372,3 +372,74 @@ Primary request: original level-one young novice adventurer, chestnut short hair
 ```
 
 커밋 후 첫 푸시는 원격 main의 LICENSE 수정 dc2b377 때문에 fast-forward 조건을 만족하지 못했다. 원격 변경이 LICENSE 1개임을 확인하고 해당 커밋 위로 이번 작업을 rebase하여 보존했다. 검증한 코드·에셋은 그대로이며, 라이선스 수정 내용을 되돌리거나 강제 푸시하지 않았다.
+
+
+## 2026-10-01 — 개별 오브젝트·조작·동작·맵 연결
+
+### 구조와 변경 근거
+
+기본 콘텐츠는 255개 엔티티의 마을(지형 240개, 건물·수목·소품·출입구·도착점·레벨 1 플레이어)과 57개 엔티티의 실내로 구성했다. 배경 한 장에서는 개별 이동·충돌·이벤트 지정이 불가능했으므로 기존 SpriteRenderer의 아틀라스 UV와 SceneSerializer로 분리했다. Terrain 그룹과 이름이 있는 오브젝트를 Hierarchy에서 선택한다. 청크 타일 파일 형식을 새로 만들지 않았으며, 기존 TileEditing의 저장/브러시 연결은 후속이다. 기존 배경 PNG는 아트 비교·재구성 참고로 보존하고 실행 씬의 배경 렌더는 제거했다. 기존 사용자 프로젝트는 자동 덮어쓰지 않으며 새 프로젝트의 기본 에셋에서 갱신된 씬을 제공한다.
+
+호출 경로를 ProjectContext/Document 등록→SceneSerializer→PlayMode 스냅샷→고정 틱 ObjectSystem→PhysicsWorld2D·ScriptSystem→이벤트 동작/ScenePortal→SceneTransitionManager의 후보 로드/교체→RenderExtract/HybridRenderer까지 확인했다. 게임 고유 맵·문구·캐릭터 데이터는 game/starter에, 공유 컴포넌트·실행은 engine/runtime에, 키보드와 화면은 editor/apps에 둔다. editor→runtime은 CMake PRIVATE 의존이며 엔진에서 앱을 역참조하지 않는다.
+
+ObjectName은 씬의 유일 이름이다. 기존 Collider2D/Shape2D/KinematicBody2D에 리플렉션을 등록해 설정을 저장하고, velocity/lastMove/hitWall은 실행 전용으로 유지했다. CharacterController2D·InteractionTarget·ScenePortal·ObjectBehavior를 추가했다. 조작은 정규화한 방향과 초당 speed를 기존 물리에 전달하며, E는 프레임에서 포착해 고정 틱에서 한 번 소비한다. 한 씬의 활성 로컬 컨트롤러는 1개이고 world XY 물리 때문에 부모 없는 루트로 제한한다. 입력 없는 틱도 물리·트리거·Lua·애니메이션을 같은 경로에서 진행한다.
+
+동작은 Start/Interact/TriggerEnter/TriggerExit와 Message/SetVisible/MoveTo/ChangeMap/LuaCallback 연결 64개까지다. 인스펙터의 이벤트 카드→선→동작 카드는 순서대로 실행한다. 기존 PropertyEditCommand의 컴포넌트 루트 값 경로로 Undo·dirty·씬 저장을 공유한다. Lua 편집은 ObjectBehavior.luaSource(64 KiB)에 저장하고 기존 ScriptComponent/ScriptSystem의 보호 호출로 실행한다. 자유 노드 VM·조건 컴파일러·별도 편집 문서 상태를 만들지 않았다. 반복적인 디자이너 요구가 생기면 실제 Lua 동작을 카드로 추가한다. 함수 존재 여부는 현재 정적 검사하지 않는다.
+
+PlayWorld마다 VM·물리를 소유하며 ECS 순회 중 컴포넌트를 추가하지 않도록 스크립트 엔티티를 먼저 수집한다. 오류 구독은 LoadClass 전에 연결한다. Stop/맵 교체/종료에서는 on_destroy→스크립트 추적 테이블→ScriptComponent→VM을 World/이벤트 버스보다 먼저 해제한다. Play 중 에셋 새로고침은 막아 비소유 애니메이션·스크립트 참조 수명을 보존한다. PNG/.anim 연결은 기존 AssetDatabase GUID와 MYE_ASSET 드롭·PropertyEditCommand를 사용한다. 애니메이션 GUID를 비우면 기존 런타임 포인터도 해제한다.
+
+마을 문은 cottage.scene의 Cottage Spawn, 실내 출구는 meadow_village.scene의 Village Spawn으로 연결한다. 기존 전환 상태 머신의 fade-out/load/activate/fade-in을 사용한다. 정규화된 파일이 프로젝트 assets 내부인지, 씬·컴포넌트·유일 이름·도착점·활성 플레이어가 유효한지 후보 World에서 검사한 뒤 PlayWorld만 교체한다. 실패는 기존 맵을 보존한다. 레벨/XP는 전달하되 인벤토리·퀘스트·온라인 존 이전을 완료로 표시하지 않는다. 현재 작은 씬의 동기 로드와 동작 시 이름 선형 탐색은 단순하게 유지하고, 지연/검색 비용이 측정되면 기존 비동기 로딩·이름 인덱스로 바꾸는 조건을 ponytail 주석에 남겼다.
+
+### 실제 결함과 수정
+
+공용 SceneSerializer의 생성 전 패스에 일반 필드 타입·유한 값·정수/float 범위·열거 이름·버전·중첩 깊이 검증을 추가했다. 기존 JsonArchive가 정수 필드도 double JSON으로 쓰는 것을 처음에 놓쳐 정상 왕복을 IsInteger로 거부했다. 기존 출력 계약을 확인해 유한한 정수 값으로 검사하고 테스트를 재실행했다. 커스텀 훅은 평탄화 키가 리플렉션 필드와 달라 객체/버전 검증과 기존 훅·오브젝트 값 검사로 구분한다. 64비트 정수 아카이브의 기존 double 정밀도 한계까지 새로 해결한 변경은 아니다.
+
+Project Open/OpenScene/SaveScene와 Play/목적지 로드에 공용 ObjectComponents 검증을 적용했다. 불완전한 포털의 저장은 디렉터리/파일 쓰기 전에 실패해 원본 파일과 dirty를 유지한다. 미등록 타입을 AddComponent 목록에서 제외해 소멸자가 필요한 값의 잘못된 동적 구성도 막았다.
+
+2D/3D는 카메라·선택·렌더까지 연결했다. 기존 Camera2D·픽셀 스냅·깊이 계약을 유지하고 3D에서는 LH 원근 View/Projection과 full world XYZ/clip Z/W를 쓴다. 3D 스프라이트 선택/외곽선과 Z=0 작업 평면 역투영, 2D 이동 기즈모·충돌 영역 표시를 제공한다. 실제 3D 캡처에서 같은 평면의 지형이 건물/울타리를 부분 가림하는 것을 확인해 공용 QuadVS에 기존 정렬 깊이 기반 최대 1e-5 NDC 동률 바이어스를 넣었다. XY/W·물리 위치·2D 결과는 바꾸지 않았고 재캡처에서 전체 건물/울타리를 확인했다. 메시 제작·3D 물리·3D 기즈모는 연결된 기능으로 표시하지 않는다.
+
+실제 Play/실내 전환 캡처에서 캐릭터가 사라지는 현상을 조사했다. GatherColliders가 origin+offset으로 구한 콜라이더 중심을 PhysicsWorld2D::Step이 Transform 원점에 그대로 기록해, 입력이 없어도 매 틱 offset이 누적되는 것이 원인이었다. 모든 Step 호출자(PhysicsSystem, ObjectSystem, bridge/village_demo, 기존 물리/씬 검사)를 확인하고 공용 Step에서 offset을 빼서 원점으로 되돌렸다. 임시 Lua/로그로 도착 위치를 확인한 뒤 진단 코드는 제거했다. 비영점 offset·무입력 여러 틱 회귀와 최종 실제 앱의 제자리/실내 캐릭터 캡처를 남겼다.
+
+기존 기본 프로젝트 검사는 엔티티를 2개로 고정해 분리된 마을에서 522/523으로 실패했다. 엔티티 증가·저장·재열기의 목적에 맞게 기존 수+생성 1개로 확인했다. Debug Expected::Value의 실패 지점을 로그에서 찾기 위해 테스트 stdout만 비버퍼로 설정했다. 신규 범위 검사 테스트에서 읽기 전용 json::Value를 직접 수정하려 해 컴파일 실패했고, 기존 Parse API의 실제 JSON 입력으로 수정했다. 테스트 실패를 숨기거나 검증 계약을 완화하지 않았다.
+
+### 에셋과 도구
+
+village_objects.png는 RGBA 1024×1536, terrain_tiles.png는 1254×1254의 4종 지형 아틀라스다. GUID는 각각 ea8b5521-683c-48ee-b36a-e224d835d054, ca04f01a-4472-4678-979b-5cf3973dd9c4로 .meta에 보존했다. 원본은 C:/Users/harun/.codex/generated_images/01a0f35b-986b-7332-9a3d-d201d45cb524/의 exec-59362834-c478-4a0c-be34-b6320a254c00.png와 exec-eaa3a8ad-731f-4d22-b8cd-84528da6a39a.png다. 첫 오브젝트 결과 exec-d3c2c49f-51d1-47fe-855d-156e18d482da.png는 셀 경계를 넘는 개체가 있어 사용하지 않았다. 2열×3행 각 512셀 안에서 전체 개체·넉넉한 여백·최대 380픽셀 실루엣을 요구해 보정했다. 실제 alpha 0..254와 각 셀의 alpha>128 경계로 UV를 확인했다. Python/PIL은 읽기 검증과 JSON/UV 계산에만 사용했으며 이미지 편집은 imagegen, 파일은 원본 그대로 복사했다. 지형 셀 배율은 48/627이고 물 타일은 아틀라스에 제공하되 기본 마을에 배치하지 않았다.
+
+clean-code·lua 스킬과 기존 C++/ImGui/픽셀 스킬의 계약을 적용했다. 기존 라이브러리로 충족해 추가 패키지나 에이전트를 실행하지 않았다. MCP 소스는 바꾸지 않고 설치된 공식 SDK Client/StdioClientTransport에서 기존 서버의 8개 도구와 engine_capture_frame을 사용했다. Computer Use의 native RPC 미구성과 Godot 새 문서의 브라우저 접근 거부는 유지되어 우회하지 않았다. GUI 키보드·마우스 전체 조작은 실행하지 못했으며 API 회귀와 실제 렌더 결과를 구분한다.
+
+### 검증 결과
+
+최종 확인은 아래 명령의 전체 Debug/Release 빌드·순차 CTest다. 샘플 hotreload가 소스 fixture를 잠깐 바꾸므로 두 구성을 동시에 검사하지 않았다. 데이터 실험은 새 build/object-validation 및 build/dev/test-data 경로에서 수행했다.
+
+```powershell
+cmake --build build/dev --config Debug
+ctest --test-dir build/dev -C Debug --output-on-failure
+cmake --build build/dev --config Release
+ctest --test-dir build/dev -C Release --output-on-failure
+```
+
+검사 5개는 기존 프레임워크에 추가했다. 조작/충돌/트리거/Lua/offset, 동작 루트 Undo·저장 왕복/잘못된 enum·큰 float·중복 이름, 맵 이동/성장 유지/실패 보존, 2D/3D 투영 왕복, 잘못된 저장의 원본/dirty 보존을 확인한다. 빌드 중 실행 중인 Release MyEditor가 LNK1104를 일으켜 사용자에게 저장·종료를 요청하고 강제 종료하지 않았다. 프로세스 종료를 확인한 뒤 실행 파일 교체를 완료했다. 기존 sol2·nodiscard·getenv 경고는 이번 작업의 성능 개선으로 설명하지 않는다.
+
+| 최종 Release 실제 MCP 캡처 | 확인 범위 |
+|---|---|
+| MyEditor-2026-10-01T10-12-59-998Z.png | 2D 개별 지형·집·소품·캐릭터, 30프레임, exit 0. docs/images/editor-meadow.png |
+| MyEditor-2026-10-01T10-13-00-991Z.png | 창 있는 Hierarchy·동작 카드·컴포넌트 UI, 30프레임, exit 0. MCP의 1920×1080→960×540 축소본 그대로 docs/images/editor-objects.png |
+| MyEditor-2026-10-01T10-13-01-847Z.png | 실제 3D 원근과 겹침 동률 수정 결과, 30프레임, exit 0. docs/images/editor-3d.png |
+| MyEditor-2026-10-01T10-13-03-198Z.png | 검증 복사본의 Start→ChangeMap으로 실제 Play 전환·도착 캐릭터, 6000프레임, exit 0. docs/images/editor-cottage.png |
+
+전환 실험은 build/object-validation/transition-project의 Village Sign에 Start→ChangeMap을 추가했고, 배포 원본을 변경하지 않았다. E 상호작용과 실패 이동은 API 검사에서 확인했으며 이 자동 전환 캡처를 사람의 E 입력 검증으로 확대하지 않는다. 프레임/실행 시간은 캡처 재현 정보이며 CPU/GPU 성능 기준선이나 개선 수치가 아니다. 상세 로그는 build/object-validation/{debug,release}-details.log, 캡처·앱 로그는 tools/mcp/.state에 있다.
+
+### 다음 완료 조건
+
+P1은 MyGame이 같은 오브젝트 시스템·GUID 맵·포털을 소비하는 실행 조합이다. P2는 기존 Tilemap 청크 저장/브러시·다층 이동/내비게이션, 네이티브 포커스/E·드롭·Undo·저장 사용자 흐름, 8방향/공격 아트다. 3D 메시 제작·기즈모·물리, 조건 노드와 인벤토리/퀘스트 맵 이전은 실제 요구·검증 조건을 먼저 정한다. 새 물리/스크립트/그래프 프레임워크·측정 없는 캐시/스레드는 추가하지 않았다. 관련 02/03/05/06/07/12/13/14/15/17 문서와 기본 에셋 안내를 구현 상태에 맞게 갱신했다.
+
+### 오브젝트 아틀라스 최초 제작 지시
+
+```text
+Edit this original meadow village art into a game-ready transparent object sprite atlas. Preserve its crisp detailed pixel-art style, same upper-left lighting, same ivory timber cottages and terracotta roof design. Remove ALL terrain, sky, grass background and scenery connections. On a truly transparent background arrange EXACTLY SIX separated full objects in a TWO COLUMN by THREE ROW layout, each with generous empty transparent margin, no overlap. Top row: left large cottage with striped awning and door facing camera, right smaller cottage. Middle row: left roofed stone well, right one full round-canopy deciduous tree including trunk. Bottom row: left wooden fence segment with two posts, right wooden signpost with blue banner and small flower planter. Elevated orthographic three-quarter RPG view; ground/feet anchors at bottom center of each object. No labels, no borders, no text, no characters, no watermarks. Sharp square pixel clusters, no blur, no soft antialias. Buildings complete with every roof edge visible; actual alpha outside objects. This image is a reusable object atlas, not a full scene.
+```
+
+보정에서는 셀을 넘던 가장자리를 이유로 같은 여섯 개체를 2열×3행 각 512셀 중앙에 완전히 넣고, 주변 투명 여백과 최대 380픽셀 실루엣을 명시했다. 지형은 동일한 광원·색조의 풀/흙/물/돌 네 개 셀로 분리하도록 지정했다. 실제 사용 여부는 지시문이 아니라 alpha·셀 경계와 앱 렌더 결과로 결정했다.
+
+최종 전체 Debug/Release 빌드는 모두 성공했다. 양쪽 CTest는 각각 13/13, 내부 검사는 각각 524/524 통과했다. 일반 float 필드의 초과 범위 차단까지 반영한 최종 상세 로그를 build/object-validation/{debug,release}-details.log에 보관했다. 문서 301개 로컬 링크 대상의 누락은 0개였고 git diff --check가 통과했다. 신규 PNG 두 개는 생성 원본과 SHA256이 같아 이미지 파일 보존을 확인했다. 네이티브 수동 UI 조작·성능 전후 측정은 실행한 검증으로 표시하지 않는다.

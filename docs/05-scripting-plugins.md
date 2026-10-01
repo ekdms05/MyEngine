@@ -38,3 +38,9 @@ Lua 상태는 소유 스레드에서 사용하고 외부 콜백 오류는 보호
 `character_demo`는 캐릭터 동작·애니메이션·발소리·Lua 핫 리로드, `village_demo`는 NPC·대화·컷신을 조합한다. script·DDC·플러그인 동작은 기존 자체 테스트로 검사한다.
 
 현재 MyGame은 script/runtime/gameplay 라이브러리를 모두 조합한 실행 경로가 아니다. 모듈 기능을 새로 구현하기보다 해당 샘플과 기존 바인딩을 제품 앱에 연결한다. 프로젝트 단위 로드/언로드·게임 명령·에디터 플레이 시스템 통합의 완료 조건은 [14](14-development-priorities.md)에 있다.
+
+## 에디터의 오브젝트 Lua
+
+ObjectBehavior.luaSource는 씬에 저장하는 소스이며 에디터의 Inspector에서 Undo와 함께 편집한다. Play의 ObjectSystem은 ScriptComponent.inlineSource를 채워 기존 LoadClass/MakeInstance/ScriptSystem 보호 호출 경로를 사용한다. .lua AssetHandle 경로를 대체하거나 임의 GUID를 생성하지 않는다. 시작·업데이트·트리거·종료 콜백을 재사용하고 E 상호작용은 on_interact를 호출한다. 카드의 LuaCallback으로 사용자 함수도 연결한다.
+
+VM은 PlayWorld별 소유이며 Stop/맵 교체 시 콜백·추적/컴포넌트 sol 참조를 먼저 정리한 뒤 VM과 World를 해제한다. 편집 월드에는 VM 참조를 만들지 않는다. 소스의 문법/실행 오류는 기존 ScriptErrorEvent·hasError로 격리하며 화면·로그에 알린다. 소스 편집은 다음 Play 시작에서 반영한다. 동작·한계는 [17](17-object-workflow.md)을 따른다.

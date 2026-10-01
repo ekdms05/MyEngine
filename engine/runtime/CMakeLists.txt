@@ -15,6 +15,8 @@
 #
 # 네임스페이스: mye::runtime. Lua 는 메인 스레드 전용(확정 규약).
 add_library(mye_runtime STATIC
+    src/ObjectComponents.cpp
+    src/ObjectSystem.cpp
     # ---- 공용 값 타입·계약 ----
     include/mye/runtime/RuntimeTypes.h
     src/RuntimeTypes.cpp
@@ -71,9 +73,9 @@ target_link_libraries(mye_runtime
     PRIVATE mye_script mye_thirdparty_sol2
 )
 
-# RuntimeBindings.cpp 만 sol2 대형 단일 헤더를 소비한다. 라이브러리 전역을 낮추지 않고
+# Lua 바인딩·오브젝트 실행 TU가 sol2 대형 단일 헤더를 소비한다. 라이브러리 전역을 낮추지 않고
 #   해당 TU 만 /W3 /bigobj 로 완화(벤더 경계 격리, mye_script 와 동일 정책).
 if(MSVC)
-    set_source_files_properties(src/RuntimeBindings.cpp src/NpcBindings.cpp PROPERTIES
+    set_source_files_properties(src/RuntimeBindings.cpp src/NpcBindings.cpp src/ObjectSystem.cpp PROPERTIES
         COMPILE_OPTIONS "/W3;/bigobj")
 endif()

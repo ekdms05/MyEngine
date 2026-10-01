@@ -13,6 +13,7 @@
 #include "mye/editor/Panel.h"
 #include "mye/core/Math.h"
 #include "mye/asset/AssetGuid.h"
+#include "mye/render/HybridRenderer.h"
 
 #include <cstdint>
 #include <memory>
@@ -21,9 +22,15 @@ namespace mye::editor {
 
 // 뷰포트 카메라 상태(패널이 팬/줌으로 갱신, EditorModule이 렌더에 소비).
 struct ViewportCamera {
+    bool perspective = false;
+    float yaw = .35f, pitch = .35f; // radians, orbit around the scene XY plane
     Vec2  center{0.0f, 0.0f};   // 월드 중심(unit)
     float zoom = 1.0f;          // 1=1x, 2=확대
 };
+
+render::HybridViewInfo BuildViewportView(const ViewportCamera& camera, uint32_t width, uint32_t height);
+Vec2 ProjectViewportPoint(const ViewportCamera& camera, Vec3 world, uint32_t width, uint32_t height);
+Vec2 ViewportPointOnPlane(const ViewportCamera& camera, Vec2 pixel, uint32_t width, uint32_t height);
 
 // 뷰포트 렌더 자원 게이트웨이. EditorModule(디바이스 소유자)이 구현한다.
 //   패널은 매 프레임 뷰포트 픽셀 크기·카메라를 통지하고, 그 결과 오프스크린 RT의 ImGui
@@ -53,6 +60,7 @@ public:
     //   +Y 아래(ImGui 화면 좌표). 픽킹·기즈모·그리드가 소비.
     virtual Vec2 ScreenToWorld(Vec2 localPx) const = 0;
     virtual Vec2 WorldToScreen(Vec2 world) const = 0;
+    virtual Vec2 WorldToScreen3D(Vec3 world) const { return WorldToScreen({world.x, world.y}); }
 };
 
 // 씬 뷰포트 패널 팩토리(내장 패널 — 다른 패널과 동일 경로 등록).

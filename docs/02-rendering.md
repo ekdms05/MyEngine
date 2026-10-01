@@ -95,3 +95,9 @@ depth = anchorDepth + (0.5 - n) * biasEps
 검증은 `bridge_demo`의 다리 위/아래·3D 가림, `sprite_demo`의 픽셀 출력과 `mye_tests`의 깊이·카메라·R8 글리프 출력 검사로 수행한다. 조명·파티클 계산 데이터의 존재는 GPU 합성 완료가 아니다. 실루엣·오버헤드 페이드·라이트맵·포스트·다른 그래픽 API는 [개선 목록](14-development-priorities.md)에 따라 실제 수요와 장면 측정으로 결정한다.
 
 문서의 깊이 수식은 현재 코드 호출 경로에 맞춰 정정했다. 이번 문서 정리는 좌표·PPU·밴드 상수·실행 알고리즘을 변경하지 않았다.
+
+## 에디터 3D 보기
+
+ViewportCamera는 같은 씬을 2D 또는 LH 원근 카메라로 표시한다. `BuildViewportView`와 투영/역투영을 렌더·그리드·팬·선택에서 공유하며 기준 편집 평면은 Z=0이다. SpriteCorners3D는 full TRS의 world XYZ를 유지한다. HybridViewInfo.geometryDepth가 켜지면 쿼드 VS는 clip Z/W, 메시 VS는 Geometry 깊이를 쓴다. 2D의 인코딩 깊이 경로는 그대로다.
+
+같은 XY 평면의 지형·소품은 원근 깊이가 같아 raster 정밀도로 부분 가림이 발생할 수 있다. 3D 쿼드에만 기존 EncodeDepth 결과 × `1e-5` NDC 바이어스를 더해 동률 순서를 정한다. 원근 XY/W와 물리 Transform을 바꾸지 않는다. 실제 3D 캡처에서 이 문제를 발견하고 수정 전후를 확인했다. 좌표·PPU48·960×540·alpha cutout은 유지하며 3D 뷰에서 물리가 3D로 바뀌지는 않는다.

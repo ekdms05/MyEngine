@@ -2,25 +2,25 @@
 
 MyEditor는 C++20·ECS·DX11·ImGui로 구성한 Windows 에디터다. 실행 파일은 `build/dev/apps/editor/Release/MyEditor.exe`, Debug는 같은 경로의 `Debug/MyEditor.exe`다.
 
-![초원마을과 애니메이션 편집 패널의 실제 Release MyEditor 화면](images/editor-animation.png)
+![개별 마을 오브젝트와 동작 편집의 실제 MyEditor 화면](images/editor-objects.png)
 
 ## 기본 프로젝트 시작
 
 실행 파일 옆 `templates/meadow_village/`에 기본 콘텐츠가 배포된다. 프로젝트 인자 없이 시작하면 코어 사용자 디렉터리의 `projects/MeadowVillage/`로 한 번 복사해 연다. 기존 `project.myeproj`가 있으면 그대로 열어 수정한 콘텐츠를 보존한다. 새 프로젝트에서도 **초원마을 기본 에셋 포함**을 선택할 수 있다. 원본 템플릿을 작업 폴더로 쓰지 않는다.
 
-기본 씬에는 독립된 배경과 초보 모험가 엔티티가 있다. 캐릭터의 `Progression`은 실제 `level=1`, `xp=0`이며 Inspector에서 확인하고 수정한다. 시작 위치 `(0, -0.9, 0)`, 배율 `0.15`, 애니메이션은 `novice_idle.anim`이다. 콘텐츠 목록·원본 크기·프레임 시간은 [기본 프로젝트 안내](../game/starter/meadow_village/README.md)를 따른다.
+기본 씬은 255개 지형·건물·소품·포털·모험가 엔티티로 구성하며 별도 집 내부 맵은 57개 엔티티다. 캐릭터의 `Progression`은 실제 `level=1`, `xp=0`이며 Inspector에서 확인하고 수정한다. 시작 위치 `(0, -0.9, 0)`, 배율 `0.15`, 애니메이션은 `novice_idle.anim`이다. 콘텐츠 목록·원본 크기·프레임 시간은 [기본 프로젝트 안내](../game/starter/meadow_village/README.md)를 따른다.
 
 ![기본 씬의 실제 960×540 DX11 렌더](images/editor-meadow.png)
 
-집·나무·다리는 배경 이미지에 합쳐져 있다. 캐릭터는 따로 선택·이동·크기 조절할 수 있지만 건물별 편집, 지형 타일, 충돌·경로 탐색·다리 층 게임플레이는 이 기본 프로젝트에 연결하지 않았다. 에디터 Play는 애니메이션을 재생하며 키보드 이동 컨트롤러는 포함하지 않는다.
+건물·타일을 개별 선택해 편집한다. Play는 기존 2D 물리·조작·상호작용·오브젝트 Lua·이벤트 연결·왕복 맵 이동·애니메이션을 실행한다. [오브젝트 제작 안내](17-object-workflow.md)에 컴포넌트·포털·Lua·2D/3D 전환의 사용법과 한계를 기록한다. 기존 사용자 프로젝트는 새 템플릿으로 덮어쓰지 않는다.
 
 ## 화면과 문서
 
 | 화면 | 현재 동작 |
 |---|---|
-| Hierarchy | 엔티티 선택·생성·삭제·재부모화. 기본 씬의 Entity #0은 배경, Entity #1은 캐릭터 |
-| Inspector | 등록된 Transform·SpriteRenderer·SpriteAnimator·FloorLevel·Progression 필드 편집 |
-| Viewport | 실제 PNG 씬 렌더, 화면/월드 변환, 선택·기즈모. 선택 경계는 변환된 스프라이트 AABB |
+| Hierarchy | ObjectName 표시·선택·생성·삭제·재부모화. Terrain 그룹과 독립 Player |
+| Inspector | 등록된 컴포넌트·콜라이더·컨트롤러·포털, 이벤트→동작·Lua·GUID 드롭 편집 |
+| Viewport | 2D/3D 전환·PNG 렌더·팬/줌/회전·선택·충돌 영역. 2D 이동 기즈모, 3D 수치는 Inspector |
 | Asset Browser | 프로젝트 에셋 탐색, PNG 드래그, .scene/.anim 더블 클릭, 에셋 새로 고침. .meta는 숨김 |
 | Animation | 독립 애니메이션 문서·Undo, 실제 시트 미리보기·프레임·타임라인·이벤트·저장·씬 지정 |
 | Dot Editor·Tile Editing | 창 메뉴의 별도 도구. 기본 배경을 자동으로 지형 타일로 변환하지 않음 |
@@ -77,9 +77,9 @@ JSON은 공용 [JsonFile](../engine/core/include/mye/core/JsonFile.h)의 64 MiB 
 
 ## 에셋과 PlayWorld
 
-EditorModule은 `assets://` VFS·AssetManager·AssetDatabase와 retained TextureHandle을 소유한다. .meta GUID로 PNG를 해석하고 `.anim`의 작업 데이터 또는 파일 데이터를 SpriteAnimator의 비소유 런타임 참조에 연결한다. 런타임 포인터는 씬에 저장하지 않는다. 외부 파일 변경은 **에셋 새로 고침**으로 반영한다. watcher 자동 시작과 .meta 임포트 설정 적용은 남아 있다.
+EditorModule은 `assets://` VFS·AssetManager·AssetDatabase와 retained TextureHandle을 소유한다. .meta GUID로 PNG를 해석하고 `.anim`의 작업 데이터 또는 파일 데이터를 SpriteAnimator의 비소유 런타임 참조에 연결한다. 런타임 포인터는 씬에 저장하지 않는다. 외부 파일 변경은 Stop 후 **에셋 새로 고침**으로 반영한다. watcher 자동 시작과 .meta 임포트 설정 적용은 남아 있다.
 
-[PlayMode](../engine/editor/include/mye/editor/PlayMode.h)는 편집 World의 스냅샷으로 별도 PlayWorld를 만든다. 고정 FixedUpdate에서 애니메이션·이벤트·Transform을 처리하며 Pause는 멈추고 Step은 한 고정 틱을 진행한다. Stop은 플레이 상태를 폐기하고 편집 문서를 유지한다. 물리·Lua·이동·대화·MMO 시스템의 MyGame과 동일한 플레이 조합은 아직 연결하지 않았다.
+[PlayMode](../engine/editor/include/mye/editor/PlayMode.h)는 편집 World의 스냅샷으로 별도 PlayWorld를 만든다. 고정 FixedUpdate에서 ObjectSystem의 Lua·조작·물리·트리거·상호작용을 처리한 뒤 애니메이션·Transform을 갱신한다. E는 프레임에서 포착해 고정 틱에서 한 번 소비한다. Pause/Step도 같은 경로다. SceneTransitionManager는 검증한 목적지 PlayWorld로 교체한다. Stop은 VM 참조부터 해제한 뒤 PlayWorld를 폐기하고 편집 문서를 유지한다. MyGame·MMO의 동일 콘텐츠 통합, 대화 위젯·NPC·퀘스트 연결은 별도 요구다.
 
 ## 명령줄
 
@@ -89,6 +89,13 @@ EditorModule은 `assets://` VFS·AssetManager·AssetDatabase와 retained Texture
 .\build\dev\apps\editor\Release\MyEditor.exe --project <folder-or-myeproj> --animation assets/animations/novice_idle.anim
 # 창 없는 DX11 씬·Play 캡처
 .\build\dev\apps\editor\Release\MyEditor.exe --project <folder-or-myeproj> --play --headless --frames 3200 --dump build/play.bmp
+```
+
+3D 보기·오브젝트 선택 캡처는 다음 옵션을 사용한다. 실제 네이티브 키 입력을 주입하는 옵션은 아니다.
+
+```powershell
+.\build\dev\apps\editor\Release\MyEditor.exe --project <project> --view3d
+.\build\dev\apps\editor\Release\MyEditor.exe --project <project> --select "Village Sign"
 ```
 
 ## Godot에서 참고한 계약
@@ -113,3 +120,5 @@ EditorModule은 `assets://` VFS·AssetManager·AssetDatabase와 retained Texture
 Computer Use의 네이티브 sky RPC가 설정되어 있지 않아 마우스·키보드로 편집/파일 선택을 실행하지 못했다. 네이티브 대화상자·미저장 버튼·여러 DPI 전체 조작은 미검증이다. 렌더는 point 샘플링하지만 ImGui 미리보기의 필터는 별도이며, 선택은 AABB여서 투명 픽셀·정확한 가림 선택은 후속이다. 최근 목록·자동 저장·복구·문서 탭 재개도 미구현이다.
 
 게임 UI는 engine/ui의 Widget·텍스트 경로로 처리한다. 에디터 ImGui를 게임 HUD로 재사용하지 않는다. MCP는 실행·캡처 도구이며 에디터 내부 원격 편집 명령은 아직 없다. 변경 이유·실행 근거·제한은 [작업 기록](16-foundation-worklog.md), 우선순위는 [14](14-development-priorities.md)에 기록한다.
+
+오브젝트·맵 연결 후속 작업에서도 새 공식 페이지 접근은 기존 보안 정책 거부로 확인하지 못했다. 이를 우회 조회하거나 추가 벤치마킹 완료로 표시하지 않았다. 현재 동작은 저장소의 ECS·PhysicsWorld2D·ScriptSystem·SceneTransitionManager 계약을 근거로 구현했다.

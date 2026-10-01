@@ -22,6 +22,7 @@
 #include "mye/ecs/View.h"
 #include "mye/scene/Transform.h"
 #include "mye/scene/Renderable.h"
+#include "mye/phys/Collision.h"
 
 #include "mye/core/Json.h"
 #include "mye/core/I18n.h"
@@ -122,7 +123,7 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         const bool open = ImGui::Begin(PanelWindowTitle("panel.viewport", "mye.viewport").c_str());
         ImGui::PopStyleVar();
-        if (!open) { ImGui::End(); return; }
+        if (!open) { if (ctx.playMode) ctx.playMode->SetInputEnabled(false); ImGui::End(); return; }
 
         IEditorViewport* vp = ctx.app ? ctx.app->Viewport() : nullptr;
         if (!vp) {
@@ -130,6 +131,13 @@ public:
             ImGui::End();
             return;
         }
+
+        if (!m_cameraInitialized) { if (vp->Camera().perspective) m_cam.perspective = true; m_cameraInitialized = true; }
+        if (ImGui::Button(m_cam.perspective ? "2D" : "2D 선택됨")) m_cam.perspective = false;
+        ImGui::SameLine();
+        if (ImGui::Button(m_cam.perspective ? "3D 선택됨" : "3D")) m_cam.perspective = true;
+        ImGui::SameLine(); ImGui::Checkbox("충돌 영역", &m_showCollision);
+        ImGui::SameLine(); ImGui::TextDisabled(m_cam.perspective ? "우클릭: 회전 / 중클릭: 이동 / 휠: 확대" : "중클릭: 이동 / 휠: 확대");
 
         // 사용 가능한 영역 = 이미지 크기(정수 픽셀). 최소 1x1.
         const ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -155,6 +163,11 @@ public:
                                ImGuiButtonFlags_MouseButtonMiddle);
         const bool hovered = ImGui::IsItemHovered();
         ImGuiIO& io = ImGui::GetIO();
+        if (ctx.playMode) ctx.playMode->SetInputEnabled(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput);
+        if (hovered && m_cam.perspective && ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
+            m_cam.yaw = Clamp(m_cam.yaw + io.MouseDelta.x * .006f, -1.2f, 1.2f);
+            m_cam.pitch = Clamp(m_cam.pitch + io.MouseDelta.y * .006f, -1.2f, 1.2f);
+        }
 
         // 이미지 로컬 픽셀 좌표 헬퍼(마우스 → 이미지 좌상단 기준).
         auto mouseLocal = [&]() -> Vec2 {
@@ -175,12 +188,12 @@ public:
 
         // ---- 팬(중간/우클릭 드래그) ----
         if (hovered && (ImGui::IsMouseDragging(ImGuiMouseButton_Middle) ||
-                        ImGui::IsMouseDragging(ImGuiMouseButton_Right))) {
+                        (!m_cam.perspective && ImGui::IsMouseDragging(ImGuiMouseButton_Right)))) {
             const ImVec2 d = io.MouseDelta;
             // 화면 픽셀 델타 → 월드 델타(줌·PPU 반영). WorldToScreen의 역: 1px = worldPerPixel.
             const Vec2 a = vp->ScreenToWorld(mouseLocal());
             const Vec2 b = vp->ScreenToWorld(Vec2{mouseLocal().x - d.x, mouseLocal().y - d.y});
-            m_cam.center += (a - b);
+            m_cam.center += (b - a);
         }
 
         // ---- 줌(휠, 마우스 앵커 유지) ----
@@ -204,14 +217,33 @@ public:
 
         // ---- 기즈모(선택 엔티티 이동) — 픽킹보다 먼저 처리해 핸들 드래그가 선택보다 우선 ----
         bool gizmoActive = false;
-        if (world) gizmoActive = HandleGizmo(ctx, *world, vp, imgPos, dl, io, hovered);
+        if (world && !m_cam.perspective) gizmoActive = HandleGizmo(ctx, *world, vp, imgPos, dl, io, hovered);
 
         // ---- 픽킹(좌클릭, 기즈모 비활성 시) ----
         if (world && hovered && !gizmoActive && ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
             const Vec2 worldPt = vp->ScreenToWorld(mouseLocal());
-            PickAt(ctx, *world, worldPt, io);
+            PickAt(ctx, *world, worldPt, mouseLocal(), io);
         }
 
+        if (world && m_showCollision) {
+            world->Query<scene::WorldTransform, phys::Collider2D>().Each([&](ecs::Entity, const scene::WorldTransform& t, const phys::Collider2D& c) {
+                const Vec2 center{t.matrix.m[3][0] + c.offset.x, t.matrix.m[3][1] + c.offset.y};
+                const ImU32 color = c.isTrigger ? IM_COL32(80,200,255,230) : IM_COL32(255,120,60,230);
+                const int count = c.shape.kind == phys::ShapeKind::Circle ? 24 : 4;
+                for (int i = 0; i < count; ++i) {
+                    const auto point = [&](int index) {
+                        if (c.shape.kind == phys::ShapeKind::Circle) {
+                            const float angle = index * 6.2831853f / count;
+                            return center + Vec2{std::cos(angle), std::sin(angle)} * c.shape.Radius();
+                        }
+                        const Vec2 corners[] = {{-1,-1},{1,-1},{1,1},{-1,1}};
+                        return center + Vec2{corners[index % 4].x * c.shape.half.x, corners[index % 4].y * c.shape.half.y};
+                    };
+                    const auto a = vp->WorldToScreen(point(i)), b = vp->WorldToScreen(point((i + 1) % count));
+                    dl->AddLine(ImVec2(imgPos.x + a.x, imgPos.y + a.y), ImVec2(imgPos.x + b.x, imgPos.y + b.y), color, 2);
+                }
+            });
+        }
         // 선택 아웃라인.
         if (world) DrawSelectionOutline(ctx, *world, vp, imgPos, dl);
 
@@ -223,6 +255,15 @@ public:
                     m_cam.center.x, m_cam.center.y,
                     (ctx.playMode && ctx.playMode->IsPlaying()) ? "  [PLAY]" : "");
 
+        if (ctx.playMode && ctx.playMode->IsPlaying()) {
+            const auto prompt = ctx.playMode->Prompt(), message = ctx.playMode->Message();
+            ImGui::SetCursorScreenPos(ImVec2(imgPos.x + 12, imgPos.y + avail.y - 70));
+            ImGui::TextWrapped("%.*s", static_cast<int>(message.size()), message.data());
+            ImGui::Text("%.*s", static_cast<int>(prompt.size()), prompt.data());
+            ImGui::TextDisabled("WASD / 방향키: 이동    E: 상호작용");
+            dl->AddRectFilled(imgPos, ImVec2(imgPos.x + avail.x, imgPos.y + avail.y), IM_COL32(0,0,0,static_cast<int>(ctx.playMode->FadeAlpha() * 255)));
+        }
+        vp->SetCamera(m_cam);
         ImGui::End();
     }
 
@@ -231,17 +272,25 @@ public:
         o["type"] = json::Value(std::string("mye.viewport"));
         o["cx"] = json::Value(static_cast<double>(m_cam.center.x));
         o["cy"] = json::Value(static_cast<double>(m_cam.center.y));
+        o["perspective"] = json::Value(m_cam.perspective);
+        o["yaw"] = json::Value(static_cast<double>(m_cam.yaw));
+        o["pitch"] = json::Value(static_cast<double>(m_cam.pitch));
         o["zoom"] = json::Value(static_cast<double>(m_cam.zoom));
         out = json::Value(std::move(o));
     }
     void DeserializeState(const json::Value& in) override {
         if (const json::Value* v = in.Find("cx")) m_cam.center.x = static_cast<float>(v->AsDouble());
         if (const json::Value* v = in.Find("cy")) m_cam.center.y = static_cast<float>(v->AsDouble());
-        if (const json::Value* v = in.Find("zoom")) m_cam.zoom = static_cast<float>(v->AsDouble());
+        if (const json::Value* v = in.Find("zoom")) m_cam.zoom = std::clamp(static_cast<float>(v->AsDouble()), .1f, 16.0f);
+        if (const json::Value* v = in.Find("perspective")) m_cam.perspective = v->AsBool();
+        if (const json::Value* v = in.Find("yaw")) m_cam.yaw = std::clamp(static_cast<float>(v->AsDouble()), -1.2f, 1.2f);
+        if (const json::Value* v = in.Find("pitch")) m_cam.pitch = std::clamp(static_cast<float>(v->AsDouble()), -1.2f, 1.2f);
     }
 
 private:
     ViewportCamera m_cam{};
+    bool m_showCollision = false;
+    bool m_cameraInitialized = false;
 
     // 픽셀 그리드(1 unit 간격) + 원점 축. 화면 밖 라인은 클립됨.
     static void DrawGrid(ImDrawList* dl, IEditorViewport* vp, const ImVec2& origin,
@@ -273,12 +322,29 @@ private:
     }
 
     // ponytail: AABB 후보 중 작은 것을 선택한다. 투명 픽셀·가림 선택이 필요하면 후보의 픽셀/깊이를 확인한다.
-    static void PickAt(EditorContext& ctx, ecs::World& world, Vec2 worldPt, ImGuiIO& io) {
+    static void PickAt(EditorContext& ctx, ecs::World& world, Vec2 worldPt, Vec2 localPixel, ImGuiIO& io) {
         ecs::Entity best = ecs::Entity::Null();
         float bestArea = std::numeric_limits<float>::max();
         world.Query<scene::LocalTransform, scene::SpriteRenderer>().Each(
             [&](ecs::Entity e, scene::LocalTransform&, scene::SpriteRenderer& sprite) {
                 if (!sprite.visible) return;
+                auto* vp = ctx.app ? ctx.app->Viewport() : nullptr;
+                if (vp && vp->Camera().perspective) {
+                    const auto* transform = world.TryGet<scene::WorldTransform>(e);
+                    const auto texture = vp->AssetTexture(sprite.sprite.guid);
+                    if (!transform || !texture) return;
+                    const auto corners = scene::SpriteCorners3D(transform->matrix, {sprite.srcUV.w * texture.Value().width, sprite.srcUV.h * texture.Value().height}, sprite.pivotPx, 48);
+                    const auto inside = [&](Vec2 a, Vec2 b, Vec2 c) {
+                        const auto cross = [](Vec2 a, Vec2 b, Vec2 p) { return (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x); };
+                        const float ab = cross(a,b,localPixel), bc = cross(b,c,localPixel), ca = cross(c,a,localPixel);
+                        return (ab >= 0 && bc >= 0 && ca >= 0) || (ab <= 0 && bc <= 0 && ca <= 0);
+                    };
+                    const auto a = vp->WorldToScreen3D(corners[0]), b = vp->WorldToScreen3D(corners[1]), c = vp->WorldToScreen3D(corners[2]), d = vp->WorldToScreen3D(corners[3]);
+                    const auto view = BuildViewportView(vp->Camera(), vp->RenderWidth(), vp->RenderHeight());
+                    const float depth = TransformPoint(corners[0], view.view).z;
+                    if (depth > .05f && depth < bestArea && (inside(a,b,c) || inside(c,b,d))) { bestArea = depth; best = e; }
+                    return;
+                }
                 const auto bounds = EntityBounds(ctx, world, e);
                 if (worldPt.x >= bounds.x && worldPt.x <= bounds.x + bounds.w &&
                     worldPt.y >= bounds.y && worldPt.y <= bounds.y + bounds.h && bounds.w * bounds.h < bestArea) {
@@ -307,6 +373,20 @@ private:
             if (!world.Valid(e)) continue;
             scene::LocalTransform* lt = world.TryGet<scene::LocalTransform>(e);
             if (!lt) continue;
+            if (vp->Camera().perspective) {
+                const auto* transform = world.TryGet<scene::WorldTransform>(e);
+                const auto* sprite = world.TryGet<scene::SpriteRenderer>(e);
+                const auto texture = sprite ? vp->AssetTexture(sprite->sprite.guid) : Expected<IEditorViewport::TexturePreview, Error>{Error{"No sprite",1}};
+                if (transform && sprite && texture) {
+                    const auto corners = scene::SpriteCorners3D(transform->matrix, {sprite->srcUV.w * texture.Value().width, sprite->srcUV.h * texture.Value().height}, sprite->pivotPx, 48);
+                    const int order[] = {0,2,3,1};
+                    for (int i = 0; i < 4; ++i) {
+                        const auto a = vp->WorldToScreen3D(corners[order[i]]), b = vp->WorldToScreen3D(corners[order[(i+1)%4]]);
+                        dl->AddLine(ImVec2(origin.x+a.x, origin.y+a.y), ImVec2(origin.x+b.x, origin.y+b.y), IM_COL32(255,190,40,220), 2);
+                    }
+                }
+                continue;
+            }
             const auto bounds = EntityBounds(ctx, world, e);
             const Vec2 a = vp->WorldToScreen(Vec2{bounds.x, bounds.y + bounds.h});
             const Vec2 b = vp->WorldToScreen(Vec2{bounds.x + bounds.w, bounds.y});

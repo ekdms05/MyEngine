@@ -172,14 +172,14 @@ void ScriptSystem::EnsureInstances() {
         if (!sc) continue;
 
         ScriptAsset* asset = sc->script.IsValid() ? sc->script.Get() : nullptr;
-        if (!asset) {
+        if (!asset && sc->inlineSource.empty()) {
             // 소스가 아직 로드되지 않음 — 다음 프레임 재시도(에러 아님).
             continue;
         }
 
-        std::string chunk = asset->sourcePath.empty() ? "script" : asset->sourcePath;
+        std::string chunk = asset && !asset->sourcePath.empty() ? asset->sourcePath : "object-script";
         Expected<sol::table, ScriptError> cls =
-            LoadClass(m_impl->runtime, asset->source, chunk);
+            LoadClass(m_impl->runtime, sc->inlineSource.empty() ? asset->source : sc->inlineSource, chunk);
         if (!cls) {
             const ScriptError& err = cls.GetError();
             sc->hasError = true;

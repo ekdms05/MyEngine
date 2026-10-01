@@ -10,6 +10,7 @@
 
 #include "mye/editor/EditorTypes.h"
 #include "mye/core/Base.h"
+#include "mye/core/Math.h"
 
 #include <cstdint>
 #include <memory>
@@ -45,6 +46,12 @@ public:
     void StepFrame();  // Paused에서 1프레임 진행(F10)
     bool ConsumeStepRequest(); // Fixed-update owner consumes one paused tick.
     void Stop();       // Play World 파기 + Play Undo 스택 파기 → Edit 복귀
+    Expected<void, Error> Tick(float dt, Vec2 movement, bool interact, std::string_view projectRoot);
+    std::string_view Message() const;
+    std::string_view Prompt() const;
+    float FadeAlpha() const;
+    void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }
+    bool InputEnabled() const { return m_inputEnabled; }
 
     PlayState State() const { return m_state; }
     bool IsPlaying() const { return m_state != PlayState::Edit; }
@@ -63,6 +70,7 @@ private:
     ecs::World* m_editWorld = nullptr;   // 비소유(Document 소유)
     EventBus*   m_events = nullptr;
     PlayState   m_state = PlayState::Edit;
+    bool m_inputEnabled = false;
 };
 
 } // namespace mye::editor

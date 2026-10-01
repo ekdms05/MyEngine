@@ -13,6 +13,7 @@
 #include "mye/editor/PlayMode.h"
 
 #include "mye/ecs/World.h"
+#include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
 
 #include "mye/core/I18n.h"
@@ -35,7 +36,8 @@ const PanelDesc kHierarchyDesc{
 };
 
 // 엔티티 표시 이름(리플렉션 Name 컴포넌트가 없는 baseline에서는 "Entity #idx").
-std::string EntityLabel(ecs::Entity e) {
+std::string EntityLabel(ecs::World& world, ecs::Entity e) {
+    if (const auto* name = world.TryGet<scene::ObjectName>(e); name && !name->value.empty()) return name->value;
     return "Entity #" + std::to_string(e.index);
 }
 
@@ -119,7 +121,7 @@ private:
         if (selected) flags |= ImGuiTreeNodeFlags_Selected;
 
         ImGui::PushID(static_cast<int>(e.index));
-        const bool open = ImGui::TreeNodeEx(EntityLabel(e).c_str(), flags);
+        const bool open = ImGui::TreeNodeEx(EntityLabel(world, e).c_str(), flags);
 
         // 선택 처리(Ctrl 토글 / Shift 추가 / 단일 교체).
         if (ImGui::IsItemClicked() && ctx.selection) {
@@ -133,7 +135,7 @@ private:
         if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
             const std::uint64_t packed = e.Packed();
             ImGui::SetDragDropPayload("MYE_ENTITY", &packed, sizeof(packed));
-            ImGui::TextUnformatted(EntityLabel(e).c_str());
+            ImGui::TextUnformatted(EntityLabel(world, e).c_str());
             ImGui::EndDragDropSource();
         }
         // 드롭 타겟 = 이 엔티티를 새 부모로 재부모화.

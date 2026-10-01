@@ -22,6 +22,7 @@
 | [05. 스크립트·플러그인](05-scripting-plugins.md) | Lua·바인딩·네이티브 확장·수명 |
 | [06. 런타임 시스템](06-runtime-systems.md) | 게임 UI·오디오·대화·컷신·NPC·세이브 |
 | [07. 에디터·UI](07-editor-ui.md) | 실행 파일·패널·편집·플레이 모드와 한계 |
+| [17. 오브젝트·동작 제작](17-object-workflow.md) | 건물·타일·조작·충돌·포털·이벤트 연결·Lua·2D/3D 뷰 |
 | [08. MCP](08-mcp.md) | 현재 8개 개발 도구·CLI·파일 경계·검증 |
 | [10. 기능 상태와 개선 안내](10-status-and-roadmap.md) | 현재 제공 기능과 개선 목록의 입구 |
 | [11. 확장성](11-extensibility.md) | 리플렉션·DLL·데이터 컴포넌트·Lua 확장 |

@@ -1,6 +1,6 @@
 # 06. 게임 UI·텍스트·오디오·런타임
 
-`mye_ui`는 게임 위젯·텍스트, `mye_audio`는 재생, `mye_runtime`은 대화·컷신·NPC·로컬 세이브·로컬라이즈·씬 전환을 담당한다. 현재 MyGame의 타이틀/설정과 전체 콘텐츠 통합 샘플의 실행 범위를 구분한다.
+`mye_ui`는 게임 위젯·텍스트, `mye_audio`는 재생, `mye_runtime`은 대화·컷신·NPC·로컬 세이브·로컬라이즈·씬 전환과 오브젝트 조작·동작 실행을 담당한다. 현재 MyGame의 타이틀/설정과 전체 콘텐츠 통합 샘플의 실행 범위를 구분한다.
 
 ## 게임 UI와 텍스트
 
@@ -38,6 +38,10 @@ MyGame은 기존 AudioModule을 사용하고 설정의 BGM/SFX 음량을 재생 
 | 오디오 리스너 | 씬 위치와 청취 위치 연결 | [AudioListener.h](../engine/runtime/include/mye/runtime/AudioListener.h) |
 
 전체 조합 예는 `village_demo`다. 컷신 이동이 항상 A*·게임의 권위 이동을 사용한다고 가정하지 않는다. MyGame에서 NPC·대화·퀘스트를 사용하는 제품 경로는 별도 통합 항목이다.
+
+## 에디터 오브젝트 실행
+
+[ObjectComponents](../engine/runtime/include/mye/runtime/ObjectComponents.h)는 조작·상호작용·포털·이벤트→동작·Lua 소스의 저장 데이터를 정의한다. [ObjectSystem](../engine/runtime/src/ObjectSystem.cpp)은 고정 틱에서 기존 PhysicsWorld2D·ScriptSystem을 사용한다. 에디터 PlayMode가 World/이벤트 버스보다 먼저 시스템과 VM을 해제하며, 씬 교체는 기존 SceneTransitionManager에 연결한다. 키보드 입력은 앱/에디터가 Vec2·한 번의 상호작용 요청으로 전달한다. 공유 런타임에서 앱을 역참조하지 않는다. 사용법·제한은 [17](17-object-workflow.md)을 따른다.
 
 ## 세이브·로컬라이즈·씬 전환
 

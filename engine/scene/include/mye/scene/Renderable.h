@@ -9,12 +9,18 @@
 #include "mye/asset/AssetGuid.h"   // AssetRef
 #include "mye/ecs/ComponentType.h"
 #include "mye/scene/RenderExtract.h"  // SortingRef
+#include <string>
 
 namespace mye::tilemap { class TilemapWorld; }
 
 namespace mye::scene {
 
 using asset::AssetRef;
+
+struct ObjectName {
+    MYE_COMPONENT(ObjectName);
+    std::string value;
+};
 
 // 2D 스프라이트. 화면 정렬은 정렬 레이어 규약(02). sprite는 AssetRef(런타임 해석).
 // srcUV = 아틀라스 소스 사각형(정규화 0~1 또는 픽셀 — 02가 해석). pivotPx = 피벗(보통 발밑).

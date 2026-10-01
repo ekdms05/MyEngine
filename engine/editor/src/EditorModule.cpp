@@ -9,7 +9,7 @@
 //
 // 플레이 tick 게이팅(07 §3): State()==Playing 일 때만 Play World 의 anim·transform 시스템을
 //   tick 한다(Edit 상태면 렌더만). Paused 는 정지, StepFrame 요청 시 1프레임 진행.
-//   (스크립트·물리 런타임 tick 은 ScriptModule/PhysicsWorld 배선이 필요 — apiForNext 참조.)
+//   ObjectSystem의 스크립트·물리·상호작용과 애니메이션을 같은 고정 틱에서 진행한다.
 //
 // 검증 CLI: --headless(창 없이), --frames N(N 프레임 후 종료), --dump path.bmp(오프스크린 RT 덤프).
 //
@@ -120,6 +120,7 @@ struct EditorModule::Impl final : public IEditorViewport {
         return {};
     }
     Expected<void, Error> RefreshAssetIndex() override {
+        if (app->PlayMode().IsPlaying()) return Error{"Stop Play before refreshing asset files", 1};
         assetRoot.clear();
         auto synced = SyncAssets();
         if (!synced) return synced.GetError();
@@ -164,7 +165,7 @@ struct EditorModule::Impl final : public IEditorViewport {
     void BindAnimations(ecs::World& world) {
         world.Query<anim::SpriteAnimator, scene::SpriteRenderer>().Each(
             [&](ecs::Entity, anim::SpriteAnimator& animator, scene::SpriteRenderer& sprite) {
-                if (!animator.animation.guid.IsValid()) return;
+                if (!animator.animation.guid.IsValid()) { animator.sheet = nullptr; animator.directClip = nullptr; return; }
                 const auto* data = ResolveAnimation(animator.animation.guid);
                 const auto* texture = data ? ResolveTexture(data->sheet.texture.guid) : nullptr;
                 if (!data || !texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
@@ -193,18 +194,9 @@ struct EditorModule::Impl final : public IEditorViewport {
     rhi::TextureHandle dumpBackbuffer{};   // 창이 있으면 ImGui 셸까지 그려진 백버퍼를 덤프(스킨 확인용)
     std::function<void()> onExit;   // 프레임 한도 도달 시 호출(main 이 Application::RequestExit 배선).
 
-    // 플레이 게이팅.
+    bool pendingInteract = false;
 
-    // ---- Camera2D 산출(현재 뷰포트 크기·카메라 기준) ----
-    render::Camera2D BuildCamera() const {
-        render::Camera2DDesc d{};
-        d.position = vpCam.center;
-        d.zoom = vpCam.zoom;
-        d.pixelSnap = true;
-        d.viewportWidth = rt.IsInitialized() ? rt.Width() : vpWidth;
-        d.viewportHeight = rt.IsInitialized() ? rt.Height() : vpHeight;
-        return render::Camera2D(d);
-    }
+    // 플레이 게이팅.
 
     // ---- IEditorViewport ----
     void SetViewportSize(uint32_t w, uint32_t h) override {
@@ -226,17 +218,14 @@ struct EditorModule::Impl final : public IEditorViewport {
     //   이미지 픽셀 = RT 네이티브 픽셀 * (imageSize/RTsize) 스케일. Camera2D 는 RT 네이티브
     //   픽셀 기준으로 Screen↔World 를 정의하므로, 먼저 이미지→RT 네이티브 픽셀로 환산한다.
     Vec2 ScreenToWorld(Vec2 localPx) const override {
-        render::Camera2D cam = BuildCamera();
-        const float sx = static_cast<float>(RenderWidth()) / static_cast<float>(std::max<uint32_t>(vpWidth, 1));
-        const float sy = static_cast<float>(RenderHeight()) / static_cast<float>(std::max<uint32_t>(vpHeight, 1));
-        return cam.ScreenToWorld(Vec2{localPx.x * sx, localPx.y * sy});
+        const float sx = static_cast<float>(RenderWidth()) / std::max(vpWidth, 1u);
+        const float sy = static_cast<float>(RenderHeight()) / std::max(vpHeight, 1u);
+        return ViewportPointOnPlane(vpCam, {localPx.x * sx, localPx.y * sy}, RenderWidth(), RenderHeight());
     }
-    Vec2 WorldToScreen(Vec2 world) const override {
-        render::Camera2D cam = BuildCamera();
-        const Vec2 nativePx = cam.WorldToScreen(world);
-        const float sx = static_cast<float>(std::max<uint32_t>(vpWidth, 1)) / static_cast<float>(RenderWidth());
-        const float sy = static_cast<float>(std::max<uint32_t>(vpHeight, 1)) / static_cast<float>(RenderHeight());
-        return Vec2{nativePx.x * sx, nativePx.y * sy};
+    Vec2 WorldToScreen(Vec2 world) const override { return WorldToScreen3D({world.x, world.y, 0}); }
+    Vec2 WorldToScreen3D(Vec3 world) const override {
+        const auto pixel = ProjectViewportPoint(vpCam, world, RenderWidth(), RenderHeight());
+        return {pixel.x * std::max(vpWidth, 1u) / RenderWidth(), pixel.y * std::max(vpHeight, 1u) / RenderHeight()};
     }
 };
 
@@ -339,6 +328,12 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
     }
 
     // 시뮬레이션은 고정 틱, 렌더·ImGui는 표현 단계에서 처리한다.
+    ctx.Modules().AddTick(this, UpdatePhase::PreUpdate, [this](const TimeStep&) {
+        auto& state = *m_impl;
+        if (state.input && state.app && state.app->PlayMode().InputEnabled() && state.app->PlayMode().State() == PlayState::Playing)
+            state.pendingInteract |= state.input->WasPressed(KeyCode::E);
+        else state.pendingInteract = false;
+    }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& t) {
         auto& state = *m_impl;
         if (!state.app || !state.device) return;
@@ -368,7 +363,17 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
     if (!w) return;
 
     const float dt = static_cast<float>(step.deltaSeconds > 0.0 ? step.deltaSeconds : (1.0 / 60.0));
-    // anim(상태머신·클립 샘플·이벤트) → transform(월드 행렬). 스크립트·물리는 별도 배선 필요.
+    Vec2 movement;
+    if (s.input && pm.InputEnabled()) {
+        movement.x = static_cast<float>(s.input->IsDown(KeyCode::D) || s.input->IsDown(KeyCode::Right)) - static_cast<float>(s.input->IsDown(KeyCode::A) || s.input->IsDown(KeyCode::Left));
+        movement.y = static_cast<float>(s.input->IsDown(KeyCode::W) || s.input->IsDown(KeyCode::Up)) - static_cast<float>(s.input->IsDown(KeyCode::S) || s.input->IsDown(KeyCode::Down));
+    }
+    auto tick = pm.Tick(dt, movement, std::exchange(s.pendingInteract, false), s.app->Project().RootDir());
+    if (!tick) MYE_LOG_ERROR("Editor", "{}", tick.GetError().message);
+    w = pm.ActiveWorld();
+    s.app->RefreshDocumentContext();
+    s.BindAnimations(*w);
+    // Fixed tick: Lua/controls -> collision/events -> animation -> transforms.
     anim::RunAnimationSystem(*w, dt);
     scene::UpdateWorldTransforms(*w);
 }
@@ -397,9 +402,9 @@ void EditorModule::Frame(const TimeStep&) {
 
     // 3a) 오프스크린 뷰포트 RT 에 씬 렌더.
     if (s.rt.IsInitialized()) {
-        render::Camera2D cam = s.BuildCamera();
+        const auto view = BuildViewportView(s.vpCam, s.rt.Width(), s.rt.Height());
         s.rt.BeginScenePass(cmd, kViewportClear);
-        s.hybrid.Render(s.proxies, cam, cmd);
+        s.hybrid.Render(s.proxies, view, cmd);
         s.rt.EndScenePass(cmd);
     }
 
@@ -496,6 +501,8 @@ void EditorModule::OnShutdown(EngineContext& ctx) {
 
     ctx.UnregisterServiceRaw(kServiceId);
 }
+
+void EditorModule::SetPerspectiveView(bool enabled) { m_impl->vpCam.perspective = enabled; }
 
 EditorApp* EditorModule::App() { return m_impl->app.get(); }
 

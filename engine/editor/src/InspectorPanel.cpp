@@ -17,6 +17,9 @@
 #include "mye/editor/CommandStack.h"
 #include "mye/editor/PlayMode.h"
 #include "mye/core/I18n.h"
+#include "mye/runtime/ObjectComponents.h"
+#include "mye/ser/JsonArchive.h"
+#include "mye/core/Log.h"
 
 #include "mye/ecs/World.h"
 #include "mye/ecs/ComponentType.h"
@@ -54,6 +57,80 @@ CommandStack* Stack(EditorContext& ctx) {
     if (ctx.playMode && ctx.playMode->IsPlaying())
         return ctx.playMode->PlayCommandStack();
     return ctx.commands;
+}
+
+bool EditText(const char* label, std::string& text, bool multiline = false) {
+    std::vector<char> buffer(multiline ? 65537 : std::max<std::size_t>(1024, text.size() + 256), 0);
+    std::copy_n(text.data(), std::min(text.size(), buffer.size() - 1), buffer.data());
+    const bool changed = multiline
+        ? ImGui::InputTextMultiline(label, buffer.data(), buffer.size(), ImVec2(-1, 260), ImGuiInputTextFlags_AllowTabInput)
+        : ImGui::InputText(label, buffer.data(), buffer.size());
+    if (changed) text = buffer.data();
+    return changed;
+}
+Expected<ValueBlob, Error> BehaviorBlob(const runtime::ObjectBehavior& data) {
+    auto archive = ser::JsonArchive::ForWrite();
+    auto result = refl::ReadValue(*refl::GetType<runtime::ObjectBehavior>(), &data, {}, archive);
+    if (!result) return result.GetError();
+    return ValueBlob{json::Stringify(archive.Root(), 0)};
+}
+void DrawObjectBehavior(EditorContext& ctx, ecs::Entity entity, const runtime::ObjectBehavior& current) {
+    auto edited = current;
+    bool changed = false;
+    ImGui::TextWrapped("이벤트에서 동작으로 연결합니다. 같은 이벤트는 위에서 아래 순서로 실행됩니다.");
+    static const char* events[] = {"시작", "상호작용", "트리거 진입", "트리거 이탈"};
+    static const char* actions[] = {"메시지", "표시/숨김", "위치 변경", "맵 이동", "Lua 함수"};
+    int remove = -1;
+    for (std::size_t i = 0; i < edited.connections.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        auto& connection = edited.connections[i];
+        ImGui::BeginGroup();
+        int event = static_cast<int>(connection.event), action = static_cast<int>(connection.action);
+        ImGui::SetNextItemWidth(110);
+        if (ImGui::Combo("##event", &event, events, 4)) { connection.event = static_cast<runtime::ObjectEvent>(event); changed = true; }
+        const ImVec2 start = ImGui::GetItemRectMax();
+        ImGui::SameLine(); ImGui::Dummy(ImVec2(26, 1)); ImGui::SameLine();
+        const ImVec2 end = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddLine(ImVec2(start.x + 2, start.y - 10), ImVec2(end.x - 3, start.y - 10), IM_COL32(90,180,230,255), 2);
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::Combo("##action", &action, actions, 5)) { connection.action = static_cast<runtime::ObjectAction>(action); changed = true; }
+        ImGui::SameLine(); if (ImGui::SmallButton("삭제")) remove = static_cast<int>(i);
+        if (connection.action == runtime::ObjectAction::ChangeMap) {
+            changed |= EditText("씬 경로", connection.text);
+            changed |= EditText("도착 오브젝트 이름", connection.target);
+            ImGui::TextDisabled("예: assets/scenes/cottage.scene");
+        } else {
+            if (connection.action != runtime::ObjectAction::Message) {
+                changed |= EditText("대상 이름", connection.target);
+                ImGui::TextDisabled("비워 두면 현재 오브젝트");
+            }
+            if (connection.action == runtime::ObjectAction::Message || connection.action == runtime::ObjectAction::LuaCallback)
+                changed |= EditText(connection.action == runtime::ObjectAction::Message ? "내용" : "함수 이름", connection.text);
+            if (connection.action == runtime::ObjectAction::MoveTo) {
+                changed |= ImGui::DragFloat("X", &connection.x, .05f);
+                changed |= ImGui::DragFloat("Y", &connection.y, .05f);
+            }
+            if (connection.action == runtime::ObjectAction::SetVisible) changed |= ImGui::Checkbox("표시", &connection.visible);
+        }
+        ImGui::EndGroup(); ImGui::Separator(); ImGui::PopID();
+    }
+    if (remove >= 0) { edited.connections.erase(edited.connections.begin() + remove); changed = true; }
+    ImGui::BeginDisabled(edited.connections.size() >= 64);
+    if (ImGui::Button("+ 이벤트 → 동작")) { edited.connections.emplace_back(); changed = true; }
+    ImGui::EndDisabled();
+    if (ImGui::TreeNode("오브젝트 Lua")) {
+        ImGui::TextWrapped("return 테이블 규약. on_start(self), on_update(self, dt), on_interact(self), on_trigger_enter(self, other)를 사용합니다. 변경 내용은 씬 저장에 포함되며 Play를 다시 시작하면 반영됩니다.");
+        if (edited.luaSource.empty() && ImGui::Button("기본 코드 만들기")) {
+            edited.luaSource = "return {\n    on_interact = function(self)\n        print(\"interacted\")\n    end,\n}\n"; changed = true;
+        }
+        changed |= EditText("##lua_source", edited.luaSource, true);
+        ImGui::TreePop();
+    }
+    if (changed) {
+        auto before = BehaviorBlob(current), after = BehaviorBlob(edited);
+        if (!before || !after) { MYE_LOG_ERROR("Editor", "Could not serialize object behavior"); return; }
+        if (auto* stack = Stack(ctx)) stack->Push(std::make_unique<PropertyEditCommand>(ObjectRef::Component(entity, *refl::GetType<runtime::ObjectBehavior>()), refl::PropertyPath{}, before.Value(), after.Value(), "Edit Object Behavior"));
+    }
 }
 
 class InspectorPanel final : public IEditorPanel {
@@ -118,7 +195,11 @@ private:
         InspectorRenderer* insp = ctx.app ? &ctx.app->Inspector() : nullptr;
 
         m_pendingRemove = nullptr;
-        for (const refl::TypeInfo* t : refl::TypeRegistry::Get().All()) {
+        const auto registered = refl::TypeRegistry::Get().All();
+        std::vector<const refl::TypeInfo*> ordered(registered.begin(), registered.end());
+        const auto behavior = std::find_if(ordered.begin(), ordered.end(), [](const auto* t) { return t && t->Id() == runtime::ObjectBehavior::kComponentTypeId; });
+        if (behavior != ordered.end()) std::rotate(ordered.begin(), behavior, behavior + 1);
+        for (const refl::TypeInfo* t : ordered) {
             if (!t || t->GetKind() != refl::Kind::Struct) continue;
             const ecs::ComponentTypeId cid = ComponentIdOf(*t);
             if (!world.IsRegistered(cid)) continue;
@@ -136,7 +217,9 @@ private:
             if (ImGui::SmallButton("제거"))
                 m_pendingRemove = t;
 
-            if (open && insp) {
+            if (open && cid == runtime::ObjectBehavior::kComponentTypeId) {
+                DrawObjectBehavior(ctx, entity, *static_cast<runtime::ObjectBehavior*>(comp));
+            } else if (open && insp) {
                 insp->DrawReflected(ctx, ObjectRef::Component(entity, *t), *t, comp,
                                     refl::PropertyPath{});
             }
@@ -169,7 +252,7 @@ private:
                 if (!t || t->GetKind() != refl::Kind::Struct) continue;
                 // 이미 부착된 컴포넌트는 목록에서 제외.
                 const ecs::ComponentTypeId cid = ComponentIdOf(*t);
-                if (world.HasDynamic(entity, cid)) continue;
+                if (!world.IsRegistered(cid) || world.HasDynamic(entity, cid)) continue;
                 const std::string name(t->Name());
                 if (!m_addSearch.empty() && !ContainsCI(name, m_addSearch)) continue;
                 if (ImGui::Selectable(name.c_str())) pick = t;

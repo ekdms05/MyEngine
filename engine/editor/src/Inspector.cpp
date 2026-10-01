@@ -23,6 +23,8 @@
 #include "mye/editor/ExtensionRegistry.h"
 
 #include "mye/asset/AssetGuid.h"
+#include "mye/asset/AssetDatabase.h"
+#include "mye/core/Module.h"
 #include "mye/core/Json.h"
 #include "mye/core/Math.h"
 #include "mye/ecs/ComponentType.h"
@@ -195,13 +197,30 @@ bool WidgetEnum(const refl::TypeInfo& type, void* ptr, const std::string& label)
     return ch;
 }
 
-bool WidgetAssetRef(void* ptr, const std::string& label) {
-    auto* ref = static_cast<asset::AssetRef*>(ptr);
-    ImGui::TextUnformatted(label.c_str());
+bool WidgetAssetRef(EditorContext& ctx, void* ptr, const std::string& label) {
+    auto& ref = *static_cast<asset::AssetRef*>(ptr);
+    auto* db = ctx.engine ? ctx.engine->GetService<asset::AssetDatabase>() : nullptr;
+    const auto path = db ? db->PathFromGuid(ref.guid) : std::string{};
+    const auto caption = path.empty() ? (ref.guid.IsValid() ? ref.guid.ToString() : std::string("에셋 드롭")) : path;
+    ImGui::TextUnformatted(label.c_str()); ImGui::SameLine();
+    ImGui::Button((caption + "##" + label).c_str());
+    bool changed = false;
+    if (ImGui::BeginDragDropTarget()) {
+        if (const auto* payload = ImGui::AcceptDragDropPayload("MYE_ASSET")) {
+            if (db && payload->Data && payload->DataSize > 1) {
+                const auto* bytes = static_cast<const char*>(payload->Data);
+                if (bytes[payload->DataSize - 1] == '\0') {
+                    const std::string_view assetPath(bytes, payload->DataSize - 1);
+                    const auto guid = db->GuidFromPath(assetPath);
+                    if (guid.IsValid()) { ref = {guid, 0}; changed = true; }
+                }
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
     ImGui::SameLine();
-    const std::string s = ref->guid.IsValid() ? ref->guid.ToString() : std::string("(none)");
-    ImGui::TextUnformatted(s.c_str());
-    return false;   // 참조 선택 UI(에셋 브라우저 드롭)은 M4-B.
+    if (ImGui::SmallButton(("비우기##" + label).c_str())) { ref = {}; changed = true; }
+    return changed;
 }
 
 // Vec/Color/Quat 특수 위젯. 처리하면 handled=true, 변경 여부는 반환.
@@ -266,7 +285,7 @@ struct InspectorRenderer::Impl {
             switch (type.GetKind()) {
             case refl::Kind::Primitive: changed = WidgetPrimitive(type, field, ptr, label); break;
             case refl::Kind::Enum:      changed = WidgetEnum(type, ptr, label); break;
-            case refl::Kind::AssetRef:  changed = WidgetAssetRef(ptr, label); break;
+            case refl::Kind::AssetRef:  changed = WidgetAssetRef(ctx, ptr, label); break;
             case refl::Kind::Struct: {
                 bool handled = false;
                 changed = WidgetSpecialStruct(type, ptr, label, handled);

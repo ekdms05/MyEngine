@@ -9,6 +9,8 @@
 #include "mye/scene/Renderable.h"
 #include "mye/anim/SpriteAnimator.h"
 #include "mye/gameplay/Progression.h"
+#include "mye/runtime/ObjectComponents.h"
+#include "mye/phys/Collision.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -58,6 +60,10 @@ Document::Document(DocumentId id, Kind kind, std::string path)
       m_worldEvents(std::make_unique<EventBus>()), m_world(std::make_unique<ecs::World>()) {
     scene::RegisterCoreComponentReflection();
     gameplay::RegisterProgressionReflection();
+    runtime::RegisterObjectComponents(*m_world);
+    m_world->RegisterComponent<scene::ObjectName>("ObjectName");
+    m_world->RegisterComponent<phys::Collider2D>("Collider2D");
+    m_world->RegisterComponent<phys::KinematicBody2D>("KinematicBody2D");
     m_world->SetEventBus(m_worldEvents.get());
     m_world->RegisterComponent<scene::LocalTransform>("LocalTransform");
     m_world->RegisterComponent<scene::WorldTransform>("WorldTransform");
@@ -160,6 +166,8 @@ Expected<void, Error> ProjectContext::Open(std::string_view projectPath, bool di
                                               Utf8String(resolved.Value()));
         auto loaded = SceneSerializer{}.LoadFromFile(doc->World(), doc->Path());
         if (!loaded) return loaded.GetError();
+        auto valid = runtime::ValidateObjectComponents(doc->World());
+        if (!valid) return valid.GetError();
         candidate->active = doc->Id();
         candidate->documents.push_back(std::move(doc));
     }
@@ -290,6 +298,8 @@ Expected<Document*, Error> ProjectContext::OpenScene(std::string_view path) {
                                           Document::Kind::Scene, canonicalPath);
     auto loaded = SceneSerializer{}.LoadFromFile(doc->World(), doc->Path());
     if (!loaded) return loaded.GetError();
+    auto valid = runtime::ValidateObjectComponents(doc->World());
+    if (!valid) return valid.GetError();
     Document* raw = doc.get();
     m_impl->documents.push_back(std::move(doc));
     m_impl->RefreshPtrs();
@@ -307,6 +317,8 @@ Expected<void, Error> ProjectContext::SaveScene(DocumentId id, std::string_view 
     for (const auto& other : m_impl->documents)
         if (other->Id() != id && SameFile(other->Path(), resolved.Value()))
             return Error{"That file is already open in another scene document", 1};
+    auto valid = runtime::ValidateObjectComponents(doc->World());
+    if (!valid) return valid.GetError();
     std::error_code ec;
     fs::create_directories(resolved.Value().parent_path(), ec);
     if (ec) return Error{"Cannot create scene folder: " + ec.message(), ec.value()};

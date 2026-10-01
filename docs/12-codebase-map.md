@@ -9,6 +9,9 @@
 | 전체 빌드 타깃 | [CMakeLists.txt](../CMakeLists.txt) | engine/·game/·apps/·samples/·tests/의 CMakeLists |
 | 부팅·루프·종료 | [App.cpp](../engine/core/src/App.cpp) | 앱의 모듈 등록·틱 |
 | 에디터 실행 | [main.cpp](../apps/editor/src/main.cpp) | EditorApp·EditorModule·ProjectContext·PlayMode |
+| 오브젝트 저장·검증 | [ObjectComponents.cpp](../engine/runtime/src/ObjectComponents.cpp) | SceneSerializer·ProjectContext·PlayMode |
+| 이동·상호작용·이벤트·Lua | [ObjectSystem.cpp](../engine/runtime/src/ObjectSystem.cpp) | PlayMode 고정 틱·PhysicsWorld2D·ScriptSystem |
+| 2D/3D 뷰 | [ViewportCamera.cpp](../engine/editor/src/ViewportCamera.cpp) | ViewportPanel 선택·HybridRenderer |
 | 게임 실행 | [main.cpp](../apps/game/main.cpp) | 에셋·씬·렌더·오디오·게임 UI·NetClient |
 | 서버 실행 | [main.cpp](../apps/server/main.cpp) | NetGameServer·GameServer·PersistenceService·liveops |
 | 에셋 패키징 | [paktool](../apps/paktool) | PakFile·VFS |

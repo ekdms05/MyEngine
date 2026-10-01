@@ -79,6 +79,7 @@ add_executable(mye_tests
     src/EditorSerializationTests.cpp  # M4-A: 씬/프리팹 직렬화·인스펙터 값 blob
     src/EditorTests.cpp               # M4-A: 커맨드/Undo·선택·플레이모드·확장·패널
     src/StarterEditorTests.cpp
+    src/ObjectWorkflowTests.cpp
     src/EditorWorkflowTests.cpp       # M4-B: 배치·편집·저장·플레이·Undo 엔드투엔드 워크플로우
     src/UiSmokeTests.cpp              # M5-A: 인게임 UI + 텍스트 골격 계약 스모크(헤드리스)
     src/UiLayoutTests.cpp             # M5-A: 앵커·레이아웃·히트테스트·이벤트·직렬화·9slice·BMP 덤프

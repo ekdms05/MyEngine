@@ -6,6 +6,7 @@
 #include "mye/scene/SceneReflection.h"
 
 #include "mye/anim/SpriteAnimator.h"
+#include "mye/phys/Collision.h"
 #include "mye/scene/Transform.h"      // LocalTransform
 #include "mye/scene/Renderable.h"     // SpriteRenderer
 #include "mye/scene/RenderExtract.h"  // FloorLevel, SortingRef
@@ -127,10 +128,38 @@ template <> void mye::refl::Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::
         .Field("playing", &mye::anim::SpriteAnimator::playing);
 }
 
+MYE_REFLECT_NAME(mye::scene::ObjectName, "ObjectName");
+MYE_REFLECT_NAME(mye::phys::Collider2D, "Collider2D");
+MYE_REFLECT_NAME(mye::phys::KinematicBody2D, "KinematicBody2D");
+MYE_REFLECT(mye::phys::Shape2D);
+MYE_REFLECT_ENUM(mye::phys::ShapeKind);
+template<> void mye::refl::Reflect(EnumBuilder<mye::phys::ShapeKind>& b) {
+    b.Value("Box", mye::phys::ShapeKind::AABB).Value("Circle", mye::phys::ShapeKind::Circle);
+}
+template<> void mye::refl::Reflect(TypeBuilder<mye::phys::Shape2D>& b) {
+    b.Version(1).Field("kind", &mye::phys::Shape2D::kind).Field("half", &mye::phys::Shape2D::half);
+}
+template<> void mye::refl::Reflect(TypeBuilder<mye::scene::ObjectName>& b) {
+    b.Version(1).Field("value", &mye::scene::ObjectName::value);
+}
+template<> void mye::refl::Reflect(TypeBuilder<mye::phys::Collider2D>& b) {
+    using C = mye::phys::Collider2D;
+    b.Version(1).Field("shape", &C::shape).Field("offset", &C::offset).Field("isTrigger", &C::isTrigger)
+        .Field("layerMask", &C::layerMask).Field("collidesWith", &C::collidesWith)
+        .Field("floorMask", &C::floorMask).Field("triggerId", &C::triggerId);
+}
+template<> void mye::refl::Reflect(TypeBuilder<mye::phys::KinematicBody2D>& b) {
+    using C = mye::phys::KinematicBody2D;
+    b.Version(1).Field("snapToGround", &C::snapToGround).Field("skin", &C::skin).Field("maxSlideIters", &C::maxSlideIters);
+}
+
 namespace mye::scene {
 
 void RegisterCoreComponentReflection() {
     // GetType<T>() 최초 호출이 lazy 등록을 트리거한다(멱등). 씬 직렬화가 All()에서 찾도록 강제.
+    (void)refl::GetType<ObjectName>();
+    (void)refl::GetType<phys::Collider2D>();
+    (void)refl::GetType<phys::KinematicBody2D>();
     (void)refl::GetType<LocalTransform>();
     (void)refl::GetType<SpriteRenderer>();
     (void)refl::GetType<FloorLevel>();

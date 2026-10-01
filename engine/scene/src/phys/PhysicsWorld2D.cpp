@@ -186,17 +186,20 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
         kb->hitWall = hitWall;
         body.pos = pos;
 
+        // The solver position is the collider center, not the transform origin.
+        // Removing the offset prevents it accumulating even when velocity is zero.
+        const Vec2 origin = pos - world.TryGet<Collider2D>(body.entity)->offset;
         // 이동 결과를 Transform에 반영(LocalTransform XY만; Z·회전 불변).
         // 주: 부모 계층이 있으면 로컬≠월드지만 M2-B 키네마틱은 루트 이동을 가정한다.
         if (auto* lt = world.TryGet<LocalTransform>(body.entity)) {
-            lt->position.x = pos.x;
-            lt->position.y = pos.y;
+            lt->position.x = origin.x;
+            lt->position.y = origin.y;
             lt->dirty = true;
         }
         // WorldTransform도 즉시 반영(다음 트리거 diff가 최신 위치 사용).
         if (auto* wt = world.TryGet<WorldTransform>(body.entity)) {
-            wt->matrix.m[3][0] = pos.x;
-            wt->matrix.m[3][1] = pos.y;
+            wt->matrix.m[3][0] = origin.x;
+            wt->matrix.m[3][1] = origin.y;
         }
     }
 

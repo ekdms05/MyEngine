@@ -32,7 +32,8 @@ constexpr const char* kQuadHlsl = R"hlsl(
 cbuffer FrameConstants : register(b0) {
     row_major float4x4 gViewProj;
     float  gAlphaCutoff;
-    float3 _pad0;
+    float gGeometryDepth;
+    float2 _pad0;
 };
 
 Texture2D    gTex     : register(t0);
@@ -55,7 +56,8 @@ VsOut vs_main(VsIn i) {
     VsOut o;
     // XY만 viewProj로 변환. z는 인코딩된 깊이를 그대로(직교 → w=1). ortho viewProj의 z항은 무시.
     float4 clip = mul(float4(i.pos.xy, 0.0, 1.0), gViewProj);
-    o.pos = float4(clip.xy, i.pos.z, 1.0);
+    o.pos = gGeometryDepth > 0.5 ? mul(float4(i.pos, 1.0), gViewProj) : float4(clip.xy, i.pos.z, 1.0);
+    if (gGeometryDepth > 0.5) o.pos.z += i.flash.y * o.pos.w;
     o.uv = i.uv;
     o.color = i.color;
     o.flash = i.flash.x;
@@ -160,7 +162,8 @@ rhi::ShaderHandle CompileStage(rhi::IDevice& dev, const char* src, rhi::ShaderSt
 struct HybridRenderer::FrameCB {
     Mat4  viewProj;
     float alphaCutoff;
-    float pad[3];
+    float geometryDepth;
+    float pad[2];
 };
 
 // b0 레이아웃(메시). 셰이더 cbuffer와 바이트 정합.
@@ -446,6 +449,7 @@ void HybridRenderer::Render(const scene::RenderProxyList& items, const HybridVie
         FrameCB f{};
         f.viewProj = view.viewProj;
         f.alphaCutoff = m_desc.alphaCutoff;
+        f.geometryDepth = view.geometryDepth ? 1.0f : 0.0f;
         std::memcpy(cb, &f, sizeof(FrameCB));
         ctx.Unmap(m_frameCB);
     }
@@ -502,7 +506,7 @@ void HybridRenderer::DrawMeshes(const scene::RenderProxyList& items, const Hybri
         const Vec3 ld = m_lightDir;
         c.lightDir[0] = ld.x; c.lightDir[1] = ld.y; c.lightDir[2] = ld.z; c.ambient = m_ambient;
         c.lightColor[0] = m_lightColor.r; c.lightColor[1] = m_lightColor.g; c.lightColor[2] = m_lightColor.b;
-        c.depthMode = static_cast<float>(it.depthMode);
+        c.depthMode = view.geometryDepth ? 2.0f : static_cast<float>(it.depthMode);
         c.anchorDepth = anchorDepth;
         c.meshViewZMin = meshViewZMin;
         c.meshViewZMax = meshViewZMax;
@@ -638,7 +642,7 @@ void HybridRenderer::BuildSpriteQuad(const scene::RenderItem& it, const HybridVi
 
     const Vec2 sourcePixels{it.srcUV.w * tex->width, it.srcUV.h * tex->height};
     if (sourcePixels.x <= 0 || sourcePixels.y <= 0) return;
-    const auto corners = scene::SpriteCorners(it.worldTransform, sourcePixels, it.pivotPx, kPixelsPerUnit);
+    const auto corners = scene::SpriteCorners3D(it.worldTransform, sourcePixels, it.pivotPx, kPixelsPerUnit);
 
     float u0 = it.srcUV.x, v0 = it.srcUV.y;
     float u1 = it.srcUV.x + it.srcUV.w, v1 = it.srcUV.y + it.srcUV.h;
@@ -646,8 +650,12 @@ void HybridRenderer::BuildSpriteQuad(const scene::RenderItem& it, const HybridVi
     if (it.flipY) std::swap(v0, v1);
 
     const Color c = it.tint;
-    auto push = [&](Vec2 p, float u, float v) {
-        m_scratchQuads.push_back({p.x, p.y, z, u, v, c.r, c.g, c.b, c.a, it.flashAmount, 0.0f});
+    // Coplanar 2D cards need a stable tie break in perspective. XY/W and physical
+    // geometry remain unchanged; the existing cutout ordering contributes only this NDC bias.
+    constexpr float kCoplanarDepthBias = 0.00001f;
+    const float depthBias = view.geometryDepth ? z * kCoplanarDepthBias : 0;
+    auto push = [&](Vec3 p, float u, float v) {
+        m_scratchQuads.push_back({p.x, p.y, view.geometryDepth ? p.z : z, u, v, c.r, c.g, c.b, c.a, it.flashAmount, depthBias});
     };
     push(corners[0], u0, v0);
     push(corners[1], u0, v1);
@@ -717,7 +725,8 @@ void HybridRenderer::BuildTileChunkQuads(const scene::RenderItem& it, const Hybr
         const float u1 = it.srcUV.x + it.srcUV.w, v1 = it.srcUV.y + it.srcUV.h;
 
         auto push = [&](float px, float py, float pz, float pu, float pv) {
-            m_scratchQuads.push_back({px, py, pz, pu, pv,
+            const auto p = view.geometryDepth ? TransformPoint({px, py, 0}, it.worldTransform) : Vec3{px, py, pz};
+            m_scratchQuads.push_back({p.x, p.y, p.z, pu, pv,
                                       white.r, white.g, white.b, white.a, 0.0f, 0.0f});
         };
         // v0(상단 UV)↔y1(월드 상단). 상단 정점은 zTop, 하단 정점은 zBottom(램프).

@@ -16,6 +16,10 @@
 #include "mye/scene/SceneModule.h"
 #include "mye/editor/EditorModule.h"
 #include "mye/editor/EditorApp.h"
+#include "mye/editor/Selection.h"
+#include "mye/editor/PlayMode.h"
+#include "mye/ecs/World.h"
+#include "mye/scene/Renderable.h"
 
 #include <Windows.h>
 #include <shellapi.h>
@@ -57,6 +61,10 @@ public:
                 m_dumpPath = a[++i];
             } else if (a[i] == "--animation" && i + 1 < a.size()) {
                 m_animationPath = a[++i];
+            } else if (a[i] == "--view3d") {
+                m_view3d = true;
+            } else if (a[i] == "--select" && i + 1 < a.size()) {
+                m_selectName = a[++i];
             } else if (a[i] == "--play") {
                 m_startPlaying = true;
             } else if (a[i] == "--lang" && i + 1 < a.size()) {
@@ -92,6 +100,14 @@ public:
                 const auto started = em->App()->PlayMode().Play();
                 if (!started) { MYE_LOG_ERROR("MyEditor", "{}", started.GetError().message); RequestExit(1); }
             }
+            em->SetPerspectiveView(m_view3d);
+            if (em->App()) em->App()->RefreshDocumentContext();
+            if (em->App() && !m_selectName.empty()) {
+                if (auto* world = em->App()->PlayMode().ActiveWorld())
+                    world->Query<scene::ObjectName>().Each([&](ecs::Entity entity, const scene::ObjectName& name) {
+                        if (name.value == m_selectName) em->App()->Selection().Select(editor::SelectableRef::OfEntity(entity));
+                    });
+            }
             em->SetCliControl(m_frameLimit, m_maxFrames, m_dumpEnabled, m_dumpPath,
                               [this]() { RequestExit(0); });
         }
@@ -102,7 +118,8 @@ public:
     void OnStop(EngineContext& /*ctx*/) override {}
 
 private:
-    std::string   m_projectPath, m_executableDirectory, m_animationPath;
+    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_selectName;
+    bool m_view3d = false;
     bool          m_startPlaying = false;
     bool          m_frameLimit = false;
     std::uint64_t m_maxFrames = 0;

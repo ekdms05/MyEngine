@@ -2,5 +2,6 @@
 #include "TestFramework.h"
 
 int main() {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     return mye::test::RunAll();
 }

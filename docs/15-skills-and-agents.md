@@ -155,3 +155,9 @@ MyEngine에서는 확장자·날짜·같은 파일명만으로 삭제하지 않�
 픽셀 creator/professional/animator/exporter의 SKILL.md를 읽고 이미지 구성·투명 시트·발밑 피벗·프레임 시간에 적용했다. 내장 imagegen으로 원본 PNG를 만들고 기존 SpriteSheet/AnimationClipData와 .meta GUID로 내보냈다. Aseprite나 pixel-mcp 명령을 실행했다고 기록하지 않는다. 새 패키지 설치나 병렬 에이전트 실행은 필요하지 않았다.
 
 Computer Use 스킬(`C:/Users/harun/.codex/plugins/cache/openai-bundled/computer-use/26.928.20755/skills/computer-use/SKILL.md`)을 읽고 @oai/sky를 불러왔으나 list_apps는 `Trusted RPC service is not configured: sky`로 실패했다. cua.getState의 네이티브 앱도 비활성이다. 직접 UI 조작을 다른 입력 주입 경로로 우회하지 않았다. Godot 스프라이트 애니메이션 문서의 Chrome 접근은 보안 정책의 권한 거부로 실패했고 해당 자료를 다른 브라우저/HTTP 경로로 우회 조회하지 않았다. 소스/API 회귀와 실제 앱 렌더 확인은 수행했으며 네이티브 사용자 조작 검증은 별도로 남긴다.
+
+## 오브젝트·조작·맵 연결 작업
+
+이번 작업은 사용자 전역 clean-code(`C:/Users/harun/.codex/skills/clean-code/SKILL.md`)와 lua(`C:/Users/harun/.codex/skills/lua/SKILL.md`)를 읽고 적용했다. 설치된 cpp-coding-standards·imgui-ui-ux-engineering·픽셀 아트 스킬의 기존 계약도 유지한다. game-ui-ux는 확인했으나 이번 직접 ImGui 컴포넌트 편집에 맞는 범위만 참고했다. 기존 ECS·물리·Lua·씬 직렬화·전환으로 요구를 충족하므로 새 패키지나 범용 그래프 라이브러리를 설치하지 않았다. 병렬 에이전트도 실행하지 않았다.
+
+MCP는 공식 SDK를 통한 8개 기존 도구 연결과 실제 MyEditor 프레임 캡처를 사용한다. 직접 세션 도구 노출·에디터 내부 원격 편집을 새로 제공한 것은 아니다. Computer Use의 네이티브 RPC 미구성 및 Godot 페이지 접근 거부는 계속 적용되며 우회 입력/조회 없이 API 회귀와 실제 렌더 검증을 구분한다.

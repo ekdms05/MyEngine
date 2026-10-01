@@ -36,6 +36,7 @@ public:
     void OnShutdown(EngineContext& ctx) override;      // EditorApp Shutdown → DebugUi Shutdown
 
     EditorApp* App();
+    void SetPerspectiveView(bool enabled);
 
     // 자동 검증 CLI 배선(main.cpp 가 부팅 인자를 파싱해 호출). onExit=프레임 한도 도달 시 종료 콜백.
     void SetCliControl(bool frameLimit, std::uint64_t maxFrames, bool dumpEnabled,

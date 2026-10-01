@@ -11,7 +11,7 @@ The design favors clear ownership, small modules and measured performance.
 
 | Application | Purpose | Current behavior |
 |-------------|---------|------------------|
-| `MyEditor` | Edit scenes and content | Project/scene create, open and save; meadow village starter with a level-1 character; sprite animation editing, PNG preview, undo and isolated animation playback |
+| `MyEditor` | Edit scenes and content | Project/scene create, open and save; meadow village starter with a level-1 character; animation editing, object components/Lua/event links, collision/controls/map portals, undo and 2D/3D views |
 | `MyGame` | Run a game project | Title/settings, scene loading, local movement, audio and loopback multiplayer movement |
 | `MyServer` | Host local multiplayer | Account authentication, authoritative movement, session snapshots, backups and metrics |
 | `paktool` | Package assets | Build and inspect pak files through the asset/VFS layer |
@@ -38,10 +38,11 @@ MyEditor includes a [meadow village starter](game/starter/meadow_village/README.
 The first launch copies it into the user project directory; new projects can include
 it from the creation dialog. Open a `.anim` file in the asset browser to edit frame
 regions, pivots, timing and events, preview the PNG and assign it to a scene sprite.
-The starter map is a background image with a separate character; editable terrain,
-collision and movement controls remain integration work. See the [editor guide](docs/07-editor-ui.md).
+The starter contains separate terrain tiles, buildings and props, collision, movement
+controls and a connected cottage map. Edit object events and Lua in the inspector,
+then test them in Play. See the [object workflow](docs/17-object-workflow.md).
 
-![MyEditor meadow village and animation panel](docs/images/editor-animation.png)
+![MyEditor modular village and object behavior](docs/images/editor-objects.png)
 
 ## Key features
 
@@ -80,7 +81,7 @@ collision and movement controls remain integration work. See the [editor guide](
   snapshots, backup/restore and PBKDF2-SHA256 password storage through Windows CNG.
 - Save format: versioned `state.json`; complete legacy three-file saves are read
   and converted on the next save. One writer per directory, 64 MiB ceiling.
-- Online combat/social integration, editor physics/Lua integration, encrypted
+- Online combat/social integration, MyGame content integration, encrypted
   transport and production operations remain in the [backlog](docs/14-development-priorities.md).
   The current UDP server binds to loopback because its credentials are unencrypted.
 

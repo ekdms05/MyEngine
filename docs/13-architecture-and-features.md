@@ -37,8 +37,8 @@ MyEngine은 C++20·DirectX 11 기반의 2.5D 픽셀아트 엔진이다. 2D 캐�
 | `imgui` | ImGui Win32·DX11 연결, 디버그 표시 | core; rhi PRIVATE | [CMake](../engine/imgui/CMakeLists.txt) |
 | `script` | sol2/Lua VM, 엔티티 스크립트, 바인딩, 오류 격리·핫 리로드 | core, scene, asset, audio, reflect, ddc | [CMake](../engine/script/CMakeLists.txt) |
 | `ui` | retained 위젯, 레이아웃·입력, FreeType 글꼴·한글 텍스트 | core, render, rhi, reflect | [CMake](../engine/ui/CMakeLists.txt) |
-| `runtime` | 대화, 컷신, NPC, 세이브, 로컬라이즈, 씬 전환 | core, ui, scene, audio, asset, reflect; script PRIVATE | [CMake](../engine/runtime/CMakeLists.txt) |
-| `editor` | 프로젝트·문서, 패널, Inspector, Undo, 플레이 월드 | core, reflect, scene, asset, render; imgui PRIVATE | [CMake](../engine/editor/CMakeLists.txt) |
+| `runtime` | 대화, 컷신, NPC, 세이브, 로컬라이즈, 씬 전환, 오브젝트 조작·상호작용·이벤트 연결 | core, ui, scene, audio, asset, reflect; script PRIVATE | [CMake](../engine/runtime/CMakeLists.txt) |
+| `editor` | 프로젝트·문서, 패널, Inspector, Undo, 플레이 월드 | core, reflect, scene, asset, render, gameplay; runtime/imgui PRIVATE | [CMake](../engine/editor/CMakeLists.txt) |
 | `plugin` | 정적·DLL 플러그인 등록과 수명 | core, reflect | [CMake](../engine/plugin/CMakeLists.txt) |
 | `gameplay` | 스탯, 전투, 인벤토리, 성장, 상태, 퀘스트·제작 | core, scene | [CMake](../engine/gameplay/CMakeLists.txt) |
 | `net` | Winsock UDP, 비트 패킹·양자화, 예측·재조정·보간 | core | [CMake](../engine/net/CMakeLists.txt) |
@@ -104,7 +104,7 @@ VFS(느슨한 파일 / pak) → 임포터 → CPU 파싱
 
 [AssetManager](../engine/asset/src/AssetManager.cpp), AssetDatabase, 파일 감시, `.meta`·GUID, PNG/glTF/Aseprite/WAV/OGG 임포터가 존재한다. 샘플·테스트에서 개별 경로를 검증하지만 `MyGame`은 자체 VFS와 경로 기반 GUID를 구성하고 PNG를 시작 시 미리 읽는다. 앱의 watcher 시작 호출과 메타 임포트 설정 연결은 보완 대상이다. 동작 없이 선언만 있던 Pin/Unpin은 호출자가 없어 제거했다. AssetHandle의 참조 카운트·RAII 수명은 유지한다.
 
-MyEditor는 프로젝트 assets/를 assets://로 마운트하고 AssetDatabase 스캔으로 .meta GUID를 조회한다. AssetManager 동기/비동기 핸들은 같은 .meta 식별자를 사용한다. PNG 핸들을 유지해 뷰포트와 애니메이션 미리보기가 공유한다. 애니메이션 문서 작업 데이터 또는 .anim 파일은 SpriteAnimator의 sheet/directClip 비소유 참조로 연결되고, 씬은 animation GUID·speed·playing만 보존한다. 고정 틱 Play에서 기존 RunAnimationSystem을 호출한다. SceneSerializer는 LocalTransform의 파생 WorldTransform을 복구하며 HybridRenderer와 선택 경계는 공용 SpriteCorners의 scale/rotation/pivot 계약을 사용한다.
+MyEditor는 프로젝트 assets/를 assets://로 마운트하고 AssetDatabase 스캔으로 .meta GUID를 조회한다. AssetManager 동기/비동기 핸들은 같은 .meta 식별자를 사용한다. PNG 핸들을 유지해 뷰포트와 애니메이션 미리보기가 공유한다. 애니메이션 문서 작업 데이터 또는 .anim 파일은 SpriteAnimator의 sheet/directClip 비소유 참조로 연결되고, 씬은 animation GUID·speed·playing만 보존한다. 고정 틱 Play에서 ObjectSystem의 Lua·조작·PhysicsWorld2D·상호작용·이벤트 연결을 처리하고 기존 RunAnimationSystem을 호출한다. SceneTransitionManager로 검증된 목적지 PlayWorld를 교체하며 레벨/XP를 옮긴다. SceneSerializer는 LocalTransform의 파생 WorldTransform을 복구하며 HybridRenderer와 선택 경계는 공용 SpriteCorners의 scale/rotation/pivot 계약을 사용한다.
 
 Lua·DDC·리플렉션·플러그인 기능도 라이브러리와 테스트가 있다. 네이티브 DLL 호스트의 현재 기능을 초기 설계에 있는 모든 서비스 접근·ABI 계약이 구현된 것으로 확대해석하지 않는다. 앱에서 로딩·언로딩·프로젝트 설정까지 연결하는 단계가 남아 있다.
 
@@ -112,7 +112,7 @@ Lua·DDC·리플렉션·플러그인 기능도 라이브러리와 테스트가 �
 
 | 실행 파일 | 직접 링크한 주요 모듈 | 현재 경로 | 중요한 미연결 부분 |
 |---|---|---|---|
-| [MyEditor](../apps/editor/CMakeLists.txt) | core, scene, editor | 프로젝트·씬 생성/열기/저장, 초원마을·레벨 1 기본 콘텐츠, PNG/GUID 해석, 애니메이션 제작·저장·미리보기·씬 지정, 고정 틱 Play | 지형·충돌·이동·물리·Lua 통합, watcher/임포트 설정, 최근 목록·복구 |
+| [MyEditor](../apps/editor/CMakeLists.txt) | core, scene, editor | 프로젝트·씬 생성/열기/저장, 초원마을·레벨 1 기본 콘텐츠, PNG/GUID 해석, 애니메이션 제작·저장·미리보기·씬 지정, 개별 건물/타일, 물리·조작·이벤트·Lua·맵 포털 Play, 2D/3D 뷰 | MyGame 콘텐츠 통합, 청크 브러시·watcher/임포트 설정, 최근 목록·복구 |
 | [MyGame](../apps/game/CMakeLists.txt) | core, rhi, asset, render, audio, scene, net, ui | 타이틀·설정·캐릭터 선택, 씬 로딩, 로컬 이동, 서버 접속·예측·보간 | script/runtime/gameplay/social/mmo 통합, 고정 틱 물리·층 판정 |
 | [MyServer](../apps/server/CMakeLists.txt) | core, net, persist, liveops, gameserver, gameplay | 계정 인증, 세션, 권위 이동, 자동 저장, 운영 명령·메트릭, 봇 | social/mmo 연결, 암호화 전송·신뢰성 있는 게임 메시지 |
 | [paktool](../apps/paktool/CMakeLists.txt) | core, asset | pak 패키징 CLI | 프로젝트 배포 흐름에 통합·검증 |
@@ -132,11 +132,11 @@ MyEditor의 편집 World는 각 Document가 소유하고 EditorModule이 활성 
 | 8방향 애니메이션·이벤트 | 실행 검증 | character_demo 방향·발소리 시나리오, 라이브러리 테스트 |
 | 에셋 비동기 로딩·재임포트 | 기반·샘플 검증 | MyEditor는 .meta 스캔·안정 GUID·PNG 소비 연결 완료. MyGame 경로 GUID, 앱 감시·설정 적용은 잔여 |
 | 오디오 믹싱·큐·BGM | 기반·샘플 검증 | MyGame이 AudioModule을 사용. 기본 실행의 장치 초기화 확인, headless는 무음. 청취·볼륨 UX는 추가 확인 필요 |
-| Lua·코루틴·핫 리로드 | 기반·샘플 검증 | character_demo 오류 격리·핫 리로드, village_demo 콘텐츠; MyGame 미연결 |
+| Lua·코루틴·핫 리로드 | 기반·샘플·에디터 연결 | character_demo 오류 격리·핫 리로드, village_demo 콘텐츠, 에디터 오브젝트 Lua 보호 호출; MyGame 미연결 |
 | UI·한글 텍스트 | 기반·샘플 검증 | FreeType·레이아웃·입력·R8 출력 회귀 테스트, 타이틀/설정 프레임 확인; UiDocument의 위젯 속성 적용·컨트롤러 연결 잔여 |
 | 대화·컷신·NPC·세이브·로컬라이즈 | 기반·샘플 검증 | runtime 테스트와 village_demo; MyGame 미연결 |
 | 에디터 프로젝트·문서·Undo·직렬화 | 앱 연결 / 기반 검증 | 실제 create/open/save와 문서별 World, 한글 경로·저장 실패·재열기·Play 왕복 회귀 검증. 네이티브 UI·DPI·에셋/플레이 시스템 범위는 [07](07-editor-ui.md) 참조 |
-| 에디터 기본 콘텐츠·애니메이션 문서 | 앱 실행 검증 | 초원마을과 독립 레벨 1 캐릭터, PNG 미리보기, 프레임/시간/피벗/이벤트·저장·Undo·씬 지정. 실제 MCP 셸/headless/Play 캡처; 배경은 합성 이미지이며 지형·이동은 미연결 |
+| 에디터 기본 콘텐츠·애니메이션 문서 | 앱 실행 검증 | 초원마을과 독립 레벨 1 캐릭터, PNG 미리보기, 프레임/시간/피벗/이벤트·저장·Undo·씬 지정. 실제 MCP 셸/headless/Play 캡처; 기본 씬은 개별 타일·건물·소품, 물리·이동·포털·오브젝트 동작 연결 |
 | 리플렉션·DDC·DLL 플러그인 | 기반 검증 | 전용 테스트·DLL fixture; 사용자 프로젝트에서의 조합·배포 흐름 별도 |
 | RPG 전투·인벤토리·퀘스트·제작 | 기반 검증 | gameplay 테스트; MyGame 플레이와 네트워크 명령 미연결 |
 | UDP 접속·권위 이동·예측·보간 | 기반·앱 연결 | 루프백 테스트와 앱 경로; v1·길이/순서/대각 이동 검증·64명 상한; 전송 보안·타임아웃·틱 협상 필요 |
@@ -159,6 +159,8 @@ MyEditor의 편집 World는 각 Document가 소유하고 EditorModule이 활성 
 
 [MCP 서버](../tools/mcp/src/index.ts)의 도구는 `build`, `test`, `run`, `capture_frame`, `logs`, `project_status`, `dot_write_sprite`, `dot_from_photo` 8개다. stdio 프로토콜, 실행 직렬화, 자식 프로세스 시간 제한·종료, 프로젝트 경로 검사가 있다. 에디터 내부 원격 조작은 이후 설계 범위다.
 
-2026-10-01 검증: 전체 Debug/Release 빌드와 양쪽 CTest 13/13 통과, 내부 테스트 519/519 통과(기본 콘텐츠·애니메이션 검증 추가 후). MCP build/smoke에서 8개 도구 확인. 서버 앱의 등록·활성 봇 자동/종료 저장·재시작·손상 저장 거부는 `tools/verify-foundation.ps1`로 확인했다. 게임 타이틀·설정·플레이와 에디터 오프스크린 프레임을 캡처했다. 일반 실행에서는 오디오 장치 초기화 로그와 BGM import를 확인했으며 실제 청취 판정은 수행하지 않았다.
+2026-10-01 검증: 전체 Debug/Release 빌드와 양쪽 CTest 13/13 통과, 내부 테스트 524/524 통과(오브젝트·물리 offset·Lua·맵 전환·저장 실패·카메라 검증 포함). MCP build/smoke의 기존 검증에서 8개 도구 확인; 이번 오브젝트 작업은 공식 SDK로 기존 capture_frame을 사용했으며 MCP 소스 변경은 없음. 서버 앱의 등록·활성 봇 자동/종료 저장·재시작·손상 저장 거부는 `tools/verify-foundation.ps1`로 확인했다. 게임 타이틀·설정·플레이와 에디터 오프스크린 프레임을 캡처했다. 일반 실행에서는 오디오 장치 초기화 로그와 BGM import를 확인했으며 실제 청취 판정은 수행하지 않았다.
 
 검증 환경·성능 수치·남은 경고·시각/보안 한계는 [작업 기록](16-foundation-worklog.md)을 참조한다. 테스트 통과는 제품 전체 UI·콘텐츠 통합이나 온라인 서비스 완성을 뜻하지 않는다.
+
+오브젝트 컴포넌트·저장·Play 수명·2D/3D 카메라의 상세 호출 경로는 [17](17-object-workflow.md)을 따른다. 3D 뷰는 XY 스프라이트 평면을 원근 투영하며 물리는 2D 그대로다. 기본 지형의 개별 스프라이트 저장은 청크 TileEditing 저장/브러시 통합과 구분한다.

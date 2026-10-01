@@ -47,6 +47,7 @@ struct HybridRendererDesc {
 
 // 프레임 뷰 정보 — Render 호출당 카메라 상태 스냅샷.
 struct HybridViewInfo {
+    bool geometryDepth = false; // 3D viewport uses world XYZ and clip Z/W
     Mat4  viewProj = Mat4::Identity();   // Camera2D::ViewProjection() (row-vector, v*M)
     Mat4  view = Mat4::Identity();       // Camera2D::ViewMatrix() (메시 뎁스 계산·앵커 viewZ용)
     Mat4  proj = Mat4::Identity();       // Camera2D::ProjectionMatrix()
@@ -112,7 +113,7 @@ private:
         float u, v;
         float r, g, b, a;
         float flash;      // 히트 플래시(0..1). VS는 TEXCOORD1 scalar(R32Float)로 읽음.
-        float flashPad;   // 정렬 패딩(16B 배수 유지). 셰이더 입력 아님(레이아웃 미참조).
+        float depthBias;  // perspective-only coplanar tie break; TEXCOORD1.y
     };
     struct MeshInstanceCB;   // 정의는 .cpp
     struct FrameCB;

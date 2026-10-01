@@ -21,6 +21,7 @@
 #pragma once
 
 #include "mye/core/Math.h"
+#include "mye/core/Base.h"
 #include "mye/render/Camera2D.h"     // kInternalWidth/Height, kPixelsPerUnit (02 규약 재노출)
 #include "mye/render/MeshTypes.h"
 #include "mye/render/DepthEncoder.h"
@@ -87,11 +88,12 @@ public:
     // 활성 RenderPass(target.BeginScenePass로 내부 RT 바인딩·클리어) 안에서 호출한다.
     // items를 kind별로 분류·정렬해 (1) 불투명 3D 메시 → (2) 타일 청크 → (3) 스프라이트 순으로
     // 단일 뎁스버퍼에 발행한다. 뎁스 테스트/기록 ON, 스프라이트/타일은 alpha cutout.
-    void Render(const scene::RenderProxyList& items, const Camera2D& camera,
+    // A nonempty GUID must resolve to a usable GPU asset; failures do not submit a partial frame.
+    Expected<void, Error> Render(const scene::RenderProxyList& items, const Camera2D& camera,
                 rhi::ICommandContext& ctx);
 
     // camera 없이 명시적 뷰 정보로 렌더(에디터 오프스크린·테스트용).
-    void Render(const scene::RenderProxyList& items, const HybridViewInfo& view,
+    Expected<void, Error> Render(const scene::RenderProxyList& items, const HybridViewInfo& view,
                 rhi::ICommandContext& ctx);
 
     // ---- 통계(오버레이) ----

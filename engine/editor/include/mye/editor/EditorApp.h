@@ -89,6 +89,7 @@ public:
     void DrawDocumentTabs(); // Scene documents belong to the viewport work area.
     void RequestOpenScene();
     void SaveActive();
+    void ReportError(const Error& error) { ReportFileResult(error, ""); }
 
 private:
     void RegisterBuiltinPanels();   // 하이어라키·인스펙터·씬 뷰포트·콘솔 등 내장 패널

@@ -20,7 +20,7 @@ public:
     bool CloseRequested() const;
     bool HasFocus() const;
     InputState& Input() { return m_input; }
-    void Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
+    Expected<void, Error> Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
                 const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command);
     void Present();
     rhi::TextureHandle Backbuffer() const;

@@ -3,7 +3,7 @@
 // CGLTF_IMPLEMENTATION은 이 TU 하나에서만 켠다(third_party/cgltf 소비 규약).
 // 경로: .gltf/.glb 바이트 → cgltf 파싱 → 정점/인덱스(왼손 변환) → rhi 정점/인덱스 버퍼.
 //
-// 좌표 변환(glTF 오른손·+Y업·-Z전방 → 엔진 왼손·+Y업·+Z전방):
+// 좌표 변환(glTF 오른손·+Y업 → 엔진 왼손·+Y업):
 //   position.z, normal.z 부호 반전. 삼각형 인덱스 와인딩(0,1,2 → 0,2,1) 뒤집기로
 //   반전된 축의 정면성(front-face) 유지. UV는 glTF 그대로(좌상단 원점).
 #define CGLTF_IMPLEMENTATION

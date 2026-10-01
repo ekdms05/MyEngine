@@ -329,7 +329,7 @@ void HybridRenderer::InitMeshPipeline() {
     p.topology = rhi::PrimitiveTopology::TriangleList;
     p.blend = rhi::BlendStateDesc::Opaque();        // 불투명 3D(cutout, 블렌드 없음)
     p.raster.cull = rhi::CullMode::Back;             // 3D 백페이스 컬
-    p.raster.frontCounterClockwise = true;          // glTF Z/와인딩 변환 후 정면 기준
+    p.raster.frontCounterClockwise = false;         // RH->LH Z/index conversion projects glTF fronts clockwise in DX11.
     p.depthStencil.depthTest = true;
     p.depthStencil.depthWrite = true;
     p.depthStencil.depthFunc = rhi::CompareFunc::LessEqual;
@@ -442,15 +442,38 @@ HybridViewInfo HybridRenderer::MakeViewInfo(const Camera2D& camera) {
 // ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
-void HybridRenderer::Render(const scene::RenderProxyList& items, const Camera2D& camera,
+Expected<void, Error> HybridRenderer::Render(const scene::RenderProxyList& items, const Camera2D& camera,
                             rhi::ICommandContext& ctx) {
-    Render(items, MakeViewInfo(camera), ctx);
+    return Render(items, MakeViewInfo(camera), ctx);
 }
 
-void HybridRenderer::Render(const scene::RenderProxyList& items, const HybridViewInfo& view,
+Expected<void, Error> HybridRenderer::Render(const scene::RenderProxyList& items, const HybridViewInfo& view,
                             rhi::ICommandContext& ctx) {
     m_stats = {};
-    if (!m_initialized) return;
+    if (!m_initialized) return Error{"HybridRenderer is not initialized", 1};
+
+    // Resolvers cache asset handles. Check references before any draw so a missing
+    // asset cannot silently become a blank object or an unintended white material.
+    for (const auto& item : items.items) {
+        const auto missing = [&](std::string_view kind, asset::AssetGuid guid) {
+            return Error{"Render object '" + std::string(item.sourceName) + "' entity " +
+                std::to_string(item.sourceEntity.Packed()) + ": " + std::string(kind) +
+                " GUID " + guid.ToString() + " is missing, invalid or not uploaded", 1};
+        };
+        if (item.kind == scene::RenderItemKind::Mesh) {
+            if (!item.mesh.IsValid()) continue; // An unassigned editor element has no geometry yet.
+            const auto* mesh = ResolveMesh(item.mesh);
+            if (!mesh || !mesh->vertexBuffer.IsValid() || mesh->vertexCount == 0)
+                return missing("mesh", item.mesh);
+            if (mesh->indexCount > 0 && !mesh->indexBuffer.IsValid()) return missing("mesh index buffer", item.mesh);
+        }
+        const auto guid = item.kind == scene::RenderItemKind::Mesh && item.material.IsValid()
+            ? item.material : item.texture;
+        if (guid.IsValid()) {
+            const auto* texture = Resolve(guid);
+            if (!texture || !texture->gpuTexture.IsValid()) return missing("texture", guid);
+        }
+    }
 
     ctx.PushDebugMarker("HybridRenderer");
 
@@ -469,6 +492,7 @@ void HybridRenderer::Render(const scene::RenderProxyList& items, const HybridVie
     CollectAndDrawSpritesTiles(items, view, ctx);
 
     ctx.PopDebugMarker();
+    return {};
 }
 
 // ---------------------------------------------------------------------------

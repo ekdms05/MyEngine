@@ -40,7 +40,7 @@ public:
 
     // 자동 검증 CLI 배선(main.cpp 가 부팅 인자를 파싱해 호출). onExit=프레임 한도 도달 시 종료 콜백.
     void SetCliControl(bool frameLimit, std::uint64_t maxFrames, bool dumpEnabled,
-                       std::string dumpPath, std::function<void()> onExit);
+                       std::string dumpPath, std::function<void(int)> onExit);
     // Paused 상태에서 F10 스텝 요청(다음 프레임에 Play World 1회 tick). EditorApp/단축키가 호출.
     void RequestStepFrame();
 

@@ -232,11 +232,8 @@ private:
         if (found == m_meshes.end()) {
             const auto path = m_assetDb->PathFromGuid(guid);
             const auto* importer = m_assets->FindImporterForPath(path);
-            if (!importer || importer->ProducedType() != asset::Mesh::kAssetTypeId) {
-                Fail(Error{"Mesh GUID has no registered mesh source: " + guid.ToString(), 1}); return nullptr;
-            }
+            if (!importer || importer->ProducedType() != asset::Mesh::kAssetTypeId) return nullptr;
             found = m_meshes.emplace(guid, m_assets->LoadSync<asset::Mesh>(path)).first;
-            if (!found->second.Get()) Fail(Error{"Mesh could not be loaded: " + path + " GUID " + guid.ToString(), 1});
         }
         return found->second.Get();
     }
@@ -305,8 +302,13 @@ private:
         m_target.BeginScenePass(cmd, Color{0.09f, 0.10f, 0.13f, 1.0f});
         const auto view = scene::BuildGameView(m_scene->world, m_camera);
         if (!view) { m_target.EndScenePass(cmd); m_device->EndFrame(); Fail(view.GetError()); return; }
-        m_hybrid.Render(m_proxies, view.Value(), cmd);
+        const auto rendered = m_hybrid.Render(m_proxies, view.Value(), cmd);
         m_target.EndScenePass(cmd);
+        if (!rendered) {
+            m_device->EndFrame();
+            Fail(Error{m_cli.project + ": " + rendered.GetError().message, rendered.GetError().code});
+            return;
+        }
         if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), view.Value().geometryDepth ? Vec2{} : m_camera.SubpixelResidual());
         ++m_frame;
         if (!m_cli.dump.empty() && m_frame == (m_cli.frames ? m_cli.frames : 3)) {

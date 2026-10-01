@@ -41,6 +41,8 @@ assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/
 
 씬의 공통 등록에는 SpriteRenderer·BillboardRenderer·MeshRenderer·Camera3D가 포함된다. 두 공식 앱이 같은 등록·직렬화 계약을 사용한다. GLB/임베디드 glTF는 기존 MeshImporter와 GUID resolver로 연결하며 노드 변환·glTF 재질·리깅·외부 .bin은 지원하지 않는다. billboard의 Full/YAxis/None, 발 피벗·반전과 기존 SpriteAnimator를 렌더에서 소비한다.
 
+표준 GLB 앞면은 Z/인덱스 변환 후 DX11 clockwise 컬링으로 표시한다. 0.2.3은 반대 면을 승인한 기존 렌더 검사를 여섯 축의 앞/뒤 검사로 교체했다. 공통 렌더 경계가 지정된 메시/PNG의 실패를 반환하며 MyGame과 자동 실행 에디터는 exit 1로 종료한다. 대화형 에디터는 Play를 중단하고 하단 오류/콘솔을 통해 편집을 계속할 수 있다.
+
 저장한 Camera3D의 위치·target·FOV·near/far·고유 이름 추종 오프셋을 Play/MyGame이 사용한다. 에디터 작업 카메라는 별개이며 current가 없으면 기존 2D 카메라로 표시한다. [컴포넌트 사용법](20-components.md)에 설정·검증·제한을 정리했다. 3D 선택/기즈모와 XZ 지면·Y 높이의 3D 물리는 아직 없다.
 
 좌표·깊이의 정본은 [02](02-rendering.md): 왼손, +Y up, PPU 48, 내부 960×540, Y/높이 기반 깊이·alpha cutout. 시뮬레이션은 고정 틱, UI·렌더는 표현 단계다.

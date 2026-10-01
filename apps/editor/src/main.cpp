@@ -147,7 +147,7 @@ public:
                     });
             }
             em->SetCliControl(m_frameLimit, m_maxFrames, m_dumpEnabled, m_dumpPath,
-                              [this]() { RequestExit(0); });
+                              [this](int code) { RequestExit(code); });
         }
         MYE_LOG_INFO("MyEditor", "start (frames={} dump='{}')",
                      m_frameLimit ? static_cast<long long>(m_maxFrames) : -1LL, m_dumpPath);

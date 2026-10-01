@@ -4,7 +4,7 @@
 // MeshImporter(cgltf)가 .gltf/.glb를 파싱해 CPU 정점/인덱스를 만들고, Finalize 단계에서
 // rhi::IDevice::CreateBuffer로 GPU에 올린 뒤 핸들을 이 구조체에 심는다.
 //
-// 좌표 규약(엔진 확정): 왼손·+Y업·+Z전방·row-major·v*M. glTF는 오른손·+Y업·-Z전방이므로
+// 좌표 규약(엔진 확정): 왼손·+Y업·카메라 +Z전방·row-major·v*M. glTF는 오른손·+Y업이므로
 // MeshImporter가 임포트 시 Z를 반전(위치 z·법선 z 부호 반전 + 삼각형 와인딩 뒤집기)해
 // 왼손 좌표계로 변환한다. 텍스처 좌표(UV)는 glTF와 동일하게 좌상단 원점을 유지한다.
 //

@@ -52,6 +52,9 @@ build/dev/apps/editor/Release/MyEditor.exe --project <manifest> --import-asset <
 | [File system](https://docs.godotengine.org/en/stable/tutorials/scripting/filesystem.html), [FileSystem dock source](https://github.com/godotengine/godot/blob/master/editor/docks/filesystem_dock.cpp) | 폴더·파일 우클릭과 삭제 의존성 확인 | 프로젝트 GUID와 메타 유지; 폴더 이동·이름 변경 보류 |
 | [Editor fonts source](https://github.com/godotengine/godot/blob/12c17c187e88efa23e6bbd6689630e256eca6523/editor/themes/editor_fonts.cpp) | 기본 UI 글꼴과 문자권별 보완 폰트 구분 | Godot의 Inter·Noto/Droid 조합 대신 사용자 요청의 나눔스퀘어라운드와 기존 ImGui 시스템 폰트 병합을 사용. 별도 폰트 엔진을 추가하지 않음 |
 | [Camera3D](https://docs.godotengine.org/en/stable/classes/class_camera3d.html), [SpriteBase3D](https://docs.godotengine.org/en/stable/classes/class_spritebase3d.html) | 저장 카메라의 current/FOV/near/far, 빌보드 모드·cutout | 2026-10-02 확인. 기존 ECS·LH·PPU48·depth 경로를 재사용. 카메라는 target/이름 추종 오프셋, current 중복 오류. Godot API·자동 카메라 선택·물리 구현을 복제하지 않음 |
+| [BaseMaterial3D CullMode](https://docs.godotengine.org/en/stable/classes/class_basematerial3d.html#enum-basematerial3d-cullmode) | 기본 백페이스 컬링으로 모델 외부를 표시 | 2026-10-02 확인. RH glTF→LH/DX11 투영의 앞면을 수정하고 여섯 축 앞/뒤를 검사. Godot의 RH 객체 모델·양면 재질 옵션은 추가하지 않음 |
+
+0.2.3의 메시 수정 근거는 [glTF instantiation의 정면 규약](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#instantiation)과 [DX11의 렌더 타깃 앞면 설정](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_rasterizer_desc)이다. 표준 위향 면을 위에서 표시·아래에서 컬링하며 원본은 변경하지 않는다. 지정한 메시/PNG의 오류는 하단 상태/콘솔에 씬·오브젝트·GUID를 안내하고 Play를 중단한다. 자동 실행에서는 exit 1을 전달한다.
 
 Windows 삭제는 [IFileOperation](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation)의 STA·휴지통·Undo·취소 결과를 사용한다. 무조건 재귀 삭제하는 경로를 만들지 않았다.
 

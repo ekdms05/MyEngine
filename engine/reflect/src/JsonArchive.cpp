@@ -11,7 +11,7 @@
 #include "mye/ser/JsonArchive.h"
 
 #include <cstdint>
-#include <cstdlib>
+#include <charconv>
 #include <memory>
 #include <string>
 #include <variant>
@@ -57,6 +57,8 @@ std::string GuidToString(std::uint64_t hi, std::uint64_t lo) {
 }
 
 bool GuidFromString(std::string_view s, std::uint64_t& hi, std::uint64_t& lo) {
+    if (s.size() != 32 && s.size() != 36) return false;
+    if (s.size() == 36 && (s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-')) return false;
     std::uint8_t bytes[16];
     int bi = 0;
     auto hexVal = [](char c) -> int {
@@ -66,7 +68,7 @@ bool GuidFromString(std::string_view s, std::uint64_t& hi, std::uint64_t& lo) {
         return -1;
     };
     for (std::size_t i = 0; i < s.size() && bi < 16;) {
-        if (s[i] == '-') { ++i; continue; }
+        if (s.size() == 36 && (i == 8 || i == 13 || i == 18 || i == 23)) { ++i; continue; }
         if (i + 1 >= s.size()) return false;
         int a = hexVal(s[i]), b = hexVal(s[i + 1]);
         if (a < 0 || b < 0) return false;
@@ -254,16 +256,26 @@ void JsonArchive::Value(mye::asset::AssetRef& v) {
     auto* ref = reinterpret_cast<mye::asset::AssetRefMirror*>(&v);
     if (m_impl->reading) {
         const json::Value* n = m_impl->NextReadNode();
-        if (n && n->IsObject()) {
-            if (const json::Value* g = n->Find("guid"); g && g->IsString()) {
-                GuidFromString(g->AsString(), ref->guid.hi, ref->guid.lo);
+        if (n) {
+            if (!n->IsObject()) { m_impl->readOk = false; return; }
+            auto candidate = *ref;
+            if (const auto* g = n->Find("guid")) {
+                if (!g->IsString()) { m_impl->readOk = false; return; }
+                if (g->AsString().empty()) candidate.guid = {};
+                else if (!GuidFromString(g->AsString(), candidate.guid.hi, candidate.guid.lo)) {
+                    m_impl->readOk = false; return;
+                }
             }
             // type 은 u64 FNV 해시 — double 로는 정밀도 손실(>2^53)이므로 10진 문자열로 왕복.
-            if (const json::Value* t = n->Find("type"); t && t->IsString()) {
-                ref->type = std::strtoull(std::string(t->AsString()).c_str(), nullptr, 10);
-            } else if (t && t->IsNumber()) {   // 하위호환(작은 값) 폴백
-                ref->type = static_cast<std::uint64_t>(t->AsInt());
+            if (const auto* t = n->Find("type")) {
+                if (t->IsString()) {
+                    const auto text = t->AsString();
+                    const auto parsed = std::from_chars(text.data(), text.data()+text.size(), candidate.type);
+                    if (parsed.ec != std::errc{} || parsed.ptr != text.data()+text.size()) { m_impl->readOk = false; return; }
+                } else if (t->IsInteger() && t->AsInt() >= 0) candidate.type = static_cast<std::uint64_t>(t->AsInt());
+                else { m_impl->readOk = false; return; }
             }
+            *ref = candidate;
         }
     } else {
         auto node = std::make_unique<WNode>();

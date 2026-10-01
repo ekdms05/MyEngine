@@ -70,6 +70,27 @@ MCP build·smoke 19개 검사와 외부 제작 루트의 실제 에디터 GLB �
 
 ## 0.2.2 배포 검증
 
+정정: 아래 0.2.2 기록의 "정면 수정"은 반대편 카메라를 사용한 검사로 잘못 판정했다. 표준 위향 GLB 피드백에서 결함이 드러났으며, 후속 0.2.3에서 여섯 축의 법선 방향/반대 방향을 검사하고 DX11 앞면 설정을 바로잡았다. 과거 실행 결과는 당시 기록으로 보존한다.
+
 [공식 릴리즈](https://github.com/ekdms05/MyEngine/releases/tag/v0.2.2)는 소스 `6859372110556214506b044dc5c6dddb20622c12`의 [태그 전 CI](https://github.com/ekdms05/MyEngine/actions/runs/36918744670)에서 검증한 산출물을 사용한다. Windows Server 2025의 `windows-2025-vs2026/20260925.250`, MSVC 19.51.36260.0에서 빌드·명시적 WARP CTest·기존 앱 통합·MCP smoke·패키징을 통과했다. 사용자 README의 2D/3D 소개 변경을 합친 커밋이며 공개 태그를 덮어쓰지 않았다.
 
 공개 ZIP 18,133,855 bytes의 SHA-256은 `0c586eb3d12e27629288cdf2e859d088b75b02d50c878b1342e06225c7b874a6`이다. 공개 배포물을 다시 내려받아 sidecar와 내부 76개 파일 해시를 검증했다. 새 폴더의 공식 바이너리로 여섯 renderer 로딩·GLB 임포트·저장 카메라의 Play/MyGame 픽셀 일치·잘못된 near의 오류 종료를 확인했다. 로컬 추출본의 에디터 셸·한글·요소 추가, 별도 네이티브 3D Play 창도 캡처했다. 별도 새 PC·키 입력 수동 플레이·게임 아트 승인·3D 물리/온라인은 이 검증에 포함하지 않는다.
+
+## 0.2.3 표준 앞면·콘텐츠 오류 경계 — 2026-10-02
+
+후속 피드백의 표준 +Y 지면을 원본 바이트 그대로 격리 프로젝트에 임포트했다. 0.2.2에서 카메라 `(0,4,-5)`는 회색 0px, `(0,-4,-5)`는 26,644px였다. 이전 회귀의 카메라가 변환된 법선 반대편을 보았다는 사실을 확인했다. 반대편 표시를 정면 성공으로 판정한 기록은 위에서 정정했다.
+
+| 변경 | 호출 경로·선택 근거 | 검증·제약 |
+|---|---|---|
+| DX11 메시 앞면을 clockwise로 수정 | MeshImporter의 RH→LH Z/법선·인덱스 반전 → Upload → GUID resolver → HybridRenderer → DX11 rasterizer. 기존 변환을 유지하고 공통 파이프라인 한 값만 수정 | 여섯 축의 표준 법선 방향/반대 방향 12개 픽셀 회귀. 수정 전 12개 기대값 실패, 수정 후 통과. 사용자 원본·GUID 자동 수정은 없음 |
+| 지정 에셋 오류를 렌더 호출자에게 반환 | RenderExtract의 이름/핸들 → 공통 Render의 캐시된 resolver 사전 확인 → Expected → MyGame·viewport·PlayWindow. 공통 경계에서 draw 전에 검증 | 메시·인덱스 버퍼·PNG의 누락/업로드 실패 거부. 미지정 새 요소와 빈 material의 기본 흰색은 보존. RHI 내부 모든 실패를 새 계약으로 확장하지 않음 |
+| 에디터의 자동 실행 실패와 대화형 복구 | 기존 하단 상태/콘솔을 재사용, Play 중단 후 비소유 render proxy를 비움. 종료 콜백에 오류 코드 전달 | headless edit/Play·네이티브 프레임 한도 실행의 누락 메시 exit 1 회귀. 수동 키 입력/IME·별도 프로세스 격리 검증은 아님 |
+| AssetRef 읽기의 신뢰 경계 | JsonArchive의 GUID 전체 형식 확인·표준 from_chars u64 읽기 → SceneSerializer의 생성 전 기존 검증. 잘못된 참조를 기본값으로 진행하지 않음 | 직접 읽기 실패 시 원래 참조 보존, custom SpriteRenderer/일반 MeshRenderer 실패 시 기존 World 보존. 32hex·정규 GUID·u64 최대값과 기존 비음수 정수 형식 유지 |
+
+glTF 앞면과 DX11 렌더 타깃 순서는 서로 다른 경계다. 근거는 [Khronos glTF instantiation](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#instantiation), [DX11 rasterizer](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_rasterizer_desc), [Godot CullMode](https://docs.godotengine.org/en/stable/classes/class_basematerial3d.html#enum-basematerial3d-cullmode)를 2026-10-02 확인했다. 후면 컬링의 사용자 기대를 채택했고 양면 표시·원본 자동 반전·새 재질 시스템은 추가하지 않았다.
+
+기존 build/dev의 Debug·Release 빌드와 CTest는 각 **548/548** 통과했다. 기존 verify-foundation.ps1의 격리 서버 저장/재시작/손상 거부와 로컬 프로젝트·맵/스폰/Lua 검사도 통과했다. MCP 0.2.3 build·smoke 19개 검사 통과; 기존 9개 도구와 공개 참조 문서를 유지한다. 이는 독립 소비자 MCP 제공이나 XYZ 물리/온라인 검사 성공이 아니다.
+
+Release 앱의 24개 실행 검사에서 동일 원본 GLB의 위향 면은 위 26,644px/아래 0px, 반대 면은 위 0px/아래 26,644px였고 MyGame/MyEditor Play 960×540 픽셀이 일치했다. 누락 메시/재질/PNG·손상 메시·잘못된 두 renderer GUID·type overflow는 두 앱 exit 1이었다. 각 로그에 파일 문맥과 렌더 오브젝트/GUID 또는 파싱 엔티티/컴포넌트/필드가 있다. 진단용 장면이며 실제 지형·건물 재내보내기와 미술 승인, 수동 게임 입력, 새 PC는 미검증이다. 상세 명령·로그·바이너리 해시·캡처와 항목별 답변은 게임 프로젝트의 로컬 피드백 폴더에 보존한다.
+
+라이브러리/API/워크플로 변경에 맞춰 렌더·씬·컴포넌트·우선순위·릴리즈 가이드와 로컬 개발/제작 스킬을 갱신했다. 표준 파싱과 기존 검증·Expected·RAII 경계가 충족하므로 새 의존성·내장 픽셀 제작 기능을 추가하지 않았다. 사전 확인은 기존 캐시 resolver를 사용하며 실제 성능 개선 수치는 측정하지 않았다. 다음 구현 조건은 공통 XYZ 이동/충돌·Lua·맵, 이어서 360° 카메라/방향별 모션·온라인 통합이다.

@@ -157,11 +157,8 @@ struct EditorModule::Impl final : public IEditorViewport {
         if (found == meshes.end()) {
             const auto path = assetDb->PathFromGuid(guid);
             const auto* importer = assets->FindImporterForPath(path);
-            if (!importer || importer->ProducedType() != asset::Mesh::kAssetTypeId) {
-                MYE_LOG_ERROR("Editor", "Mesh GUID has no registered mesh source: {}", guid.ToString()); return nullptr;
-            }
+            if (!importer || importer->ProducedType() != asset::Mesh::kAssetTypeId) return nullptr;
             found = meshes.emplace(guid, assets->LoadSync<asset::Mesh>(path)).first;
-            if (!found->second.Get()) MYE_LOG_ERROR("Editor", "Mesh could not be loaded: {} GUID {}", path, guid.ToString());
         }
         return found->second.Get();
     }
@@ -222,7 +219,22 @@ struct EditorModule::Impl final : public IEditorViewport {
     uint64_t frameCount = 0;
     bool     dumped = false;
     rhi::TextureHandle dumpBackbuffer{};   // 창이 있으면 ImGui 셸까지 그려진 백버퍼를 덤프(스킨 확인용)
-    std::function<void()> onExit;   // 프레임 한도 도달 시 호출(main 이 Application::RequestExit 배선).
+    std::function<void(int)> onExit;
+    int exitCode = 0;
+    std::string lastFrameError;
+
+    void ReportFrameError(const Error& error) {
+        const auto* document = app->Project().Active();
+        const auto file = document ? document->Path() : projectPath;
+        const Error diagnostic{std::string(file) + ": " + error.message, error.code};
+        if (diagnostic.message != lastFrameError) app->ReportError(diagnostic);
+        lastFrameError = diagnostic.message;
+        if (app->PlayMode().IsPlaying()) app->PlayMode().Stop();
+        if (headless || frameLimit || dumpEnabled) {
+            exitCode = 1;
+            if (onExit) onExit(exitCode);
+        }
+    }
 
     bool pendingInteract = false;
 
@@ -424,7 +436,8 @@ void EditorModule::Frame(const TimeStep&) {
     s.app->RefreshDocumentContext();
 
     auto synced = s.SyncAssets();
-    if (!synced) MYE_LOG_ERROR("Editor", "{}", synced.GetError().message);
+    if (!synced) s.ReportFrameError(synced.GetError());
+    bool frameFailed = !synced;
     if (auto* world = s.app->PlayMode().ActiveWorld()) s.BindAnimations(*world);
 
     // 2) 활성 World 추출.
@@ -446,11 +459,19 @@ void EditorModule::Frame(const TimeStep&) {
         if (s.headless && world && s.app->PlayMode().IsPlaying()) {
             const auto gameView = scene::BuildGameView(*world, render::Camera2D{});
             if (gameView) view = gameView.Value();
-            else MYE_LOG_ERROR("Editor", "{}", gameView.GetError().message);
+            else {
+                s.ReportFrameError(gameView.GetError());
+                s.proxies.Clear();
+                frameFailed = true;
+            }
         }
         s.rt.BeginScenePass(cmd, kViewportClear);
-        s.hybrid.Render(s.proxies, view, cmd);
+        const auto rendered = s.hybrid.Render(s.proxies, view, cmd);
         s.rt.EndScenePass(cmd);
+        if (!rendered) {
+            s.ReportFrameError(rendered.GetError());
+            s.proxies.Clear();
+        } else if (!frameFailed) s.lastFrameError.clear();
     }
 
     // 3b) 백버퍼에 ImGui 셸(도킹·메뉴·패널) — 창이 있을 때만.
@@ -504,10 +525,12 @@ void EditorModule::Frame(const TimeStep&) {
         render::Camera2D fallback;
         fallback.SetPosition(center);
         auto view = scene::BuildGameView(*s.app->PlayMode().ActiveWorld(), fallback);
-        if (view) s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd);
-        else {
-            MYE_LOG_ERROR("Editor", "{}", view.GetError().message);
-            s.app->PlayMode().Stop();
+        const auto rendered = view
+            ? s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd)
+            : Expected<void, Error>{view.GetError()};
+        if (!rendered) {
+            s.ReportFrameError(rendered.GetError());
+            s.proxies.Clear();
             s.playWindow.Close();
         }
     }
@@ -548,7 +571,7 @@ void EditorModule::HandleDump() {
 void EditorModule::RequestExit() {
     // Application::RequestExit 은 core 서비스로 노출되지 않으므로, main.cpp 가 SetCliControl 로
     //   넘긴 종료 콜백(캡처한 Application*)을 호출해 메인 루프를 탈출시킨다(헤드리스·프레임 한도).
-    if (m_impl->onExit) m_impl->onExit();
+    if (m_impl->onExit) m_impl->onExit(m_impl->exitCode);
 }
 
 void EditorModule::OnShutdown(EngineContext& ctx) {
@@ -579,7 +602,7 @@ EditorApp* EditorModule::App() { return m_impl->app.get(); }
 
 // CLI 제어 배선(main.cpp 가 호출) — frames/dump/headless + 종료 콜백.
 void EditorModule::SetCliControl(bool frameLimit, uint64_t maxFrames, bool dumpEnabled,
-                                 std::string dumpPath, std::function<void()> onExit) {
+                                 std::string dumpPath, std::function<void(int)> onExit) {
     Impl& s = *m_impl;
     s.frameLimit = frameLimit;
     s.maxFrames = maxFrames;

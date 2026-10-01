@@ -104,7 +104,11 @@ depth = anchorDepth + (0.5 - n) * biasEps
 
 BillboardRenderer는 Full(카메라 right/up), YAxis(월드 +Y 유지), None(원래 TRS)을 선택한다. 모두 같은 발 피벗·UV·알파/깊이 경로를 사용한다. SpriteAnimator는 스프라이트 또는 빌보드 하나를 갱신하며 중복 renderer 구성은 거부한다. 카메라 기준 방향 모션 자동 선택·정밀 shear·3D 물리는 미지원이다.
 
-정적 glTF의 Z/와인딩 변환 결과는 메시 파이프라인의 counter-clockwise 정면 설정으로 그린다. 이전 DX11의 clockwise 강제값은 파싱 단위 검증만으로 발견되지 않았다. 정면 삼각형의 실제 DX11 픽셀 검증으로 임포터→GPU 계약을 확인한다. 빈 알베도는 매 draw마다 흰색 텍스처를 바인딩하므로 이전 재질이 남지 않는다.
+정적 glTF의 Z/인덱스 반전은 유지하며 변환한 앞면을 DX11 메시 파이프라인의 clockwise 설정(`frontCounterClockwise=false`)으로 그린다. glTF의 RH 정면 순서와 렌더 타깃에 투영된 순서를 구분한다. 0.2.2의 counter-clockwise 설정은 표준 위향 지면을 뒤집어 표시했다. 여섯 축의 표준 앞면/뒷면 실제 픽셀 회귀로 수정했다. 백페이스 컬링은 유지한다. 양면 표시나 원본 인덱스 자동 수정을 우회 해결책으로 사용하지 않는다.
+
+빈 알베도만 흰색 텍스처를 바인딩한다. 지정한 메시/PNG GUID가 누락·손상·타입 불일치 또는 GPU 업로드 실패 상태면 `HybridRenderer::Render`가 `Expected<void, Error>`를 반환하고 draw 제출 전에 거부한다. 진단은 오브젝트 이름·런타임 엔티티 핸들·GUID를 포함하며 앱은 프로젝트/씬 파일 문맥을 붙인다. MyGame 및 자동 실행 MyEditor는 exit 1, 대화형 에디터는 하단 오류/콘솔에서 안내하고 Play를 중단한다. 에셋을 아직 지정하지 않은 새 요소는 편집할 수 있다.
+
+0.2.2의 뒤집힌 컬링에 맞춘 원본은 외부 제작 도구에서 표준 앞면으로 다시 내보내야 한다. 엔진이 사용자 GLB·`.meta` GUID를 고치거나 덮어쓰지 않는다. glTF 노드 변환·음수 배율·재질 자동 연결·리깅·외부 .bin은 이 검사의 지원/통과 범위가 아니다.
 
 ViewportCamera는 같은 씬을 2D 또는 LH 원근 카메라로 표시한다. `BuildViewportView`와 투영/역투영을 렌더·그리드·팬·선택에서 공유하며 기준 편집 평면은 Z=0이다. SpriteCorners3D는 full TRS의 world XYZ를 유지한다. HybridViewInfo.geometryDepth가 켜지면 쿼드 VS는 clip Z/W, 메시 VS는 Geometry 깊이를 쓴다. 2D의 인코딩 깊이 경로는 그대로다.
 

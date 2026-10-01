@@ -59,18 +59,20 @@ bool PlayWindow::OnMessage(void*, uint32_t message, uint64_t wparam, int64_t lpa
     // Raw Input stays registered to the editor. Registering a second backend would steal it.
     return false;
 }
-void PlayWindow::Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
+Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
                         const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command) {
-    if (!m_window || !m_swapChain || !m_target.IsInitialized()) return;
+    if (!m_window || !m_swapChain || !m_target.IsInitialized()) return Error{"Play render surface is unavailable", 1};
     if (paused != m_paused) {
         m_window->SetTitle(paused ? "MyEngine — Play · 일시정지" : "MyEngine — Play");
         m_paused = paused;
     }
     m_target.BeginScenePass(command, {.09f, .10f, .13f, 1});
-    renderer.Render(proxies, view, command);
+    const auto rendered = renderer.Render(proxies, view, command);
     m_target.EndScenePass(command);
+    if (!rendered) return rendered.GetError();
     const auto size = m_window->GetClientSize();
     if (size.x > 0 && size.y > 0) m_target.Blit(command, Backbuffer(), size, {});
+    return {};
 }
 void PlayWindow::Present() { if (m_swapChain) m_swapChain->Present(false); }
 rhi::TextureHandle PlayWindow::Backbuffer() const {

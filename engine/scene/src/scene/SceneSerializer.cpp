@@ -14,6 +14,7 @@
 
 #include "mye/core/Log.h"
 #include "mye/core/JsonFile.h"
+#include "mye/asset/AssetGuid.h"
 #include "mye/ecs/ComponentPool.h"
 #include "mye/ecs/ComponentType.h"
 #include "mye/ecs/World.h"
@@ -269,15 +270,23 @@ Expected<void, Error> ValidateComponentValue(const refl::TypeInfo& type, const j
             if (!valid) return valid.GetError();
         }
         return {};
+    case refl::Kind::AssetRef: {
+        auto archive = ser::JsonArchive::ForRead(value);
+        asset::AssetRef reference;
+        archive.Value(reference);
+        if (!archive.Ok()) return Error{"Invalid asset reference GUID/type", 2};
+        return {};
+    }
     case refl::Kind::Struct:
         if (!value.IsObject()) return Error{"Component structure must be an object", 2};
         if (const auto* version = value.Find("__version"); version && (!version->IsNumber() || std::trunc(version->AsDouble()) != version->AsDouble() || version->AsDouble() < 0 || version->AsDouble() > type.Version()))
             return Error{"Unsupported component version", 2};
-        if (type.CustomSerialize()) return {}; // custom hooks define their own flattened keys
         for (const auto& field : type.Fields()) {
+            // Custom hooks flatten geometry fields, but retain named AssetRef objects.
+            if (type.CustomSerialize() && field.Type().GetKind() != refl::Kind::AssetRef) continue;
             if (const auto* child = value.Find(field.Name())) {
                 auto valid = ValidateComponentValue(field.Type(), *child, depth + 1);
-                if (!valid) return valid.GetError();
+                if (!valid) return Error{std::string(field.Name()) + ": " + valid.GetError().message, valid.GetError().code};
             }
         }
         return {};
@@ -385,7 +394,7 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
                 return Error{"ReadInto: unsupported component '" + name + "'", 2};
             if (!value.IsObject()) return Error{"ReadInto: component must be an object", 2};
             auto valid = ValidateComponentValue(*type, value);
-            if (!valid) return valid.GetError();
+            if (!valid) return Error{"ReadInto entity " + std::to_string(id->AsInt()) + " component '" + name + "': " + valid.GetError().message, valid.GetError().code};
         }
     }
     std::unordered_map<std::uint32_t, uint8_t> visited;
@@ -483,7 +492,9 @@ Expected<std::vector<ecs::Entity>, Error>
 SceneSerializer::LoadFromFile(ecs::World& world, std::string_view path) const {
     auto parsed = ReadJsonFile(Utf8Path(path));
     if (!parsed) return parsed.GetError();
-    return ReadInto(world, parsed.Value());
+    auto loaded = ReadInto(world, parsed.Value());
+    if (!loaded) return Error{std::string(path) + ": " + loaded.GetError().message, loaded.GetError().code};
+    return loaded;
 }
 
 // ---- 메모리 스냅샷 ----

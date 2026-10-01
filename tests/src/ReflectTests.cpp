@@ -250,6 +250,36 @@ MYE_TEST(ReflectMethodInvoke) {
 // -----------------------------------------------------------------------------
 // JsonArchive 왕복
 // -----------------------------------------------------------------------------
+MYE_TEST(JsonArchiveRejectsMalformedAssetReferenceWithoutChangingIt) {
+    const asset::AssetRef original{{0x0123456789abcdefULL,0xfedcba9876543210ULL}, asset::Texture::kAssetTypeId};
+    for (const auto* text : {
+        R"({"guid":"invalid-guid"})",
+        R"({"guid":"01234567-89ab-cdef-fedc-ba9876543210trailing"})",
+        R"({"guid":"0123456789abcdef-fedcba9876543210-"})",
+        R"({"guid":7})",
+        R"({"guid":"00000000-0000-0000-0000-000000000001","type":"12x"})",
+        R"({"type":"18446744073709551616"})",
+        R"({"type":-1})",
+        R"({"type":1.5})",
+        R"("not an asset object")"}) {
+        auto parsed = json::Parse(text);
+        MYE_EXPECT(parsed); if (!parsed) continue;
+        auto archive = ser::JsonArchive::ForRead(parsed.Value());
+        auto reference = original;
+        archive.Value(reference);
+        MYE_EXPECT(!archive.Ok());
+        MYE_EXPECT(reference.guid == original.guid && reference.type == original.type);
+    }
+    for (const auto* text : {R"({"guid":"0123456789abcdeffedcba9876543210","type":"18446744073709551615"})",
+                            R"({"guid":"01234567-89ab-cdef-fedc-ba9876543210","type":"18446744073709551615"})"}) {
+        auto parsed = json::Parse(text);
+        auto archive = ser::JsonArchive::ForRead(parsed.Value());
+        asset::AssetRef reference;
+        archive.Value(reference);
+        MYE_EXPECT(archive.Ok() && reference.guid == original.guid && reference.type == UINT64_MAX);
+    }
+}
+
 MYE_TEST(JsonArchiveRoundtrip) {
     using namespace refltest;
     Outer src;

@@ -574,6 +574,33 @@ MYE_TEST(EditorExecutableRecoversInteractiveProjectButFailsAutomatedProject) {
     MYE_EXPECT(preserved == "{");
 }
 
+MYE_TEST(EditorExecutableRejectsMissingRenderAsset) {
+    const auto root = ProjectTestDirectory("missing-render-asset");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(app.CreateProject("Missing asset", Utf8String(root / "project")));
+    auto* document = app.Project().Active();
+    MYE_EXPECT(document);
+    if (!document) { app.Shutdown(); return; }
+    auto& world = document->World();
+    const auto entity = world.Create();
+    world.Add<scene::ObjectName>(entity).value = "Missing building";
+    world.Add<scene::MeshRenderer>(entity).mesh.guid = asset::AssetGuid::Generate();
+    MYE_EXPECT(app.SaveScene(document->Path()));
+    app.Shutdown();
+    const auto projectArgument = L"--project \"" + (root / "project/project.myeproj").wstring() + L"\"";
+    int index = 0;
+    for (const auto* flags : {L" --headless --frames 1", L" --headless --play --frames 1", L" --frames 1"}) {
+        EditorProcess child;
+        MYE_EXPECT(child.Start(root / std::to_string(index++), projectArgument + flags));
+        if (!child.process.hProcess) continue;
+        MYE_EXPECT(WaitForSingleObject(child.process.hProcess, 15000) == WAIT_OBJECT_0);
+        DWORD exitCode = 0;
+        MYE_EXPECT(GetExitCodeProcess(child.process.hProcess, &exitCode) && exitCode == 1);
+    }
+}
+
 MYE_TEST(EditorInspectorAssetClearUndoRestoresGuidAndType) {
     EditorGuiScope gui;
     const auto root = ProjectTestDirectory("asset-ref-undo");
@@ -746,7 +773,7 @@ MYE_TEST(EditorFrameReacquiresBackbufferAfterUiResize) {
     module->App()->Panels().Open("test.resize");
     const auto output = root / "resized.bmp";
     bool finished = false;
-    module->SetCliControl(true, 1, true, Utf8String(output), [&]() { finished = true; });
+    module->SetCliControl(true, 1, true, Utf8String(output), [&](int code) { MYE_EXPECT(code == 0); finished = true; });
     window.Value()->PumpMessages();
     modules.Tick(UpdatePhase::PreRender, TimeStep{});
     MYE_EXPECT(resized && finished);

@@ -15,8 +15,10 @@
 #include "mye/core/Math.h"
 #include "mye/asset/AssetGuid.h"
 #include "mye/ecs/ComponentType.h"
+#include "mye/ecs/Entity.h"
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 namespace mye::ecs { class World; }
@@ -55,6 +57,8 @@ enum class RenderItemKind : uint8_t { Sprite, Billboard, Mesh, TilemapChunk };
 
 struct RenderItem {
     RenderItemKind kind = RenderItemKind::Sprite;
+    ecs::Entity sourceEntity{};
+    std::string_view sourceName{}; // Non-owning: consume before the source World is mutated or destroyed.
 
     // 그리기 소스(02가 아틀라스·메시 핸들로 해석). 02 SpriteProxy/MeshProxy로 이관.
     asset::AssetGuid texture{};    // Sprite/Billboard: 스프라이트/아틀라스 GUID

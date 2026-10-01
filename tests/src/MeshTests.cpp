@@ -194,12 +194,6 @@ MYE_TEST(MeshGltfFrontFaceAndDefaultMaterialRender) {
     auto created = rhi::CreateDevice(rhi::Backend::DX11, {});
     MYE_EXPECT(created); if (!created) return;
     auto device = std::move(created).Value();
-    const std::vector<Vtx> vertices{{-1,-1,0, 0,0,-1, 0,0}, {0,1,0, 0,0,-1, 0,0}, {1,-1,0, 0,0,-1, 0,0}};
-    auto parsed = MeshImporter::ParseGltf(BuildGlb(vertices, {0,1,2}), {});
-    MYE_EXPECT(parsed); if (!parsed) return;
-    auto uploaded = MeshImporter::Upload(*device, std::move(parsed).Value());
-    MYE_EXPECT(uploaded); if (!uploaded) return;
-    auto mesh = std::move(uploaded).Value();
     rhi::TextureDesc targetDesc{};
     targetDesc.width = targetDesc.height = 32;
     targetDesc.format = rhi::Format::RGBA8Unorm;
@@ -209,39 +203,109 @@ MYE_TEST(MeshGltfFrontFaceAndDefaultMaterialRender) {
     render::HybridRendererDesc description{};
     description.colorFormat = targetDesc.format;
     renderer.Init(*device, description);
-    renderer.SetMeshResolver([](void* data, AssetGuid) { return static_cast<const Mesh*>(data); }, &mesh);
     MYE_EXPECT(target.IsValid() && renderer.IsInitialized());
     render::HybridViewInfo view;
     view.geometryDepth = true;
-    view.view = Mat4::LookAtLH({0,0,-3}, {0,0,0}, {0,1,0});
     view.proj = Mat4::PerspectiveLH(1.0f, 1, .05f, 100);
-    view.viewProj = view.view * view.proj;
     scene::RenderProxyList items;
     auto& item = items.Push();
     item.kind = scene::RenderItemKind::Mesh; item.mesh = AssetGuid::Generate();
-    device->BeginFrame();
-    auto& context = device->GetImmediateContext();
-    rhi::RenderPassColorAttachment color{};
-    color.texture = target; color.loadOp = rhi::LoadOp::Clear; color.clearColor = Color::Black();
-    rhi::RenderPassBeginDesc pass{}; pass.colorAttachments = {&color, 1};
-    context.BeginRenderPass(pass);
-    context.SetViewport({0,0,32,32,0,1});
-    renderer.Render(items, view, context);
-    context.EndRenderPass();
     const auto path = std::filesystem::path(MYE_TEST_DATA_DIR) / "mesh-front.bmp";
     std::filesystem::create_directories(path.parent_path());
-    MYE_EXPECT(rhi::CaptureBackbuffer(*device, target, path.string()));
-    device->EndFrame();
-    std::ifstream file(path, std::ios::binary);
-    std::vector<uint8_t> bmp((std::istreambuf_iterator<char>(file)), {});
-    MYE_EXPECT(bmp.size() >= 54 + 32 * 32 * 4);
-    if (bmp.size() >= 54 + 32 * 32 * 4) {
-        const auto* center = &bmp[54 + (16 * 32 + 16) * 4];
-        MYE_EXPECT(center[0] > 30 && center[0] == center[1] && center[1] == center[2]);
+
+    // glTF CCW faces: cross(u,v) == normal. Inspect both sides after RH->LH conversion.
+    // A camera opposite the converted normal would accidentally certify a back face.
+    struct Face { Vec3 normal, u, v; };
+    const Face faces[] = {
+        {{1,0,0}, {0,1,0}, {0,0,1}}, {{-1,0,0}, {0,0,1}, {0,1,0}},
+        {{0,1,0}, {0,0,1}, {1,0,0}}, {{0,-1,0}, {1,0,0}, {0,0,1}},
+        {{0,0,1}, {1,0,0}, {0,1,0}}, {{0,0,-1}, {0,1,0}, {1,0,0}}
+    };
+    for (const auto& face : faces) {
+        std::vector<Vtx> vertices;
+        for (const Vec3 position : {face.u*-1.0f-face.v, face.u-face.v, face.u+face.v, face.v-face.u})
+            vertices.push_back({position.x, position.y, position.z,
+                face.normal.x, face.normal.y, face.normal.z, .5f, .5f});
+        auto parsed = MeshImporter::ParseGltf(BuildGlb(vertices, {0,1,2,0,2,3}), {});
+        MYE_EXPECT(parsed); if (!parsed) continue;
+        const Vec3 normal{face.normal.x, face.normal.y, -face.normal.z};
+        MYE_EXPECT_NEAR(Vec3::Dot(parsed.Value().vertices[0].normal, normal), 1.0f, 1e-5f);
+        auto uploaded = MeshImporter::Upload(*device, std::move(parsed).Value());
+        MYE_EXPECT(uploaded); if (!uploaded) continue;
+        auto mesh = std::move(uploaded).Value();
+        renderer.SetMeshResolver([](void* data, AssetGuid) { return static_cast<const Mesh*>(data); }, &mesh);
+        for (const float side : {1.0f, -1.0f}) {
+            view.view = Mat4::LookAtLH(normal * (3.0f * side), {0,0,0},
+                face.normal.y != 0 ? Vec3{0,0,1} : Vec3{0,1,0});
+            view.viewProj = view.view * view.proj;
+            device->BeginFrame();
+            auto& context = device->GetImmediateContext();
+            rhi::RenderPassColorAttachment color{};
+            color.texture = target; color.loadOp = rhi::LoadOp::Clear; color.clearColor = Color::Black();
+            rhi::RenderPassBeginDesc pass{}; pass.colorAttachments = {&color, 1};
+            context.BeginRenderPass(pass);
+            context.SetViewport({0,0,32,32,0,1});
+            MYE_EXPECT(renderer.Render(items, view, context));
+            context.EndRenderPass();
+            MYE_EXPECT(rhi::CaptureBackbuffer(*device, target, path.string()));
+            device->EndFrame();
+            std::ifstream file(path, std::ios::binary);
+            std::vector<uint8_t> bmp((std::istreambuf_iterator<char>(file)), {});
+            MYE_EXPECT(bmp.size() >= 54 + 32 * 32 * 4);
+            if (bmp.size() >= 54 + 32 * 32 * 4) {
+                const auto* center = &bmp[54 + (16 * 32 + 16) * 4];
+                if (side > 0) MYE_EXPECT(center[0] > 30 && center[0] == center[1] && center[1] == center[2]);
+                else MYE_EXPECT(center[0] == 0 && center[1] == 0 && center[2] == 0);
+            }
+        }
+        device->Destroy(mesh.vertexBuffer); device->Destroy(mesh.indexBuffer);
     }
     renderer.Shutdown();
     device->Destroy(target);
-    device->Destroy(mesh.vertexBuffer); device->Destroy(mesh.indexBuffer);
+}
+
+MYE_TEST(HybridRendererRejectsBrokenAssetReferences) {
+    auto created = rhi::CreateDevice(rhi::Backend::DX11, {});
+    MYE_EXPECT(created); if (!created) return;
+    auto device = std::move(created).Value();
+    render::HybridRenderer renderer;
+    renderer.Init(*device, {});
+    scene::RenderProxyList items;
+    auto& item = items.Push();
+    item.sourceEntity = {7,2}; item.sourceName = "Missing building";
+    const auto missing = AssetGuid::Generate();
+    device->BeginFrame();
+    auto& context = device->GetImmediateContext();
+    for (const auto kind : {scene::RenderItemKind::Mesh, scene::RenderItemKind::Sprite,
+                           scene::RenderItemKind::Billboard, scene::RenderItemKind::TilemapChunk}) {
+        item.kind = kind; item.mesh = missing; item.texture = missing;
+        const auto rendered = renderer.Render(items, render::HybridViewInfo{}, context);
+        MYE_EXPECT(!rendered && renderer.LastStats().drawCalls == 0);
+        if (!rendered) {
+            MYE_EXPECT(rendered.GetError().message.find(item.sourceName) != std::string::npos);
+            MYE_EXPECT(rendered.GetError().message.find(missing.ToString()) != std::string::npos);
+        }
+    }
+    auto parsed = MeshImporter::ParseGltf(BuildTriangleGlb(), {});
+    MYE_EXPECT(parsed);
+    if (parsed) {
+        auto uploaded = MeshImporter::Upload(*device, std::move(parsed).Value());
+        MYE_EXPECT(uploaded);
+        if (uploaded) {
+            auto mesh = std::move(uploaded).Value();
+            renderer.SetMeshResolver([](void* data, AssetGuid) { return static_cast<const Mesh*>(data); }, &mesh);
+            item.kind = scene::RenderItemKind::Mesh;
+            item.texture = {}; item.material = missing;
+            MYE_EXPECT(!renderer.Render(items, render::Camera2D{}, context));
+            MYE_EXPECT(renderer.LastStats().drawCalls == 0);
+            device->Destroy(mesh.vertexBuffer); device->Destroy(mesh.indexBuffer);
+        }
+    }
+    items.Clear();
+    items.Push().kind = scene::RenderItemKind::Mesh;
+    MYE_EXPECT(renderer.Render(items, render::Camera2D{}, context)); // Unassigned editor element.
+    device->EndFrame();
+    renderer.Shutdown();
 }
 
 // 바운딩: z-반전 후 min/max 재계산. glTF z[1,3] → 엔진 z[-3,-1].

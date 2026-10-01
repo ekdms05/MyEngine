@@ -52,6 +52,8 @@ void ExtractRenderItems(ecs::World& world, RenderProxyList& out) {
 
         RenderItem& it = out.Push();
         it.kind = RenderItemKind::Sprite;
+        it.sourceEntity = e;
+        if (const auto* name = world.TryGet<ObjectName>(e)) it.sourceName = name->value;
         it.texture = sr.sprite.guid;
         it.srcUV = sr.srcUV;
         it.pivotPx = sr.pivotPx;
@@ -76,6 +78,8 @@ void ExtractRenderItems(ecs::World& world, RenderProxyList& out) {
 
         RenderItem& it = out.Push();
         it.kind = RenderItemKind::Billboard;
+        it.sourceEntity = e;
+        if (const auto* name = world.TryGet<ObjectName>(e)) it.sourceName = name->value;
         it.texture = br.sprite.guid;
         it.srcUV = br.srcUV;
         it.pivotPx = br.pivotPx;
@@ -99,6 +103,8 @@ void ExtractRenderItems(ecs::World& world, RenderProxyList& out) {
 
         RenderItem& it = out.Push();
         it.kind = RenderItemKind::Mesh;
+        it.sourceEntity = e;
+        if (const auto* name = world.TryGet<ObjectName>(e)) it.sourceName = name->value;
         it.mesh = mr.mesh.guid;
         it.material = mr.material.guid;
         it.depthMode = mr.depthMode;
@@ -120,6 +126,8 @@ void ExtractRenderItems(ecs::World& world, RenderProxyList& out) {
                 if (!chunk.HasAnyColumn()) return;
                 RenderItem& it = out.Push();
                 it.kind = RenderItemKind::TilemapChunk;
+                it.sourceEntity = e;
+                if (const auto* name = world.TryGet<ObjectName>(e)) it.sourceName = name->value;
                 it.tilemap = tr.runtime;
                 it.tileLayer = layer.Index();
                 it.chunkCoord = chunk.Coord();

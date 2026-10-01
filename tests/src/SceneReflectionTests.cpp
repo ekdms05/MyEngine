@@ -160,3 +160,32 @@ MYE_TEST(SceneComponentReflectionRoundtrip) {
     MYE_EXPECT(sr2->flipX == true);
     MYE_EXPECT(sr2->sort.sortLayer == 105);
 }
+
+MYE_TEST(SceneRejectsMalformedAssetReferenceBeforeChangingWorld) {
+    ecs::World world;
+    scene::RegisterCoreComponents(world);
+    const auto original = world.Create();
+    world.Add<scene::ObjectName>(original).value = "Keep";
+    scene::SceneSerializer serializer;
+    const auto before = serializer.WriteWorld(world);
+    MYE_EXPECT(before);
+    if (!before) return;
+    for (const auto* source : {
+        R"({"__version":1,"entities":[{"id":1,"components":{"SpriteRenderer":{"sprite":{"guid":"invalid","type":"0"}}}}]})",
+        R"({"__version":1,"entities":[{"id":1,"components":{"MeshRenderer":{"mesh":{"guid":"00112233-4455-6677-8899-aabbccddeeff-extra","type":"0"}}}}]})",
+        R"({"__version":1,"entities":[{"id":1,"components":{"MeshRenderer":{"material":{"guid":"00112233-4455-6677-8899-aabbccddeeff","type":"18446744073709551616"}}}}]})"}) {
+        const auto parsed = json::Parse(source);
+        MYE_EXPECT(parsed);
+        if (!parsed) continue;
+        const auto loaded = serializer.ReadInto(world, parsed.Value());
+        MYE_EXPECT(!loaded);
+        if (!loaded) {
+            MYE_EXPECT(loaded.GetError().message.find("entity 1 component") != std::string::npos);
+            MYE_EXPECT(loaded.GetError().message.find("Invalid asset reference") != std::string::npos);
+        }
+        MYE_EXPECT(world.Valid(original));
+        const auto after = serializer.WriteWorld(world);
+        MYE_EXPECT(after);
+        if (after) MYE_EXPECT(json::Stringify(before.Value()) == json::Stringify(after.Value()));
+    }
+}

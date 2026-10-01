@@ -34,7 +34,8 @@ std::unique_ptr<IEditorPanelFactory> MakeViewportPanelFactory();
 EditorApp::EditorApp() = default;
 EditorApp::~EditorApp() = default;
 
-Expected<void, Error> EditorApp::Initialize(EngineContext& engine, std::string_view projectPath) {
+Expected<void, Error> EditorApp::Initialize(EngineContext& engine, std::string_view projectPath, std::string_view templateDirectory) {
+    m_templateDirectory = templateDirectory;
     m_engine = &engine;
     m_events = &engine.Events();
 
@@ -65,6 +66,13 @@ Expected<void, Error> EditorApp::Initialize(EngineContext& engine, std::string_v
             ReportFileResult(result, "");
             RestoreLayout(); // Editor remains usable so the user can choose a valid project.
         }
+    } else if (!m_templateDirectory.empty()) {
+        const auto starter = Utf8Path(engine.GetPaths().userDir) / "projects" / "MeadowVillage";
+        std::error_code ec;
+        auto result = std::filesystem::exists(starter / "project.myeproj", ec)
+            ? OpenProject(Utf8String(starter / "project.myeproj"))
+            : CreateProject("초원마을", Utf8String(starter), false, true);
+        if (!result) { ReportFileResult(result, ""); RestoreLayout(); }
     } else RestoreLayout();
     m_window = MainWindowOrNull();
     if (m_window) m_window->AddMessageHook(this, -100);
@@ -98,7 +106,7 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->Open("mye.inspector");
     m_panels->Open("mye.assets");
     m_panels->Open("mye.console");
-    m_panels->Open("mye.doteditor");
+    // Pixel drawing and animation tools open on demand; the scene starts visible.
 }
 
 void EditorApp::RestoreLayout() {
@@ -190,6 +198,7 @@ void EditorApp::OnFrame() {
     if (m_panels) m_panels->SetupDockspace(m_ctx);   // 남은 영역에 도크스페이스 + 최초 1회 기본 배치
     ImGui::End();                                    // 호스트 종료
 
+    m_animationFocused = false;
     if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
     DrawFileDialogs();
 }
@@ -203,6 +212,7 @@ CommandStack& EditorApp::Commands() {
 
 // 현재 편집 대상 스택(플레이 중이면 플레이 스택).
 CommandStack* EditorApp::ActiveStack() {
+    if (m_animationFocused) if (auto* doc = AnimationDocument()) return &doc->Commands();
     if (m_playMode && m_playMode->IsPlaying())
         return m_playMode->PlayCommandStack();
     Document* active = m_project ? m_project->Active() : nullptr;
@@ -458,6 +468,13 @@ void EditorApp::NewScene() {
 }
 
 void EditorApp::SaveActive() {
+    if (m_animationFocused) {
+        if (auto* doc = AnimationDocument()) {
+            auto saved = m_project->SaveAnimation(doc->Id(), doc->Path());
+            ReportFileResult(saved, mye::i18n::T("file.saved"));
+        }
+        return;
+    }
     Document* active = m_project ? m_project->Active() : nullptr;
     if (!active) return;
 

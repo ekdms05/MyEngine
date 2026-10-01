@@ -1,6 +1,6 @@
 // mye/editor/Project.h — 프로젝트 컨텍스트 + 열린 문서 (docs/07 §2, §6)
 //
-// 프로젝트 루트 = 에셋 DB 루트. 에디터 상태는 <project>/.myeditor/(layout.ini·session.json)에 저장, 씬 파일엔
+// 에셋 DB 루트는 <project>/assets/. 에디터 상태는 <project>/.myeditor/(layout.ini·session.json)에 저장, 씬 파일엔
 //   저장 금지(.gitignore 대상 — 규약 확정).
 //
 // 문서(Document): 열린 씬/에셋 하나. 문서별 CommandStack·dirty를 소유. Ctrl+Z·저장은 포커스
@@ -9,6 +9,7 @@
 
 #include "mye/editor/EditorTypes.h"
 #include "mye/editor/CommandStack.h"
+#include "mye/asset/AnimationAsset.h"
 
 #include <memory>
 #include <span>
@@ -18,7 +19,7 @@
 
 namespace mye::editor {
 
-// 열린 문서 하나(씬/애셋). v1은 씬 문서. 문서별 Undo 스택 소유.
+// 열린 씬 또는 애니메이션 에셋. 문서별 Undo 스택 소유.
 class Document {
 public:
     enum class Kind : std::uint8_t { Scene, Asset };
@@ -36,8 +37,11 @@ public:
     std::string      TabTitle() const;                        // 파일명 + dirty '*'
     ecs::World&      World() { return *m_world; }
     const ecs::World& World() const { return *m_world; }
+    asset::AnimationAsset& Animation() { return m_animation; }
+    const asset::AnimationAsset& Animation() const { return m_animation; }
 
 private:
+    asset::AnimationAsset m_animation;
     DocumentId   m_id;
     Kind         m_kind;
     std::string  m_path;
@@ -57,14 +61,14 @@ public:
     // Validate/load a candidate before replacing the current project. Discard is explicit.
     Expected<void, Error> Open(std::string_view projectPath, bool discardUnsaved = false);
     Expected<void, Error> Create(std::string_view name, std::string_view directory,
-                                 bool discardUnsaved = false);
-    Expected<void, Error> Save(); // All named scenes, then project metadata.
+                                 bool discardUnsaved = false, std::string_view templateDirectory = {});
+    Expected<void, Error> Save(); // All named scene/animation documents, then project metadata.
     bool IsOpen() const;
     bool HasUnsavedChanges() const;
     std::string_view Name() const;
     std::string_view ProjectFilePath() const;
 
-    std::string_view RootDir() const;       // 프로젝트 루트(에셋 DB 루트)
+    std::string_view RootDir() const;       // 프로젝트 루트
     std::string      EditorStateDir() const; // <root>/.myeditor
     std::string      LayoutIniPath() const;  // <root>/.myeditor/layout.ini
     std::string      SessionJsonPath() const;// <root>/.myeditor/session.json
@@ -73,6 +77,9 @@ public:
     Document* NewScene();                              // 빈 새 씬 문서(미저장)
     Expected<Document*, Error> OpenScene(std::string_view path); // Failure preserves all documents.
     Expected<void, Error> SaveScene(DocumentId id, std::string_view path);
+    Document* NewAnimation();
+    Expected<Document*, Error> OpenAnimation(std::string_view path);
+    Expected<void, Error> SaveAnimation(DocumentId id, std::string_view path);
     void      CloseDocument(DocumentId id);
     Document* Active() const;                           // 포커스 문서(null 가능)
     void      SetActive(DocumentId id);

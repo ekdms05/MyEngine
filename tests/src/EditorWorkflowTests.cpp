@@ -591,3 +591,24 @@ MYE_TEST(EditorProjectRejectsBrokenSceneAndMetadata) {
     MYE_EXPECT(!project.Open(Utf8String(root / "valid" / "project.myeproj")));
     MYE_EXPECT(project.HasUnsavedChanges());
 }
+
+MYE_TEST(EditorStartupCopiesStarterAndPreservesUserEdits) {
+    const auto root = ProjectTestDirectory("starter-startup");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, "", MYE_STARTER_SOURCE_DIR));
+    MYE_EXPECT(app.Project().IsOpen() && app.Project().Name() == "초원마을");
+    const auto projectFile = std::string(app.Project().ProjectFilePath());
+    const auto mainPath = std::string(app.Project().Active()->Path());
+    app.Commands().Push(std::make_unique<CreateEntityCommand>());
+    MYE_EXPECT(app.SaveProject());
+    const auto saved = ReadJsonFile(Utf8Path(mainPath));
+    MYE_EXPECT(saved && saved.Value().Find("entities")->AsArray().size() == 3);
+    app.Shutdown();
+    EditorApp reopened;
+    MYE_EXPECT(reopened.Initialize(engine, "", MYE_STARTER_SOURCE_DIR));
+    MYE_EXPECT(reopened.Project().ProjectFilePath() == projectFile);
+    const auto retained = ReadJsonFile(Utf8Path(mainPath));
+    MYE_EXPECT(retained && retained.Value().Find("entities")->AsArray().size() == 3);
+    reopened.Shutdown();
+}

@@ -48,3 +48,13 @@ VFS 읽기 → 임포터 CPU 파싱 → AssetManager finalize → AssetHandle
 [paktool](../apps/paktool)과 [패키징 스크립트](../tools/package/package.ps1)를 사용한다. 게임 실행에 필요한 PNG·글꼴·Lua·설정·플랫폼 런타임을 실제 새 환경에서 확인해야 한다. pak 생성 성공과 배포본 완성은 구분한다.
 
 에셋·시트·오디오·pak 왕복은 `mye_tests`, GPU finalize는 `asset_smoke`, 실제 재임포트 소비는 관련 샘플에서 검사한다. 앱 공통 에셋 부팅·watcher·import 설정·안정 참조 연결과 배포 글꼴은 [14](14-development-priorities.md)의 완료 조건으로 관리한다.
+
+## MyEditor 인덱스와 애니메이션 파일
+
+AssetDatabase::ScanDirectory는 assets/를 재귀 탐색해 .meta를 파싱하고 GUID↔assets:// 경로 인덱스를 후보 전체 검증 뒤 교체한다. 등록된 소스 또는 .anim에 .meta가 없으면 기존 AssetMeta·원자적 JSON 쓰기로 생성한다. 이미 로드한 소스는 CachedGuid를 재사용한다. 중복/0 GUID와 잘못된 메타·링크를 거부한다. 스캔 실패 시 이전 인덱스는 유지되지만 앞서 생성한 누락 sidecar는 남을 수 있다. 동기/비동기 AssetManager 로드는 .meta GUID를 보존한다.
+
+MyEditor는 PNG importer·retained TextureHandle·하이브리드 texture resolver를 연결했다. 수동 에셋 새로 고침은 DB와 로더 자원을 다시 구성한다. 자동 watcher, .meta 임포트 설정 적용과 MyGame의 경로 GUID 수렴은 미완료다.
+
+[AnimationAsset](../engine/asset/include/mye/asset/AnimationAsset.h)은 기존 SpriteSheet·AnimationClipData의 값 데이터다. `.anim` version=1은 texture GUID, width/height, name/loop/direction, frames(x/y/w/h/pivotX/pivotY), timeline(frame/seconds), events(frame/name/text/value)를 저장한다. direction은 정방향 0·역방향 1·왕복 2다. 피벗은 프레임 내부 기준 픽셀 좌표이며 UV는 영역과 시트 크기에서 계산한다.
+
+이미지 크기 1~32768, 시트/타임라인 1~4096, 프레임 영역·시간 0.001~60초·인덱스·유한 피벗/이벤트 수치·이벤트 위치를 검증한다. 타임라인과 시간 개수는 같아야 한다. 실제 PNG 크기가 다르면 런타임에 연결하지 않는다. 읽기/저장은 기존 64 MiB JsonFile 경계를 사용한다. 새 범용 에셋 직렬화 프레임워크나 별도 이미지 인코더는 만들지 않았다.

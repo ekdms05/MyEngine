@@ -1,9 +1,36 @@
 // AnimClipEditCommand.cpp — 애니 클립 편집 커맨드 + 값 변환 헬퍼 + 8방향 세트 구성 (docs/07)
 #include "mye/editor/AnimEditing.h"
+#include "mye/editor/EditorContext.h"
+#include "mye/editor/PlayMode.h"
+#include "mye/editor/CommandStack.h"
+#include "mye/ecs/World.h"
+#include "mye/scene/Renderable.h"
+#include "mye/refl/TypeRegistry.h"
+#include "mye/ser/JsonArchive.h"
 
 #include <algorithm>
 
 namespace mye::editor {
+
+Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation) {
+    auto* world = ctx.activeWorld();
+    const auto* type = refl::TypeRegistry::Get().Find("SpriteAnimator");
+    if ((ctx.playMode && ctx.playMode->IsPlaying()) || !world || !world->Valid(entity) || !world->TryGet<scene::SpriteRenderer>(entity) ||
+        !ctx.commands || !type || !world->IsRegistered(anim::SpriteAnimator::kComponentTypeId) || !animation.guid.IsValid())
+        return Error{"Select a sprite in an editable scene and save its animation first", 1};
+    const auto* current = world->TryGet<anim::SpriteAnimator>(entity);
+    asset::AssetRef before = current ? current->animation : asset::AssetRef{};
+    auto oldArchive = ser::JsonArchive::ForWrite(); oldArchive.Value(before);
+    auto newArchive = ser::JsonArchive::ForWrite(); newArchive.Value(animation);
+    auto path = refl::PropertyPath::Parse("animation");
+    if (!path) return path.GetError();
+    ctx.commands->BeginTransaction("스프라이트 애니메이션 지정");
+    if (!current) ctx.commands->Push(std::make_unique<AddComponentCommand>(entity, *type));
+    ctx.commands->Push(std::make_unique<PropertyEditCommand>(ObjectRef::Component(entity, *type), path.Value(),
+        ValueBlob{json::Stringify(oldArchive.Root())}, ValueBlob{json::Stringify(newArchive.Root())}));
+    ctx.commands->EndTransaction();
+    return {};
+}
 
 AnimClipEditCommand::AnimClipEditCommand(asset::AnimationClipData* target,
                                          asset::AnimationClipData before,

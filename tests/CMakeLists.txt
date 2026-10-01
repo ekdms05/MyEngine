@@ -78,6 +78,7 @@ add_executable(mye_tests
     src/ScriptTests.cpp           # M3-C: Lua 런타임·콜백·에러격리·핫리로드·코루틴
     src/EditorSerializationTests.cpp  # M4-A: 씬/프리팹 직렬화·인스펙터 값 blob
     src/EditorTests.cpp               # M4-A: 커맨드/Undo·선택·플레이모드·확장·패널
+    src/StarterEditorTests.cpp
     src/EditorWorkflowTests.cpp       # M4-B: 배치·편집·저장·플레이·Undo 엔드투엔드 워크플로우
     src/UiSmokeTests.cpp              # M5-A: 인게임 UI + 텍스트 골격 계약 스모크(헤드리스)
     src/UiLayoutTests.cpp             # M5-A: 앵커·레이아웃·히트테스트·이벤트·직렬화·9slice·BMP 덤프
@@ -106,3 +107,5 @@ add_dependencies(mye_tests mye_sample_plugin)
 target_compile_definitions(mye_tests PRIVATE MYE_SAMPLE_PLUGIN_DLL="$<TARGET_FILE:mye_sample_plugin>")
 
 add_test(NAME mye_tests COMMAND mye_tests)
+
+target_compile_definitions(mye_tests PRIVATE MYE_STARTER_SOURCE_DIR="${PROJECT_SOURCE_DIR}/game/starter/meadow_village")

@@ -1,5 +1,6 @@
 // mye/render/HybridRenderer.cpp — 하이브리드 깊이 렌더러 구현 (docs/02 §하이브리드 깊이 정렬)
 #include "mye/render/HybridRenderer.h"
+#include "mye/scene/SpriteGeometry.h"
 
 #include "mye/render/Camera2D.h"
 #include "mye/core/Log.h"
@@ -635,45 +636,25 @@ void HybridRenderer::BuildSpriteQuad(const scene::RenderItem& it, const HybridVi
     // flat depth: 발밑(sortKeyY) 기준 단일 인코딩 깊이. 쿼드 전체가 같은 z.
     const float z = EncodeDepth(it.sortLayer, it.sortKeyY, it.orderInLayer, view.depth);
 
-    // 월드 위치(피벗 기준점). worldTransform translation row = m[3].
-    const Vec2 pos{it.worldTransform.m[3][0], it.worldTransform.m[3][1]};
-
-    // 크기(unit) = srcUV 픽셀크기/PPU. srcUV가 정규화(0..1)로 들어오면 텍스처 크기로 환산.
-    // RenderExtract는 srcUV를 정규화(0..1)로 공급(기본 {0,0,1,1}=전체).
-    const float texW = static_cast<float>(tex->width);
-    const float texH = static_cast<float>(tex->height);
-    const float srcPxW = it.srcUV.w * texW;
-    const float srcPxH = it.srcUV.h * texH;
-    Vec2 sizeUnit{srcPxW / kPixelsPerUnit, srcPxH / kPixelsPerUnit};
-    if (sizeUnit.x <= 0.0f || sizeUnit.y <= 0.0f) sizeUnit = {1.0f, 1.0f};
-
-    // 정규화 피벗(0..1) = pivotPx / 소스픽셀. 기본 발밑(하단 중앙).
-    Vec2 pivot{0.5f, 1.0f};
-    if (srcPxW > 0.0f && srcPxH > 0.0f && (it.pivotPx.x != 0.0f || it.pivotPx.y != 0.0f)) {
-        pivot = {it.pivotPx.x / srcPxW, it.pivotPx.y / srcPxH};
-    }
+    const Vec2 sourcePixels{it.srcUV.w * tex->width, it.srcUV.h * tex->height};
+    if (sourcePixels.x <= 0 || sourcePixels.y <= 0) return;
+    const auto corners = scene::SpriteCorners(it.worldTransform, sourcePixels, it.pivotPx, kPixelsPerUnit);
 
     float u0 = it.srcUV.x, v0 = it.srcUV.y;
     float u1 = it.srcUV.x + it.srcUV.w, v1 = it.srcUV.y + it.srcUV.h;
     if (it.flipX) std::swap(u0, u1);
     if (it.flipY) std::swap(v0, v1);
 
-    const float left   = pos.x - pivot.x * sizeUnit.x;
-    const float right  = left + sizeUnit.x;
-    const float top    = pos.y + pivot.y * sizeUnit.y;   // +Y 위
-    const float bottom = top - sizeUnit.y;
-
     const Color c = it.tint;
-    const float f = it.flashAmount;
-    auto push = [&](float px, float py, float pu, float pv) {
-        m_scratchQuads.push_back({px, py, z, pu, pv, c.r, c.g, c.b, c.a, f, 0.0f});
+    auto push = [&](Vec2 p, float u, float v) {
+        m_scratchQuads.push_back({p.x, p.y, z, u, v, c.r, c.g, c.b, c.a, it.flashAmount, 0.0f});
     };
-    push(left,  top,    u0, v0);
-    push(left,  bottom, u0, v1);
-    push(right, top,    u1, v0);
-    push(right, top,    u1, v0);
-    push(left,  bottom, u0, v1);
-    push(right, bottom, u1, v1);
+    push(corners[0], u0, v0);
+    push(corners[1], u0, v1);
+    push(corners[2], u1, v0);
+    push(corners[2], u1, v0);
+    push(corners[1], u0, v1);
+    push(corners[3], u1, v1);
     ++m_stats.spriteCount;
 }
 

@@ -15,6 +15,7 @@
 // 복합 연산이므로 멀티스레드 로드·릴리스가 동시에 일어나면 자료구조가 경합한다(M1은 단일스레드).
 // 멀티스레드 로딩(M1-B/M3)에서는 이 연산들을 뮤텍스로 보호하거나 명령 큐로 직렬화할 것.
 #include "mye/asset/AssetManager.h"
+#include "mye/asset/AssetMeta.h"
 #include "mye/asset/Texture.h"
 #include "mye/asset/Mesh.h"
 #include "mye/asset/AudioClip.h"
@@ -203,6 +204,23 @@ IAssetImporter* AssetManager::FindImporterForPath(std::string_view path) const {
     return m_impl->FindImporterForExt(ext);
 }
 
+AssetGuid AssetManager::CachedGuid(std::string_view vpath) const {
+    auto found = m_impl->pathToSlot.find(std::string(vpath));
+    return found == m_impl->pathToSlot.end() ? AssetGuid{} : m_impl->slots[found->second].guid;
+}
+
+namespace {
+Expected<AssetGuid, Error> SourceGuid(VirtualFileSystem& vfs, std::string_view path) {
+    const auto sidecar = MetaPathFor(path);
+    if (!vfs.Exists(sidecar)) return AssetGuid::Generate();
+    auto bytes = vfs.ReadAll(sidecar);
+    if (!bytes) return bytes.GetError();
+    auto meta = AssetMeta::Parse(std::string_view(reinterpret_cast<const char*>(bytes.Value().data()), bytes.Value().size()));
+    if (!meta) return meta.GetError();
+    return meta.Value().guid;
+}
+}
+
 uint32_t AssetManager::AcquireSlot(const AssetGuid& guid, AssetTypeId type) {
     return m_impl->AllocSlot(guid, type);
 }
@@ -238,11 +256,20 @@ AssetHandle<T> AssetManager::LoadSync(std::string_view vpath) {
         return AssetHandle<T>(this, idx, m_impl->slots[idx].generation.load());
     }
 
+    auto identity = SourceGuid(*m_impl->vfs, vpath);
+    if (!identity) {
+        MYE_LOG_ERROR("Asset", "LoadSync metadata: {}", identity.GetError().message);
+        const auto idx = AcquireSlot(AssetGuid::Generate(), T::kAssetTypeId);
+        m_impl->slots[idx].state = AssetState::Failed;
+        m_impl->pathToSlot.emplace(key, idx);
+        return AssetHandle<T>(this, idx, m_impl->slots[idx].generation.load());
+    }
+    const auto guid = identity.Value();
     IAssetImporter* importer = FindImporterForPath(vpath);
     if (!importer) {
         MYE_LOG_ERROR("Asset", "LoadSync: no importer for '{}'", key);
         // Failed 슬롯을 만들어 상태 조회가 가능한 핸들을 돌려준다.
-        const uint32_t idx = AcquireSlot(AssetGuid::Generate(), T::kAssetTypeId);
+        const uint32_t idx = AcquireSlot(guid, T::kAssetTypeId);
         m_impl->slots[idx].state = AssetState::Failed;
         m_impl->pathToSlot.emplace(key, idx);
         return AssetHandle<T>(this, idx, m_impl->slots[idx].generation.load());
@@ -251,7 +278,7 @@ AssetHandle<T> AssetManager::LoadSync(std::string_view vpath) {
     auto blob = m_impl->vfs->ReadAll(vpath);
     if (!blob) {
         MYE_LOG_ERROR("Asset", "LoadSync: read failed '{}': {}", key, blob.GetError().message);
-        const uint32_t idx = AcquireSlot(AssetGuid::Generate(), importer->ProducedType());
+        const uint32_t idx = AcquireSlot(guid, importer->ProducedType());
         m_impl->slots[idx].state = AssetState::Failed;
         m_impl->pathToSlot.emplace(key, idx);
         return AssetHandle<T>(this, idx, m_impl->slots[idx].generation.load());
@@ -265,7 +292,7 @@ AssetHandle<T> AssetManager::LoadSync(std::string_view vpath) {
 
     auto imported = importer->Import(ctx);
 
-    const uint32_t idx = AcquireSlot(AssetGuid::Generate(), importer->ProducedType());
+    const uint32_t idx = AcquireSlot(guid, importer->ProducedType());
     m_impl->pathToSlot.emplace(key, idx);
     AssetSlot& slot = m_impl->slots[idx];
 
@@ -458,7 +485,9 @@ AssetHandle<T> AssetManager::LoadAsync(std::string_view vpath, LoadPriority pri)
     }
 
     // 슬롯 즉시 확보(State=Queued) → 핸들 즉시 반환.
-    const AssetGuid guid = AssetGuid::Generate();
+    auto identity = SourceGuid(*m_impl->vfs, vpath);
+    if (!identity) return LoadSync<T>(vpath);
+    const AssetGuid guid = identity.Value();
     const uint32_t idx = AcquireSlot(guid, T::kAssetTypeId);
     m_impl->pathToSlot.emplace(key, idx);
     AssetSlot& slot = m_impl->slots[idx];

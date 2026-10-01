@@ -35,6 +35,9 @@ public:
 
     // 확장자(SourceExtensions)로 임포터를 등록. 나중 등록이 내장을 오버라이드(로그 경고).
     void RegisterImporter(std::unique_ptr<IAssetImporter> importer);
+    // Non-owning importer query for editor metadata and type validation.
+    IAssetImporter* FindImporterForPath(std::string_view path) const;
+    AssetGuid CachedGuid(std::string_view vpath) const;
 
     // 동기 로드 — 부트스트랩·에디터·단위 테스트용. 실패 시 Failed 상태 핸들.
     template <typename T> AssetHandle<T> LoadSync(std::string_view vpath);
@@ -74,7 +77,7 @@ public:
 
 private:
     // 확장자 → 임포터 조회. 없으면 nullptr.
-    IAssetImporter* FindImporterForPath(std::string_view path) const;
+
     // 슬롯 확보(신규 또는 재사용). 이미 로드된 vpath면 기존 슬롯 반환.
     uint32_t AcquireSlot(const AssetGuid& guid, AssetTypeId type);
 

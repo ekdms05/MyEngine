@@ -397,6 +397,17 @@ SceneSerializer::ReadInto(ecs::World& world, const json::Value& in, bool preserv
         }
     }
 
+    // These components are derived and deliberately absent from the file. Rebuild them
+    // at the load boundary so file opens, play snapshots and prefab loads share the contract.
+    for (const auto& pe : pending) {
+        if (world.TryGet<scene::LocalTransform>(pe.entity))
+            world.Add<scene::WorldTransform>(pe.entity);
+        if (auto* parent = world.TryGet<scene::Parent>(pe.entity); parent && !parent->parent.IsNull()) {
+            const auto target = parent->parent;
+            parent->parent = ecs::Entity::Null();
+            scene::ApplyReparent(world, pe.entity, target, false);
+        }
+    }
     if (outLocalToEntity) *outLocalToEntity = localToEntity;
     return roots;
 }

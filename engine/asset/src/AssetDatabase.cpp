@@ -15,6 +15,9 @@
 #include "mye/asset/Importer.h"
 #include "mye/core/Events.h"
 #include "mye/core/Log.h"
+#include "mye/core/JsonFile.h"
+#include "mye/asset/AssetMeta.h"
+#include <filesystem>
 
 #include <algorithm>
 #include <chrono>
@@ -126,10 +129,45 @@ void AssetDatabase::UnregisterImporter(const IAssetImporter* importer) {
 }
 
 Expected<void, Error> AssetDatabase::ScanDirectory(std::string_view rootDir) {
-    // M3-A: 인메모리 GUID 인덱스 구축(영속화 없음). 실제 .meta 파싱·서브에셋은 후속.
-    // 여기서는 rootDir 정규화만 기록해 워처 경로 매핑의 기준을 세운다.
-    m_impl->rootDir = NormalizeSlashesLower(std::string(rootDir));
-    while (!m_impl->rootDir.empty() && m_impl->rootDir.back() == '/') m_impl->rootDir.pop_back();
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const auto root = fs::canonical(Utf8Path(rootDir), ec);
+    if (ec || !fs::is_directory(root, ec)) return Error{"Asset root is unavailable: " + ec.message(), 1};
+    decltype(m_impl->pathToGuid) paths;
+    decltype(m_impl->guidToPath) guids;
+    for (fs::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+        if (it->is_symlink(ec)) return Error{"Asset links must not escape the project root", 1};
+        if (!it->is_regular_file(ec) || it->path().extension() == ".meta") continue;
+        const auto relative = Utf8String(it->path().lexically_relative(root));
+        const auto vpath = m_impl->vpathMount + "://" + relative;
+        const auto sidecar = Utf8Path(Utf8String(it->path()) + ".meta");
+        const bool hasMeta = fs::exists(sidecar, ec);
+        if (ec) break;
+        AssetMeta meta;
+        if (hasMeta) {
+            auto value = ReadJsonFile(sidecar);
+            if (!value) return value.GetError();
+            auto parsed = AssetMeta::Parse(json::Stringify(value.Value()));
+            if (!parsed) return parsed.GetError();
+            meta = std::move(parsed).Value();
+        } else {
+            const auto* importer = m_impl->manager->FindImporterForPath(vpath);
+            if (!importer && it->path().extension() != ".anim") continue;
+            meta = AssetMeta::CreateFor(importer ? importer->Name() : "AnimationAsset", importer ? importer->Version() : 1);
+            if (const auto cached = m_impl->manager->CachedGuid(vpath); cached.IsValid()) meta.guid = cached;
+            auto value = json::Parse(meta.Stringify());
+            if (!value) return value.GetError();
+            auto saved = WriteJsonFile(sidecar, value.Value());
+            if (!saved) return saved.GetError();
+        }
+        if (!meta.guid.IsValid() || guids.contains(meta.guid)) return Error{"Duplicate or empty asset GUID: " + relative, 1};
+        paths.emplace(vpath, meta.guid);
+        guids.emplace(meta.guid, vpath);
+    }
+    if (ec) return Error{"Asset scan failed: " + ec.message(), ec.value()};
+    m_impl->rootDir = Utf8String(root);
+    m_impl->pathToGuid = std::move(paths);
+    m_impl->guidToPath = std::move(guids);
     return {};
 }
 

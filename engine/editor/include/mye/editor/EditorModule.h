@@ -23,7 +23,7 @@ class EditorModule : public IModule {
 public:
     MYE_SERVICE(EditorModule);
 
-    explicit EditorModule(std::string projectPath = {});
+    explicit EditorModule(std::string projectPath = {}, std::string templateDirectory = {});
     ~EditorModule() override;
 
     const char* GetName() const override { return "EditorModule"; }

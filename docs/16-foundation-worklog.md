@@ -275,3 +275,100 @@ Debug/Release 전체 빌드와 양쪽 CTest 13/13, 내부 검사 514/514 통과�
 파일별 저장은 원자적 교체를 사용하지만 프로젝트의 여러 씬·메타데이터 전체는 단일 트랜잭션이 아니다. 뒤 파일 실패 전에 앞 파일이 저장될 수 있다. 한 파일에 한 작성자, 64 MiB 상한이며 기존 tmp는 자동 복구·삭제하지 않는다. 실제 정전·디스크 장애·동시 에디터 쓰기를 검증하지 않았다. 최근 목록·자동 저장·문서 탭 재개/닫기 UX, 게임 전용 컴포넌트 등록, 에셋 해석, 물리·Lua/runtime의 동일 Play 조합은 후속 작업이다. 이 변경을 온라인 게임이나 엔진 전체 완성으로 표시하지 않는다.
 
 마지막 문서 검사는 README·AGENTS·docs 29개의 UTF-8 읽기와 코드 블록을 제외한 로컬 링크 562개에서 누락 0개였다. 처음 링크 정규식이 C++ lambda의 `[&](float dt)`를 링크로 오인한 결과는 코드 블록 제외 후 다시 확인했다. git diff --check도 통과했다. SceneModule 등록은 CommandBuffer reparent hook의 공용 초기화가 존재하므로 유지하고, 그 별도 World를 문서 편집 World로 설명하지 않도록 구조 문서에 명시했다.
+
+
+## 2026-10-01 — 초원마을 기본 콘텐츠와 애니메이션 제작 흐름
+
+### 확인한 결함과 수정 경계
+
+실제 경로를 apps/editor → EditorModule/EditorApp → Project/Document → SceneSerializer → RenderExtract/HybridRenderer로 추적했다. 기존 SpriteSheetImporter·ClipPlayback·SpriteAnimator·AnimEditing·AssetMeta·VFS·AssetManager·Progression의 정의와 호출자를 먼저 확인했다.
+
+| 확인 근거 | 변경 | 선택 이유 |
+|---|---|---|
+| 에디터 HybridRenderer에 texture resolver가 없고 ScanDirectory는 루트만 기록 | 기존 DB의 .meta 스캔, VFS/PNG importer, retained TextureHandle과 resolver 연결 | 씬 GUID를 실제 PNG 소비자까지 연결. 별도 앱 식별자/로더를 만들지 않음 |
+| LoadSync/Async가 .meta와 다른 임시 GUID 생성 | 메타 식별자 읽기, CachedGuid 재사용, 0/중복 GUID 거부 | DB와 핸들 식별자가 일치하고 재실행/스캔에서 참조 유지 |
+| 전역 static AnimEditSession, 씬 Undo에 에셋 작업 저장, 실제 파일 열기/저장·PNG 미리보기 없음 | 프로젝트 소유 애니메이션 Document와 독립 CommandStack, 기존 편집 헬퍼·ClipPlayback 사용 | 수명·dirty·Undo 경계를 일치시키고 중복 프리뷰 시간 계산 삭제 |
+| .anim 파일 계약이 없고 런타임 포인터만 사용 | AnimationAsset 값 타입의 version 1 JSON, persistent animation GUID와 런타임 참조 분리 | 기존 SpriteSheet/Clip 재사용. 이미지 인코더·범용 직렬화 프레임워크 추가 없음 |
+| 배율을 준 첫 실제 캡처에서 배경이 잘리고 캐릭터가 거대함 | SceneSerializer의 WorldTransform/Children 복구, SpriteCorners를 렌더/선택에서 공유 | LocalTransform 직렬화 후 파생 데이터가 없고 렌더가 scale/rotation을 무시한 공통 원인을 수정. 파일/Play/프리팹 경계에 적용 |
+| Inspector 등록 타입에 편집 필드 정보가 없고 Undo 뒤 dirty 갱신 누락 | 기존 flat 씬 포맷을 유지하면서 필드 메타 추가, Transform 쓰기 후 dirty 갱신 | 파일 호환성과 Inspector/기즈모/Undo의 실제 행렬 갱신을 함께 유지 |
+| 문자만 Lv1이라 표시하면 실제 상태를 검증할 수 없음 | 기존 gameplay::Progression level=1/xp=0 등록·저장·Inspector·Play 복제 | 콘텐츠 정보와 실제 ECS 상태 일치, 새 게임 고유 엔진 컴포넌트 불필요 |
+| Play Tick이 렌더 단계, StepFrame은 no-op | 코어 FixedUpdate에 기존 애니메이션/Transform 연결, Step 요청 한 번 소비 | 프레임률에 의존하는 시뮬레이션 방지. 물리/Lua 연결 완료로 확대하지 않음 |
+| 셸 캡처의 마을이 headless보다 밝음 | MyEditor swapchain을 BGRA8Unorm으로 정합 | 기존 PNG·RT의 UNORM 색을 ImGui 출력에서 sRGB로 다시 인코딩하지 않음 |
+
+Animation 문서는 assets/ 내부만 열기/저장하도록 공통 파일 경계에서 검사한다. 프로젝트 루트 안이더라도 assets/ 밖이면 GUID 스캔·씬 지정이 불가능하기 때문이다. 다른 열린 문서의 파일 덮어쓰기는 거부하고, 새 경로의 기존 .anim 덮어쓰기는 패널에서 확인한다. 원자적 JSON 교체 실패는 원본·경로·dirty를 보존한다. 새 문서를 이름 없이 프로젝트 저장 성공으로 처리하지 않는다.
+
+런타임 Texture/Animation 자원은 에디터 모듈이 소유하고 World에는 비소유 참조만 연결한다. 새 프로젝트·새로 고침에서 재바인딩하며, 종료는 문서/UI→렌더→에셋 핸들/매니저→디바이스 순서다. 게임 콘텐츠는 game/starter/, 실행 조합은 apps/editor/, 공유 데이터·동작은 engine/에 둔다. 새 패키지·병렬 에이전트·임의 이미지 라이브러리는 추가하지 않았다.
+
+### 기본 콘텐츠 제작과 보존
+
+내장 imagegen으로 원본 배경과 투명 캐릭터 시트 두 장을 제작했다. 타사 게임/캐릭터/로고/외부 아트 팩을 입력하거나 복사하지 않았다. imagegen을 사용한 결과를 수작업 원본이나 Aseprite 도구 실행으로 표시하지 않는다. 사용 프롬프트는 아래에 보관한다.
+
+- 배경: 1672×941 RGB, 초원·3개 집·우물·꽃·울타리·개울·다리. SHA256 `F233B9CD40E81AA5FAAA40A9AAFEAC24518DFF5DA723DC76E21A18F385C02F18`.
+- 캐릭터: 2170×725 RGBA, 정면 초보 모험가 8개 포즈. SHA256 `C8CAF294F9A78B95ECDAD76FE4EA634CE74388B81974B5AA954572B52C6C71F6`.
+- 요청한 균등 격자/베이스라인은 생성 결과와 달랐다. 원본 PNG는 그대로 복사하고 alpha≥128 실루엣의 프레임 영역과 2px 여유·발밑 피벗을 읽어 .anim에 기록했다. Python/Pillow는 알파 범위·캡처 픽셀 차이 분석에만 썼으며 이미지를 편집/리샘플링하지 않았다.
+- idle은 시트 0~3, 0.30초씩; walk는 4~7, 0.14초씩. walk 타임라인 0/2의 footstep(grass, 1) 마커는 기존 이벤트 계약을 사용하며 사운드 연결은 포함하지 않는다.
+- 배경 GUID `13fa9057-03a9-4586-bff7-4bf66394bd47`, 캐릭터 GUID `014fc10e-782f-43da-9641-6fa0d79a4b05`; idle/walk GUID는 각각 `1496e3ee-ab5b-4215-8ddd-cfdbcd36a46d`, `6cb65e2a-ab6a-441f-93ab-61fff3b981c6`.
+
+기본 프로젝트의 원본은 game/starter/meadow_village이다. 빌드는 실행 파일 옆 templates/meadow_village에 복사하고, 프로젝트 인자 없는 첫 실행은 코어 userDir/projects/MeadowVillage로 한 번 복사한다. 기존 프로젝트가 있으면 다시 덮어쓰지 않는다. 새 프로젝트의 기본 에셋 포함 체크도 같은 ProjectContext::Create 경로를 쓴다. 템플릿 파일 검증과 복사는 기존 std::filesystem·JsonFile을 사용한다. 복사 중 디스크 실패 시 새 대상 폴더의 일부 파일이 남을 수 있으며 자동 삭제하지 않는다.
+
+### 실제 도구 적용과 실패 기록
+
+픽셀 4종 SKILL.md의 실루엣·색·프레임·피벗·타이밍 지침과 기존 imgui-ui-ux-engineering/cpp-coding-standards를 적용했다. Aseprite/pixel-mcp는 없으므로 해당 명령은 실행하지 않았다. 현재 대화에 MyEngine MCP 도구가 직접 노출되지 않은 상태는 유지된다. 설치된 공식 MCP SDK Client/StdioClientTransport로 tools/mcp/dist/index.js를 실행하여 8개 도구 목록과 실제 engine_capture_frame 호출을 확인했다. 서버의 소스·프로토콜·도구를 새로 만들지 않았으므로 MCP 소스 변경용 npm build/smoke는 이번 변경에서 다시 실행하지 않았다.
+
+Computer Use SKILL.md를 읽고 @oai/sky를 불러왔다. list_apps는 `Trusted RPC service is not configured: sky`로 실패했고 cua.getState에서도 네이티브 앱이 비활성이다. 도구가 없는 상황을 PowerShell UIAutomation/SendInput으로 우회하지 않았다. Chrome의 Godot 공식 스프라이트 애니메이션 문서 열기는 브라우저 보안 정책이 사용자 권한 거부를 반환했다. 이 거부를 다른 브라우저·HTTP·간접 요청으로 우회하지 않았고 새 공식 문서를 읽었다고 기록하지 않는다. 이전 프로젝트 파일 작업에서 확인한 공식 Project Manager/data_paths/nodes_and_scenes/project_organization 계약은 docs/07에 출처·차이를 유지한다. 새 애니메이션 비교 검증은 문서 접근이 가능할 때 진행한다.
+
+### 검증 결과
+
+Debug/Release 전체 빌드와 양쪽 CTest 13/13, 내부 검사 519/519 통과했다. 기존 자체 프레임워크에 5개 검사만 추가했다. 기본 프로젝트의 실제 재실행 보존, 씬/애니메이션 Undo·dirty 분리, 레벨 1 저장/Play 복제, animation/scene 저장 왕복과 .tmp 실패 보존, 잘못된 영역/시간/이벤트/경로, GUID 유지·중복 실패 시 이전 인덱스 보존, Transform 복구/Undo·SpriteCorners를 확인한다.
+
+GUID 회귀 검사를 처음 추가할 때 GPU 없는 동기 TextureImporter를 Loaded로 기대해 518/519가 실패했다. 기존 동기 PNG importer는 디바이스가 필수라는 계약을 확인하고 실제 DX11 디바이스로 검사 조건을 수정했다. 실패를 성공처럼 숨기거나 importer 계약을 테스트에 맞춰 완화하지 않았다. 이후 전체 Debug/Release 검사를 통과했다. 로그는 build/meadow-validation/{debug,release}-{build,tests}.log에 있다. 기존 sol2·getenv/fopen 경고는 별도로 남으며 성능 개선 수치를 새로 주장하지 않는다.
+
+초기 실제 캡처 `MyEditor-2026-10-01T07-36-02-321Z.png`의 잘못된 배율은 Transform 공통 경계 수정 뒤 재캡처로 확인했다. 이후 패널의 일부 신규 한글이 Python→PowerShell 기본 인코딩 때문에 물음표로 기록된 것을 실제 UI에서 발견해 UTF-8 전송·i18n panel.anim 키로 수정했다. 최종 Release 캡처에서 한글과 PNG 미리보기를 확인했다.
+
+| 실제 MCP 캡처 | 결과 |
+|---|---|
+| MyEditor-2026-10-01T08-10-38-336Z.png | 창 있는 셸·마을·캐릭터·Animation 패널, frame 30, exit 0. 원본 1920×1080을 MCP가 960×540으로 축소. docs/images/editor-animation.png로 그대로 복사 |
+| MyEditor-2026-10-01T08-11-00-928Z.png | headless 실제 DX11 씬, 960×540, frame 30, exit 0. docs/images/editor-meadow.png로 그대로 복사 |
+| MyEditor-2026-10-01T08-11-01-933Z.png | --play frame 600, exit 0. 짧은 실행에서 대기 첫 포즈와 같은 프레임이므로 이 캡처만으로 진행을 판정하지 않음 |
+| MyEditor-2026-10-01T08-12-45-557Z.png | --play frame 3200, exit 0, 프로세스 648ms. Edit 캡처 대비 1484픽셀 변화, 경계 (465,242)-(495,313)가 캐릭터에 한정. 실제 애니메이션 진행 확인 |
+
+캡처와 MCP 호출 로그는 tools/mcp/.state/의 로컬 검증 자료이며 실제 사용자 데이터 대신 build/meadow-validation/project를 사용했다. GUI 패널의 마우스/키보드 수정·저장/취소는 native RPC 부재로 실행하지 못했다. 실제 앱 렌더와 API 회귀를 사용자 전체 조작 검증으로 확대하지 않는다.
+
+### 유지·삭제 이유와 다음 완료 조건
+
+삭제한 것은 세션 전역 임시 클립과 중복 시간 계산·실제 구현보다 앞선 설명이다. 기존 ClipEditing/DirectionalSet 헬퍼·애니메이션 상태 머신·타일/물리 라이브러리는 호출자/검증이 있으므로 보존한다. 문서에 근거 없는 8방향/상태 머신 편집 UI를 나열하지 않는다. 문서 전체 재시작이나 일반 포맷 정리는 하지 않았다.
+
+기본 콘텐츠는 고해상도 픽셀 스타일의 합성 배경과 독립 캐릭터다. 지형·집·수목의 개별 에셋 분리, 충돌/내비게이션·다리층·입력 이동은 실제 제작 데이터 계약이 필요해 D-09 P1로 분류했다. 새 타일/물리 구현 대신 기존 TileEditing·다층 충돌·경로 탐색을 연결한다. 정면 대기/걷기를 8방향·장비·공격으로 확장하는 아트는 그 다음 콘텐츠 작업이다.
+
+.meta 설정 적용·자동 watcher·MyGame GUID 수렴, 미저장 문서 재개/자동 저장·복구, 이미지의 point 미리보기·정확한 픽셀 선택·다양한 DPI·한글 외 신규 패널 라벨 번역은 후속이다. 이벤트 편집은 삭제/추가 방식이고 사운드 자동 매핑은 하지 않는다. 온라인 게임 시스템·물리/Lua Play 연결이나 정식 MMORPG 완성으로 표시하지 않는다.
+
+문서 최종 검사는 README·AGENTS·docs·기본 프로젝트 안내 30개를 UTF-8로 읽고 코드 블록/인라인 코드를 제외한 로컬 링크 557개에서 누락 0개였다. git diff --check도 통과했다. 기본 에셋 PNG의 SHA256이 imagegen 원본과 같아 원본 보존을 확인했다. 문서 화면은 MCP가 저장한 앱 캡처 PNG를 그대로 복사했다.
+
+기존 character_demo hotreload 시나리오는 samples/character_demo/assets/scripts/player.lua를 잠깐 덮어쓴 뒤 복원한다. Debug/Release CTest를 동시에 실행하면 한 프로세스가 다른 프로세스의 임시 스크립트를 원본으로 보관할 수 있었다. 검사 전 clean 상태였고 변경 내용이 샘플의 v2 코드와 일치함을 확인해 테스트가 바꾼 파일만 HEAD 원본으로 복구했다. 최종 CTest는 Debug 다음 Release 순서로 재실행하고 각 상세 로그를 build/meadow-validation/{debug,release}-details.log로 보관했다. 샘플의 사용자 콘텐츠는 변경하지 않는다. 후속 검증은 이 소스 fixture를 build/의 실행별 작업 복사본으로 격리하는 것이 완료 조건이다.
+
+AnimationAsset Undo는 기존 값 스냅샷 방식을 쓴다. 기본 8프레임 콘텐츠에서는 단순하고 수명이 명확하며, 최대 크기 시트·긴 편집 이력에서 메모리가 병목이면 변경 프레임만 기록하는 방식으로 교체한다. 지금은 측정 없는 캐시·풀·스레드·범용 명령 프레임워크를 추가하지 않았다.
+
+### 제작 프롬프트
+
+#### 배경
+
+```text
+Use case: stylized-concept
+Asset type: playable 2.5D pixel-art RPG starter village background, landscape 16:9 composition.
+Primary request: Create a beautiful high-detail original pixel-art meadow village game map. Orthographic elevated three-quarter view, screen-aligned ground, no perspective vanishing point. A small quiet village with three timber-and-plaster cottages with terracotta roofs across the upper half, a stone well left of center, flower gardens and wooden fences, a winding ochre dirt path from bottom center to a central plaza, a shallow sparkling brook and small wooden bridge at the right, clustered deciduous trees framing the top corners. Keep a broad clear walkable dirt/grass patch around the exact center and lower half to place a playable character later.
+Style/medium: meticulously hand-placed-looking crisp pixel clusters, sharp stepped edges, detailed grass and foliage, coherent limited color ramps, NO smooth brush strokes, no blur, no antialiasing or depth of field. Game-ready cohesive pixel art, original fantasy rural setting.
+Lighting/mood: warm peaceful late morning, subtle cool green-purple shadows, warm yellow-green highlights, consistent light from upper left.
+Composition: landscape canvas, complete map filling canvas, no border, no UI, no characters, no text, no logos. Readable roofs, path and silhouettes even at small game scale.
+Color palette: emerald and sage grass, warm ochre paths, ivory plaster, walnut timber, terracotta roofs, cornflower-blue water and wildflowers.
+Constraints: no references to existing games or franchises, no watermark. Buildings and trees fixed scenery, terrain deliberately clear at center.
+```
+
+#### 캐릭터
+
+```text
+Use case: stylized-concept
+Asset type: transparent PNG pixel-art RPG character animation sprite sheet.
+Primary request: original level-one young novice adventurer, chestnut short hair, teal tunic with ivory undershirt, leather belt and tiny satchel, brown boots, no weapon. High-detail crisp pixel clusters, warm highlights cool shadows, readable silhouette, game-ready. Front view facing down-screen, slightly elevated orthographic game camera. Exactly EIGHT full-body sprites laid out in ONE horizontal row, eight equal-width cells. First four cells form a subtle breathing idle cycle (same feet alignment); last four cells form a walking cycle (left leg forward, passing, right leg forward, passing), visibly distinct foot and arm positions. Same character, scale, outfit and lighting every cell. Each sprite fully contained with generous blank transparent space on all sides, same baseline, no overlap. Canvas very wide, 8:1 aspect ratio. Character fills about 65% of each cell width and 80% height. Pixel art only, sharp square pixels and stepped edges, no smooth gradients, no blur, no cast shadows outside character. Background actually transparent. No cell borders, no labels, no lettering, no UI, no watermark, no existing franchise references.
+```
+
+커밋 후 첫 푸시는 원격 main의 LICENSE 수정 dc2b377 때문에 fast-forward 조건을 만족하지 못했다. 원격 변경이 LICENSE 1개임을 확인하고 해당 커밋 위로 이번 작업을 rebase하여 보존했다. 검증한 코드·에셋은 그대로이며, 라이선스 수정 내용을 되돌리거나 강제 푸시하지 않았다.

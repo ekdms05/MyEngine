@@ -12,6 +12,7 @@
 #include "mye/editor/EditorTypes.h"
 #include "mye/editor/Panel.h"
 #include "mye/core/Math.h"
+#include "mye/asset/AssetGuid.h"
 
 #include <cstdint>
 #include <memory>
@@ -41,6 +42,12 @@ public:
     // 렌더 대상 픽셀 크기(ColorTextureId의 이미지 크기). ImGui::Image UV/좌표 매핑에 사용.
     virtual uint32_t RenderWidth() const = 0;
     virtual uint32_t RenderHeight() const = 0;
+
+    struct TexturePreview { void* id = nullptr; uint32_t width = 0, height = 0; };
+    virtual Expected<TexturePreview, Error> AssetTexture(asset::AssetGuid) {
+        return Error{"Texture preview is unavailable", 1};
+    }
+    virtual Expected<void, Error> RefreshAssetIndex() { return Error{"Asset index is unavailable", 1}; }
 
     // 좌표 변환(뷰포트 이미지 로컬 픽셀 ↔ 월드). localPx: 이미지 좌상단(0,0)~(RenderW,RenderH),
     //   +Y 아래(ImGui 화면 좌표). 픽킹·기즈모·그리드가 소비.

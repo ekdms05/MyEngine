@@ -5,6 +5,7 @@
 // 런타임 파생 필드(dirty·flash 등)는 직렬화하지 않는다.
 #include "mye/scene/SceneReflection.h"
 
+#include "mye/anim/SpriteAnimator.h"
 #include "mye/scene/Transform.h"      // LocalTransform
 #include "mye/scene/Renderable.h"     // SpriteRenderer
 #include "mye/scene/RenderExtract.h"  // FloorLevel, SortingRef
@@ -14,13 +15,36 @@
 #include "mye/asset/AssetGuid.h"      // AssetRef
 
 // 비수식 이름 등록 — MYE_COMPONENT(kComponentTypeId=HashFnv1a64("Name"))와 컴포넌트 ID 정합.
+MYE_REFLECT_NAME(mye::Vec2, "Vec2");
+MYE_REFLECT_NAME(mye::Vec3, "Vec3");
+MYE_REFLECT_NAME(mye::Quat, "Quat");
+MYE_REFLECT_NAME(mye::Rect, "Rect");
+MYE_REFLECT_NAME(mye::Color, "Color");
+template <> void mye::refl::Reflect<mye::Vec2>(TypeBuilder<mye::Vec2>& b) {
+    b.Field("x", &mye::Vec2::x).Field("y", &mye::Vec2::y);
+}
+template <> void mye::refl::Reflect<mye::Vec3>(TypeBuilder<mye::Vec3>& b) {
+    b.Field("x", &mye::Vec3::x).Field("y", &mye::Vec3::y).Field("z", &mye::Vec3::z);
+}
+template <> void mye::refl::Reflect<mye::Quat>(TypeBuilder<mye::Quat>& b) {
+    b.Field("x", &mye::Quat::x).Field("y", &mye::Quat::y).Field("z", &mye::Quat::z).Field("w", &mye::Quat::w);
+}
+template <> void mye::refl::Reflect<mye::Rect>(TypeBuilder<mye::Rect>& b) {
+    b.Field("x", &mye::Rect::x).Field("y", &mye::Rect::y).Field("w", &mye::Rect::w).Field("h", &mye::Rect::h);
+}
+template <> void mye::refl::Reflect<mye::Color>(TypeBuilder<mye::Color>& b) {
+    b.Field("r", &mye::Color::r).Field("g", &mye::Color::g).Field("b", &mye::Color::b).Field("a", &mye::Color::a);
+}
+
 MYE_REFLECT_NAME(mye::scene::LocalTransform, "LocalTransform");
 MYE_REFLECT_NAME(mye::scene::SpriteRenderer, "SpriteRenderer");
 MYE_REFLECT_NAME(mye::scene::FloorLevel, "FloorLevel");
+MYE_REFLECT_NAME(mye::anim::SpriteAnimator, "SpriteAnimator");
 
 namespace mye::refl {
 template <> void Reflect<mye::scene::LocalTransform>(TypeBuilder<mye::scene::LocalTransform>& b);
 template <> void Reflect<mye::scene::SpriteRenderer>(TypeBuilder<mye::scene::SpriteRenderer>& b);
+template <> void Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::anim::SpriteAnimator>& b);
 template <> void Reflect<mye::scene::FloorLevel>(TypeBuilder<mye::scene::FloorLevel>& b);
 } // namespace mye::refl
 
@@ -78,13 +102,29 @@ void SerFloorLevel(IArchive& ar, void* inst) {
 } // namespace
 
 template <> void mye::refl::Reflect<mye::scene::LocalTransform>(TypeBuilder<mye::scene::LocalTransform>& b) {
-    b.Version(1).CustomSerialize(&SerLocalTransform);
+    b.Version(1).CustomSerialize(&SerLocalTransform)
+        .Field("position", &mye::scene::LocalTransform::position)
+        .Field("rotation", &mye::scene::LocalTransform::rotation)
+        .Field("scale", &mye::scene::LocalTransform::scale);
 }
 template <> void mye::refl::Reflect<mye::scene::SpriteRenderer>(TypeBuilder<mye::scene::SpriteRenderer>& b) {
-    b.Version(1).CustomSerialize(&SerSpriteRenderer);
+    b.Version(1).CustomSerialize(&SerSpriteRenderer)
+        .Field("sprite", &mye::scene::SpriteRenderer::sprite)
+        .Field("srcUV", &mye::scene::SpriteRenderer::srcUV)
+        .Field("pivotPx", &mye::scene::SpriteRenderer::pivotPx)
+        .Field("tint", &mye::scene::SpriteRenderer::tint)
+        .Field("visible", &mye::scene::SpriteRenderer::visible)
+        .Field("flipX", &mye::scene::SpriteRenderer::flipX)
+        .Field("flipY", &mye::scene::SpriteRenderer::flipY);
 }
 template <> void mye::refl::Reflect<mye::scene::FloorLevel>(TypeBuilder<mye::scene::FloorLevel>& b) {
-    b.Version(1).CustomSerialize(&SerFloorLevel);
+    b.Version(1).CustomSerialize(&SerFloorLevel).Field("level", &mye::scene::FloorLevel::level);
+}
+
+template <> void mye::refl::Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::anim::SpriteAnimator>& b) {
+    b.Version(1).Field("animation", &mye::anim::SpriteAnimator::animation)
+        .Field("speed", &mye::anim::SpriteAnimator::speed)
+        .Field("playing", &mye::anim::SpriteAnimator::playing);
 }
 
 namespace mye::scene {
@@ -94,6 +134,7 @@ void RegisterCoreComponentReflection() {
     (void)refl::GetType<LocalTransform>();
     (void)refl::GetType<SpriteRenderer>();
     (void)refl::GetType<FloorLevel>();
+    (void)refl::GetType<anim::SpriteAnimator>();
 }
 
 } // namespace mye::scene

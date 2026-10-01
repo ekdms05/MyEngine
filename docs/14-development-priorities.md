@@ -24,6 +24,7 @@
 | P1-01 | 절단·과거 seq 입력 적용, 대각선 속도 증가 | v1·메시지 종류·길이·varuint 범위·순서 검사, 공통 이동 정규화, 스냅샷 64명 상한·서버 발신자 검사 | 입력 경계 수정. 패킷 세션 nonce·재전송·틱 협상은 미완성 |
 | P1-03 | MyGame 무음 초기화·메뉴 중복 라벨·잘못된 글리프 출력 | AudioModule 재사용, 항목 라벨·정수 배율 클릭 좌표, R8 마스크·UI +Y 아래·painter 순서 수정 | 타이틀/설정 캡처·GPU 출력 회귀·장치 초기화 확인. 청취·다양한 DPI·설정 마우스 UX는 미검증/미완성 |
 | P1-05 기본 파일 흐름 | 프로젝트 경로만 기록하고 씬을 읽지 않음, 모든 문서가 하나의 편집 World 사용 | 버전 있는 .myeproj, 후보 로드 후 교체, 문서별 World·Undo, 메뉴·파일 선택·단축키, 원자적 씬 쓰기와 미저장 확인 | 한글 프로젝트 생성→편집→저장→재열기→Play 및 실패 보존 검증. 최근 목록·복구·DPI·게임 플레이 시스템은 후속 범위 |
+| P1-05/06 편집 콘텐츠 | 에디터 texture resolver·DB scan 무동작, 전역 애니 편집 상태와 저장/이미지 미리보기 부재, 씬 로드의 WorldTransform 누락·렌더 배율 무시 | 기존 GUID/.meta/VFS·SpriteSheet·ClipPlayback·CommandStack 연결, 기본 프로젝트, 레벨 1, .anim 문서·저장·미리보기·씬 지정, 파생 Transform 복구·공용 SpriteCorners | Debug/Release CTest·실제 MCP 렌더와 Play 프레임 변화 확인. 합성 배경의 타일·충돌·이동, watcher·임포트 설정·네이티브 UI 조작은 잔여 |
 | P2-03 일부 | User 설정 로드 누락, 글꼴 드라이브 고정 | 코어 User 스코프 로드, 게임 설정 저장·복원 경로, 시스템 Windows 폰트 경로 사용 | 기본 경로 연결. 프로젝트 배포 글꼴·fallback·UiDocument 컨트롤러 통합 필요 |
 
 근거: [GameServer](../engine/gameserver/src/GameServer.cpp), [NetGameServer](../engine/gameserver/src/NetGameServer.cpp), [저장](../engine/persist/src/PersistenceService.cpp), [계정](../engine/persist/src/AccountStore.cpp), [프로토콜](../engine/net/include/mye/net/Protocol.h), [게임](../apps/game/main.cpp), [스프라이트 배치](../engine/render/src/SpriteBatch.cpp).
@@ -38,8 +39,8 @@ PBKDF2 회수는 [OWASP 비밀번호 저장 기준](https://cheatsheetseries.owa
 | 2 · P0-02 확장 | 영속성 | 저장 실패·복구 감사, ID/계정/원장 교차 참조 정책, 운영 내구성·동시성 결정. 장애 주입·백업 무결성·복구 범위 검증. 용량/운영 요구가 확정되면 DB·마이그레이션 선택 |
 | 3 · P1-02 | 접속 수명 | 네트워크 admit와 Join 실패 취소, heartbeat/timeout, 캐릭터 없음·중복 접속·강제 종료에서 유령 엔티티 없음. 거부와 일시 장애를 UI에 구분 |
 | 4 · P1-04 | 이동 계약 | 고정 틱 로컬 이동에 기존 물리·층 판정 연결. 클라이언트/서버의 이동·충돌·속도·틱 설정 공통화. 벽·경사·다리 위/아래·프레임률·서버 설정 변경 검사 |
-| 5 · P1-05 잔여 | 에디터 제품 흐름 | 기본 create/open/save는 연결했다. 파일 선택·미저장 확인의 다양한 DPI/키보드 접근 검사, 저장 충돌·잔여 tmp 복구 절차. P1-06 후 동일 에셋·물리·Lua/runtime 플레이 연결; 현재 씬 실행/시작 씬 실행 구분 검증 |
-| 6 · P1-06 | 에셋 흐름 | 앱 경로 GUID·PNG 선로딩을 기존 GUID/.meta/VFS/AssetManager에 수렴. watcher·import 설정·필요한 에셋만 로딩. 이동/재임포트 실패에서 참조·이전 자원 보존 |
+| 5 · P1-05 잔여 | 에디터 제품 흐름 | 기본 create/open/save와 PNG·애니메이션 제작/저장/Play를 연결했다. 파일 선택·미저장 확인의 다양한 DPI/키보드 접근 검사, 저장 충돌·잔여 tmp 복구 절차. 동일 물리·Lua/runtime 플레이 연결; 현재 씬 실행/시작 씬 실행 구분 검증 |
+| 6 · P1-06 | 에셋 흐름 | MyEditor GUID/.meta·PNG 연결은 완료. MyGame 경로 GUID·PNG 선로딩을 공용 경로에 수렴. watcher·import 설정·필요한 에셋만 로딩. 이동/재임포트 실패에서 참조·이전 자원 보존 |
 | 7 · P2-01/02 | 코드 경계 | AudioModule 중복은 제거. main의 UI·씬·네트워크를 수명/변경 이유가 다른 책임에서만 분리. render가 PRIVATE include로 scene 구현을 읽는 결합을 순수 렌더 입력 계약으로 정리 |
 | 8 · P2-03/04 | UI·진단 | 설정 마우스·키보드·배율 UX, 배포 폰트, UiDocument 위젯/스크립트 연결. ConfigChangedEvent EventBus·minidump·초기화 오류 경계 검증 |
 | 9 · P2-05/06 | 측정·배포 | 동일 Release 장면의 CPU/GPU·할당·배치·에셋·바이트 기준선. GPU 타임스탬프와 일반 readback은 DX11 stub이므로 연결 전 완료 주장 금지. pak/글꼴/스크립트 배포·새 PC 실행 확인 |
@@ -53,12 +54,13 @@ Godot 공식 자료와 채택·보류 근거는 [에디터 문서](07-editor-ui.
 | ID | 우선순위 | 개발 범위 | 완료 조건·선행 조건 |
 |---|---|---|---|
 | D-01 | P1 | 오프라인 콘텐츠 통합 | P1-04~06 후 MyGame에서 에디터 맵·물리·Lua/runtime 대화·NPC·퀘스트·세이브·씬 전환. village_demo 경로 재사용 |
+| D-09 | P1 | 편집 가능한 초원마을 | 합성 배경에서 재사용 지형·건물·수목 에셋과 타일 데이터로 전환. 기존 TileEditing·다층 충돌·경로 탐색 재사용. PPU/발밑 피벗·가림·벽/다리 이동을 씬 저장/재열기·MyGame에서 검증. 정식 장비·공격 아트보다 기본 편집/이동 계약 우선 |
 | D-02 | P1 | 온라인 게임 명령 | P0·P1-02/04 후 선택·공격·피해·스킬·아이템·퀘스트의 서버 권위 요청/결과. 두 클라이언트·손실·역순·중복에서 결과 수렴 |
 | D-03 | P2 | 게임 UI·소셜 | 기존 social 채팅·파티부터 실제 메시지·UI 연결. 권한·차단·탈퇴·재접속 검증. 길드·우편·경매는 개별 완료 조건 |
-| D-04 | P2 | 직업·사냥 콘텐츠·정식 아트 | game/mmo 데이터로 스폰→처치→루트→성장→복원. 현재 캐릭터 PNG의 여러 포즈·배경 잔여·실루엣은 정식 시트/프레임/피벗/방향 검수 필요 |
+| D-04 | P2 | 직업·사냥 콘텐츠·정식 아트 | game/mmo 데이터로 스폰→처치→루트→성장→복원. 기존 게임 PNG의 포즈·배경·실루엣 검수와 기본 novice 시트의 정면 4프레임 대기/걷기를 8방향·장비·공격으로 확장할 아트 계약 필요 |
 | D-05 | P2 | 전송 용량·신뢰성 | v1·64명 상한 이후 이벤트 재전송·MTU·AOI·차등. 현재 전체 스냅샷 전송 비용 측정 후 변경. 64명은 MMO 수용량 보장이 아님 |
 | D-06 | P2 | 조명·파티클·GPU 연출 | 기존 계산·데이터 재사용. 깊이·alpha cutout·픽셀 스냅 유지, 실제 GPU 예산과 장면 검증 |
-| D-07 | P2 | 콘텐츠 검사 | 씬·에셋·대화 키·피벗·프레임 참조 오류를 실행 전 발견. paktool/MCP와 중복 없이 연결 |
+| D-07 | P2 | 콘텐츠 검사 | 씬 계층과 .anim 버전/영역/피벗/시간/이벤트·PNG 크기 검사는 연결. 에셋 전체 참조·대화 키·배포 전 오류 발견으로 확장. paktool/MCP와 중복 없이 연결. character_demo 핫 리로드 검사는 소스 fixture 대신 build/의 실행별 복사본으로 격리 |
 | D-08 | P3 | 확장 플랫폼·운영 | DB·다중 서버·DX12/Vulkan은 제품 요구·측정으로 결정. 이름뿐인 백엔드·추측성 분산 계층은 추가하지 않음 |
 
 ## 유지·삭제·품질 기준

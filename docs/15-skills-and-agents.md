@@ -26,12 +26,12 @@
 | shader-programming | [gamedev-skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills) | HLSL·좌표/UV/마스크 계약 검토. 월드 cutout/depth write 유지 |
 | game-ui-ux | [gamedev-skills](https://github.com/gamedev-skills/awesome-gamedev-agent-skills) | 메뉴 라벨·입력·화면 배율·설정. 새 웹 UI 프레임워크 도입 없음 |
 | imgui-ui-ux-engineering | [muhosekerci](https://github.com/muhosekerci/imgui-ui-ux-engineering) | 기존 ImGui 1.92.9 WIP 기준. 상태·ID·스코프·색/간격 검토 |
-| pixel-art-creator | [pixel-plugin](https://github.com/willibrandon/pixel-plugin) | skillfish 설치 후 Codex 로컬 메타데이터 보정. 실제 제작 도구는 Aseprite/pixel-mcp 필요 |
+| pixel-art-creator | [pixel-plugin](https://github.com/willibrandon/pixel-plugin) | skillfish 설치 후 Codex 로컬 메타데이터 보정. 제공된 Aseprite/pixel-mcp 명령은 해당 도구가 필요. 이번 기본 PNG는 내장 imagegen 사용 |
 | pixel-art-professional | [pixel-plugin](https://github.com/willibrandon/pixel-plugin) | 팔레트·실루엣·픽셀 규칙·검수 |
 | pixel-art-exporter | [pixel-plugin](https://github.com/willibrandon/pixel-plugin) | 프레임/시트·투명도·메타 내보내기 |
 | pixel-art-animator | [pixel-plugin](https://github.com/willibrandon/pixel-plugin) | 방향·프레임·타이밍·루프 지침 |
 
-이 스킬의 핵심 지침을 읽고 필요한 범위만 적용했다. 픽셀 스킬로 에셋을 생성하거나 외부 제작 서버를 실행한 것은 아니다. 기준 PPU 48·타깃 960×540·발밑 피벗·alpha cutout은 저장소 [렌더 계약](02-rendering.md)이 우선한다.
+이 스킬의 핵심 지침을 읽고 필요한 범위만 적용했다. 초기 구조 조사에서는 픽셀 제작을 실행하지 않았다. 이후 기본 콘텐츠 작업에서 픽셀 4종의 실루엣·피벗·타이밍·시트 지침을 적용하고 내장 imagegen으로 PNG 2개를 제작했다. 외부 Aseprite/pixel-mcp 제작 서버는 실행하지 않았다. 기준 PPU 48·타깃 960×540·발밑 피벗·alpha cutout은 저장소 [렌더 계약](02-rendering.md)이 우선한다.
 
 ### 설치 명령·메타데이터 보정
 
@@ -147,3 +147,11 @@ MyEngine에서는 확장자·날짜·같은 파일명만으로 삭제하지 않�
 ### 프로젝트·씬 파일 작업에 적용한 스킬
 
 에디터 create/open/save 연결에는 프로젝트에 이미 설치된 imgui-ui-ux-engineering과 cpp-coding-standards를 읽고 적용했다. 기존 ImGui·Windows 파일 선택 API·공용 직렬화를 사용하므로 추가 패키지를 설치하지 않았다. Godot의 공식 자료를 기능 벤치마킹 근거로 사용하며 전문 역할의 별도 병렬 실행은 하지 않았다. 스킬 정적 검사 오탐과 g++/c++ 전용 컴파일 게이트의 MSVC 제약, 제품 자체 빌드·테스트·실제 캡처의 범위는 [작업 기록](16-foundation-worklog.md)에 구분해서 기록했다.
+
+## 기본 콘텐츠 작업의 실제 도구 연결
+
+2026-10-01: MyEngine MCP 도구는 현재 대화의 직접 호출 목록에 여전히 없지만, 설치된 공식 MCP SDK의 Client·StdioClientTransport로 저장소 서버에 연결했다. listTools에서 8개 도구를 확인하고 engine_capture_frame으로 실제 Release MyEditor의 셸·씬·Play를 캡처했다. 설정 파일 존재, SDK를 통한 연결, 세션 도구 노출을 구분한다. 서버 소스는 수정하지 않았다.
+
+픽셀 creator/professional/animator/exporter의 SKILL.md를 읽고 이미지 구성·투명 시트·발밑 피벗·프레임 시간에 적용했다. 내장 imagegen으로 원본 PNG를 만들고 기존 SpriteSheet/AnimationClipData와 .meta GUID로 내보냈다. Aseprite나 pixel-mcp 명령을 실행했다고 기록하지 않는다. 새 패키지 설치나 병렬 에이전트 실행은 필요하지 않았다.
+
+Computer Use 스킬(`C:/Users/harun/.codex/plugins/cache/openai-bundled/computer-use/26.928.20755/skills/computer-use/SKILL.md`)을 읽고 @oai/sky를 불러왔으나 list_apps는 `Trusted RPC service is not configured: sky`로 실패했다. cua.getState의 네이티브 앱도 비활성이다. 직접 UI 조작을 다른 입력 주입 경로로 우회하지 않았다. Godot 스프라이트 애니메이션 문서의 Chrome 접근은 보안 정책의 권한 거부로 실패했고 해당 자료를 다른 브라우저/HTTP 경로로 우회 조회하지 않았다. 소스/API 회귀와 실제 앱 렌더 확인은 수행했으며 네이티브 사용자 조작 검증은 별도로 남긴다.

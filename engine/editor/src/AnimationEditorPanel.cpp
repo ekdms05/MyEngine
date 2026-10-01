@@ -1,205 +1,291 @@
-// AnimationEditorPanel.cpp — 애니메이션 에디터 패널 (docs/07 §애니메이션 에디터)
-//
-// 07: .anim 클립 편집기. SpriteSheet 프레임 그리드·타임라인(프레임/duration)·프리뷰(재생)·
-//   이벤트 마커 편집(footstep 등)·8방향 세트 구성·리스트 기반 상태머신 전이 편집(그래프는 P2).
-//   편집은 AnimClipEditCommand 경유(before/after 클립 스냅샷), 값은 AnimationClipData(04 스키마).
-//
-// 내장=1급 플러그인 — IEditorPanelFactory로 등록. 헤드리스 테스트는 커맨드·헬퍼(anim_edit)를 검증.
-#include "mye/editor/Panel.h"
-#include "mye/editor/EditorContext.h"
-#include "mye/editor/Command.h"
-#include "mye/editor/CommandStack.h"
+#include "mye/editor/BuiltinPanels.h"
+#include "mye/editor/EditorApp.h"
 #include "mye/editor/AnimEditing.h"
-
+#include "mye/editor/Project.h"
+#include "mye/editor/Viewport.h"
+#include "mye/editor/Selection.h"
+#include "mye/asset/AssetDatabase.h"
+#include "mye/asset/SpriteImporter.h"
+#include "mye/core/Module.h"
+#include "mye/core/JsonFile.h"
+#include "mye/ecs/World.h"
+#include "mye/scene/Renderable.h"
 #include "imgui.h"
 
-#include <memory>
-#include <string>
+#include <algorithm>
+#include <array>
+#include <cstdio>
+#include <filesystem>
 
 namespace mye::editor {
-
 namespace {
-
-const PanelDesc kAnimDesc{
-    /*id*/ "mye.anim",
-    /*title*/ "애니메이션 에디터",
-    /*allowMultiple*/ false,
-    /*defaultDock*/ DockSlot::Center,
-};
-
-// 애니 에디터 문서 상태 — 에디터가 보유하는 클립 워킹 카피 + 프리뷰 재생 상태.
-//   ConsolePanel 공유 저장소처럼 세션 전역 1개(단일 클립 문서 편집 가정).
-struct AnimEditSession {
-    asset::AnimationClipData clip;   // 편집 중인 클립(워킹 카피). 로드 시 채워짐.
-    bool   loaded = false;
-    // 프리뷰 재생.
-    bool   playing = false;
-    float  cursorTime = 0.0f;        // 초
-    int    previewFrame = 0;
-    float  speed = 1.0f;
-
-    static AnimEditSession& Get() {
-        static AnimEditSession s;
-        return s;
-    }
-
-    float ClipDuration() const {
-        float t = 0.0f;
-        for (float d : clip.frameDurations) t += d;
-        return t;
-    }
-    void Advance(float dt) {
-        if (!playing || clip.frameDurations.empty()) return;
-        const float total = ClipDuration();
-        if (total <= 0.0f) return;
-        cursorTime += dt * speed;
-        if (clip.loop) { while (cursorTime >= total) cursorTime -= total; }
-        else if (cursorTime > total) { cursorTime = total; playing = false; }
-        float acc = 0.0f;
-        previewFrame = 0;
-        for (size_t i = 0; i < clip.frameDurations.size(); ++i) {
-            acc += clip.frameDurations[i];
-            if (cursorTime < acc) { previewFrame = static_cast<int>(i); break; }
-            previewFrame = static_cast<int>(i);
-        }
-    }
-};
-
-static CommandStack* Stack(EditorContext& ctx) {
-    return ctx.commands;
-}
-
-// 클립 전체 변경을 AnimClipEditCommand로 커밋(before=현재 세션 클립, after=변경본).
-static void PushClipEdit(EditorContext& ctx, AnimEditSession& s,
-                         asset::AnimationClipData after, std::string label) {
-    CommandStack* stack = Stack(ctx);
-    if (!stack) { s.clip = std::move(after); return; }   // 스택 없으면 직접 적용
-    stack->Push(std::make_unique<AnimClipEditCommand>(&s.clip, s.clip, std::move(after),
-                                                       std::move(label)));
-}
+const PanelDesc kDesc{"mye.anim", "애니메이션", false, DockSlot::Right};
 
 class AnimationEditorPanel final : public IEditorPanel {
 public:
-    const PanelDesc& Desc() const override { return kAnimDesc; }
-
+    const PanelDesc& Desc() const override { return kDesc; }
     void OnGui(EditorContext& ctx) override {
-        if (!ImGui::Begin("애니메이션 에디터")) { ImGui::End(); return; }
-        AnimEditSession& s = AnimEditSession::Get();
-
-        if (!s.loaded) {
-            if (ImGui::Button("새 클립 만들기")) {
-                s.clip = asset::AnimationClipData{};
-                s.clip.name = "clip";
-                s.loaded = true;
-            }
-            ImGui::TextDisabled("에셋 브라우저에서 .anim 더블클릭 시 로드(후속 배선)");
-            ImGui::End();
-            return;
+        if (!ImGui::Begin(PanelWindowTitle("panel.anim", "mye.anim").c_str())) { ImGui::End(); return; }
+        if (!ctx.app || !ctx.project || !ctx.project->IsOpen()) {
+            ImGui::TextUnformatted("프로젝트를 먼저 열어주세요."); ImGui::End(); return;
         }
-
-        // 프리뷰 재생 진행.
-        s.Advance(ImGui::GetIO().DeltaTime);
-
-        DrawHeader(ctx, s);
+        if (ImGui::Button("새 애니메이션")) {
+            auto* doc = ctx.project->NewAnimation();
+            ctx.app->SelectAnimationDocument(doc->Id());
+        }
+        ImGui::SameLine();
+        auto* doc = ctx.app->AnimationDocument();
+        if (ImGui::BeginCombo("문서", doc ? doc->TabTitle().c_str() : "에셋의 .anim 파일을 더블 클릭")) {
+            for (auto* candidate : ctx.project->Documents()) {
+                if (candidate->GetKind() != Document::Kind::Asset) continue;
+                ImGui::PushID(static_cast<int>(candidate->Id().value));
+                if (ImGui::Selectable(candidate->TabTitle().c_str(), candidate == doc)) {
+                    ctx.app->SelectAnimationDocument(candidate->Id()); doc = candidate;
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
+        }
+        if (!doc) { ImGui::TextWrapped("새 클립을 만들거나 에셋 브라우저에서 .anim 파일을 열어주세요."); ImGui::End(); return; }
+        if (m_document != doc->Id() || m_root != ctx.project->RootDir()) {
+            m_document = doc->Id(); m_root = ctx.project->RootDir(); m_cursor = {}; m_playing = false;
+            m_status.clear();
+            std::snprintf(m_savePath.data(), m_savePath.size(), "%s", doc->Path().empty()
+                ? "assets/animations/new_animation.anim" : std::string(doc->Path()).c_str());
+        }
+        doc->Commands().SetContext(&ctx);
+        auto& data = doc->Animation();
+        ImGui::InputText("저장 경로", m_savePath.data(), m_savePath.size());
+        if (ImGui::Button("저장 / 다른 이름으로")) {
+            auto target = Utf8Path(m_savePath.data());
+            if (!target.is_absolute()) target = Utf8Path(ctx.project->RootDir()) / target;
+            std::error_code ec;
+            const bool exists = std::filesystem::exists(target, ec);
+            const bool same = !doc->Path().empty() && std::filesystem::equivalent(Utf8Path(doc->Path()), target, ec);
+            if (exists && !same) ImGui::OpenPopup("기존 애니메이션 덮어쓰기");
+            else SaveDocument(ctx, *doc);
+        }
+        if (ImGui::BeginPopupModal("기존 애니메이션 덮어쓰기", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("기존 파일을 덮어씁니다: %s", m_savePath.data());
+            if (ImGui::Button("덮어쓰기")) { SaveDocument(ctx, *doc); ImGui::CloseCurrentPopup(); }
+            ImGui::SameLine();
+            if (ImGui::Button("취소")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!doc->Commands().CanUndo());
+        if (ImGui::Button("되돌리기")) { doc->Commands().Undo(); m_cursor = {}; }
+        ImGui::EndDisabled(); ImGui::SameLine();
+        ImGui::BeginDisabled(!doc->Commands().CanRedo());
+        if (ImGui::Button("다시 실행")) { doc->Commands().Redo(); m_cursor = {}; }
+        ImGui::EndDisabled();
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) ctx.app->SetAnimationFocused();
+        if (m_commandPosition != doc->Commands().Position()) { m_cursor = {}; m_commandPosition = doc->Commands().Position(); }
+        if (!m_status.empty()) ImGui::TextWrapped("%s", m_status.c_str());
         ImGui::Separator();
-        DrawTransport(s);
-        ImGui::Separator();
-        DrawFrames(ctx, s);
-        ImGui::Separator();
-        DrawEvents(ctx, s);
-
+        ImGui::BeginDisabled(ctx.playMode && ctx.playMode->IsPlaying());
+        if (ImGui::Button("선택한 스프라이트에 지정")) {
+            auto* db = ctx.engine ? ctx.engine->GetService<asset::AssetDatabase>() : nullptr;
+            const auto relative = Utf8Path(doc->Path()).lexically_relative(Utf8Path(ctx.project->RootDir()) / "assets");
+            asset::AssetRef ref;
+            if (db) ref.guid = db->GuidFromPath("assets://" + Utf8String(relative));
+            auto assigned = AssignAnimationToEntity(ctx, ctx.selection ? ctx.selection->Primary().AsEntity() : ecs::Entity{}, ref);
+            m_status = assigned ? "씬에 지정했습니다. 씬 저장 후 Play에서 재생됩니다." : assigned.GetError().message;
+        }
+        ImGui::EndDisabled();
+        DrawSettings(ctx, *doc);
+        auto valid = data.Validate();
+        if (!valid) ImGui::TextWrapped("%s", valid.GetError().message.c_str());
+        if (valid && m_playing) {
+            anim::AdvanceClip(data.clip, m_cursor, std::min(ImGui::GetIO().DeltaTime, 0.1f) * m_speed,
+                              [](const asset::AnimEventMarker&) {});
+            if (m_cursor.finished) m_playing = false;
+        }
+        if (ImGui::Button(m_playing ? "일시 정지" : "재생")) {
+            if (m_cursor.finished) m_cursor = {};
+            m_playing = !m_playing;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("처음으로")) { m_cursor = {}; m_playing = false; }
+        ImGui::SameLine(); ImGui::SetNextItemWidth(150);
+        ImGui::SliderFloat("미리보기 속도", &m_speed, 0.1f, 3.0f, "%.1fx");
+        auto* viewport = ctx.app->Viewport();
+        auto preview = viewport ? viewport->AssetTexture(data.sheet.texture.guid)
+                                : Expected<IEditorViewport::TexturePreview, Error>(Error{"Preview unavailable", 1});
+        if (preview && data.imageSize.x == static_cast<int32_t>(preview.Value().width) && data.imageSize.y == static_cast<int32_t>(preview.Value().height)) {
+            const auto index = anim::CurrentFrameIndex(data.clip, m_cursor);
+            if (index < data.sheet.frames.size()) {
+                ImGui::Text("현재 시트 프레임: %u", index);
+                DrawImage(preview.Value(), data.sheet.frames[index], 140.0f);
+            }
+            DrawSheetFrames(*doc, preview.Value());
+        } else if (preview) ImGui::TextWrapped("시트 크기가 PNG와 다릅니다. 시트를 다시 설정하세요.");
+        else ImGui::TextWrapped("%s", preview.GetError().message.c_str());
+        DrawTimeline(*doc);
+        DrawEvents(*doc);
         ImGui::End();
     }
-
-    void SerializeState(json::Value& out) const override {
-        json::Value::Object o;
-        o["type"] = json::Value(std::string("mye.anim"));
-        out = json::Value(std::move(o));
-    }
-
 private:
-    static void DrawHeader(EditorContext&, AnimEditSession& s) {
-        char buf[128];
-        std::snprintf(buf, sizeof(buf), "%s", s.clip.name.c_str());
-        if (ImGui::InputText("클립 이름", buf, sizeof(buf))) s.clip.name = buf;
-        ImGui::SameLine();
-        ImGui::Checkbox("Loop", &s.clip.loop);
-        ImGui::Text("프레임 %zu개  길이 %.2fs", s.clip.frameIndices.size(), s.ClipDuration());
-    }
-
-    static void DrawTransport(AnimEditSession& s) {
-        if (ImGui::Button(s.playing ? "❚❚ 정지" : "▶ 재생")) s.playing = !s.playing;
-        ImGui::SameLine();
-        if (ImGui::Button("⏮")) { s.cursorTime = 0; s.previewFrame = 0; }
-        ImGui::SameLine();
-        ImGui::SliderFloat("speed", &s.speed, 0.1f, 4.0f, "x%.2f");
-        ImGui::Text("프리뷰 프레임: %d", s.previewFrame);
-    }
-
-    static void DrawFrames(EditorContext& ctx, AnimEditSession& s) {
-        ImGui::TextUnformatted("프레임:");
-        static int newFrameIdx = 0;
-        static float newDur = 0.1f;
-        ImGui::InputInt("추가 프레임 idx", &newFrameIdx);
-        ImGui::InputFloat("duration", &newDur);
-        if (ImGui::Button("+ 프레임 추가")) {
-            PushClipEdit(ctx, s,
-                         anim_edit::WithFrameAppended(s.clip,
-                             static_cast<uint32_t>(std::max(0, newFrameIdx)), newDur),
-                         "프레임 추가");
+    void SaveDocument(EditorContext& ctx, Document& doc) {
+        const auto saved = ctx.project->SaveAnimation(doc.Id(), m_savePath.data());
+        m_status = saved ? "애니메이션 저장 완료" : saved.GetError().message;
+        if (saved && ctx.app->Viewport()) {
+            auto refreshed = ctx.app->Viewport()->RefreshAssetIndex();
+            if (!refreshed) m_status += " / " + refreshed.GetError().message;
         }
-        for (size_t i = 0; i < s.clip.frameIndices.size(); ++i) {
+    }
+    void Commit(Document& doc, asset::AnimationAsset after, const char* label) {
+        doc.Commands().Push(std::make_unique<AnimAssetEditCommand>(doc.Animation(), std::move(after), label));
+        m_cursor = {};
+    }
+    static void DrawImage(const IEditorViewport::TexturePreview& texture, const asset::SpriteFrame& frame, float height) {
+        const auto& r = frame.rect;
+        if (r.w <= 0 || r.h <= 0 || r.x < 0 || r.y < 0 ||
+            int64_t{r.x} + r.w > texture.width || int64_t{r.y} + r.h > texture.height) return;
+        ImGui::Image(reinterpret_cast<ImTextureID>(texture.id), ImVec2(height * r.w / r.h, height),
+            ImVec2(float(r.x) / texture.width, float(r.y) / texture.height),
+            ImVec2(float(r.x + r.w) / texture.width, float(r.y + r.h) / texture.height));
+    }
+    void DrawSettings(EditorContext& ctx, Document& doc) {
+        auto& data = doc.Animation();
+        char name[256]; std::snprintf(name, sizeof(name), "%s", data.clip.name.c_str());
+        if (ImGui::InputText("클립 이름 (Enter)", name, sizeof(name), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            auto after = data; after.clip.name = name; Commit(doc, std::move(after), "클립 이름");
+        }
+        bool loop = data.clip.loop;
+        if (ImGui::Checkbox("반복", &loop)) { auto after = data; after.clip.loop = loop; Commit(doc, std::move(after), "반복"); }
+        ImGui::SameLine();
+        int direction = static_cast<int>(data.clip.direction);
+        if (ImGui::Combo("방향", &direction, "정방향\0역방향\0왕복\0")) {
+            auto after = data; after.clip.direction = static_cast<asset::AnimationClipData::Direction>(direction);
+            Commit(doc, std::move(after), "재생 방향");
+        }
+        ImGui::TextWrapped("PNG 시트를 에셋 브라우저에서 아래로 드래그하세요. 기존 시트 설정은 Undo로 복원할 수 있습니다.");
+        ImGui::Button("PNG 시트 놓기", ImVec2(-1, 28));
+        if (ImGui::BeginDragDropTarget()) {
+            if (const auto* payload = ImGui::AcceptDragDropPayload("MYE_ASSET")) {
+                const auto* text = static_cast<const char*>(payload->Data);
+                auto* db = ctx.engine ? ctx.engine->GetService<asset::AssetDatabase>() : nullptr;
+                if (db && payload->DataSize > 0 && text[payload->DataSize - 1] == '\0' &&
+                    std::string_view(text).ends_with(".png") && ctx.app->Viewport()) {
+                    auto texture = ctx.app->Viewport()->AssetTexture(db->GuidFromPath(text));
+                    if (texture) {
+                        auto after = data;
+                        after.sheet.texture.guid = db->GuidFromPath(text);
+                        after.imageSize = {static_cast<int32_t>(texture.Value().width), static_cast<int32_t>(texture.Value().height)};
+                        after.sheet.frames.clear(); after.clip.frameIndices.clear(); after.clip.frameDurations.clear(); after.clip.events.clear();
+                        Commit(doc, std::move(after), "시트 선택");
+                    } else m_status = texture.GetError().message;
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        ImGui::InputInt2("그리드 셀 크기 (px)", m_cell.data());
+        ImGui::BeginDisabled(m_cell[0] <= 0 || m_cell[1] <= 0 || data.imageSize.x <= 0 || data.imageSize.y <= 0);
+        if (ImGui::Button("그리드에서 프레임 만들기")) {
+            const int64_t count = int64_t{data.imageSize.x / m_cell[0]} * (data.imageSize.y / m_cell[1]);
+            if (count > 0 && count <= 4096) {
+                auto after = data;
+                asset::SpriteSheetImportSettings settings; settings.frameSize = {m_cell[0], m_cell[1]};
+                after.sheet.frames = asset::SpriteSheetImporter::SliceGrid(data.imageSize, settings);
+                after.clip.frameIndices.clear(); after.clip.frameDurations.clear(); after.clip.events.clear();
+                for (uint32_t i = 0; i < after.sheet.frames.size(); ++i) {
+                    after.sheet.frames[i].pivot = {0.5f, 1.0f};
+                    after.clip.frameIndices.push_back(i); after.clip.frameDurations.push_back(0.15f);
+                }
+                Commit(doc, std::move(after), "그리드 프레임");
+            } else m_status = "시트 프레임 수는 1~4096이어야 합니다.";
+        }
+        ImGui::EndDisabled();
+    }
+    void DrawSheetFrames(Document& doc, const IEditorViewport::TexturePreview& texture) {
+        if (!ImGui::CollapsingHeader("시트 프레임 / 클릭하여 타임라인에 추가")) return;
+        auto& data = doc.Animation();
+        for (size_t i = 0; i < data.sheet.frames.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
-            ImGui::Text("f%zu: sheet[%u]", i, s.clip.frameIndices[i]);
-            ImGui::SameLine();
-            float d = (i < s.clip.frameDurations.size()) ? s.clip.frameDurations[i] : 0.0f;
-            ImGui::SetNextItemWidth(80);
-            if (ImGui::InputFloat("dur", &d))
-                PushClipEdit(ctx, s, anim_edit::WithFrameDuration(s.clip, i, d), "duration 변경");
-            ImGui::SameLine();
-            if (ImGui::SmallButton("삭제"))
-                PushClipEdit(ctx, s, anim_edit::WithFrameRemoved(s.clip, i), "프레임 삭제");
+            DrawImage(texture, data.sheet.frames[i], 64);
+            if (ImGui::IsItemClicked()) {
+                auto after = data;
+                after.clip = anim_edit::WithFrameAppended(data.clip, static_cast<uint32_t>(i), 0.15f);
+                Commit(doc, std::move(after), "프레임 추가");
+            }
+            int rect[4]{data.sheet.frames[i].rect.x, data.sheet.frames[i].rect.y,
+                        data.sheet.frames[i].rect.w, data.sheet.frames[i].rect.h};
+            if (ImGui::InputInt4("영역 (Enter)", rect, ImGuiInputTextFlags_EnterReturnsTrue)) {
+                auto after = data;
+                after.sheet.frames[i].rect = {rect[0], rect[1], rect[2], rect[3]};
+                after.sheet.frames[i].uv = {float(rect[0]) / data.imageSize.x, float(rect[1]) / data.imageSize.y,
+                                           float(rect[2]) / data.imageSize.x, float(rect[3]) / data.imageSize.y};
+                if (after.Validate()) Commit(doc, std::move(after), "프레임 영역"); else m_status = "프레임 영역이 시트 밖입니다.";
+            }
+            const auto& f = data.sheet.frames[i];
+            float pivot[2]{f.pivotInPixels ? f.pivot.x : f.pivot.x * f.rect.w,
+                           f.pivotInPixels ? f.pivot.y : f.pivot.y * f.rect.h};
+            if (ImGui::InputFloat2("피벗 px (Enter)", pivot, "%.1f", ImGuiInputTextFlags_EnterReturnsTrue)) {
+                auto after = data; after.sheet.frames[i].pivot = {pivot[0], pivot[1]}; after.sheet.frames[i].pivotInPixels = true;
+                if (after.Validate()) Commit(doc, std::move(after), "프레임 피벗");
+            }
             ImGui::PopID();
         }
     }
-
-    static void DrawEvents(EditorContext& ctx, AnimEditSession& s) {
-        ImGui::TextUnformatted("이벤트 마커:");
-        static int evFrame = 0;
-        static char evName[64] = "footstep";
-        ImGui::InputInt("프레임", &evFrame);
-        ImGui::InputText("이름", evName, sizeof(evName));
-        if (ImGui::Button("+ 이벤트 추가")) {
-            asset::AnimEventMarker ev;
-            ev.frameIndex = static_cast<uint32_t>(std::max(0, evFrame));
-            ev.name = evName;
-            PushClipEdit(ctx, s, anim_edit::WithEventAdded(s.clip, ev), "이벤트 추가");
-        }
-        for (size_t i = 0; i < s.clip.events.size(); ++i) {
-            ImGui::PushID(static_cast<int>(1000 + i));
-            ImGui::Text("◆ f%u: %s", s.clip.events[i].frameIndex, s.clip.events[i].name.c_str());
+    void DrawTimeline(Document& doc) {
+        auto& data = doc.Animation();
+        ImGui::SeparatorText("타임라인");
+        for (size_t i = 0; i < data.clip.frameIndices.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Text("%zu: 시트 %u", i, data.clip.frameIndices[i]); ImGui::SameLine();
+            float duration = data.clip.frameDurations[i]; ImGui::SetNextItemWidth(110);
+            if (ImGui::InputFloat("초 (Enter)", &duration, 0, 0, "%.3f", ImGuiInputTextFlags_EnterReturnsTrue)) {
+                auto after = data; after.clip = anim_edit::WithFrameDuration(data.clip, i, duration);
+                if (after.Validate()) Commit(doc, std::move(after), "프레임 시간");
+            }
             ImGui::SameLine();
-            if (ImGui::SmallButton("삭제"))
-                PushClipEdit(ctx, s, anim_edit::WithEventRemoved(s.clip, i), "이벤트 삭제");
+            if (ImGui::SmallButton("보기")) { m_cursor = {}; m_cursor.step = data.clip.direction == asset::AnimationClipData::Direction::Reverse
+                    ? static_cast<uint32_t>(data.clip.frameIndices.size() - 1 - i) : static_cast<uint32_t>(i); m_playing = false; }
+            ImGui::SameLine(); ImGui::BeginDisabled(i == 0);
+            if (ImGui::SmallButton("<")) { auto after = data; after.clip = anim_edit::WithFrameMoved(data.clip, i, i - 1); Commit(doc, std::move(after), "순서 이동"); }
+            ImGui::EndDisabled(); ImGui::SameLine(); ImGui::BeginDisabled(i + 1 == data.clip.frameIndices.size());
+            if (ImGui::SmallButton(">")) { auto after = data; after.clip = anim_edit::WithFrameMoved(data.clip, i, i + 1); Commit(doc, std::move(after), "순서 이동"); }
+            ImGui::EndDisabled(); ImGui::SameLine();
+            if (ImGui::SmallButton("삭제")) { auto after = data; after.clip = anim_edit::WithFrameRemoved(data.clip, i); Commit(doc, std::move(after), "프레임 삭제"); ImGui::PopID(); break; }
             ImGui::PopID();
         }
     }
+    void DrawEvents(Document& doc) {
+        auto& data = doc.Animation();
+        if (!ImGui::CollapsingHeader("이벤트")) return;
+        for (size_t i = 0; i < data.clip.events.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            const auto& event = data.clip.events[i];
+            ImGui::Text("%u / %s / %s / %.2f", event.frameIndex, event.name.c_str(), event.stringArg.c_str(), event.floatArg);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("삭제")) { auto after = data; after.clip = anim_edit::WithEventRemoved(data.clip, i); Commit(doc, std::move(after), "이벤트 삭제"); ImGui::PopID(); break; }
+            ImGui::PopID();
+        }
+        ImGui::InputInt("프레임 위치", &m_eventFrame); ImGui::InputText("이름", m_eventName.data(), m_eventName.size());
+        ImGui::InputText("문자열 인자", m_eventText.data(), m_eventText.size()); ImGui::InputFloat("수치 인자", &m_eventValue);
+        if (ImGui::Button("이벤트 추가") && m_eventFrame >= 0) {
+            auto after = data;
+            after.clip = anim_edit::WithEventAdded(data.clip, {static_cast<uint32_t>(m_eventFrame), m_eventName.data(), m_eventText.data(), m_eventValue});
+            if (after.Validate()) Commit(doc, std::move(after), "이벤트 추가"); else m_status = "이벤트 프레임·이름·인자를 확인하세요.";
+        }
+    }
+    DocumentId m_document{};
+    uint64_t m_commandPosition = 0;
+    std::string m_root, m_status;
+    std::array<char, 4096> m_savePath{};
+    std::array<int, 2> m_cell{64, 64};
+    anim::ClipCursor m_cursor{};
+    bool m_playing = false;
+    float m_speed = 1.0f, m_eventValue = 0;
+    int m_eventFrame = 0;
+    std::array<char, 128> m_eventName{}, m_eventText{};
 };
-
-template <class P>
-class SimpleFactory final : public IEditorPanelFactory {
+class AnimationEditorPanelFactory final : public IEditorPanelFactory {
 public:
-    explicit SimpleFactory(const PanelDesc& d) : m_desc(d) {}
-    const PanelDesc& Desc() const override { return m_desc; }
-    std::unique_ptr<IEditorPanel> Create() override { return std::make_unique<P>(); }
-private:
-    const PanelDesc& m_desc;
+    const PanelDesc& Desc() const override { return kDesc; }
+    std::unique_ptr<IEditorPanel> Create() override { return std::make_unique<AnimationEditorPanel>(); }
 };
-
-} // namespace
-
-std::unique_ptr<IEditorPanelFactory> MakeAnimationEditorPanelFactory() {
-    return std::make_unique<SimpleFactory<AnimationEditorPanel>>(kAnimDesc);
 }
-
+std::unique_ptr<IEditorPanelFactory> MakeAnimationEditorPanelFactory() { return std::make_unique<AnimationEditorPanelFactory>(); }
 } // namespace mye::editor

@@ -15,6 +15,10 @@
 
 [Camera2D](../engine/render/include/mye/render/Camera2D.h)가 화면/월드 변환·카메라 픽셀 스냅을 담당한다. 표현 상태에 보간을 적용할 경우 보간 후 픽셀 스냅한다. 월드의 +Y 위와 UI의 +Y 아래를 혼용하지 않는다.
 
+[SpriteCorners](../engine/scene/include/mye/scene/SpriteGeometry.h)는 소스 영역 크기·발밑 피벗·PPU와 전체 WorldTransform으로 쿼드 좌표를 만든다. HybridRenderer와 에디터 선택 경계가 같은 함수를 사용하므로 scale·rotation을 렌더에서 누락하지 않는다. SceneSerializer는 로드한 LocalTransform에 파생 WorldTransform을 복구한다. 좌표·PPU·깊이·cutout 수치는 유지한다.
+
+MyEditor PNG·뷰포트는 UNORM 색을 그대로 사용한다. 편집기 스왑체인도 BGRA8Unorm으로 맞춰 ImGui 출력에서 sRGB 인코딩이 색을 다시 밝히지 않게 한다. 월드 텍스처의 point 샘플링과 ImGui 이미지 미리보기의 필터는 구분한다.
+
 ## 현재 프레임 경로
 
 ```text

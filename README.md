@@ -11,7 +11,7 @@ The design favors clear ownership, small modules and measured performance.
 
 | Application | Purpose | Current behavior |
 |-------------|---------|------------------|
-| `MyEditor` | Edit scenes and content | Project/scene create, open and save; independent scene tabs, docking panels, inspector, undo and an isolated play world |
+| `MyEditor` | Edit scenes and content | Project/scene create, open and save; meadow village starter with a level-1 character; sprite animation editing, PNG preview, undo and isolated animation playback |
 | `MyGame` | Run a game project | Title/settings, scene loading, local movement, audio and loopback multiplayer movement |
 | `MyServer` | Host local multiplayer | Account authentication, authoritative movement, session snapshots, backups and metrics |
 | `paktool` | Package assets | Build and inspect pak files through the asset/VFS layer |
@@ -33,6 +33,15 @@ opening cutscene, wandering NPCs, footsteps and BGM. Lua scripts and localizatio
 tables load from assets at startup. The map and spawn layout are currently
 constructed in C++; complete data-driven editing and automatic reload remain
 integration work.
+
+MyEditor includes a [meadow village starter](game/starter/meadow_village/README.md).
+The first launch copies it into the user project directory; new projects can include
+it from the creation dialog. Open a `.anim` file in the asset browser to edit frame
+regions, pivots, timing and events, preview the PNG and assign it to a scene sprite.
+The starter map is a background image with a separate character; editable terrain,
+collision and movement controls remain integration work. See the [editor guide](docs/07-editor-ui.md).
+
+![MyEditor meadow village and animation panel](docs/images/editor-animation.png)
 
 ## Key features
 
@@ -71,7 +80,7 @@ integration work.
   snapshots, backup/restore and PBKDF2-SHA256 password storage through Windows CNG.
 - Save format: versioned `state.json`; complete legacy three-file saves are read
   and converted on the next save. One writer per directory, 64 MiB ceiling.
-- Online combat/social integration, editor asset/play-system integration, encrypted
+- Online combat/social integration, editor physics/Lua integration, encrypted
   transport and production operations remain in the [backlog](docs/14-development-priorities.md).
   The current UDP server binds to loopback because its credentials are unencrypted.
 

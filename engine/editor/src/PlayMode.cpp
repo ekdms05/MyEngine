@@ -20,6 +20,7 @@
 namespace mye::editor {
 
 struct PlayModeController::Impl {
+    bool stepRequested = false;
     std::unique_ptr<EventBus>     playEvents;     // Play World 전용 월드-로컬 버스(Stop 시 파기).
     std::unique_ptr<ecs::World>   playWorld;      // 버스보다 먼저 파괴.
     std::unique_ptr<CommandStack> playCommands;   // 플레이 중 Undo(Stop 시 파기).
@@ -84,6 +85,7 @@ Expected<void, Error> PlayModeController::Play() {
     // 플레이 전용 Undo 스택(Stop 시 파기). 문서 스택과 분리(07 §3).
     m_impl->playCommands = std::make_unique<CommandStack>();
 
+    m_impl->stepRequested = false;
     m_state = PlayState::Playing;
     PublishStateChange(m_events, prev, m_state);
     return {};
@@ -99,17 +101,18 @@ void PlayModeController::Pause() {
 void PlayModeController::Resume() {
     if (m_state != PlayState::Paused) return;
     const PlayState prev = m_state;
+    m_impl->stepRequested = false;
     m_state = PlayState::Playing;
     PublishStateChange(m_events, prev, m_state);
 }
 
 void PlayModeController::StepFrame() {
-    // 07: F10 — Paused에서만 1프레임 진행. 실제 Play World tick(스크립트·물리·AI 고정 스텝)은
-    //   런타임 시스템 스케줄러 배선(M4-B 뷰포트/게임 루프 통합)에서 이 훅을 소비한다. 여기서는
-    //   상태 계약만 지킨다(Paused 유지). tick 게이팅은 EditorModule의 PreRender 틱이 State()를
-    //   보고 결정한다.
-    if (m_state != PlayState::Paused) return;
-    // no-op placeholder: 1프레임 진행 요청 플래그는 상위 루프가 State()==Paused + 요청으로 처리.
+    if (m_state == PlayState::Paused) m_impl->stepRequested = true;
+}
+bool PlayModeController::ConsumeStepRequest() {
+    const bool requested = m_state == PlayState::Paused && m_impl->stepRequested;
+    m_impl->stepRequested = false;
+    return requested;
 }
 
 void PlayModeController::Stop() {
@@ -123,6 +126,7 @@ void PlayModeController::Stop() {
     if (m_impl->playCommands) m_impl->playCommands->Clear();
     m_impl->playCommands.reset();
 
+    m_impl->stepRequested = false;
     m_state = PlayState::Edit;
     PublishStateChange(m_events, prev, m_state);
 }

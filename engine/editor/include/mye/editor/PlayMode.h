@@ -43,6 +43,7 @@ public:
     void Pause();      // Playing → Paused
     void Resume();     // Paused → Playing
     void StepFrame();  // Paused에서 1프레임 진행(F10)
+    bool ConsumeStepRequest(); // Fixed-update owner consumes one paused tick.
     void Stop();       // Play World 파기 + Play Undo 스택 파기 → Edit 복귀
 
     PlayState State() const { return m_state; }

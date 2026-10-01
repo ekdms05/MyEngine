@@ -2,7 +2,7 @@
 //                                                            (docs/07 §1·§3, 씬 뷰포트)
 // 07 §1: 게임과 동일한 모듈 스택 위에 얹히는 EditorModule. 이 모듈이:
 //   (1) RHI 디바이스·스왑체인·mye_imgui DebugUi(도킹 셸)를 소유·초기화하고,
-//   (2) PreRender 틱에서 [플레이 tick 게이팅] → [활성 World를 오프스크린 RT에 렌더] →
+//   (2) FixedUpdate에서 플레이를 진행하고 PreRender에서 [활성 World를 오프스크린 RT에 렌더] →
 //       [DebugUi::BeginFrame → EditorApp::OnFrame(도킹·메뉴·패널) → DebugUi::EndFrame → Present]
 //       를 오케스트레이션하며,
 //   (3) IEditorViewport 를 구현해 ViewportPanel 에 오프스크린 RT 텍스처·좌표 변환을 제공한다.
@@ -22,8 +22,16 @@
 
 #include "mye/scene/RenderExtract.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/Renderable.h"
+#include "mye/ecs/World.h"
 
 #include "mye/anim/AnimationSystem.h"
+#include "mye/asset/AssetDatabase.h"
+#include "mye/asset/AssetManager.h"
+#include "mye/asset/Importer.h"
+#include "mye/core/JsonFile.h"
+#include <map>
+#include <filesystem>
 
 #include "mye/core/App.h"
 #include "mye/core/Events.h"
@@ -63,7 +71,7 @@ constexpr uint32_t kHeadlessH = 540;
 // -----------------------------------------------------------------------------
 struct EditorModule::Impl final : public IEditorViewport {
     std::unique_ptr<EditorApp> app;
-    std::string projectPath;
+    std::string projectPath, templateDirectory;
 
     EngineContext*         engine = nullptr;
     InputState*            input = nullptr;
@@ -78,6 +86,98 @@ struct EditorModule::Impl final : public IEditorViewport {
     mye::ScopedSubscription          onResized;
 
     // 뷰포트 상태(패널이 통지, 렌더가 소비).
+    // Handles are released before the manager and device.
+    std::unique_ptr<asset::VirtualFileSystem> vfs;
+    std::unique_ptr<asset::AssetManager> assets;
+    std::unique_ptr<asset::AssetDatabase> assetDb;
+    std::map<asset::AssetGuid, asset::AssetHandle<asset::Texture>> textures;
+    std::map<asset::AssetGuid, asset::AnimationAsset> animations;
+    std::string assetRoot;
+
+    void ClearAssets() {
+        if (engine) engine->UnregisterServiceRaw(asset::AssetDatabase::kServiceId);
+        textures.clear();
+        animations.clear();
+        assetDb.reset();
+        assets.reset();
+        vfs.reset();
+        assetRoot.clear();
+    }
+    Expected<void, Error> SyncAssets() {
+        const auto root = Utf8String(Utf8Path(app->Project().RootDir()) / "assets");
+        if (root == assetRoot) return {};
+        ClearAssets();
+        if (!app->Project().IsOpen()) return {};
+        vfs = std::make_unique<asset::VirtualFileSystem>();
+        vfs->Mount("assets", std::make_unique<asset::LooseFileSystem>(root), 0);
+        assets = std::make_unique<asset::AssetManager>(*vfs, device.get());
+        assets->RegisterImporter(std::make_unique<asset::TextureImporter>());
+        assetDb = std::make_unique<asset::AssetDatabase>(*assets, nullptr);
+        auto scanned = assetDb->ScanDirectory(root);
+        if (!scanned) { ClearAssets(); assetRoot = root; return scanned.GetError(); }
+        assetRoot = root;
+        engine->RegisterServiceRaw(asset::AssetDatabase::kServiceId, assetDb.get());
+        return {};
+    }
+    Expected<void, Error> RefreshAssetIndex() override {
+        assetRoot.clear();
+        auto synced = SyncAssets();
+        if (!synced) return synced.GetError();
+        return assetDb ? assetDb->ScanDirectory(assetRoot) : Expected<void, Error>(Error{"Open a project first", 1});
+    }
+    const asset::Texture* ResolveTexture(asset::AssetGuid guid) {
+        if (!assetDb || !guid.IsValid()) return nullptr;
+        auto found = textures.find(guid);
+        if (found == textures.end()) {
+            const auto path = assetDb->PathFromGuid(guid);
+            if (path.empty()) return nullptr;
+            const auto* importer = assets->FindImporterForPath(path);
+            if (!importer || importer->ProducedType() != asset::Texture::kAssetTypeId) return nullptr;
+            found = textures.emplace(guid, assets->LoadSync<asset::Texture>(path)).first;
+        }
+        return found->second.Get();
+    }
+    Expected<TexturePreview, Error> AssetTexture(asset::AssetGuid guid) override {
+        const auto* texture = ResolveTexture(guid);
+        if (!texture) return Error{"Texture could not be loaded; check its PNG and .meta", 1};
+        return TexturePreview{device->GetImGuiTextureID(texture->gpuTexture), texture->width, texture->height};
+    }
+    const asset::AnimationAsset* ResolveAnimation(asset::AssetGuid guid) {
+        if (!assetDb || !guid.IsValid()) return nullptr;
+        const auto path = assetDb->PathFromGuid(guid);
+        if (!path.ends_with(".anim")) return nullptr;
+        const auto osPath = Utf8Path(assetRoot) / Utf8Path(path.substr(9));
+        for (auto* doc : app->Project().Documents()) {
+            if (doc->GetKind() != Document::Kind::Asset || Utf8Path(doc->Path()) != osPath) continue;
+            return doc->Animation().Validate() ? &doc->Animation() : nullptr;
+        }
+        auto found = animations.find(guid);
+        if (found == animations.end()) {
+            auto value = ReadJsonFile(osPath);
+            if (!value) { MYE_LOG_ERROR("Editor", "{}", value.GetError().message); return nullptr; }
+            auto loaded = asset::AnimationAsset::FromJson(value.Value());
+            if (!loaded) { MYE_LOG_ERROR("Editor", "{}", loaded.GetError().message); return nullptr; }
+            found = animations.emplace(guid, std::move(loaded).Value()).first;
+        }
+        return &found->second;
+    }
+    void BindAnimations(ecs::World& world) {
+        world.Query<anim::SpriteAnimator, scene::SpriteRenderer>().Each(
+            [&](ecs::Entity, anim::SpriteAnimator& animator, scene::SpriteRenderer& sprite) {
+                if (!animator.animation.guid.IsValid()) return;
+                const auto* data = ResolveAnimation(animator.animation.guid);
+                const auto* texture = data ? ResolveTexture(data->sheet.texture.guid) : nullptr;
+                if (!data || !texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
+                    animator.sheet = nullptr; animator.directClip = nullptr;
+                    return;
+                }
+                if (animator.directClip != &data->clip) { animator.cursor = {}; animator.started = false; }
+                animator.sheet = &data->sheet;
+                animator.directClip = &data->clip;
+                anim::UpdateAnimator(animator, 0.0f, &sprite, [](const asset::AnimEventMarker&) {});
+            });
+    }
+
     ViewportCamera vpCam{};
     uint32_t       vpWidth = kHeadlessW;
     uint32_t       vpHeight = kHeadlessH;
@@ -94,7 +194,6 @@ struct EditorModule::Impl final : public IEditorViewport {
     std::function<void()> onExit;   // 프레임 한도 도달 시 호출(main 이 Application::RequestExit 배선).
 
     // 플레이 게이팅.
-    bool stepRequested = false;
 
     // ---- Camera2D 산출(현재 뷰포트 크기·카메라 기준) ----
     render::Camera2D BuildCamera() const {
@@ -142,8 +241,9 @@ struct EditorModule::Impl final : public IEditorViewport {
 };
 
 // -----------------------------------------------------------------------------
-EditorModule::EditorModule(std::string projectPath) : m_impl(std::make_unique<Impl>()) {
+EditorModule::EditorModule(std::string projectPath, std::string templateDirectory) : m_impl(std::make_unique<Impl>()) {
     m_impl->projectPath = std::move(projectPath);
+    m_impl->templateDirectory = std::move(templateDirectory);
 }
 EditorModule::~EditorModule() = default;
 
@@ -181,7 +281,8 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
     if (s.device && window) {
         rhi::SwapChainDesc scDesc{};
         scDesc.width = 0; scDesc.height = 0;
-        scDesc.format = rhi::Format::BGRA8UnormSrgb;
+        // Imported pixel colors already use UNORM; sRGB output would brighten the viewport again.
+        scDesc.format = rhi::Format::BGRA8Unorm;
         s.swapChain = s.device->CreateSwapChain(window->GetNativeHandle(), scDesc);
         if (!s.swapChain)
             MYE_LOG_ERROR("Editor", "스왑체인 생성 실패");
@@ -209,7 +310,7 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
         ppd.internalWidth = kHeadlessW;
         ppd.internalHeight = kHeadlessH;
         ppd.useDepth = true;
-        ppd.backbufferFormat = s.swapChain ? s.swapChain->GetFormat() : rhi::Format::BGRA8UnormSrgb;
+        ppd.backbufferFormat = s.swapChain ? s.swapChain->GetFormat() : rhi::Format::BGRA8Unorm;
         s.rt.Init(*s.device, ppd);
 
         render::HybridRendererDesc hrd{};
@@ -217,8 +318,9 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
         hrd.depthFormat = rhi::Format::D24UnormS8Uint;
         hrd.alphaCutoff = 0.5f;
         s.hybrid.Init(*s.device, hrd);
-        // 텍스처 해석기: 에디터 에셋 파이프라인(에셋 브라우저 에이전트)과 공유 예정.
-        // Texture resolution is not wired yet; unresolved sprites are skipped.
+        s.hybrid.SetTextureResolver([](void* user, asset::AssetGuid guid) {
+            return static_cast<Impl*>(user)->ResolveTexture(guid);
+        }, &s);
     }
 
     s.app = std::make_unique<EditorApp>();
@@ -227,7 +329,7 @@ void EditorModule::OnInitialize(EngineContext& ctx) {
 void EditorModule::OnPostInitialize(EngineContext& ctx) {
     Impl& s = *m_impl;
     if (s.app) {
-        auto r = s.app->Initialize(ctx, s.projectPath);
+        auto r = s.app->Initialize(ctx, s.projectPath, s.templateDirectory);
         if (!r) MYE_LOG_ERROR("Editor", "EditorApp 초기화 실패: {}", r.GetError().message);
 
         s.app->RefreshDocumentContext();
@@ -236,7 +338,16 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
         s.app->SetViewport(&s);
     }
 
-    // PreRender 틱: 플레이 게이팅 → 오프스크린 씬 렌더 → ImGui 프레임 → Present.
+    // 시뮬레이션은 고정 틱, 렌더·ImGui는 표현 단계에서 처리한다.
+    ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& t) {
+        auto& state = *m_impl;
+        if (!state.app || !state.device) return;
+        state.app->RefreshDocumentContext();
+        auto synced = state.SyncAssets();
+        if (!synced) MYE_LOG_ERROR("Editor", "{}", synced.GetError().message);
+        if (auto* world = state.app->PlayMode().ActiveWorld()) state.BindAnimations(*world);
+        TickPlayWorld(t);
+    }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::PreRender,
                           [this](const TimeStep& t) { Frame(t); }, /*orderKey*/ 100);
 }
@@ -250,7 +361,7 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
 
     bool doTick = false;
     if (st == PlayState::Playing) doTick = true;
-    else if (st == PlayState::Paused && s.stepRequested) { doTick = true; s.stepRequested = false; }
+    else if (st == PlayState::Paused && pm.ConsumeStepRequest()) doTick = true;
 
     if (!doTick) return;
     ecs::World* w = pm.ActiveWorld();
@@ -262,13 +373,14 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
     scene::UpdateWorldTransforms(*w);
 }
 
-void EditorModule::Frame(const TimeStep& step) {
+void EditorModule::Frame(const TimeStep&) {
     Impl& s = *m_impl;
     if (!s.app || !s.device) return;
     s.app->RefreshDocumentContext();
 
-    // 1) 플레이 tick 게이팅.
-    TickPlayWorld(step);
+    auto synced = s.SyncAssets();
+    if (!synced) MYE_LOG_ERROR("Editor", "{}", synced.GetError().message);
+    if (auto* world = s.app->PlayMode().ActiveWorld()) s.BindAnimations(*world);
 
     // 2) 활성 World 추출.
     ecs::World* world = s.app->PlayMode().ActiveWorld();
@@ -378,6 +490,7 @@ void EditorModule::OnShutdown(EngineContext& ctx) {
     s.hybrid.Shutdown();
     s.rt.Shutdown();
     s.proxies.Clear();
+    s.ClearAssets();
     s.swapChain.reset();
     s.device.reset();
 
@@ -397,6 +510,6 @@ void EditorModule::SetCliControl(bool frameLimit, uint64_t maxFrames, bool dumpE
     s.onExit = std::move(onExit);
 }
 
-void EditorModule::RequestStepFrame() { m_impl->stepRequested = true; }
+void EditorModule::RequestStepFrame() { if (m_impl->app) m_impl->app->PlayMode().StepFrame(); }
 
 } // namespace mye::editor

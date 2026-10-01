@@ -36,7 +36,7 @@ public:
 
     // ---- 라이프사이클(EditorModule이 호출) ----
     // 서브시스템 생성·이벤트 배선·내장 패널 등록·프로젝트 오픈·레이아웃 복원.
-    Expected<void, Error> Initialize(EngineContext& engine, std::string_view projectPath);
+    Expected<void, Error> Initialize(EngineContext& engine, std::string_view projectPath, std::string_view templateDirectory = {});
     // 매 프레임(PreRender): DebugUi::BeginFrame 이후 호출 → 메뉴바·툴바·도킹·패널 빌드.
     void OnFrame();
     // 종료: 레이아웃 저장·문서 정리(디바이스/윈도우 파괴 전, 셧다운 데드락 규약).
@@ -64,11 +64,15 @@ public:
     bool Vsync() const { return m_vsync; }
 
     Expected<void, Error> CreateProject(std::string_view name, std::string_view directory,
-                                        bool discardUnsaved = false);
+                                        bool discardUnsaved = false, bool useStarter = false);
     Expected<void, Error> OpenProject(std::string_view path, bool discardUnsaved = false);
     Expected<void, Error> OpenScene(std::string_view path);
     Expected<void, Error> SaveProject();
     Expected<void, Error> SaveScene(std::string_view path);
+    Expected<void, Error> OpenAnimation(std::string_view path);
+    Document* AnimationDocument();
+    void SetAnimationFocused() { m_animationFocused = true; }
+    void SelectAnimationDocument(DocumentId id) { m_animationId = id; }
     void ActivateDocument(DocumentId id);
     void RefreshDocumentContext(); // Also called before the module renders/ticks a world.
 
@@ -112,6 +116,10 @@ private:
     ecs::World*    m_boundWorld = nullptr;
     bool           m_selectDocumentTab = false;
     bool           m_showNewProject = false;
+    bool           m_useStarter = true;
+    std::string    m_templateDirectory;
+    DocumentId     m_animationId{};
+    bool           m_animationFocused = false;
     std::array<char, 128> m_newProjectName{};
     std::array<char, 4096> m_newProjectDirectory{};
     std::string    m_fileStatus;

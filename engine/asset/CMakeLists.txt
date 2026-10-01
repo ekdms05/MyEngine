@@ -32,6 +32,7 @@ add_library(mye_asset STATIC
     # ---- ----
     src/FileWatcher.cpp
     src/AssetDatabase.cpp
+    src/AnimationAsset.cpp
     src/SpriteImporter.cpp
     src/AtlasPacker.cpp
     src/AudioImporter.cpp

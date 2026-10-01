@@ -20,6 +20,7 @@ struct Progression {
 
 // level → level+1 에 필요한 경험치(성장 곡선, 밸런스 지점).
 int64_t XpForLevel(int32_t level);
+void RegisterProgressionReflection();
 
 // XP 획득 → 레벨업 처리. 레벨업마다 stats.base 성장 + stats.dirty=true. 오른 레벨 수 반환.
 int32_t GainXp(Progression& prog, Stats& stats, int64_t amount);

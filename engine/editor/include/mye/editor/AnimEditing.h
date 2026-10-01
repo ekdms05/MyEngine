@@ -1,22 +1,35 @@
 // mye/editor/AnimEditing.h — 애니메이션 에디터 편집 모델·커맨드 (docs/07 §애니메이션 에디터)
 //
-// 07: .anim 클립/상태머신 편집. 타임라인(프레임·duration), 이벤트 마커(footstep 등), 8방향 세트,
-//   리스트 기반 전이 편집(노드 그래프는 P2 백로그). 편집은 커맨드 경유, 값은 AnimationClipData
-//   (04 스키마)를 직렬화(refl/ser)한다.
-//
-// 편집 대상은 에디터가 보유한 AnimationClipData 워킹 카피(비-ECS)다. 커맨드는 그 인스턴스를
-//   비소유 포인터로 캡처하고, before/after를 값 스냅샷으로 저장해 Undo 1회로 되돌린다. 이는
-//   PropertyEditCommand(ECS 컴포넌트 대상)와 별개의 "에셋 문서 편집" 경로다(docs/07 §4 문서별 스택).
+// .anim 문서는 AnimationAsset(SpriteSheet + AnimationClipData)과 독립 Undo를 소유한다.
+// 패널은 프레임·시간·이벤트와 이미지 미리보기를 제공하며 런타임 ClipPlayback을 재사용한다.
+// 커맨드는 문서보다 짧게 살아야 한다. 씬의 컴포넌트 지정은 별도 씬 Undo에 기록한다.
 #pragma once
 
 #include "mye/editor/Command.h"
 #include "mye/asset/SpriteSheet.h"
+#include "mye/asset/AnimationAsset.h"
 #include "mye/anim/SpriteAnimator.h"
 
 #include <string>
 #include <vector>
 
 namespace mye::editor {
+
+Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation);
+
+class AnimAssetEditCommand final : public IEditorCommand {
+public:
+    AnimAssetEditCommand(asset::AnimationAsset& target, asset::AnimationAsset after, std::string label)
+        : m_target(target), m_before(target), m_after(std::move(after)), m_label(std::move(label)) {}
+    void Execute(EditorContext&) override { m_target = m_after; }
+    void Undo(EditorContext&) override { m_target = m_before; }
+    std::string_view Label() const override { return m_label; }
+private:
+    // ponytail: 작은 클립은 값 스냅샷으로 Undo한다. 큰 시트의 메모리가 병목이면 변경 프레임만 기록한다.
+    asset::AnimationAsset& m_target; // Owning document outlives its command stack.
+    asset::AnimationAsset m_before, m_after;
+    std::string m_label;
+};
 
 // ---------------------------------------------------------------------------
 // 클립 편집 커맨드 — 클립 전체를 before/after 스냅샷(간결·안전). 프레임/duration/이벤트 편집 공용.

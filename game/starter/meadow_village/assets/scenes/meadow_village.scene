@@ -1,0 +1,108 @@
+{
+  "__version": 1,
+  "entities": [
+    {
+      "id": 1,
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 0,
+          "py": 0,
+          "pz": 0,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "rw": 1,
+          "sx": 0.5741626794258373,
+          "sy": 0.5738575982996812,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "sprite": {
+            "guid": "13fa9057-03a9-4586-bff7-4bf66394bd47",
+            "type": "0"
+          },
+          "uvx": 0,
+          "uvy": 0,
+          "uvw": 1,
+          "uvh": 1,
+          "pvx": 836.0,
+          "pvy": 470.5,
+          "tr": 1,
+          "tg": 1,
+          "tb": 1,
+          "ta": 1,
+          "flipX": false,
+          "flipY": false,
+          "visible": true,
+          "sortLayer": 1,
+          "orderInLayer": 0
+        },
+        "FloorLevel": {
+          "__version": 1,
+          "level": 0
+        }
+      }
+    },
+    {
+      "id": 2,
+      "components": {
+        "LocalTransform": {
+          "__version": 1,
+          "px": 0,
+          "py": -0.9,
+          "pz": 0,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "rw": 1,
+          "sx": 0.15,
+          "sy": 0.15,
+          "sz": 1
+        },
+        "SpriteRenderer": {
+          "__version": 1,
+          "sprite": {
+            "guid": "014fc10e-782f-43da-9641-6fa0d79a4b05",
+            "type": "0"
+          },
+          "uvx": 0.019815668202764977,
+          "uvy": 0.13793103448275862,
+          "uvw": 0.0935483870967742,
+          "uvh": 0.6565517241379311,
+          "pvx": 101.5,
+          "pvy": 474,
+          "tr": 1,
+          "tg": 1,
+          "tb": 1,
+          "ta": 1,
+          "flipX": false,
+          "flipY": false,
+          "visible": true,
+          "sortLayer": 100,
+          "orderInLayer": 0
+        },
+        "FloorLevel": {
+          "__version": 1,
+          "level": 0
+        },
+        "SpriteAnimator": {
+          "__version": 1,
+          "animation": {
+            "guid": "1496e3ee-ab5b-4215-8ddd-cfdbcd36a46d",
+            "type": "0"
+          },
+          "speed": 1,
+          "playing": true
+        },
+        "Progression": {
+          "__version": 1,
+          "level": 1,
+          "xp": 0,
+          "maxLevel": 99
+        }
+      }
+    }
+  ]
+}

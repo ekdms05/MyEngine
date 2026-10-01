@@ -99,6 +99,8 @@ struct AnimStateMachine {
 struct SpriteAnimator {
     MYE_COMPONENT(SpriteAnimator);
 
+    asset::AssetRef animation; // Persistent clip asset; runtime pointers are rebound after loading.
+
     // 상태 머신 정의(비소유). nullptr 이면 singleClip 직접 재생 모드로 동작.
     const AnimStateMachine* machine = nullptr;
 

@@ -8,3 +8,10 @@ add_executable(MyEditor
 target_link_libraries(MyEditor PRIVATE
     mye_core mye_scene mye_editor
 )
+
+add_custom_command(TARGET MyEditor POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/game/starter/meadow_village"
+        "$<TARGET_FILE_DIR:MyEditor>/templates/meadow_village"
+    COMMENT "Copying editor starter assets"
+)

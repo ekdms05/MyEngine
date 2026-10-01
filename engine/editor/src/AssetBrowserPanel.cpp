@@ -12,6 +12,8 @@
 //
 // 소유: 내장 패널도 1급 플러그인 — IEditorPanelFactory 로 등록(RegisterBuiltinPanels 경유).
 #include "mye/editor/Panel.h"
+#include "mye/editor/EditorApp.h"
+#include "mye/editor/Viewport.h"
 #include "mye/editor/EditorContext.h"
 #include "mye/editor/Command.h"
 #include "mye/core/I18n.h"
@@ -263,6 +265,10 @@ public:
         }
 
         // 검색 바.
+        if (ImGui::Button("에셋 새로 고침") && ctx.app && ctx.app->Viewport()) {
+            auto result = ctx.app->Viewport()->RefreshAssetIndex();
+            if (!result) MYE_LOG_ERROR("Editor", "{}", result.GetError().message);
+        }
         char buf[256];
         std::snprintf(buf, sizeof(buf), "%s", m_search.c_str());
         ImGui::SetNextItemWidth(-1.0f);
@@ -279,7 +285,7 @@ public:
         ImGui::SameLine();
 
         if (ImGui::BeginChild("##asset_files", ImVec2(0, 0), true)) {
-            DrawFileList(assetsRoot);
+            DrawFileList(ctx, assetsRoot);
         }
         ImGui::EndChild();
 
@@ -336,7 +342,7 @@ private:
         ImGui::PopID();
     }
 
-    void DrawFileList(const std::string& assetsRoot) {
+    void DrawFileList(EditorContext& ctx, const std::string& assetsRoot) {
         ImGui::TextDisabled("%s", m_currentFolder.empty()
                                       ? "assets://"
                                       : ("assets://" + m_currentFolder).c_str());
@@ -352,6 +358,13 @@ private:
 
             ImGui::PushID(fname.c_str());
             ImGui::Selectable((std::string(IconFor(ext)) + " " + fname).c_str());
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                Expected<void, Error> opened;
+                if (ext == "anim") opened = ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath));
+                else if (ext == "scene") opened = ctx.app->OpenScene(VpathToOsPath(ctx, vpath));
+                if (!opened) MYE_LOG_ERROR("Editor", "{}", opened.GetError().message);
+            }
+
 
             // 드래그 소스 — 페이로드 = vpath 문자열(널 종단 포함).
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
@@ -374,7 +387,7 @@ private:
             if (ec) break;
             const bool isDir = e.is_directory(ec);
             std::string name = Utf8String(e.path().filename());
-            if (name.empty() || name.front() == '.') continue;   // .meta·숨김 스킵.
+            if (name.empty() || name.front() == '.' || e.path().extension() == ".meta") continue;   // .meta·숨김 스킵.
             if (isDir != wantDirs) continue;
             out.push_back(std::move(name));
         }

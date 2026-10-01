@@ -102,6 +102,7 @@ void PanelManager::SetupDockspace(EditorContext& /*ctx*/) {
         // stableId 로만 매칭(언어 무관). 패널 Begin 은 "라벨###안정ID"를 쓴다(PanelWindowTitle).
         ImGui::DockBuilderDockWindow("###mye.hierarchy", left);
         ImGui::DockBuilderDockWindow("###mye.inspector", right);
+        ImGui::DockBuilderDockWindow("###mye.anim", right);
         ImGui::DockBuilderDockWindow("###mye.assets",    bottom);
         ImGui::DockBuilderDockWindow("###mye.console",   bottom);
         ImGui::DockBuilderDockWindow("###mye.viewport",  center);

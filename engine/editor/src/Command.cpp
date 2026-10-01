@@ -97,6 +97,8 @@ bool ApplyBlob(EditorContext& ctx, const ObjectRef& target, const refl::Property
     if (!parsed) return false;
     auto ar = ser::JsonArchive::ForRead(parsed.Value());
     auto r = refl::WriteValue(*target.componentType, comp, path, ar);
+    if (r && target.componentType->Id() == scene::LocalTransform::kComponentTypeId)
+        static_cast<scene::LocalTransform*>(comp)->dirty = true;
     return static_cast<bool>(r);
 }
 } // namespace

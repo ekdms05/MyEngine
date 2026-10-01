@@ -96,18 +96,20 @@ void EditorApp::RefreshDocumentContext() {
 
 void EditorApp::ActivateDocument(DocumentId id) {
     if (!m_project || m_playMode->IsPlaying()) return;
+    m_animationFocused = false;
     m_project->SetActive(id);
     RefreshDocumentContext();
     m_selectDocumentTab = true;
 }
 
 Expected<void, Error> EditorApp::CreateProject(std::string_view name, std::string_view directory,
-                                             bool discardUnsaved) {
+                                             bool discardUnsaved, bool useStarter) {
     if (m_playMode->IsPlaying()) return Error{T("file.stopfirst"), 1};
     auto layout = SaveLayout();
     if (!layout) return layout.GetError();
-    auto created = m_project->Create(name, directory, discardUnsaved);
+    auto created = m_project->Create(name, directory, discardUnsaved, useStarter ? m_templateDirectory : "");
     if (!created) return created.GetError();
+    m_animationId = {};
     RestoreLayout();
     RefreshDocumentContext();
     m_selectDocumentTab = true;
@@ -120,6 +122,7 @@ Expected<void, Error> EditorApp::OpenProject(std::string_view path, bool discard
     if (!layout) return layout.GetError();
     auto opened = m_project->Open(path, discardUnsaved);
     if (!opened) return opened.GetError();
+    m_animationId = {};
     RestoreLayout();
     RefreshDocumentContext();
     m_selectDocumentTab = true;
@@ -131,6 +134,22 @@ Expected<void, Error> EditorApp::OpenScene(std::string_view path) {
     auto opened = m_project->OpenScene(path);
     if (!opened) return opened.GetError();
     ActivateDocument(opened.Value()->Id());
+    return {};
+}
+
+Document* EditorApp::AnimationDocument() {
+    if (!m_project) return nullptr;
+    for (auto* doc : m_project->Documents())
+        if (doc->Id() == m_animationId && doc->GetKind() == Document::Kind::Asset) return doc;
+    return nullptr;
+}
+
+Expected<void, Error> EditorApp::OpenAnimation(std::string_view path) {
+    auto opened = m_project->OpenAnimation(path);
+    if (!opened) return opened.GetError();
+    m_animationId = opened.Value()->Id();
+    opened.Value()->Commands().SetContext(&m_ctx);
+    m_panels->Open("mye.anim");
     return {};
 }
 
@@ -204,6 +223,11 @@ void EditorApp::RequestOpenScene() {
 }
 
 void EditorApp::RequestSaveAs() {
+    if (m_animationFocused && AnimationDocument()) {
+        m_panels->Open("mye.anim");
+        ReportFileResult(Error{"애니메이션 패널에서 저장 경로를 지정하세요", 1}, "");
+        return;
+    }
     if (m_playMode->IsPlaying()) return;
     Document* doc = m_project->Active();
     if (!doc) return;
@@ -222,6 +246,12 @@ void EditorApp::RequestSaveProject() {
     }
     for (Document* doc : m_project->Documents()) {
         if (!doc->Path().empty()) continue;
+        if (doc->GetKind() == Document::Kind::Asset) {
+            m_animationId = doc->Id();
+            m_panels->Open("mye.anim");
+            ReportFileResult(Error{"Save the new animation in the animation panel first", 1}, "");
+            return;
+        }
         ActivateDocument(doc->Id());
         RequestSaveAs();
         if (doc->Path().empty() || m_fileError) return;
@@ -241,6 +271,7 @@ void EditorApp::DrawDocumentTabs() {
     const Document* active = m_project->Active();
     DocumentId selected{};
     for (Document* doc : m_project->Documents()) {
+        if (doc->GetKind() != Document::Kind::Scene) continue;
         ImGui::PushID(static_cast<int>(doc->Id().value));
         ImGuiTabItemFlags flags = ImGuiTabItemFlags_None;
         if (selectRequested && doc == active) flags |= ImGuiTabItemFlags_SetSelected;
@@ -276,11 +307,12 @@ void EditorApp::DrawFileDialogs() {
         else if (!folder.Value().empty())
             std::snprintf(m_newProjectDirectory.data(), m_newProjectDirectory.size(), "%s", folder.Value().c_str());
     }
+    if (!m_templateDirectory.empty()) ImGui::Checkbox("초원마을 기본 에셋 포함", &m_useStarter);
     ImGui::TextWrapped("%s", T("file.emptyfolder"));
     if (m_fileError) ImGui::TextWrapped("%s: %s", T("file.error"), m_fileStatus.c_str());
     ImGui::BeginDisabled(m_newProjectName[0] == '\0' || m_newProjectDirectory[0] == '\0');
     if (ImGui::Button(T("file.create")) && ConfirmProjectChange()) {
-        auto result = CreateProject(m_newProjectName.data(), m_newProjectDirectory.data(), true);
+        auto result = CreateProject(m_newProjectName.data(), m_newProjectDirectory.data(), true, m_useStarter);
         ReportFileResult(result, T("file.created"));
         if (result) ImGui::CloseCurrentPopup();
     }

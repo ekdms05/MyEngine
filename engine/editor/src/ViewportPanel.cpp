@@ -9,6 +9,7 @@
 //       변경을 PropertyEditCommand(ActiveStack 경유)로 발행. Ctrl 스냅(0.25u).
 //   패널은 IEditorViewport(EditorModule 구현)로만 렌더 자원·좌표 변환에 접근한다(RHI 직접 접근 금지).
 #include "mye/editor/Viewport.h"
+#include "mye/scene/SpriteGeometry.h"
 #include "mye/editor/EditorApp.h"
 #include "mye/editor/EditorContext.h"
 #include "mye/editor/Selection.h"
@@ -33,6 +34,8 @@
 #include "imgui.h"
 
 #include <cmath>
+#include <algorithm>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -84,8 +87,29 @@ refl::PropertyPath PositionPath() {
     return path;
 }
 
-// 스프라이트 반경(월드 단위) 추정 — 픽킹 AABB용. 피벗·시트 크기 정보가 없으므로 보수적 기본.
+// 에셋을 해석하지 못한 엔티티에만 사용하는 기본 선택 경계.
 constexpr float kPickHalfExtent = 0.5f;   // 1x1 unit 히트 박스(PPU48 → 48px 스프라이트 근사)
+Rect EntityBounds(EditorContext& ctx, ecs::World& world, ecs::Entity entity) {
+    const auto* transform = world.TryGet<scene::WorldTransform>(entity);
+    const auto* sprite = world.TryGet<scene::SpriteRenderer>(entity);
+    auto* viewport = ctx.app ? ctx.app->Viewport() : nullptr;
+    if (transform && sprite && viewport) {
+        auto texture = viewport->AssetTexture(sprite->sprite.guid);
+        if (texture) {
+            const auto corners = scene::SpriteCorners(transform->matrix,
+                {sprite->srcUV.w * texture.Value().width, sprite->srcUV.h * texture.Value().height}, sprite->pivotPx, 48.0f);
+            float left = corners[0].x, right = left, bottom = corners[0].y, top = bottom;
+            for (auto p : corners) {
+                left = std::min(left, p.x); right = std::max(right, p.x);
+                bottom = std::min(bottom, p.y); top = std::max(top, p.y);
+            }
+            return {left, bottom, right - left, top - bottom};
+        }
+    }
+    const auto* local = world.TryGet<scene::LocalTransform>(entity);
+    return local ? Rect{local->position.x - kPickHalfExtent, local->position.y - kPickHalfExtent, 1, 1} : Rect{};
+}
+
 
 } // namespace
 
@@ -248,18 +272,17 @@ private:
         }
     }
 
-    // 월드 점에서 가장 가까운 스프라이트 엔티티 히트테스트 → 선택.
+    // ponytail: AABB 후보 중 작은 것을 선택한다. 투명 픽셀·가림 선택이 필요하면 후보의 픽셀/깊이를 확인한다.
     static void PickAt(EditorContext& ctx, ecs::World& world, Vec2 worldPt, ImGuiIO& io) {
         ecs::Entity best = ecs::Entity::Null();
-        float bestDist = kPickHalfExtent;   // AABB half-extent 내만 후보.
-
+        float bestArea = std::numeric_limits<float>::max();
         world.Query<scene::LocalTransform, scene::SpriteRenderer>().Each(
-            [&](ecs::Entity e, scene::LocalTransform& lt, scene::SpriteRenderer&) {
-                const float dx = std::fabs(worldPt.x - lt.position.x);
-                const float dy = std::fabs(worldPt.y - lt.position.y);
-                if (dx <= kPickHalfExtent && dy <= kPickHalfExtent) {
-                    const float d = dx + dy;
-                    if (d <= bestDist) { bestDist = d; best = e; }
+            [&](ecs::Entity e, scene::LocalTransform&, scene::SpriteRenderer& sprite) {
+                if (!sprite.visible) return;
+                const auto bounds = EntityBounds(ctx, world, e);
+                if (worldPt.x >= bounds.x && worldPt.x <= bounds.x + bounds.w &&
+                    worldPt.y >= bounds.y && worldPt.y <= bounds.y + bounds.h && bounds.w * bounds.h < bestArea) {
+                    bestArea = bounds.w * bounds.h; best = e;
                 }
             });
 
@@ -284,9 +307,9 @@ private:
             if (!world.Valid(e)) continue;
             scene::LocalTransform* lt = world.TryGet<scene::LocalTransform>(e);
             if (!lt) continue;
-            const Vec2 c{lt->position.x, lt->position.y};
-            const Vec2 a = vp->WorldToScreen(Vec2{c.x - kPickHalfExtent, c.y + kPickHalfExtent});
-            const Vec2 b = vp->WorldToScreen(Vec2{c.x + kPickHalfExtent, c.y - kPickHalfExtent});
+            const auto bounds = EntityBounds(ctx, world, e);
+            const Vec2 a = vp->WorldToScreen(Vec2{bounds.x, bounds.y + bounds.h});
+            const Vec2 b = vp->WorldToScreen(Vec2{bounds.x + bounds.w, bounds.y});
             dl->AddRect(ImVec2(origin.x + a.x, origin.y + a.y),
                         ImVec2(origin.x + b.x, origin.y + b.y),
                         IM_COL32(255, 190, 40, 220), 0.0f, 0, 2.0f);

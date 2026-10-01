@@ -15,11 +15,14 @@
 
 #include "mye/scene/SceneModule.h"
 #include "mye/editor/EditorModule.h"
+#include "mye/editor/EditorApp.h"
 
 #include <Windows.h>
 #include <shellapi.h>
 
+#include <array>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -40,6 +43,10 @@ std::string ProjectArgument(const std::vector<std::string>& args) {
 class MyEditorApp final : public Application {
 public:
     explicit MyEditorApp(const LaunchArgs& args) : m_projectPath(ProjectArgument(args.args)) {
+        std::array<wchar_t, 32768> executable{};
+        const auto count = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+        if (count > 0 && count < executable.size())
+            m_executableDirectory = Utf8String(std::filesystem::path(executable.data()).parent_path());
         const auto& a = args.args;
         for (std::size_t i = 0; i < a.size(); ++i) {
             if (a[i] == "--frames" && i + 1 < a.size()) {
@@ -48,6 +55,10 @@ public:
             } else if (a[i] == "--dump" && i + 1 < a.size()) {
                 m_dumpEnabled = true;
                 m_dumpPath = a[++i];
+            } else if (a[i] == "--animation" && i + 1 < a.size()) {
+                m_animationPath = a[++i];
+            } else if (a[i] == "--play") {
+                m_startPlaying = true;
             } else if (a[i] == "--lang" && i + 1 < a.size()) {
                 const std::string& v = a[++i];
                 using mye::i18n::Lang;
@@ -64,12 +75,23 @@ public:
 
     void OnRegisterModules(ModuleRegistry& modules) override {
         modules.Register(std::make_unique<scene::SceneModule>());
-        modules.Register(std::make_unique<editor::EditorModule>(m_projectPath));
+        const auto starter = Utf8Path(m_executableDirectory) / "templates" / "meadow_village";
+        std::error_code ec;
+        modules.Register(std::make_unique<editor::EditorModule>(m_projectPath,
+            std::filesystem::is_directory(starter, ec) ? Utf8String(starter) : ""));
     }
 
     void OnStart(EngineContext& ctx) override {
         // EditorModule 에 CLI 제어를 주입(프레임 한도 도달 시 이 Application 을 종료).
         if (auto* em = ctx.GetService<editor::EditorModule>()) {
+            if (em->App() && !m_animationPath.empty()) {
+                const auto opened = em->App()->OpenAnimation(m_animationPath);
+                if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); }
+            }
+            if (em->App() && m_startPlaying) {
+                const auto started = em->App()->PlayMode().Play();
+                if (!started) { MYE_LOG_ERROR("MyEditor", "{}", started.GetError().message); RequestExit(1); }
+            }
             em->SetCliControl(m_frameLimit, m_maxFrames, m_dumpEnabled, m_dumpPath,
                               [this]() { RequestExit(0); });
         }
@@ -80,7 +102,8 @@ public:
     void OnStop(EngineContext& /*ctx*/) override {}
 
 private:
-    std::string   m_projectPath;
+    std::string   m_projectPath, m_executableDirectory, m_animationPath;
+    bool          m_startPlaying = false;
     bool          m_frameLimit = false;
     std::uint64_t m_maxFrames = 0;
     bool          m_dumpEnabled = false;

@@ -29,6 +29,7 @@ Expected<AssetMeta, Error> AssetMeta::Parse(std::string_view utf8Json) {
     if (!guid) {
         return Error{"AssetMeta::Parse: bad guid: " + guid.GetError().message, 3};
     }
+    if (!guid.Value().IsValid()) return Error{"AssetMeta::Parse: empty guid", 3};
     meta.guid = guid.Value();
 
     const json::Value* impV = root.Find("importer");

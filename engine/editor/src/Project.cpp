@@ -7,6 +7,8 @@
 #include "mye/scene/SceneReflection.h"
 #include "mye/scene/Transform.h"
 #include "mye/scene/Renderable.h"
+#include "mye/anim/SpriteAnimator.h"
+#include "mye/gameplay/Progression.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -16,16 +18,23 @@ namespace mye::editor {
 namespace {
 namespace fs = std::filesystem;
 
-Expected<fs::path, Error> ScenePath(const fs::path& root, std::string_view text) {
+Expected<fs::path, Error> ScenePath(const fs::path& root, std::string_view text, std::string_view extension = ".scene") {
     auto path = Utf8Path(text);
-    if (path.empty() || text.find('\0') != std::string_view::npos || path.extension() != ".scene")
-        return Error{"Select a .scene file", 1};
+    if (path.empty() || text.find('\0') != std::string_view::npos || path.extension() != extension)
+        return Error{"Select a " + std::string(extension) + " file", 1};
     std::error_code ec;
     path = fs::weakly_canonical(path.is_absolute() ? path : root / path, ec);
     if (ec) return Error{"Scene path is unavailable: " + ec.message(), ec.value()};
     const auto relative = path.lexically_relative(root);
     if (relative.empty() || relative.is_absolute() || *relative.begin() == "..")
         return Error{"Scene files must be inside the current project", 1};
+    if (extension == ".anim") {
+        const auto assetRoot = fs::weakly_canonical(root / "assets", ec);
+        if (ec) return Error{"Asset folder is unavailable: " + ec.message(), ec.value()};
+        const auto assetRelative = path.lexically_relative(assetRoot);
+        if (assetRelative.empty() || assetRelative.is_absolute() || *assetRelative.begin() == "..")
+            return Error{"Animation files must be inside the project assets folder", 1};
+    }
     return path;
 }
 
@@ -48,6 +57,7 @@ Document::Document(DocumentId id, Kind kind, std::string path)
     : m_id(id), m_kind(kind), m_path(std::move(path)),
       m_worldEvents(std::make_unique<EventBus>()), m_world(std::make_unique<ecs::World>()) {
     scene::RegisterCoreComponentReflection();
+    gameplay::RegisterProgressionReflection();
     m_world->SetEventBus(m_worldEvents.get());
     m_world->RegisterComponent<scene::LocalTransform>("LocalTransform");
     m_world->RegisterComponent<scene::WorldTransform>("WorldTransform");
@@ -55,6 +65,8 @@ Document::Document(DocumentId id, Kind kind, std::string path)
     m_world->RegisterComponent<scene::Children>("Children");
     m_world->RegisterComponent<scene::SpriteRenderer>("SpriteRenderer");
     m_world->RegisterComponent<scene::FloorLevel>("FloorLevel");
+    m_world->RegisterComponent<anim::SpriteAnimator>("SpriteAnimator");
+    m_world->RegisterComponent<gameplay::Progression>("Progression");
 }
 Document::~Document() = default;
 
@@ -158,7 +170,7 @@ Expected<void, Error> ProjectContext::Open(std::string_view projectPath, bool di
 }
 
 Expected<void, Error> ProjectContext::Create(std::string_view name, std::string_view directory,
-                                            bool discardUnsaved) {
+                                            bool discardUnsaved, std::string_view templateDirectory) {
     if (!discardUnsaved && HasUnsavedChanges())
         return Error{"Save or explicitly discard the current scenes before changing projects", 1};
     if (name.empty() || name.find_first_not_of(" \t\r\n") == std::string_view::npos || directory.empty() ||
@@ -171,6 +183,35 @@ Expected<void, Error> ProjectContext::Create(std::string_view name, std::string_
     if (ec) return Error{"Cannot inspect project folder: " + ec.message(), ec.value()};
     if (existed && (!fs::is_directory(root, ec) || !fs::is_empty(root, ec) || ec))
         return Error{"Choose a new or empty folder; existing files will not be overwritten", 1};
+    if (!templateDirectory.empty()) {
+        const auto source = fs::canonical(Utf8Path(templateDirectory), ec);
+        if (ec) return Error{"Starter template is unavailable: " + ec.message(), 1};
+        ProjectContext checked;
+        auto valid = checked.Open(Utf8String(source));
+        if (!valid) return valid.GetError();
+        std::vector<fs::path> files;
+        for (fs::recursive_directory_iterator it(source, ec), end; !ec && it != end; it.increment(ec)) {
+            if (it->is_symlink(ec)) return Error{"Starter templates must not contain links", 1};
+            if (it->is_directory(ec) && it->path().filename() == ".myeditor") { it.disable_recursion_pending(); continue; }
+            if (it->is_regular_file(ec)) files.push_back(it->path());
+        }
+        if (ec) return Error{"Cannot read starter template: " + ec.message(), ec.value()};
+        for (const auto& file : files) {
+            const auto target = root / file.lexically_relative(source);
+            fs::create_directories(target.parent_path(), ec);
+            if (ec) return Error{"Cannot create starter folder: " + ec.message(), ec.value()};
+            fs::copy_file(file, target, fs::copy_options::none, ec);
+            if (ec) return Error{"Cannot copy starter asset: " + ec.message(), ec.value()};
+        }
+        const auto manifest = root / Utf8Path(checked.ProjectFilePath()).filename();
+        auto metadata = ReadJsonFile(manifest);
+        if (!metadata) return metadata.GetError();
+        auto renamed = metadata.Value().AsObject();
+        renamed["name"] = json::Value(std::string(name));
+        auto saved = WriteJsonFile(manifest, json::Value(std::move(renamed)));
+        if (!saved) return saved.GetError();
+        return Open(Utf8String(manifest), discardUnsaved);
+    }
     fs::create_directories(root / "assets" / "scenes", ec);
     if (ec) return Error{"Cannot create project folder: " + ec.message(), ec.value()};
     const auto main = root / "assets" / "scenes" / "main.scene";
@@ -195,7 +236,8 @@ Expected<void, Error> ProjectContext::Save() {
     for (const auto& doc : m_impl->documents)
         if (doc->Path().empty()) return Error{"Choose a file name for each unsaved scene first", 1};
     for (const auto& doc : m_impl->documents) {
-        auto saved = SaveScene(doc->Id(), doc->Path());
+        auto saved = doc->GetKind() == Document::Kind::Scene
+            ? SaveScene(doc->Id(), doc->Path()) : SaveAnimation(doc->Id(), doc->Path());
         if (!saved) return saved.GetError();
     }
     auto metadata = m_impl->metadata.AsObject();
@@ -258,7 +300,7 @@ Expected<Document*, Error> ProjectContext::OpenScene(std::string_view path) {
 Expected<void, Error> ProjectContext::SaveScene(DocumentId id, std::string_view path) {
     if (!IsOpen()) return Error{"Open a project first", 1};
     Document* doc = m_impl->Find(id);
-    if (!doc) return Error{"Scene document no longer exists", 1};
+    if (!doc || doc->GetKind() != Document::Kind::Scene) return Error{"Scene document no longer exists", 1};
     auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path);
     if (!resolved) return resolved.GetError();
     const auto target = Utf8String(resolved.Value());
@@ -281,6 +323,55 @@ Expected<void, Error> ProjectContext::SaveScene(DocumentId id, std::string_view 
     return {};
 }
 
+Document* ProjectContext::NewAnimation() {
+    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::Asset, std::string{});
+    doc->Animation().clip.name = "new_animation";
+    auto* raw = doc.get();
+    m_impl->documents.push_back(std::move(doc));
+    m_impl->RefreshPtrs();
+    return raw; // Scene focus is independent of the animation panel.
+}
+
+Expected<Document*, Error> ProjectContext::OpenAnimation(std::string_view path) {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".anim");
+    if (!resolved) return resolved.GetError();
+    for (auto& doc : m_impl->documents)
+        if (SameFile(doc->Path(), resolved.Value())) return doc.get();
+    auto value = ReadJsonFile(resolved.Value());
+    if (!value) return value.GetError();
+    auto animation = asset::AnimationAsset::FromJson(value.Value());
+    if (!animation) return animation.GetError();
+    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::Asset,
+                                          Utf8String(resolved.Value()));
+    doc->Animation() = std::move(animation).Value();
+    auto* raw = doc.get();
+    m_impl->documents.push_back(std::move(doc));
+    m_impl->RefreshPtrs();
+    return raw;
+}
+
+Expected<void, Error> ProjectContext::SaveAnimation(DocumentId id, std::string_view path) {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto* doc = m_impl->Find(id);
+    if (!doc || doc->GetKind() != Document::Kind::Asset) return Error{"No animation document", 1};
+    auto valid = doc->Animation().Validate();
+    if (!valid) return valid.GetError();
+    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".anim");
+    if (!resolved) return resolved.GetError();
+    for (const auto& other : m_impl->documents)
+        if (other->Id() != id && SameFile(other->Path(), resolved.Value()))
+            return Error{"That animation file is already open", 1};
+    std::error_code ec;
+    fs::create_directories(resolved.Value().parent_path(), ec);
+    if (ec) return Error{"Cannot create animation folder: " + ec.message(), ec.value()};
+    auto saved = WriteJsonFile(resolved.Value(), doc->Animation().ToJson());
+    if (!saved) return saved.GetError();
+    doc->SetPath(Utf8String(resolved.Value()));
+    doc->Commands().MarkSaved();
+    return {};
+}
+
 void ProjectContext::CloseDocument(DocumentId id) {
     auto& v = m_impl->documents;
     v.erase(std::remove_if(v.begin(), v.end(),
@@ -288,13 +379,14 @@ void ProjectContext::CloseDocument(DocumentId id) {
             v.end());
     m_impl->RefreshPtrs();
     if (m_impl->active == id) {
-        m_impl->active = v.empty() ? DocumentId{} : v.back()->Id();
+        m_impl->active = {};
+        for (const auto& doc : v) if (doc->GetKind() == Document::Kind::Scene) m_impl->active = doc->Id();
     }
 }
 
 Document* ProjectContext::Active() const { return m_impl->Find(m_impl->active); }
 void ProjectContext::SetActive(DocumentId id) {
-    if (m_impl->Find(id)) m_impl->active = id;
+    if (auto* doc = m_impl->Find(id); doc && doc->GetKind() == Document::Kind::Scene) m_impl->active = id;
 }
 std::span<Document* const> ProjectContext::Documents() const { return m_impl->documentPtrs; }
 

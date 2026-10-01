@@ -34,3 +34,12 @@ int32_t GainXp(Progression& prog, Stats& stats, int64_t amount) {
 }
 
 } // namespace mye::gameplay
+
+#include "mye/refl/TypeBuilder.h"
+MYE_REFLECT_NAME(mye::gameplay::Progression, "Progression");
+template <> void mye::refl::Reflect<mye::gameplay::Progression>(TypeBuilder<mye::gameplay::Progression>& b) {
+    b.Version(1).Field("level", &mye::gameplay::Progression::level)
+        .Field("xp", &mye::gameplay::Progression::xp)
+        .Field("maxLevel", &mye::gameplay::Progression::maxLevel);
+}
+void mye::gameplay::RegisterProgressionReflection() { (void)refl::GetType<Progression>(); }

@@ -72,6 +72,7 @@ constexpr Entry kTable[] = {
     {"panel.viewport",  "씬 뷰포트",   "Scene",     "シーンビュー",   "场景"},
     {"panel.inspector", "인스펙터",    "Inspector", "インスペクター", "检查器"},
     {"panel.assets",    "에셋",        "Assets",    "アセット",       "资源"},
+    {"panel.anim",      "애니메이션", "Animation", "アニメーション", "动画"},
     {"panel.console",   "콘솔",        "Console",   "コンソール",     "控制台"},
     {"panel.doteditor", "닷 에디터",   "Dot Editor","ドットエディタ", "像素编辑器"},
 

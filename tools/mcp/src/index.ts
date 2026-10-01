@@ -4,7 +4,7 @@
  * 규약(docs/08-mcp.md):
  * - McpServer + StdioServerTransport, 툴 일괄 등록(파일 1개 = 툴 1개 컨벤션).
  * - stdout 은 MCP 프로토콜 전용 — 서버 자체 로그는 stderr 로만 낸다(console.log 금지).
- * - 리포 루트: MYE_ROOT 환경변수 우선, 기본 tools/mcp/../.. — 빌드 디렉터리: MYE_BUILD_DIR(기본 "build").
+ * - 리포 루트: MYE_ROOT 환경변수 우선, 기본 tools/mcp/../.. — 빌드 디렉터리: MYE_BUILD_DIR(기본 "build/dev").
  */
 import fs from "node:fs";
 import path from "node:path";

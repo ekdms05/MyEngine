@@ -38,7 +38,7 @@ npm run build     # tsc → dist/
 | 변수 | 기본값 | 의미 |
 |---|---|---|
 | `MYE_ROOT` | `tools/mcp/../..` (리포 루트) | 엔진 리포 루트. 모든 자식 프로세스의 cwd |
-| `MYE_BUILD_DIR` | `build` | CMake 빌드 디렉터리(루트 상대). AI 전용 빌드를 사람(IDE) 빌드와 분리하려면 `build/dev` 권장 |
+| `MYE_BUILD_DIR` | `build/dev` | CMake 빌드 디렉터리(루트 상대). 프로젝트 preset·README 실행 경로와 동일하며 필요하면 다른 경로로 지정 |
 
 ## 툴 목록
 

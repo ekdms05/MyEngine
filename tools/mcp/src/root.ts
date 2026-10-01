@@ -5,8 +5,8 @@
  * - 리포 루트는 서버 파일 위치 기준 ../../ (tools/mcp → E:/MyEngine).
  * - 환경변수 MYE_ROOT 로 오버라이드 가능.
  * - 모든 경로 파라미터는 루트 상대만 허용, '..' 탈출 거부.
- * - MYE_BUILD_DIR 로 빌드 디렉터리 오버라이드(기본 "build") — 사람(IDE) 빌드와
- *   AI 빌드를 분리하고 싶을 때 "build/dev" 등을 지정한다(08 오픈 이슈 #7).
+ * - MYE_BUILD_DIR 로 빌드 디렉터리 오버라이드(기본 "build/dev").
+ *   기본값은 프로젝트 CMake preset·실행 경로와 동일하다.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,10 +26,10 @@ export function resolveRepoRoot(): string {
   return path.resolve(mcpPackageDir(), "..", "..");
 }
 
-/** 빌드 디렉터리(루트 상대): MYE_BUILD_DIR 환경변수, 기본 "build". */
+/** 빌드 디렉터리(루트 상대): MYE_BUILD_DIR 환경변수, 기본 "build/dev". */
 export function resolveBuildDirRel(root: string): string {
   const env = process.env["MYE_BUILD_DIR"];
-  const rel = env && env.trim().length > 0 ? env.trim() : "build";
+  const rel = env && env.trim().length > 0 ? env.trim() : "build/dev";
   // 검증(탈출 거부)만 수행하고 상대 경로 문자열을 그대로 유지한다.
   resolveInRoot(root, rel);
   return rel;

@@ -128,7 +128,7 @@ superpowers의 `requesting-code-review/code-reviewer.md`와 구현·검토 프�
 | [repo-cleanup 원문](https://github.com/nickcrew/claude-cortex/blob/bb47af79ad3befe01ae01940fcf5f16e30a1b6df/skills/repo-cleanup/SKILL.md) | NickCrew, 166 설치·47 stars | 사용처·재생성 여부 확인은 적합하지만 [참조 문서](https://github.com/nickcrew/claude-cortex/blob/bb47af79ad3befe01ae01940fcf5f16e30a1b6df/skills/repo-cleanup/references/code-cleanup.md)에 `build/` 전체 삭제 예제와 웹 프로젝트 가정이 있다. 현재 실행 파일·검증 기록이 함께 있는 MyEngine에 그대로 적용하지 않음 |
 | project-workspace-cleaner | 검색 결과 161 설치 | 원본 GitHub 저장소 조회가 404로 실패하여 원문 검증·추천·설치에서 제외 |
 
-file-organizer 원문은 `ComposioHQ/awesome-claude-skills` revision `be2a406907dbc61b73e6827ded415c96139d13a2`의 `file-organizer/SKILL.md`를 확인했다. 일반 파일 정리용 설치 명령은 다음과 같다. **이번에는 추가 설치하지 않았다.** 기존 CMake 지침·현재 저장소 계약·PowerShell로 빌드 정리 범위를 판단할 수 있어 중복 도구를 늘리지 않았다.
+file-organizer 원문은 `ComposioHQ/awesome-claude-skills` revision `be2a406907dbc61b73e6827ded415c96139d13a2`의 `file-organizer/SKILL.md`를 확인했다. 일반 파일 정리용 설치 명령은 다음과 같다. **조사 단계에서는 추가 설치하지 않았다.** 기존 CMake 지침·현재 저장소 계약·PowerShell로 빌드 정리 범위를 판단할 수 있어 중복 도구를 늘리지 않았다.
 
 ```powershell
 npx.cmd skills add https://github.com/ComposioHQ/awesome-claude-skills --skill file-organizer --agent codex --yes
@@ -137,3 +137,9 @@ npx.cmd skills add https://github.com/ComposioHQ/awesome-claude-skills --skill f
 MyEngine에서는 확장자·날짜·같은 파일명만으로 삭제하지 않는다. `build/dev`의 Debug/Release 실행 파일을 유지하고, 구 빌드 안의 독립 스크립트·테스트 프로젝트·캡처와 서버 저장 데이터는 먼저 별도로 확인한다. CMake 트리 자체를 이동하면 cache의 절대 경로가 맞지 않으므로 필요한 증거/소스만 보관하고 재생성 가능한 산출물을 정리한다.
 
 [CMake 공식 문서](https://cmake.org/cmake/help/latest/manual/cmake.1.html#build-a-project)에 따르면 `--target clean`은 정리만 하고 `--clean-first`는 정리 후 다시 빌드한다. 이 명령은 지정한 빌드 트리에 적용되므로 다른 구 트리 전체 정리의 대체 수단이 아니다. 현재 사용 중인 `build/dev`에 정리 명령을 실행하지 않았다. 실측 분류와 보존 근거는 [작업 기록](16-foundation-worklog.md)에 남겼다.
+
+### 실제 경로 정리에 적용한 스킬
+
+후속 소스·빌드 경로 정리에서는 사용자 전역에 이미 설치된 `C:/Users/harun/.codex/skills/file-organizer/SKILL.md`와 프로젝트의 `.agents/skills/cmake/SKILL.md`를 읽고 적용했다. 추가 다운로드는 하지 않았다. file-organizer의 목록 조사·보관 계획·해시 대조·수정 시각 보존·작업 기록을 적용하고, CMake 의존성·현재 실행 경로 확인은 저장소 계약에 따라 별도로 수행했다.
+
+빌드 명령은 별도 래퍼 없이 CMake의 기본 preset으로 통일했다. 실제 정리는 PowerShell의 경로 검증·파일 복사·이동·삭제로 수행했으며 `build/dev`와 검증 자료는 유지했다. 보관 목록과 SHA-256은 로컬 `archive/build-cleanup-2026-10-01/manifest.json`, 정리 범위·재사용 제약·검증 결과는 [작업 기록](16-foundation-worklog.md)에 있다.

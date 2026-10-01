@@ -175,3 +175,50 @@ m6-review, m6a, m6a-dialogue, m6a-world, m6b, m6b-npc
 변경은 문서·주석·표시 문자열이다. 새 기능·추상화·패키지를 추가하지 않았고 사용자 에셋·저장 데이터·구 build 폴더를 삭제하지 않았다. 이전 정리 조사에 필요한 실제 구 디렉터리명·경로와 기존 테스트 산출물 이름은 보존한다. 기존 C4996 경고는 남는다.
 
 에디터 실제 파일 열기, MyGame의 전체 온라인 콘텐츠, 보호되는 전송·신뢰 세션, GPU 타임스탬프·일반 readback은 여전히 개선 항목이다. 이번 검증은 전체 마우스/DPI 워크플로·청취·운영 MMO 부하 검증을 새로 수행한 것이 아니다. 상세 완료 조건은 [개발 우선순위](14-development-priorities.md)를 따른다.
+
+## 소스·빌드 경로 정리 (2026-10-01)
+
+작업 기준은 main d965f98이며 시작 시 추적 파일의 변경은 없었다. 사용자가 후속으로 소스·빌드 경로 정리를 요청하여 앞선 읽기 전용 조사에서 확인한 구 산출물을 실제로 정리했다. 기존 `file-organizer`·`cmake` 스킬을 읽고 적용했으며 추가 패키지나 자동 정리 작업은 설치하지 않았다.
+
+### 경로 선택과 사용처 근거
+
+| 변경 | 근거·선택 이유 |
+|---|---|
+| 현재 소스 경로 유지 | engine은 공유 기반, game은 게임 규칙, apps는 실행 조합, samples·tests는 검증이라는 기존 책임 경계가 있다. 소스 이동으로 공개 include·CMake 의존성을 다시 엮을 필요가 없어 폴더 이름이나 파일 크기만으로 재배치하지 않았다. |
+| build/dev에 구성·빌드·테스트 통일 | README·AGENTS·프로젝트 MCP 설정·tools/package/package.ps1·tools/verify-foundation.ps1이 이미 같은 트리를 사용한다. CMakePresets.json으로 기존 VS 18 2026 x64 트리를 구성하며 Debug·Release는 같은 트리의 구성이다. 별도 빌드 래퍼를 만들지 않았다. VS 2022 수동 구성 경로도 README에 남겼다. |
+| MCP 기본값 수정 | 프로젝트 설정은 build/dev지만 resolveBuildDirRel의 환경변수 없는 기본값은 build였다. 모든 호출자는 index.ts에서 만든 문맥을 build/run/capture/test/status에 전달하므로 공통 경계인 root.ts에서 기본값을 고쳤다. 사용자 지정 경로와 루트 밖 접근 거부는 유지한다. |
+| 구 소스·데이터·증거를 archive로 분리 | 구 빌드에는 독립 CMake 소스·스크립트·에셋·에디터 설정·계정/캐릭터/원장 JSON·캡처가 함께 있었다. 활성 빌드로 보이는 폴더를 남기지 않으면서 보존하기 위해 원래 상대 경로를 유지한 로컬 archive/build-cleanup-2026-10-01로 옮겼다. 사용자 데이터가 있어 archive는 Git에서 제외한다. |
+| CMakeUserPresets.json을 Git에서 제외 | 공용 CMakePresets.json과 개인 환경 설정을 구분한다. 별도 사용자 preset 파일은 만들지 않았다. |
+
+추적 UTF-8 텍스트의 구 빌드 경로를 다시 검색했으며 직접 참조는 이 문서의 과거 조사 기록뿐이었다. build 하위 실행 파일을 사용하는 프로세스와 cmake/MSBuild/cl/link/ctest 실행이 없는지도 정리 직전에 확인했다. 외부 IDE·사용자 바로가기의 참조는 확인하지 못했다.
+
+### 분류·보존·삭제 결과
+
+파일 크기 합계는 논리 크기이며 실제 디스크 회수량과 같다고 보장하지 않는다. 구 트리 57개 모두 CMakeCache.txt의 source가 E:/MyEngine, project가 MyEngine임을 확인했다.
+
+| 처리 | 실측 결과 | 이유·다시 필요한 조건 |
+|---|---:|---|
+| 구 트리의 컴파일 산출물 삭제 | 24,709개 / 28,592,874,527 bytes, 약 26.63GiB | 구 트리의 구성별 출력 폴더·CMakeFiles 안에서 obj/lib/pdb/ilk/exe/dll/exp/res/tlog/idb/ipdb/iobj/pch/lastbuildstate/recipe만 분류했다. 현재 앱은 build/dev를 사용한다. 과거 바이너리가 필요하면 해당 소스 revision·도구 환경으로 새 트리에 재빌드해야 하며 현재 소스의 출력과 같다는 보장은 없다. |
+| 구 트리에서 판단이 불확실한 파일까지 보관 | 9,269개 / 177,283,873 bytes | 독립 소스·설정·데이터·로그·캡처뿐 아니라 작은 생성 메타데이터도 보관했다. 모든 보관 복사의 SHA-256이 원본과 일치한 뒤에 구 트리를 제거했다. |
+| 독립 폴더·루트 파일 그대로 이동 | 147개 / 136,769,491 bytes | m3b_smoke, _assetview, _mcpdrive, _netdemo, _nete2e, _nete2e2, _vis, build 루트 파일 29개와 저장소 루트 파일 5개를 보존했다. 계정·원장 데이터는 내용 출력이나 Git 추가를 하지 않았다. |
+| 최종 보관본 확인 | 9,416개 / 314,053,364 bytes | 모든 보관 파일의 크기·SHA-256 대조 통과. 수정 시각(UTC) 대조도 불일치 0개다. manifest.json에 원래 경로·보관 경로·크기·시각·해시를 기록했다. |
+
+build에는 dev·foundation·docs-audit만 남겼다. dev의 Debug·Release 실행 파일, foundation의 기존 변경 patch·재현 자료·서버 실험 데이터, docs-audit의 검증 기록은 유지했다. engine/game/apps/samples/tests/assets/third_party의 소스·에셋은 정리 대상으로 삼지 않았다. 저장소 루트의 기존 BMP 4개와 vc140.pdb도 삭제하지 않고 보관했다.
+
+복사·이동·재귀 삭제는 PowerShell 기본 명령으로 수행했다. 실제 절대 경로가 허용한 저장소/build/archive 내부인지 확인하고 재분석 지점을 거부했다. 삭제 직전에 전체 파일 목록·크기·수정 시각을 다시 대조하여 조사 이후 변경된 트리를 지우지 않도록 했다. 분류 목록·실행 스크립트·로그는 로컬 build/docs-audit/cleanup-inventory.json, cleanup-plan.json, cleanup-references.json, cleanup-build.ps1, cleanup-build.log에 있다.
+
+### 보관 자료 재사용 제약
+
+보관한 CMake cache·Visual Studio 프로젝트의 절대 경로는 과거 기록이다. 보관 폴더를 이동한 빌드 트리로 실행하지 않는다. 필요한 소스·데이터만 manifest로 식별하여 별도 위치에 복사하고 새 빌드를 구성한다.
+
+독립 m3b_smoke는 구 build/m3b 라이브러리를 직접 참조하므로 소스 보관을 현재 실행 가능 상태로 표시하지 않았다. 현행 CTest를 기본 검증으로 사용하며 이 소스가 다시 필요하면 현재 CMake 타깃에 연결하고 별도로 검증한다. m6b/final_verify.ps1의 구 캡처 경로도 보존된 과거 관계이며 재사용 전에 수정해야 한다. 서버 데이터는 스키마·버전·복구 절차를 확인한 뒤 격리된 실험 경로에서만 읽는다.
+
+### 정리 후 검증
+
+- cmake --list-presets=all과 cmake --preset dev 통과. 기존 build/dev 트리를 재사용했다.
+- Debug·Release 빌드와 ctest --preset debug/release 각각 통과: CTest 13/13, mye_tests 출력 511/511 passed. 기존 MSVC C4996 경고는 남으며 이번 정리에서 외부 코드나 무관한 경고 수정을 하지 않았다.
+- tools/mcp에서 npm.cmd run build·npm.cmd run smoke 통과. 기존 smoke에 기본 build/dev와 MYE_BUILD_DIR override 검사를 추가했고 총 10개 검사 ALL PASS다. 자식 서버는 build/_smoke_mcp_none을 사용하여 실제 빌드를 실행하지 않았다.
+- 보관본 전체의 크기·해시와 수정 시각 확인 통과. 정리 자체는 GPU·오디오·앱 통합 기능 변경이나 운영 성능 개선을 의미하지 않는다.
+- README·AGENTS·docs 29개의 UTF-8 읽기와 실제 로컬 링크 556개 확인: 누락 0개. git diff --check 통과. archive와 CMakeUserPresets.json의 Git 제외도 확인했다.
+
+빌드·테스트 로그는 build/docs-audit/cleanup-configure.log, cleanup-debug-build.log, cleanup-debug-ctest.log, cleanup-release-build.log, cleanup-release-ctest.log에 남겼다. 보관본과 검증 산출물은 Git에 포함하지 않는다.

@@ -87,9 +87,9 @@ Requirements: **Windows**, **Visual Studio 2022/2026** (C++20 toolchain),
 **CMake ≥ 3.26**.
 
 ```sh
-cmake -S . -B build/dev -G "Visual Studio 18 2026" -A x64
-cmake --build build/dev --config Debug
-cmake --build build/dev --config Release
+cmake --preset dev
+cmake --build --preset debug
+cmake --build --preset release
 ```
 
 Run the editor or game from the repository root:
@@ -143,13 +143,23 @@ map layout changes currently require updating the sample C++ implementation.
 Run the tests:
 
 ```sh
-ctest --test-dir build/dev -C Debug --output-on-failure
+ctest --preset debug
 powershell -File tools/verify-foundation.ps1 -Configuration Debug
 ```
 
-> Use the `Visual Studio 17 2022` generator instead if that's what you have
-> installed. Engine modules are static libraries; Windows, DirectX 11 and the
-> matching MSVC runtime remain platform requirements.
+The `dev` preset uses Visual Studio 2026 and keeps both configurations in
+`build/dev`. With Visual Studio 2022, configure the same directory with
+`cmake -S . -B build/dev -G "Visual Studio 17 2022" -A x64` and use the existing
+`--config Debug`/`--config Release` build commands. Choose the generator before
+creating the build tree. Windows, DirectX 11 and the matching MSVC runtime
+remain platform requirements.
+
+Sources stay in `engine/`, `game/`, `apps/`, `samples/` and `tests/`. Generated
+files stay under `build/`. Local verification records remain in
+`build/foundation` and `build/docs-audit`; preserved legacy sources, captures
+and save data are under `archive/build-cleanup-2026-10-01`. The archive is local
+and excluded from Git. Its manifest records original paths and SHA-256 hashes;
+old CMake caches are historical records and cannot be reused as moved builds.
 
 ## Repository layout
 

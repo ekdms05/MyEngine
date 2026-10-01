@@ -4,13 +4,12 @@
  *
  * 검증 항목(엔진 빌드는 절대 실행하지 않는다 — 격리 규칙):
  *  1. initialize 핸드셰이크(serverInfo.name === "myengine")
- *  2. tools/list — 6개 툴 전부 노출 + 각 inputSchema 존재
+ *  2. tools/list — 8개 툴 전부 노출 + 각 inputSchema 존재
  *  3. project_status 호출 — 빌드 없이도 정상 텍스트 응답(항상 성공 규약)
  *  4. engine_logs 호출 — 기록 부재 시 isError + "engine_run 먼저" 우아한 실패
  *  5. engine_run 호출 — 빌드 산출물 부재 시 isError + "engine_build 먼저" 우아한 실패
  *
- * MYE_BUILD_DIR=build/dev 로 띄우므로(존재하지 않는 디렉터리) 다른 워크플로우가 쓰는
- * build/ 를 건드리지 않는다.
+ * MYE_BUILD_DIR=build/_smoke_mcp_none으로 실행하여 실제 build/dev를 건드리지 않는다.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -106,6 +105,17 @@ const EXPECTED_TOOLS = [
 ];
 
 async function main() {
+  const { resolveBuildDirRel } = await import("../dist/root.js");
+  const previousBuildDir = process.env.MYE_BUILD_DIR;
+  try {
+    delete process.env.MYE_BUILD_DIR;
+    check("기본 빌드 경로 — build/dev", resolveBuildDirRel(repoRoot) === "build/dev");
+    process.env.MYE_BUILD_DIR = "build/_smoke_mcp_none";
+    check("빌드 경로 override 유지", resolveBuildDirRel(repoRoot) === "build/_smoke_mcp_none");
+  } finally {
+    if (previousBuildDir === undefined) delete process.env.MYE_BUILD_DIR;
+    else process.env.MYE_BUILD_DIR = previousBuildDir;
+  }
   // 1) initialize
   const init = await request("initialize", {
     protocolVersion: "2024-11-05",
@@ -151,7 +161,7 @@ async function main() {
     statusText.split("\n")[0],
   );
   check(
-    "project_status — 미구성 빌드 디렉터리(build/dev)를 '안 됨'으로 보고",
+    "project_status — 격리 빌드 디렉터리를 '안 됨'으로 보고",
     statusText.includes("안 됨"),
   );
 

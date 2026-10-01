@@ -31,9 +31,9 @@ npm.cmd run smoke
 | 환경변수 | 구현 기본값 | 현재 프로젝트 설정 |
 |---|---|---|
 | MYE_ROOT | tools/mcp/../.. | E:/MyEngine |
-| MYE_BUILD_DIR | build | build/dev |
+| MYE_BUILD_DIR | build/dev | build/dev |
 
-설정 없는 MCP의 기본 build 경로와 저장소의 권장 build/dev를 혼동하지 않는다. 실행 경로 해석은 [root.ts](../tools/mcp/src/root.ts)를 따른다.
+설정 없는 MCP도 프로젝트 preset과 동일한 build/dev를 사용한다. MYE_BUILD_DIR로 다른 루트 상대 경로를 지정할 수 있다. 실행 경로 해석은 [root.ts](../tools/mcp/src/root.ts)를 따른다.
 
 ## 실행·캡처 경계
 

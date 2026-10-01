@@ -3,6 +3,8 @@ build/
 out/
 bin/
 dist/
+archive/
+CMakeUserPresets.json
 *.obj
 *.pdb
 *.ilk

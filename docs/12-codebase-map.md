@@ -56,6 +56,10 @@ GameServer 세션 → 캐릭터 상태·원장 → PersistenceService → state.
 
 ## 변경 전에 확인할 경계
 
+소스는 위 모듈 경로에 유지하고 빌드는 [CMakePresets.json](../CMakePresets.json)의 dev preset으로 build/dev에 모은다. Debug·Release는 같은 트리의 구성이다. MCP의 기본값과 프로젝트 설정, 패키징·서버 검증 도구도 build/dev를 사용한다.
+
+build/foundation·build/docs-audit는 로컬 재현·검증 자료다. 구 빌드의 독립 소스·설정·데이터·캡처는 archive/build-cleanup-2026-10-01에 보관했다. 보관본의 CMake cache·절대 경로는 과거 기록이며 현재 빌드로 실행하지 않는다. 보관 목록·원래 경로·해시는 해당 폴더의 manifest.json, 정리 근거와 검증은 [작업 기록](16-foundation-worklog.md)을 따른다.
+
 정의와 모든 호출자를 찾고 입력에서 최종 소비자까지 추적한다. 공통 원인은 공통 경계에서 고친다. 헤더·CMake 링크·앱 등록·테스트가 각각 존재하는지 확인하고, 라이브러리 구현만으로 앱 연결을 완료 표시하지 않는다.
 
 현재 render→scene 소스 결합, 앱의 GUID/선로딩, 에디터 파일 열기와 MyGame의 런타임/물리 배선은 [13](13-architecture-and-features.md)에 근거가 있다. 긴 파일이라는 이유만으로 분리하지 않고 수명·변경 이유·의존성이 다른 책임을 분리한다.

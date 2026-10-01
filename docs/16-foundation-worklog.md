@@ -482,3 +482,11 @@ MyEditorContent CMake 타깃은 실행 파일 빌드의 의존성으로 starter/
 네이티브 Computer Use RPC 미구성으로 파일 선택/드롭/키보드/모션 키 입력/DPI 수동 흐름은 미검증이다. 가이드 브라우저 주소 http://127.0.0.1:8765 접근은 Browser Use 보안 정책이 사용자 권한 거부로 차단했다. 다른 surface/CDP/직접 입력으로 우회하지 않았다. 정적 파일·디코더 검증과 브라우저의 화면/키보드/비디오/오프라인/도움말 직접 클릭 검증은 구분한다. 테스트용 HTTP 서버는 종료했다. 자동 저장/크래시 복구·MyGame 통합·대규모 Undo 메모리 측정·고급 리깅과 P0 온라인 인증/영속성 조건은 별도 잔여다.
 
 최종 공통 명령 경계 검토에서 Play 중 포커스된 제작 문서의 Undo를 선택할 수 있는 순서 문제를 고쳤다. ActiveStack은 Play 스택을 먼저 선택하고 SaveActive는 Stop 안내를 전달한다. Dot 문서 파일/저장/Undo 버튼도 Play 중 비활성화한다. 기존 이동 회귀에 Play 중 구성/모션 지정 거부 검사를 추가했고 전체 양쪽 13/13·529/529 통과를 재확인했다. 최종 Markdown 로컬 링크 589개 누락0으로 확인했다.
+
+## 에디터 UI 스킬 재조사
+
+2026-10-01: 사용자의 UI 스킬 조사 요청에 따라 설치된 find-skills·ImGui·game-ui-ux·웹 지침과 추가 후보 원문을 비교했다. skills.sh leaderboard 및 CLI의 `game editor ui`·`imgui`·`desktop ui ux accessibility`, MCP Market 게임 개발 목록, GitHub 원문·revision·stars를 확인했다. 판단·출처·설치 수·보류 이유·적용 순서는 [15](15-skills-and-agents.md#에디터-ui-개선용-스킬-재검토)에 기록했다.
+
+기존 C++ Dear ImGui 스킬이 에디터 구현에 직접 맞아 주력으로 유지한다. game-ui-ux는 게임 HUD, 웹 지침은 HTML 가이드에 적용한다. ui-ux-pro-max는 데스크톱 스택도 지원하므로 이전의 웹 전용으로 읽힐 수 있는 분류를 정정했지만 Dear ImGui 전용 구현 지침은 없다. impeccable의 native audit도 모바일 프레임워크 대상임을 확인했다. Unity IMGUI는 C#의 다른 API이며 minimalist-ui는 밝은 웹 디자인을 강제해 제외했다. 인기도를 제품 적합성·검증 성공으로 취급하지 않았다.
+
+문서만 변경했다. 기존 설치로 역할을 충족해 추가 설치·lock 변경·에이전트 실행은 하지 않았고 UI 코드·에셋·설정은 변경하지 않았다. 변경 문서의 로컬 링크 27개 누락0·새 절 앵커·git diff --check를 확인했다. 제품 빌드·CTest·실제 UI 조작을 이번 조사에서 다시 실행한 것으로 기록하지 않는다.

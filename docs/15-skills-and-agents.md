@@ -169,11 +169,11 @@ MCP는 공식 SDK를 통한 8개 기존 도구 연결과 실제 MyEditor 프레�
 | 후보 | 판단 | 실제 적용 |
 |---|---|---|
 | 기존 imgui-ui-ux-engineering | Dear ImGui 작업에 직접 맞음. 버전 주의 문서까지 확인 | 문서 상태·도킹·작업 계층·중립 테마·vector+text·클리핑·정적 scope 검사 |
-| 기존 game-ui-ux | 게임 HUD/입력/정보 계층 지침은 유효, 웹/React 예제를 네이티브 셸로 대체할 이유 없음 | 콘텐츠 작업 흐름·포커스 원칙만 참고 |
+| 기존 game-ui-ux | 게임 HUD/입력/정보 계층 지침은 유효, Godot/Unity 예제의 API는 자체 엔진에 그대로 적용하지 않음 | 콘텐츠 작업 흐름·포커스 원칙만 참고 |
 | 기존 Pixel Art creator/professional/animator/exporter | 참조·분리 부위·프레임 시간·PNG 시트와 소스/출력 구분에 적합 | MyEngine 자체 제작 API에 적용. Aseprite 도구 연결/실행은 확인되지 않음 |
 | [Vercel web-design-guidelines](https://skills.sh/vercel-labs/agent-skills/web-design-guidelines) | 공식 원문·명확한 접근성/포커스/미디어/레이아웃 리뷰 기준. HTML 제작 가이드에 필요한 중복 없는 검사 | 새로 설치하고 원문 및 최신 guideline을 읽음. label/alt/크기/skip link/focus-visible/video controls/자동재생 제외 반영 |
 | 기존 frontend-design 플러그인 | 이미 설치되어 있어 중복 다운로드 필요 없음 | 이번 네이티브 UI에 웹 컴포넌트 라이브러리 추가하지 않음 |
-| minimalist-ui / ui-ux-pro-max 등 폭넓은 웹 스킬 | 검색 노출·대규모 설치가 자체 C++ 도킹에 적합하다는 뜻은 아님 | 기존 ImGui 지침과 정적 웹 가이드로 충족하여 추가 설치하지 않음 |
+| minimalist-ui / ui-ux-pro-max | 검색 노출·대규모 설치가 자체 C++ 도킹에 적합하다는 뜻은 아님. ui-ux-pro-max는 데스크톱 스택도 지원하며 아래 재검토에 적용 범위를 구분 | 기존 ImGui 지침과 정적 웹 가이드로 충족하여 추가 설치하지 않음 |
 
 ```powershell
 npx.cmd skills add https://github.com/vercel-labs/agent-skills --skill web-design-guidelines --agent codex -y
@@ -182,3 +182,40 @@ npx.cmd skills add https://github.com/vercel-labs/agent-skills --skill web-desig
 설치 위치는 프로젝트 .agents/skills/web-design-guidelines, 원본/해시는 skills-lock.json에 기록한다. 설치 파일은 ignored이며 실행 중 세션의 자동 도구 등록과 동일하지 않다. 필요한 지침을 직접 읽고 적용했으며 에이전트 정의·병렬 실행·React/폰트/아이콘/영상 인코더 패키지는 추가하지 않았다. 영상은 이미 설치된 OpenCV→Windows Media Foundation H.264, GIF는 Pillow로 기존 출력 프레임을 인코딩했다.
 
 ImGui scope 정적 검사는 4개 변경 UI 파일 모두 통과했다. 스킬 quality_suite의 semantic checks 30/30과 공식 header 확인은 통과했으나 전체 게이트는 g++/c++를 찾지 못해 FAIL이다. 제품은 별도 MSVC Debug/Release 빌드·CTest로 검증하며 이 결과로 스킬 전체 FAIL을 성공으로 바꾸지 않는다. 로컬 가이드 브라우저 접근은 권한 거부되었고 UI/비디오 브라우저 검증을 우회하지 않았다.
+
+## 에디터 UI 개선용 스킬 재검토
+
+2026-10-01: **설치된 imgui-ui-ux-engineering을 주력으로 유지한다.** MyEditor는 C++ Dear ImGui 기반이며 도킹·Inspector·제작 패널의 상태와 입력을 기존 데이터 모델에 연결해야 한다. 색상만 바꾸는 지침보다 ID·수명·포커스·클리핑·DPI·Undo까지 다루는 지침이 맞는다. 현재 테마는 [ImGuiSkin](../engine/imgui/src/ImGuiSkin.cpp), 제작 흐름과 미검증 범위는 [18](18-editor-authoring.md)에 있다.
+
+find-skills로 [skills.sh](https://www.skills.sh/) leaderboard와 `game editor ui`, `imgui`, `desktop ui ux accessibility`를 검색했다. [MCP Market](https://mcpmarket.com/ko/tools/skills/categories/game-development)의 현재 노출 목록도 확인했다. Blender·Three.js·Unity·Godot 등 다른 제작 환경의 후보가 포함되므로 게임 개발 카테고리만으로 MyEngine 에디터에 적합하다고 판단하지 않는다. 후보의 원본 SKILL.md와 GitHub 저장소를 대조했다.
+
+| 우선순위·후보 | 현재 상태 | 적용 판단과 근거 |
+|---|---|---|
+| 1 · [imgui-ui-ux-engineering](https://github.com/muhosekerci/imgui-ui-ux-engineering) | 프로젝트 설치됨 | 직접 일치. 도킹·Table/Inspector 정렬·상태·안정 ID·입력 capture·키보드·DPI·리스트 클리핑을 검토. 소규모 커뮤니티 지침이므로 저장소의 실제 ImGui 헤더·MSVC·앱 검증을 우선 |
+| 2 · [game-ui-ux](https://github.com/gamedev-skills/awesome-gamedev-agent-skills) | 프로젝트 설치됨 | 게임 HUD·인벤토리·설정·일시정지와 화면 배율/포커스에 사용. Godot/Unity 예제를 engine/ui의 기존 레이아웃·입력에 맞춰 해석 |
+| 3 · frontend-design / [web-design-guidelines](https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines) | 전역 플러그인 / 프로젝트 설치됨 | HTML 제작 가이드의 정보 계층·키보드·포커스·미디어·반응형 검사. 네이티브 패널 구현은 ImGui 지침 사용 |
+| 보조 · [ui-ux-pro-max 원문](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/09170eec67eefd46a7ae85de61b40c194020f997/.claude/skills/ui-ux-pro-max/SKILL.md) | 미설치 | 웹·모바일·데스크톱 22개 스택과 Python 검색을 제공. WPF/WinUI 등은 있으나 Dear ImGui 스택은 없음. 색·간격·입력 피드백 조사 공백이 생기면 추가. 터치 44px·CSS·GSAP 규칙을 데스크톱 제작 도구에 일괄 적용하지 않음 |
+| 보류 · [impeccable 원문](https://github.com/pbakaus/impeccable/blob/c74755d920985f7a92cef691ca970ba95f90126e/.agents/skills/impeccable/SKILL.md) | 미설치 | Operate 모드의 작업 중심 설계·오류/빈 상태 검토는 유용. 별도 launcher·프로젝트/디자인 문서·명령 체계가 기존 지침과 중복. [native audit](https://github.com/pbakaus/impeccable/blob/c74755d920985f7a92cef691ca970ba95f90126e/.agents/skills/impeccable/reference/audit.native.md)는 iOS/Android/adaptive 및 SwiftUI/Compose 등 대상이며 Dear ImGui 전용 검증이 아님 |
+| 제외 · [Unity ui-imgui 원문](https://github.com/unity-technologies/skills/blob/36e1a6aad886cff5682858510ba08d4b215e7f33/skills/ui-imgui/SKILL.md) | 미설치 | UnityEditor.EditorWindow·OnGUI·SerializedProperty를 사용하는 C# 스킬. C++ Dear ImGui와 API·수명·직렬화가 다름 |
+| 제외 · [minimalist-ui 원문](https://github.com/leonxlnx/taste-skill/blob/ce26fc25c0e5e8cab638f883de62d9a86ee5e45b/skills/minimalist-skill/SKILL.md) | 미설치 | 밝은 웹 편집 디자인·세리프 제목·큰 여백·bento/CSS/스크롤 효과를 강제. 요청한 검정/회색의 조밀한 제작 도구와 맞지 않음 |
+
+CLI 검색 시 설치 수 / GitHub 조회 시 저장소 stars: ImGui **56 / 5**, ui-ux-pro-max **377.8K / 132,190**, impeccable **304.8K / 73,282**, minimalist-ui **366.7K / 91,662**, Unity ui-imgui **3K / 1,016**. 모두 조사 시점의 별도 서비스 조회값이다. 저장소 별 수는 개별 스킬의 검증 횟수가 아니며 인기보다 기술 적합성과 원문을 우선했다. ImGui의 작은 사용 규모는 특히 공식 API·제품 검증을 생략하지 않을 이유다.
+
+이번에는 기존 설치로 필요한 역할을 충족하므로 추가 다운로드·설정 변경·에이전트 실행을 하지 않았다. 보조 자료가 실제로 필요해질 때의 프로젝트 설치 명령은 다음과 같다. 이는 **추천 후보의 설치법이며 이번 실행 결과가 아니다**.
+
+```powershell
+npx.cmd skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max --agent codex --yes
+```
+
+### 다음 UI 작업의 적용 순서
+
+아래는 새로 발견한 결함 목록이 아니라 [14](14-development-priorities.md)의 잔여 검증과 제작 흐름에 맞춘 실행 순서다.
+
+| 순서 | 적용할 지침 | 완료 판단 |
+|---|---|---|
+| 1 · 입력·배율 | ImGui: 좁은 도킹 영역·긴 한글·DPI·포커스·단축키·disabled 상태 | 프로젝트 열기→오브젝트 선택→기본 이동 구성→제작→저장/Undo를 실제 사용자 입력으로 확인. 이미 기록된 네이티브 미검증을 해소 |
+| 2 · 정보 계층 | ImGui: Inspector 그룹·열 정렬·빈 상태·다음 행동·오류 위치 | 초보자가 선택한 대상·바뀐 값·저장 상태·다음 행동을 화면에서 찾을 수 있는지 확인 |
+| 3 · 시각 일관성 | ImGui: 공용 색/간격·아이콘+라벨·hover/selected/focused | 기존 ImGuiSkin을 재사용하고 의미 없는 장식·패널별 중복 상수를 추가하지 않음. 테마 준수와 기능 개선을 별도로 판단 |
+| 4 · 성능·게임 UI | ImGui 리스트 클리핑 / game-ui-ux 레이아웃·포커스 | 큰 계층/에셋 목록은 동일 Release 장면에서 측정 후 개선. 게임 HUD는 기존 engine/ui를 사용해 별도 실행 검증 |
+
+기존 C++/clean-code 기준은 UI 상태와 저장·Undo 모델의 소유권을 검토하는 데 함께 사용한다. 이번 조사는 UI 코드 수정·빌드·화면 조작 검증을 수행한 작업으로 표시하지 않는다.

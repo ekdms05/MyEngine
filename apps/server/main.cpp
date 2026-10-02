@@ -253,7 +253,8 @@ int main(int argc, char** argv) {
     }
 
     const float dt = 1.0f / static_cast<float>(tickrate);
-    const auto tickDuration = std::chrono::microseconds(1'000'000 / tickrate);
+    const auto tickDuration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(1.0 / tickrate));
     const long long autosaveTicks = autosaveSec > 0 ? static_cast<long long>(autosaveSec) * tickrate : 0;
     const long long reloadTicks = static_cast<long long>(tickrate) * 5;   // 5초마다 config 핫리로드·메트릭
 
@@ -269,6 +270,7 @@ int main(int argc, char** argv) {
     };
 
     long long tick = 0;
+    auto nextTick = std::chrono::steady_clock::now();
     while ((maxTicks < 0 || tick < maxTicks) && !g_stop.load()) {
         const auto start = std::chrono::steady_clock::now();
 
@@ -317,8 +319,9 @@ int main(int argc, char** argv) {
             else MYE_LOG_INFO("Server", "자동저장(백업 회전) 완료 (tick {})", tick);
         }
 
-        const auto elapsed = std::chrono::steady_clock::now() - start;
-        if (elapsed < tickDuration) std::this_thread::sleep_for(tickDuration - elapsed);
+        // Absolute deadlines recover oversleep instead of compounding Windows timer granularity.
+        nextTick += tickDuration;
+        std::this_thread::sleep_until(nextTick);
     }
 
     // ---- 종료 시 저장(백업 회전) + 메트릭 스냅샷 ----

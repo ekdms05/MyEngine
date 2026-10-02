@@ -43,6 +43,14 @@ $reloadedBot = $reloaded.characters.characters | Where-Object { $_.name -eq 'bot
 if ($reloadedBot.posX -ne $bot.posX -or $reloadedBot.posY -ne $bot.posY -or $reloadedBot.hp -ne $bot.hp) {
     throw 'Restart changed persisted bot state'
 }
+# Relative sleeps accumulate Windows timer rounding and starve 60 Hz clients.
+$tickClock = [Diagnostics.Stopwatch]::StartNew()
+Invoke-ServerCheck 0 @('--port', '0', '--tickrate', '60', '--ticks', '120')
+$tickClock.Stop()
+if ($tickClock.Elapsed.TotalSeconds -gt 2.8) {
+    throw "120 server ticks exceeded the 60 Hz deadline allowance: $($tickClock.Elapsed.TotalSeconds)s"
+}
+Write-Output "PASS: 120 server ticks in $($tickClock.Elapsed.TotalSeconds.ToString('F3'))s (60 Hz, 0.8s startup/scheduling allowance)"
 [IO.File]::WriteAllText($snapshotPath, '{}', [Text.UTF8Encoding]::new($false))
 $before = (Get-FileHash -LiteralPath $snapshotPath).Hash
 Invoke-ServerCheck 4 @('--port', '0', '--ticks', '0')

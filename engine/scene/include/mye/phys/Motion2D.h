@@ -47,20 +47,18 @@ struct CollisionBody2D {
 };
 
 bool CanInteract2D(const CollisionBody2D& a, const CollisionBody2D& b);
+bool CanBlock2D(const CollisionBody2D& moving, const CollisionBody2D& obstacle);
 Expected<void, Error> ValidateCollisionBodies2D(std::span<const CollisionBody2D> bodies);
 
-// Existing tile boundary. The source outlives every motion call that uses it.
-class ITileCollision {
-public:
-    virtual ~ITileCollision() = default;
-    virtual std::optional<Vec2> ResolveSolid(const Shape2D& shape, Vec2 pos,
-                                           int8_t floorLevel) const = 0;
-    virtual std::optional<float> SampleGroundHeight(Vec2 worldXY, int8_t level) const {
-        (void)worldXY;
-        (void)level;
-        return std::nullopt;
-    }
+struct ShapeCastHit2D {
+    double fraction = 0; // Fraction of displacement in [0,1], not elapsed seconds.
+    Vec2 normal{};      // Unit normal pointing out of the obstacle.
+    uint64_t colliderId = 0;
 };
+
+// Reports the first blocking contact, or fraction zero for an initial overlap.
+Expected<std::optional<ShapeCastHit2D>, Error> CastMotion2D(
+    const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles, Vec2 displacement);
 
 struct MotionResult2D {
     Vec2 position{}, lastMove{};
@@ -70,6 +68,6 @@ struct MotionResult2D {
 // Value-only calculation: neither body nor obstacles are changed, including on failure.
 Expected<MotionResult2D, Error> MoveAndSlide2D(
     const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles,
-    Vec2 velocity, float dt, int maxSlideIters, const ITileCollision* tiles = nullptr);
+    Vec2 velocity, float dt, int maxSlideIters);
 
 } // namespace mye::phys

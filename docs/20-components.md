@@ -13,7 +13,7 @@
 | Camera3D | current·target·followTarget·FOV·near/far 설정 | 활성 하나; 위치는 LocalTransform. Play/MyGame용이며 에디터 작업 카메라와 별개 |
 | FloorLevel | 높이 층 level | 지면 0; 렌더·충돌 층을 함께 확인 |
 | Collider2D | shape/half/offset·그룹/층 마스크 | 48px 전체 폭은 반폭 0.5. isTrigger면 이동을 막지 않고 이벤트 발생 |
-| KinematicBody2D | 충돌하며 이동하는 본체 | skin=충돌 간격, maxSlideIters=1~16. 바닥 스냅에는 바닥 서비스 필요 |
+| KinematicBody2D | 충돌하며 이동하는 본체 | maxSlideIters=1~16. skin/snapToGround는 저장 호환 필드로 현재 2D 계산에 미적용 |
 | CharacterController2D | enabled/speed·idleAnimation/walkAnimation | 최상위 활성 1명, 속도 0~100 unit/s. 3이면 144px/s. 조작을 끄면 정지 |
 | Collider3D | enabled/shape/half/offset/isTrigger | 축 정렬 상자/+Z 경사. half·offset은 로컬 단위이며 양수 Transform 스케일 적용 |
 | KinematicBody3D | settings의 speed/gravity/jumpSpeed/floorSnap/stepHeight/skin | 접지·벽·천장 상태. 조작 캐릭터와 함께 사용; 자유 강체·메시 물리 미지원 |

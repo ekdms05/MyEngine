@@ -48,7 +48,7 @@ namespace {
 namespace fs = std::filesystem;
 struct GameCli {
     std::string project, scene, dump, connect, credentials;
-    uint64_t frames = 0;
+    uint64_t frames = 0, ticks = 0;
     uint64_t character = 0;
 };
 
@@ -58,7 +58,7 @@ Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
         const auto& option = args[i];
         if (option == "--headless") continue;
         if (option.starts_with("--project=")) { cli.project = option.substr(10); continue; }
-        if (option != "--project" && option != "--scene" && option != "--frames" && option != "--dump" &&
+        if (option != "--project" && option != "--scene" && option != "--frames" && option != "--ticks" && option != "--dump" &&
             option != "--connect" && option != "--credentials" && option != "--character")
             return Error{"Unknown option: " + option, 64};
         if (++i == args.size() || args[i].empty()) return Error{"Missing value: " + option, 64};
@@ -73,9 +73,10 @@ Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
             if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || cli.character == 0)
                 return Error{"--character requires a positive character ID", 64};
         } else {
-            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), cli.frames);
-            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || cli.frames == 0)
-                return Error{"--frames requires a positive integer", 64};
+            auto& limit = option == "--ticks" ? cli.ticks : cli.frames;
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), limit);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || limit == 0)
+                return Error{option + " requires a positive integer", 64};
         }
     }
     if (cli.project.empty() || Utf8Path(cli.project).extension() != ".myeproj")
@@ -436,7 +437,8 @@ private:
         });
     }
     void Tick(float dt) {
-        if (!m_ready) return;
+        // Catch-up may schedule several fixed ticks before the next render.
+        if (!m_ready || (m_cli.ticks && m_tick >= m_cli.ticks)) return;
         Vec2 movement{};
         if (m_input && m_inputFocused) {
             movement.x = float(m_input->IsDown(KeyCode::D) || m_input->IsDown(KeyCode::Right)) - float(m_input->IsDown(KeyCode::A) || m_input->IsDown(KeyCode::Left));
@@ -472,6 +474,8 @@ private:
                                          std::string(m_scene->objects->Message());
             if (title != m_currentTitle) { m_window->SetTitle(title); m_currentTitle = title; }
         }
+        if (m_ready && ++m_tick == m_cli.ticks)
+            MYE_LOG_INFO("Game", "Fixed tick limit reached: {}", m_tick);
     }
     void Render() {
         if (!m_ready) return;
@@ -493,13 +497,15 @@ private:
         }
         if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), view.Value().geometryDepth ? Vec2{} : m_camera.SubpixelResidual());
         ++m_frame;
-        if (!m_cli.dump.empty() && m_frame == (m_cli.frames ? m_cli.frames : 3)) {
+        const bool finished = (m_cli.frames && m_frame >= m_cli.frames) ||
+                              (m_cli.ticks && m_tick >= m_cli.ticks);
+        if (!m_cli.dump.empty() && (m_cli.frames || m_cli.ticks ? finished : m_frame == 3)) {
             auto captured = rhi::CaptureBackbuffer(*m_device, m_target.ColorTarget(), m_cli.dump);
             if (!captured) Fail(captured.GetError());
         }
         m_device->EndFrame();
         if (m_swapChain) m_swapChain->Present(false);
-        if (m_cli.frames && m_frame >= m_cli.frames) m_exit(m_ready ? 0 : 1);
+        if (finished) m_exit(m_ready ? 0 : 1);
     }
     void Fail(const Error& error) { m_ready = false; MYE_LOG_ERROR("Game", "{}", error.message); m_exit(1); }
 
@@ -529,7 +535,7 @@ private:
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Mesh>> m_meshes;
     std::map<asset::AssetGuid, asset::AnimationAsset> m_animations;
     std::string m_title, m_currentTitle;
-    uint64_t m_frame = 0;
+    uint64_t m_frame = 0, m_tick = 0;
     bool m_ready = false, m_interact = false, m_jump = false;
     float m_cameraMouseX = 0;
     bool m_onlineSpawnLogged = false;
@@ -558,7 +564,7 @@ int main() {
         ::LocalFree(argv);
     }
     for (const auto& arg : launch.args) if (arg == "--help") {
-        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--dump frame.bmp] [--headless]\nWASD/arrows or gamepad: movement, E: interact, Escape: exit.");
+        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--ticks N] [--dump frame.bmp] [--headless]\n--ticks limits fixed simulation steps; when both limits are set, the first ends play.\nWASD/arrows or gamepad: movement, E: interact, Escape: exit.");
         return 0;
     }
     auto cli = mye::ParseCli(launch.args);

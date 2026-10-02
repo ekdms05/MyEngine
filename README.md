@@ -42,6 +42,8 @@ build/dev/apps/game/Release/MyGame.exe --project game/starter/meadow_village/pro
 
 `MyGame` plays authored projects locally and connects to the authenticated loopback XYZ server. [3D play and online setup](docs/21-3d-play-and-online.md) describes controls, shared collision, prediction, replication and saved positions. Public Internet transport, online portals/game rules and game export remain incomplete. Play inside the editor uses a separate native window in the same process, so it does not isolate process crashes.
 
+Current source adds continuous box/circle collision and `MyGame --ticks N` for fixed simulation checks, with an optional `--dump final.bmp` after the last tick. These changes are not in the existing 0.3.0 binaries; shared 2D authority/prediction remains pending.
+
 ## Development tools
 
 [MCP](docs/08-mcp.md) provides build, test, run, capture, project inspection, API reference and validated asset import. Node.js is needed only for these tools. [Skills and specialist roles](docs/15-skills-and-agents.md) are development aids, not engine runtime dependencies.

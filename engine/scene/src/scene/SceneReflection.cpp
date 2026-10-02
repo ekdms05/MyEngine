@@ -217,7 +217,7 @@ template<> void mye::refl::Reflect(TypeBuilder<mye::phys::Collider2D>& b) {
 }
 template<> void mye::refl::Reflect(TypeBuilder<mye::phys::KinematicBody2D>& b) {
     using C = mye::phys::KinematicBody2D;
-    b.Version(1).Field("snapToGround", &C::snapToGround).Attr(Attribute::MakeTooltip("바닥 높이 판정에 맞춥니다. 바닥 판정 서비스 연결이 필요합니다.")).Field("skin", &C::skin).Attr(Attribute::MakeTooltip("충돌면과 유지하는 작은 간격(월드 단위). 0~1 범위를 사용합니다.")).Field("maxSlideIters", &C::maxSlideIters).Attr(Attribute::MakeTooltip("한 고정 틱의 최대 벽면 미끄러짐 횟수. 1~16 범위입니다."));
+    b.Version(1).Field("snapToGround", &C::snapToGround).Attr(Attribute::MakeTooltip("저장 호환용 필드입니다. 현재 2D 이동에는 바닥 스냅을 적용하지 않습니다.")).Field("skin", &C::skin).Attr(Attribute::MakeTooltip("저장 호환용 필드입니다. 현재 2D 충돌 간격에는 적용하지 않습니다.")).Field("maxSlideIters", &C::maxSlideIters).Attr(Attribute::MakeTooltip("한 고정 틱의 최대 벽면 미끄러짐 횟수. 1~16 범위입니다."));
 }
 
 namespace mye::scene {

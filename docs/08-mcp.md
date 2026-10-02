@@ -8,7 +8,7 @@
 |---|---|
 | engine_build | 미구성 시 CMake configure, 지정 타깃/구성 빌드, 오류·경고 요약 |
 | engine_test | 구성된 빌드의 CTest 실행·결과 요약 |
-| engine_run | 지정 앱을 프레임 제한, MyServer를 틱 제한으로 실행하고 종료/출력 확인 |
+| engine_run | 지정 앱을 프레임 제한, MyServer를 틱 제한으로 실행. ticks 입력으로 MyGame/MyServer 고정 틱 한도 선택 |
 | engine_capture_frame | 실행 타깃 BMP 캡처를 PNG 이미지 콘텐츠로 반환 |
 | engine_logs | 빌드·테스트·실행·캡처 로그 조회 |
 | project_status | configure 상태·마지막 작업·앱 소스·캡처·버전 조회 |
@@ -42,6 +42,8 @@ npm.cmd run smoke
 ## 실행·캡처 경계
 
 `--frames N`은 자동 종료, `--dump <path.bmp>`는 프레임 기록에 사용한다. 실행 타깃은 설정된 빌드 트리에서 찾는다. `MyEditor`에는 `args=["--project", "프로젝트 경로"]`를 전달해야 한다. 프로젝트 없이 실행하면 프로젝트 선택 창이 열린다. 모든 게임/서버 CLI를 임의로 호출하는 일반 셸 도구가 아니다.
+
+개발 소스의 `MyGame --ticks N`은 실제 고정 시뮬레이션 N회 후 최종 프레임을 렌더/캡처하고 종료한다. MCP에서 `engine_run(sample="MyGame", ticks=4, args=["--project", "프로젝트.myeproj", "--headless"])`를 호출하면 기본 frames 대신 `--ticks 4`를 전달한다. MyEditor 등 다른 앱의 ticks는 거부한다. 한도는 양수이며 CLI에 frames/ticks를 모두 지정하면 먼저 도달한 한도로 종료한다. 프레임 수는 물리 틱 수나 서버 ack 수가 아니다. `engine_capture_frame`은 여전히 프레임 기준 도구다. 새 MyGame 틱 옵션은 기존 0.3.0 바이너리에 없다.
 
 ```text
 MCP 요청 → 입력/경로 검증 → 작업 직렬화 → CLI 실행·로그 저장

@@ -1,5 +1,5 @@
 /**
- * engine_run — 앱 실행(프레임/서버 틱 한도로 자동 종료, 크래시 코드 해석).
+ * engine_run — 앱 실행(프레임/고정 틱 한도로 자동 종료, 크래시 코드 해석).
  * 실행 산출물은 <buildDir> 하위의 <config>/<target>.exe에서 찾는다.
  * sample 입력 이름은 기존 MCP 클라이언트 호환을 위해 유지한다.
  */
@@ -17,6 +17,7 @@ interface RunParams {
   sample: string;
   config: "Debug" | "Release";
   frames: number;
+  ticks?: number | undefined;
   args?: string[] | undefined;
   timeoutSec: number;
 }
@@ -26,12 +27,13 @@ export function registerRunTool(server: McpServer, ctx: ServerContext): void {
     "engine_run",
     {
       description:
-        "앱을 --frames N(MyServer는 --ticks N)으로 자동 종료시키고, exit 코드(크래시 시 NTSTATUS 해석 병기)와 " +
+        "앱을 --frames N(MyServer는 --ticks N)으로 자동 종료한다. MyGame/MyServer에 ticks를 지정하면 고정 틱 한도를 사용하고, exit 코드(크래시 시 NTSTATUS 해석 병기)와 " +
         "출력 꼬리를 반환한다. 전체 로그는 engine_logs(source=\"run\")로.",
       inputSchema: {
         sample: z.string().min(1).describe('실행 타깃(예: "MyEditor"). MyEditor의 --project는 args로 전달'),
         config: z.enum(["Debug", "Release"]).default("Debug").describe("빌드 구성"),
         frames: z.number().int().min(1).default(120).describe("실행 한도(MyServer --ticks N, 나머지 --frames N)"),
+        ticks: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional().describe("MyGame/MyServer 고정 틱 한도. 지정하면 frames 대신 사용"),
         args: z.array(z.string()).optional().describe("앱에 넘길 추가 인자"),
         timeoutSec: z.number().int().min(1).max(600).default(30).describe("타임아웃(초)"),
       },
@@ -93,11 +95,16 @@ export function missingExeError(ctx: ServerContext, sample: string, config: stri
 
 async function doRun(ctx: ServerContext, p: RunParams): Promise<CallToolResult> {
   assertSafeName(p.sample, "타깃");
+  const target = p.sample.toLowerCase();
+  if (p.ticks !== undefined && target !== "mygame" && target !== "myserver")
+    return errorResult("ticks는 MyGame/MyServer의 고정 시뮬레이션 전용입니다. 다른 앱에는 frames를 사용하세요.");
+  const unit = target === "myserver" || p.ticks !== undefined ? "ticks" : "frames";
+  const limit = p.ticks ?? p.frames;
 
   const exe = findTargetExe(ctx, p.sample, p.config);
   if (exe === null) return missingExeError(ctx, p.sample, p.config);
 
-  const args = [p.sample.toLowerCase() === "myserver" ? "--ticks" : "--frames", String(p.frames), ...(p.args ?? [])];
+  const args = [`--${unit}`, String(limit), ...(p.args ?? [])];
   const res = await runProcess({ command: exe, args, cwd: ctx.root, timeoutMs: p.timeoutSec * 1000 });
 
   const logPath = ctx.state.writeLog(
@@ -113,8 +120,7 @@ async function doRun(ctx: ServerContext, p: RunParams): Promise<CallToolResult> 
 
   const ok = !res.timedOut && res.exitCode === 0 && res.spawnError === undefined;
   const exitDesc = describeExitCode(res.exitCode);
-  const unit = p.sample.toLowerCase() === "myserver" ? "ticks" : "frames";
-  const summary = `RUN ${p.sample} (${p.config}, ${p.frames} ${unit}) — exit ${exitDesc} · ${res.durationMs}ms · timedOut ${String(res.timedOut)}`;
+  const summary = `RUN ${p.sample} (${p.config}, ${limit} ${unit}) — exit ${exitDesc} · ${res.durationMs}ms · timedOut ${String(res.timedOut)}`;
 
   const body: string[] = [summary];
   if (res.spawnError !== undefined) body.push(`실행 실패: ${res.spawnError}`);
@@ -140,7 +146,7 @@ async function doRun(ctx: ServerContext, p: RunParams): Promise<CallToolResult> 
     config: p.config,
     durationMs: res.durationMs,
     logPath,
-    extra: { sample: p.sample, frames: p.frames, exitCode: res.exitCode, timedOut: res.timedOut },
+    extra: { sample: p.sample, frames: p.frames, ticks: p.ticks, limit, unit, exitCode: res.exitCode, timedOut: res.timedOut },
   });
   return ok ? textResult(body.join("\n")) : errorResult(body.join("\n"));
 }

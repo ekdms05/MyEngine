@@ -47,7 +47,7 @@ npm run build     # tsc → dist/
 |---|---|
 | `engine_build` | CMake 빌드(미구성 시 CMake 기본 제너레이터 / x64로 configure). 기존 cache의 제너레이터 유지. 에러≤30·경고≤10 을 `파일(줄): 코드: 메시지`로 요약 |
 | `engine_test` | `ctest --output-on-failure` 실행·요약(passed/failed/total + 실패 테스트 출력 꼬리). 자동 빌드는 하지 않음 |
-| `engine_run` | 실행 타깃을 `--frames N`으로 실행. MyEditor는 args에 --project 전달 |
+| `engine_run` | `--frames N` 실행(MyServer는 --ticks N). ticks 지정 시 MyGame/MyServer 고정 틱 한도. 프로젝트는 args에 --project 전달 |
 | `engine_capture_frame` | 프레임 BMP를 PNG MCP 이미지 콘텐츠로 반환. 최대 변 960px |
 | `engine_logs` | 최근 빌드/테스트/실행/캡처 원본 로그 tail + 레벨(warn/error)·정규식 필터 |
 | `project_status` | configure 상태·마지막 작업 요약·앱 소스 목록·최근 캡처·서버 버전. 항상 성공 |
@@ -60,12 +60,15 @@ npm run build     # tsc → dist/
 
 ## 실행 CLI 계약
 
-실행·캡처 도구는 두 플래그를 사용한다 ([CLI 계약](../../docs/08-mcp.md) 참조):
+실행·캡처 도구는 다음 플래그를 사용한다 ([CLI 계약](../../docs/08-mcp.md) 참조):
 
 | 플래그 | 의미 |
 |---|---|
 | `--frames <N>` | N 프레임 렌더 후 exit 0 자동 종료 |
-| `--dump <path.bmp>` | 마지막 프레임 백버퍼를 BMP(24/32bpp)로 저장 후 종료 |
+| `--ticks <N>` | MyGame/MyServer 고정 틱 한도. engine_run의 ticks 입력이 frames 대신 전달됨 |
+| `--dump <path.bmp>` | MyGame의 지정 한도 최종 프레임을 BMP로 저장. 한도 없으면 3번째 프레임 기록 |
+
+MyGame의 ticks는 현재 개발 소스 옵션으로 기존 0.3.0 바이너리에는 없다. MyEditor 등의 ticks 입력은 거부하며 engine_capture_frame은 프레임 기준을 유지한다. CLI에서 frames/ticks를 모두 지정하면 먼저 도달한 한도로 종료한다. 물리 확인에는 렌더 프레임 수를 고정 틱 수로 간주하지 않는다.
 
 ## 상태 디렉터리 (`.state/`, gitignore)
 

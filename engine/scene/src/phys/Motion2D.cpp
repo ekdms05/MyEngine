@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace mye::phys {
 namespace {
@@ -21,11 +22,39 @@ bool ValidBody(const CollisionBody2D& body) {
            Finite(body.pos - half) && Finite(body.pos + half);
 }
 
+Vec2 Advance(Vec2 position, Vec2 displacement, double fraction) {
+    return {static_cast<float>(position.x + static_cast<double>(displacement.x) * fraction),
+            static_cast<float>(position.y + static_cast<double>(displacement.y) * fraction)};
+}
+
+Vec2 RoundOutward(Vec2 position, Vec2 normal) {
+    // One representable step avoids rounding a contact back into the solid.
+    const float infinity = std::numeric_limits<float>::infinity();
+    if (normal.x != 0) position.x = std::nextafter(position.x, normal.x < 0 ? -infinity : infinity);
+    if (normal.y != 0) position.y = std::nextafter(position.y, normal.y < 0 ? -infinity : infinity);
+    return position;
+}
+
+bool HasBlockingOverlap(const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles,
+                        Vec2 position) {
+    for (const auto& obstacle : obstacles) {
+        if (!CanBlock2D(body, obstacle)) continue;
+        const auto mtv = ResolveMTV(obstacle.shape, obstacle.pos, body.shape, position);
+        if (mtv && (mtv->x != 0 || mtv->y != 0)) return true;
+    }
+    return false;
+}
+
 } // namespace
 
 bool CanInteract2D(const CollisionBody2D& a, const CollisionBody2D& b) {
     return FloorsOverlap(a.floorMask, b.floorMask) &&
            ((a.collidesWith & b.layerMask) != 0 || (b.collidesWith & a.layerMask) != 0);
+}
+
+bool CanBlock2D(const CollisionBody2D& moving, const CollisionBody2D& obstacle) {
+    return !obstacle.isTrigger && (moving.id == 0 || moving.id != obstacle.id) &&
+           CanInteract2D(moving, obstacle);
 }
 
 Expected<void, Error> ValidateCollisionBodies2D(std::span<const CollisionBody2D> bodies) {
@@ -37,71 +66,66 @@ Expected<void, Error> ValidateCollisionBodies2D(std::span<const CollisionBody2D>
 
 Expected<MotionResult2D, Error> MoveAndSlide2D(
     const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles,
-    Vec2 velocity, float dt, int maxSlideIters, const ITileCollision* tiles) {
+    Vec2 velocity, float dt, int maxSlideIters) {
     if (!ValidBody(body) || body.isTrigger || !Finite(velocity) || !std::isfinite(dt) ||
         dt <= 0 || dt > 1 || maxSlideIters < 1 || maxSlideIters > 16)
         return Error{"2D motion requires a solid body, finite velocity, dt in (0,1] and 1..16 slides", 1};
     if (auto valid = ValidateCollisionBodies2D(obstacles); !valid) return valid.GetError();
 
-    const Vec2 desired = velocity * dt;
-    const Vec2 half = body.shape.kind == ShapeKind::Circle
-                          ? Vec2{body.shape.Radius(), body.shape.Radius()}
-                          : body.shape.half;
-    const float minHalf = std::max(.001f, std::min(half.x, half.y));
-    const float ratio = std::hypot(desired.x, desired.y) / minHalf;
-    // Clamp before integer conversion: finite velocity can still overflow this ratio.
-    // ponytail: 16 discrete substeps; shape sweeps are required before thin-wall online acceptance.
-    const int substeps = ratio >= 15 ? 16 : 1 + static_cast<int>(ratio);
-    const Vec2 subDesired = desired / static_cast<float>(substeps);
     MotionResult2D result;
     result.position = body.pos;
 
-    for (int step = 0; step < substeps; ++step) {
-        Vec2 remaining = subDesired;
-        for (int iter = 0; iter < maxSlideIters; ++iter) {
-            if (std::abs(remaining.x) < 1e-7f && std::abs(remaining.y) < 1e-7f) break;
-            Vec2 candidate = result.position + remaining;
-            if (!Finite(candidate)) return Error{"2D motion position overflow", 1};
-            Vec2 correction{};
-            bool collided = false;
-            for (const auto& obstacle : obstacles) {
-                if ((body.id != 0 && obstacle.id == body.id) || obstacle.isTrigger ||
-                    !CanInteract2D(body, obstacle)) continue;
-                if (auto mtv = ResolveMTV(obstacle.shape, obstacle.pos, body.shape, candidate)) {
-                    candidate += *mtv;
-                    correction += *mtv;
-                    collided = true;
-                }
-            }
-            if (tiles) {
-                if (auto mtv = tiles->ResolveSolid(body.shape, candidate, body.floorLevel)) {
-                    candidate += *mtv;
-                    correction += *mtv;
-                    collided = true;
-                }
-            }
-            if (!Finite(candidate) || !Finite(correction))
-                return Error{"2D collision returned a non-finite correction", 1};
-            remaining = remaining - (candidate - result.position);
-            result.position = candidate;
-            result.hitWall |= collided;
-            if (!collided) break;
-
-            const float length = std::hypot(correction.x, correction.y);
-            if (!std::isfinite(length)) return Error{"2D collision correction length overflow", 1};
-            if (length <= 1e-7f) break;
-            const Vec2 normal = correction / length;
-            const float inward = Vec2::Dot(remaining, normal);
-            if (!std::isfinite(inward)) return Error{"2D slide projection overflow", 1};
-            remaining = inward < 0 ? remaining - normal * inward : Vec2{};
-            if (!Finite(remaining)) return Error{"2D slide displacement overflow", 1};
+    // Recover even a stationary body. An unresolved gap must fail without a world commit.
+    for (int pass = 0; pass < maxSlideIters; ++pass) {
+        bool corrected = false;
+        for (const auto& obstacle : obstacles) {
+            if (!CanBlock2D(body, obstacle)) continue;
+            const auto mtv = ResolveMTV(obstacle.shape, obstacle.pos, body.shape, result.position);
+            if (!mtv || (mtv->x == 0 && mtv->y == 0)) continue;
+            if (!Finite(*mtv)) return Error{"2D overlap recovery overflow", 1};
+            result.position = RoundOutward(Advance(result.position, *mtv, 1), *mtv);
+            if (!Finite(result.position)) return Error{"2D overlap recovery position overflow", 1};
+            corrected = result.hitWall = true;
         }
+        if (!corrected) break;
+    }
+    if (HasBlockingOverlap(body, obstacles, result.position))
+        return Error{"2D initial overlap cannot be resolved within the slide limit", 1};
+
+    Vec2 remaining = velocity * dt;
+    for (int slide = 0; slide <= maxSlideIters; ++slide) {
+        if (remaining.x == 0 && remaining.y == 0) break;
+        CollisionBody2D moving = body;
+        moving.pos = result.position;
+        auto cast = CastMotion2D(moving, obstacles, remaining);
+        if (!cast) return cast.GetError();
+        if (!cast.Value()) {
+            result.position = Advance(result.position, remaining, 1);
+            break;
+        }
+        const auto& hit = *cast.Value();
+        result.position = RoundOutward(Advance(result.position, remaining, hit.fraction), hit.normal);
+        if (!Finite(result.position)) return Error{"2D contact position overflow", 1};
+        result.hitWall = true;
+        // A final cast allows the last tangent travel, but never another unchecked direction change.
+        if (slide == maxSlideIters) break;
+        remaining = {static_cast<float>(remaining.x * (1 - hit.fraction)),
+                     static_cast<float>(remaining.y * (1 - hit.fraction))};
+        if (remaining.x == 0 && remaining.y == 0) break;
+        const double inward = static_cast<double>(remaining.x) * hit.normal.x +
+                              static_cast<double>(remaining.y) * hit.normal.y;
+        if (inward >= 0) return Error{"2D motion cast returned a non-blocking contact", 1};
+        remaining = {static_cast<float>(remaining.x - inward * hit.normal.x),
+                     static_cast<float>(remaining.y - inward * hit.normal.y)};
+        if (!Finite(remaining)) return Error{"2D slide displacement overflow", 1};
     }
     result.lastMove = result.position - body.pos;
     if (!Finite(result.lastMove)) return Error{"2D motion displacement overflow", 1};
     CollisionBody2D finalBody = body;
     finalBody.pos = result.position;
     if (!ValidBody(finalBody)) return Error{"2D motion bounds overflow", 1};
+    if (HasBlockingOverlap(body, obstacles, result.position))
+        return Error{"2D contact loses precision at this coordinate or motion scale", 1};
     return result;
 }
 

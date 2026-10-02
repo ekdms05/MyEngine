@@ -99,7 +99,7 @@ Expected<void, Error> PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus
         const auto* parent = world.TryGet<scene::Parent>(entity);
         if (!world.Has<LocalTransform>(entity) || (parent && !parent->parent.IsNull()))
             return Error{"2D kinematic movement requires a root LocalTransform", 1};
-        auto moved = MoveAndSlide2D(body, insts, kb->velocity, dt, kb->maxSlideIters, m_tiles);
+        auto moved = MoveAndSlide2D(body, insts, kb->velocity, dt, kb->maxSlideIters);
         if (!moved) return moved.GetError();
         const Vec2 origin = moved.Value().position - world.TryGet<Collider2D>(entity)->offset;
         if (!std::isfinite(origin.x) || !std::isfinite(origin.y))

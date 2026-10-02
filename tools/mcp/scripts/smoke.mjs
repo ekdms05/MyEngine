@@ -184,6 +184,11 @@ async function main() {
     run.result?.isError === true && /engine_build/.test(runText),
     runText.split("\n")[0],
   );
+  const unsupportedTicks = await request("tools/call", {
+    name: "engine_run", arguments: { sample: "MyEditor", ticks: 4 },
+  });
+  check("engine_run — 지원하지 않는 앱의 고정 틱 거부",
+    unsupportedTicks.result?.isError === true && firstText(unsupportedTicks.result).includes("MyGame/MyServer"));
 
   // Real file parsing in an isolated build/ project; no user data or engine build.
   const online = await request("tools/call", { name: "engine_reference", arguments: { topic: "online", search: "PhysicsWorld3D" } });
@@ -191,7 +196,7 @@ async function main() {
   const roadmap = await request("tools/call", { name: "engine_reference", arguments: { topic: "roadmap", search: "D05" } });
   check("engine_reference — 2D 목표와 앱 연결 완료 조건", roadmap.result?.isError !== true && firstText(roadmap.result).includes("22-2d-mmorpg-roadmap.md") && firstText(roadmap.result).includes("두 계정"));
   const motion = await request("tools/call", { name: "engine_reference", arguments: { topic: "scene", search: "MoveAndSlide2D" } });
-  check("engine_reference — 공통 2D 계산과 실제 오류 전달 경로", motion.result?.isError !== true && firstText(motion.result).includes("MotionResult2D") && firstText(motion.result).includes("ObjectSystem::Tick") && !firstText(motion.result).includes("PhysicsSystem.h"));
+  check("engine_reference — 연속 2D 계산과 실제 오류 전달 경로", motion.result?.isError !== true && firstText(motion.result).includes("MotionResult2D") && firstText(motion.result).includes("CastMotion2D") && firstText(motion.result).includes("ObjectSystem::Tick") && !firstText(motion.result).includes("PhysicsSystem.h"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

@@ -245,7 +245,7 @@ MYE_TEST(PhysFailedStepPreservesBodiesAndTriggerHistory) {
     MYE_EXPECT(enters == 1 && exits == 0);
 }
 
-MYE_TEST(PhysSharedMotionRejectsMalformedInputAndTileResults) {
+MYE_TEST(PhysSharedMotionRejectsMalformedInput) {
     using namespace mye::phys;
     CollisionBody2D body;
     const float nan = std::numeric_limits<float>::quiet_NaN();
@@ -264,12 +264,9 @@ MYE_TEST(PhysSharedMotionRejectsMalformedInputAndTileResults) {
     invalid.shape = Shape2D::MakeCircle(std::numeric_limits<float>::max());
     invalid.pos.x = std::numeric_limits<float>::max();
     MYE_EXPECT(!MoveAndSlide2D(invalid, {}, {}, .1f, 4));
-    class InvalidTiles final : public ITileCollision {
-        std::optional<Vec2> ResolveSolid(const Shape2D&, Vec2, int8_t) const override {
-            return Vec2{std::numeric_limits<float>::quiet_NaN(), 0};
-        }
-    } tiles;
-    MYE_EXPECT(!MoveAndSlide2D(body, {}, {1, 0}, .1f, 4, &tiles));
+    invalid = body;
+    invalid.pos = {1e20f, 0};
+    MYE_EXPECT(!MoveAndSlide2D(invalid, std::span(&body, 1), {-1e20f, 0}, 1, 4));
     MYE_EXPECT_NEAR(body.pos.x, 0, 1e-6f);
 }
 
@@ -305,6 +302,140 @@ MYE_TEST(PhysSpatialHashLargeBoundsAndInvalidInputs) {
     hash.SetCellSize(std::numeric_limits<float>::infinity());
     MYE_EXPECT_NEAR(hash.CellSize(), 1, 1e-6f);
     MYE_EXPECT(hash.ItemCount() == 0);
+}
+
+MYE_TEST(PhysContinuousMotionStopsAtThinSolids) {
+    using namespace mye::phys;
+    for (const auto shape : {Shape2D::MakeBox(.1f, .1f), Shape2D::MakeCircle(.1f)}) {
+        for (const auto solid : {Shape2D::MakeBox(.005f, 10), Shape2D::MakeCircle(.05f)}) {
+            CollisionBody2D body;
+            body.shape = shape;
+            CollisionBody2D wall;
+            wall.shape = solid; wall.pos = {1.6f, 0};
+            for (int iterations : {1, 4, 16}) {
+                const auto moved = MoveAndSlide2D(body, std::span(&wall, 1), {100, 0}, .1f, iterations);
+                MYE_EXPECT(moved);
+                if (!moved) continue;
+                MYE_EXPECT_NEAR(moved.Value().position.x, 1.6f - solid.half.x - .1f, .00001f);
+                MYE_EXPECT_NEAR(moved.Value().position.y, 0, .00001f);
+                MYE_EXPECT(moved.Value().hitWall);
+            }
+        }
+        CollisionBody2D body;
+        body.shape = shape;
+        CollisionBody2D vertical, horizontal;
+        vertical.shape = Shape2D::MakeBox(.005f, 10); vertical.pos = {1.6f, 0};
+        horizontal.shape = Shape2D::MakeBox(10, .005f); horizontal.pos = {0, 1.2f};
+        std::vector<CollisionBody2D> walls{vertical, horizontal};
+        for (int iterations : {1, 4, 16}) {
+            for (int order = 0; order < 2; ++order) {
+                const auto corner = MoveAndSlide2D(body, walls, {10, 8}, 1, iterations);
+                MYE_EXPECT(corner);
+                if (corner) {
+                    MYE_EXPECT_NEAR(corner.Value().position.x, 1.495f, .00001f);
+                    MYE_EXPECT_NEAR(corner.Value().position.y, 1.095f, .00001f);
+                }
+                std::reverse(walls.begin(), walls.end());
+            }
+        }
+    }
+}
+
+MYE_TEST(PhysContinuousCastCornersFiltersAndTouching) {
+    using namespace mye::phys;
+    CollisionBody2D body;
+    body.shape = Shape2D::MakeBox(.5f, .5f); body.pos = {-2, 0};
+    CollisionBody2D grazingBox;
+    grazingBox.shape = Shape2D::MakeBox(.5f, .5f);
+    auto grazing = CastMotion2D(body, std::span(&grazingBox, 1), {4, 4});
+    MYE_EXPECT(grazing && !grazing.Value()); // Touches a corner, never enters either solid.
+    auto endContact = CastMotion2D(body, std::span(&grazingBox, 1), {1, 0});
+    MYE_EXPECT(endContact && endContact.Value());
+    if (endContact && endContact.Value()) MYE_EXPECT_NEAR(endContact.Value()->fraction, 1, .00001);
+    body.shape = Shape2D::MakeCircle(.5f); body.pos = {-2, .9f};
+    CollisionBody2D box;
+    box.id = 10; box.shape = Shape2D::MakeBox(.5f, .5f);
+    auto cast = CastMotion2D(body, std::span(&box, 1), {4, 0});
+    MYE_EXPECT(cast && cast.Value());
+    if (cast && cast.Value()) {
+        MYE_EXPECT_NEAR(cast.Value()->fraction, .3, .00001);
+        MYE_EXPECT_NEAR(cast.Value()->normal.x, -.6f, .00001f);
+        MYE_EXPECT_NEAR(cast.Value()->normal.y, .8f, .00001f);
+        MYE_EXPECT(cast.Value()->colliderId == 10);
+    }
+    CollisionBody2D movingBox = box, stationaryCircle = body;
+    movingBox.pos = {2, -.9f}; stationaryCircle.pos = {};
+    auto reversed = CastMotion2D(movingBox, std::span(&stationaryCircle, 1), {-4, 0});
+    MYE_EXPECT(reversed && reversed.Value());
+    if (reversed && reversed.Value()) {
+        MYE_EXPECT_NEAR(reversed.Value()->fraction, .3, .00001);
+        MYE_EXPECT_NEAR(reversed.Value()->normal.x, .6f, .00001f);
+        MYE_EXPECT_NEAR(reversed.Value()->normal.y, -.8f, .00001f);
+    }
+    auto duplicateBox = box;
+    duplicateBox.id = 20;
+    std::vector<CollisionBody2D> tied{duplicateBox, box};
+    for (int order = 0; order < 2; ++order) {
+        auto equalContact = CastMotion2D(body, tied, {4, 0});
+        MYE_EXPECT(equalContact && equalContact.Value() && equalContact.Value()->colliderId == 10);
+        std::reverse(tied.begin(), tied.end());
+    }
+    body.pos = {-1.1f, .9f};
+    cast = CastMotion2D(body, std::span(&box, 1), {.25f, 0});
+    MYE_EXPECT(cast && !cast.Value()); // Inside the expanded box, outside its rounded corner.
+    auto moved = MoveAndSlide2D(body, std::span(&box, 1), {2.5f, 0}, .1f, 4);
+    MYE_EXPECT(moved);
+    if (moved) MYE_EXPECT_NEAR(moved.Value().position.x, -.85f, .00001f);
+    body.pos = {-2, 1};
+    cast = CastMotion2D(body, std::span(&box, 1), {4, 0});
+    MYE_EXPECT(cast && !cast.Value());
+    body.pos = {-1, 0};
+    for (Vec2 displacement : {Vec2{-1, 0}, Vec2{0, 2}}) {
+        cast = CastMotion2D(body, std::span(&box, 1), displacement);
+        MYE_EXPECT(cast && !cast.Value());
+    }
+    body.pos = {};
+    cast = CastMotion2D(body, std::span(&box, 1), {});
+    MYE_EXPECT(cast && cast.Value() && cast.Value()->fraction == 0);
+    MYE_EXPECT(!CastMotion2D(body, {}, {std::numeric_limits<float>::quiet_NaN(), 0}));
+
+    body.id = 5; body.pos = {-2, 0}; body.layerMask = body.collidesWith = 1;
+    CollisionBody2D self = box; self.id = body.id; self.pos = {-1, 0};
+    CollisionBody2D trigger = self; trigger.id = 11; trigger.isTrigger = true;
+    CollisionBody2D upper = self; upper.id = 12; upper.floorMask = FloorBit(1);
+    CollisionBody2D masked = self; masked.id = 13; masked.layerMask = masked.collidesWith = 2;
+    std::vector<CollisionBody2D> obstacles{self, trigger, upper, masked, box};
+    for (int order = 0; order < 2; ++order) {
+        cast = CastMotion2D(body, obstacles, {4, 0});
+        MYE_EXPECT(cast && cast.Value() && cast.Value()->colliderId == box.id);
+        std::reverse(obstacles.begin(), obstacles.end());
+    }
+}
+
+MYE_TEST(PhysInitialOverlapRecoveryAndImpossibleGap) {
+    using namespace mye::phys;
+    for (const auto shape : {Shape2D::MakeBox(.1f, .1f), Shape2D::MakeCircle(.1f)}) {
+        CollisionBody2D body;
+        body.shape = shape;
+        CollisionBody2D solid;
+        solid.shape = Shape2D::MakeBox(.5f, 5);
+        const auto recovered = MoveAndSlide2D(body, std::span(&solid, 1), {}, .1f, 4);
+        MYE_EXPECT(recovered);
+        if (recovered) {
+            MYE_EXPECT(recovered.Value().hitWall);
+            MYE_EXPECT_NEAR(recovered.Value().position.x, .6f, .00001f);
+            MYE_EXPECT_NEAR(recovered.Value().lastMove.x, .6f, .00001f);
+        }
+        MYE_EXPECT_NEAR(body.pos.x, 0, .00001f);
+    }
+    World world;
+    PhysicsWorld2D physics;
+    MakeBody(world, {-.3f, 0}, Shape2D::MakeBox(.2f, 10));
+    MakeBody(world, {.3f, 0}, Shape2D::MakeBox(.2f, 10));
+    const auto player = MakeBody(world, {}, Shape2D::MakeBox(.2f, .2f));
+    world.Add<KinematicBody2D>(player);
+    MYE_EXPECT(!physics.Step(world, nullptr, .1f));
+    MYE_EXPECT_NEAR(world.TryGet<LocalTransform>(player)->position.x, 0, .00001f);
 }
 
 MYE_TEST(PhysMoveAndSlideWall) {

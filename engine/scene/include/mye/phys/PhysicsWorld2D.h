@@ -1,11 +1,10 @@
 // mye/phys/PhysicsWorld2D.h — ECS adapter for shared value-only 2D motion.
 //
 // - 브로드페이즈: SpatialHash. 내로우페이즈: AABB/원 겹침 + MTV.
-// - KinematicBody2D move-and-slide: 벽 슬라이드, 엔티티/타일 충돌 해결.
+// - KinematicBody2D: 연속 상자/원 캐스트, 초기 겹침 회복, 벽 슬라이드.
 // - 트리거 Enter/Exit: 프레임 간 겹침 집합 diff → 월드 EventBus 발행.
 // - floorLevel 필터: 다리 위/아래 같은 XY라도 층이 다르면 비충돌.
 //
-// 타일 충돌은 기존 ITileCollision 소스를 비소유로 참조한다.
 #pragma once
 
 #include "mye/phys/Collision.h"
@@ -26,7 +25,6 @@ public:
     explicit PhysicsWorld2D(float cellSize = 1.0f);
 
     void SetCellSize(float cellSize) { m_broadphase.SetCellSize(cellSize); }
-    void SetTileCollision(const ITileCollision* tiles) { m_tiles = tiles; }
 
     // Failure leaves transforms, body results and the trigger history unchanged.
     Expected<void, Error> Step(ecs::World& world, EventBus* worldBus, float dt);
@@ -45,7 +43,6 @@ private:
     Expected<void, Error> RebuildBroadphase(const std::vector<ColliderInst>& insts);
 
     SpatialHash              m_broadphase;
-    const ITileCollision*    m_tiles = nullptr;   // 비소유
     // 직전 스텝의 트리거 겹침 집합(Enter/Exit diff용). 값 = (trigger, other, triggerId).
     struct TriggerPair { Entity trigger, other; uint32_t triggerId; };
     // 트리거 쌍 전순서(사전식 (trigger.Packed(), other.Packed())). 정렬·diff 병합 기준(충돌 없음).

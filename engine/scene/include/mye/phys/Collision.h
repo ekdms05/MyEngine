@@ -48,14 +48,14 @@ struct Collider2D {
 // KinematicBody2D 컴포넌트 — 속도 기반 이동체. move-and-slide로 벽 슬라이드.
 //
 // velocity: 초당 이동(월드 단위). 스텝마다 velocity*dt만큼 이동 시도 후 충돌 슬라이드.
-// snapToGround: 경사/계단 셀에 붙어 이동(타일 높이 스냅) — 타일 충돌 소스가 있을 때만.
+// snapToGround와 skin은 저장 호환용 필드다. 현재 2D 이동에서 사용하지 않는다.
 // ---------------------------------------------------------------------------
 struct KinematicBody2D {
     MYE_COMPONENT(KinematicBody2D);
 
     Vec2  velocity{0, 0};
     bool  snapToGround = false;
-    float skin = 0.01f;        // 접촉 여유(파고듦 방지 마진)
+    float skin = 0.01f;        // 저장 호환용; 현재 2D 이동에는 미적용
     int   maxSlideIters = 4;   // move-and-slide 반복 상한
 
     // 직전 스텝 결과(읽기 전용 취급) — 게임 로직·애니메이션이 참조.

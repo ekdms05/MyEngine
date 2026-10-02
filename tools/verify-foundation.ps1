@@ -81,6 +81,9 @@ function Invoke-PlayerCheck([int]$ExpectedExit, [string[]]$Arguments) {
 Invoke-PlayerCheck 64 @('--headless')
 Invoke-PlayerCheck 64 @('--make-sample')
 Invoke-PlayerCheck 64 @('--project', $projectFile, '--frames', 'invalid')
+foreach ($invalidTicks in @('0', '-1', '18446744073709551616', 'invalid')) {
+    Invoke-PlayerCheck 64 @('--project', $projectFile, '--ticks', $invalidTicks)
+}
 $frame = Join-Path $playerDir 'frame.bmp'
 Invoke-PlayerCheck 0 @('--project', $projectFile, '--headless', '--frames', '30', '--dump', $frame)
 if (-not (Test-Path -LiteralPath $frame) -or (Get-Item -LiteralPath $frame).Length -le 54) { throw 'Project player capture was not produced' }
@@ -133,6 +136,63 @@ if ($mapLog -notmatch 'Scene loaded: assets/scenes/cottage.scene' -or $mapLog -n
 # The authored Lua path can change a body after load validation. Runtime physics must
 # refuse non-finite movement, propagate the failure to MyGame and leave scene data intact.
 $validSceneJson = Get-Content -LiteralPath $sceneFile -Raw -Encoding UTF8
+# A copied authored scene exercises serializer -> Lua -> ObjectSystem -> continuous
+# collision. Render-frame counts cannot guarantee a number of fixed simulation ticks.
+foreach ($shape in @('Box', 'Circle')) {
+    $motionScene = $validSceneJson | ConvertFrom-Json
+    $moving = $motionScene.entities | Where-Object { $_.components.CharacterController2D.enabled }
+    $wall = $motionScene.entities | Where-Object { $_.components.ObjectName.value -eq 'Cottage Door' }
+    if (-not $moving -or -not $wall) { throw 'Continuous collision fixture missing' }
+    $moving.components.PSObject.Properties.Remove('CharacterController2D')
+    $moving.components.LocalTransform.px = 0
+    $moving.components.LocalTransform.py = 0
+    $moving.components.Collider2D.shape.kind = $shape
+    $moving.components.Collider2D.shape.half.x = 0.1
+    $moving.components.Collider2D.shape.half.y = 0.1
+    $moving.components.Collider2D.offset.x = 0
+    $moving.components.Collider2D.offset.y = 0
+    $moving.components | Add-Member -MemberType NoteProperty -Name ObjectBehavior -Force -Value ([pscustomobject]@{
+        connections = @(); luaSource = @"
+return {
+  on_init = function(self)
+    self.steps = 0
+    mye.world.entity_from_packed(self.entity):set_velocity(mye.Vec2(1000, 0))
+  end,
+  on_update = function(self, dt)
+    self.steps = self.steps + 1
+    assert(self.steps <= 4, 'fixed tick limit exceeded')
+    if self.steps >= 2 then
+      local body = mye.world.entity_from_packed(self.entity)
+      assert(math.abs(body:get_position().x - 1.495) < 0.0001 and body:hit_wall(), 'thin wall collision failed')
+    end
+    if self.steps == 4 then mye.log('player-continuous-$shape-pass') end
+  end
+}
+"@
+    })
+    $wall.components = [pscustomobject]@{
+        ObjectName = $wall.components.ObjectName
+        LocalTransform = $wall.components.LocalTransform
+        Collider2D = $wall.components.Collider2D
+    }
+    $wall.components.LocalTransform.px = 1.6
+    $wall.components.LocalTransform.py = 0
+    $wall.components.Collider2D.shape.half.x = 0.005
+    $wall.components.Collider2D.shape.half.y = 10
+    $wall.components.Collider2D.isTrigger = $false
+    $motionScene.entities = @($moving, $wall)
+    [IO.File]::WriteAllText($sceneFile, ($motionScene | ConvertTo-Json -Depth 24), [Text.UTF8Encoding]::new($false))
+    $sceneHash = (Get-FileHash -LiteralPath $sceneFile).Hash
+    $motionFrame = Join-Path $playerDir "continuous-$shape.bmp"
+    Invoke-PlayerCheck 0 @('--project', $projectFile, '--headless', '--ticks', '4', '--dump', $motionFrame)
+    $motionLog = Get-Content -LiteralPath (Join-Path $playerDir "step-$script:playerStep.log") -Raw -Encoding UTF8
+    if ($motionLog -notmatch "player-continuous-$shape-pass" -or $motionLog -notmatch 'Fixed tick limit reached: 4' -or
+        $motionLog -match '\[ERROR\]' -or -not (Test-Path -LiteralPath $motionFrame) -or
+        (Get-FileHash -LiteralPath $sceneFile).Hash -ne $sceneHash) {
+        throw "Authored $shape continuous collision, exact tick limit, capture or scene preservation failed"
+    }
+    Write-Output "PASS: authored Lua $shape at 1000 units/s stops before 0.01-unit wall, exactly 4 fixed ticks, final capture, scene preserved"
+}
 $character = $village.entities | Where-Object { $_.components.CharacterController2D.enabled }
 if (-not $character) { throw 'Starter 2D character fixture missing' }
 $character.components.PSObject.Properties.Remove('CharacterController2D')

@@ -185,6 +185,26 @@ MYE_TEST(PhysMoveAndSlideWall) {
 // ---------------------------------------------------------------------------
 // floorLevel 충돌 필터 — 다리 위/아래 비충돌
 // ---------------------------------------------------------------------------
+MYE_TEST(PhysWallSlideDoesNotRepeatTangentialTravel) {
+    for (int iterations : {1, 4, 16}) {
+        World world;
+        PhysicsWorld2D physics;
+        MakeBody(world, Vec2{2, 0}, Shape2D::MakeBox(.5f, 5));
+        const Entity mover = MakeBody(world, Vec2{1, 0}, Shape2D::MakeBox(.5f, .5f));
+        auto& body = world.Add<KinematicBody2D>(mover);
+        body.velocity = Vec2{2, 1};
+        body.maxSlideIters = iterations;
+
+        physics.Step(world, nullptr, .1f);
+
+        const auto* pose = world.TryGet<LocalTransform>(mover);
+        MYE_EXPECT_NEAR(pose->position.x, 1, .0001f);
+        MYE_EXPECT_NEAR(pose->position.y, .1f, .0001f);
+        MYE_EXPECT_NEAR(body.lastMove.y, .1f, .0001f);
+        MYE_EXPECT(body.hitWall);
+    }
+}
+
 MYE_TEST(PhysFloorLevelFilter) {
     World w;
     EventBus bus;

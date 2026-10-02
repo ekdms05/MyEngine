@@ -164,6 +164,9 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
                 }
             }
 
+            // The candidate already consumed its tangent travel; only the unapplied
+            // displacement may be projected and retried after resolving penetration.
+            remaining = remaining - (tryPos - pos);
             pos = tryPos;
             if (!collided) break;
 

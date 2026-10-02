@@ -1,8 +1,8 @@
 # MyEngine
 
-A Windows C++20 game engine for 2D/3D pixel art games. Build scenes from separate objects, connect collision and interaction components, write Lua behavior, and test in a separate game window.
+A lightweight Windows C++20 engine being built for online 2D pixel MMORPGs. Build scenes from separate objects, connect collision and interaction components, write Lua behavior, and test in a separate game window.
 
-Static embedded GLB meshes, camera-facing sprites and saved 3D game cameras share the official editor/player path. Movement and collision remain 2D; 3D physics and an authenticated online player are still in development. See the [component guide](docs/20-components.md) for supported formats and limits.
+Local 2D movement, collision, sprites, animation and portals share the editor/player path. Authored 2D online scenes, authoritative game rules and runtime UI still need integration. The [2D MMORPG work list](docs/22-2d-mmorpg-roadmap.md) defines the product goal, small tasks and acceptance checks. Existing static 3D meshes, billboards, orbit cameras and bounded XYZ online play remain supported; new 3D work has lower priority. See the [component guide](docs/20-components.md) for actual formats and limits.
 
 ## Get started
 

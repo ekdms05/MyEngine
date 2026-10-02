@@ -58,6 +58,8 @@ MCP 요청 → 입력/경로 검증 → 작업 직렬화 → CLI 실행·로그 
 
 `engine_reference(topic="components")`는 [컴포넌트 사용법](20-components.md)의 단위·기본값·조작·실행 제약을 읽는다.
 
+`engine_reference(topic="roadmap")`은 [온라인 2D MMORPG 작업 목록](22-2d-mmorpg-roadmap.md)의 목표·현재 경로·작은 작업/완료 조건을 읽는다. 미완료 작업을 현재 제공 API로 설명하지 않는다. 기존 `online` 주제의 XYZ 계약은 유지한다.
+
 `engine_reference(topic="online")`은 [XYZ/온라인](21-3d-play-and-online.md)의 장면 구성·카메라 입력·인증 CLI·예측/영속·지원 한계를 읽는다. `engine_run(sample="MyServer", frames=N)`은 서버의 `--ticks N`으로 변환된다. 개발 MCP와 릴리즈 소비자용 도구의 연결은 구분한다.
 
 `asset_import`는 `project`, 저장소 상대 `source`, **assets/ 기준** `destination`을 받는다. 예: `destination="characters/player.png"`. 대상 폴더는 에셋 브라우저에서 먼저 생성한다. 내부 호출은 `MyEditor --project <manifest> --import-asset <source> --asset-destination <destination> --headless --frames 1`이다. 파일 복사·지원 형식·GUID/.meta·실패 처리는 에디터의 공통 임포트 경계가 담당한다. 열린 GUI 상태 변경이나 에셋 삭제는 지원하지 않는다. 현재 프로젝트를 GUI에서 다시 스캔하거나 다시 열어 반영한다.

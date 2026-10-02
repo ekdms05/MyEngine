@@ -188,6 +188,8 @@ async function main() {
   // Real file parsing in an isolated build/ project; no user data or engine build.
   const online = await request("tools/call", { name: "engine_reference", arguments: { topic: "online", search: "PhysicsWorld3D" } });
   check("engine_reference — XYZ 공통 물리/온라인 정본", online.result?.isError !== true && firstText(online.result).includes("21-3d-play-and-online.md") && firstText(online.result).includes("PhysicsWorld3D::Step"));
+  const roadmap = await request("tools/call", { name: "engine_reference", arguments: { topic: "roadmap", search: "D05" } });
+  check("engine_reference — 2D 목표와 앱 연결 완료 조건", roadmap.result?.isError !== true && firstText(roadmap.result).includes("22-2d-mmorpg-roadmap.md") && firstText(roadmap.result).includes("두 계정"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

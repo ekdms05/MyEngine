@@ -78,6 +78,22 @@ MYE_TEST(ObjectControlsCollisionTriggerAndLuaInteraction) {
     MYE_EXPECT(!system.Prompt().empty());
 }
 
+MYE_TEST(ObjectTickPropagatesPhysicsFailureBeforeMovementCommit) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World();
+    const auto player = Player(world);
+    runtime::ObjectSystem system(world);
+    MYE_EXPECT(system.Initialize());
+    world.TryGet<phys::KinematicBody2D>(player)->maxSlideIters = 0;
+    auto failed = system.Tick(.02f, {1, 0}, false);
+    MYE_EXPECT(!failed);
+    if (!failed) MYE_EXPECT(failed.GetError().message.find("1..16 slides") != std::string::npos);
+    MYE_EXPECT_NEAR(world.TryGet<scene::LocalTransform>(player)->position.x, 0, .001f);
+    world.TryGet<phys::KinematicBody2D>(player)->maxSlideIters = 4;
+    MYE_EXPECT(system.Tick(.02f, {1, 0}, false));
+    MYE_EXPECT_NEAR(world.TryGet<scene::LocalTransform>(player)->position.x, .04f, .001f);
+}
+
 MYE_TEST(ObjectSceneRoundTripRejectsInvalidEventsAndDuplicateTargets) {
     editor::Document document({1}, editor::Document::Kind::Scene, "");
     auto& world = document.World();

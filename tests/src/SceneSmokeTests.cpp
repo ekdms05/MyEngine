@@ -130,7 +130,7 @@ MYE_TEST(SmokeSlopeClimbRaisesHeightLevel) {
     bool monotonic = true;
 
     for (int step = 0; step < 400; ++step) {
-        phys.Step(w, &bus, dt);
+        MYE_EXPECT(phys.Step(w, &bus, dt));
         Vec2 xy = BodyXY(w, hero);
         auto gh = SampleGroundFollow(map, xy);
         if (!gh) { if (xy.x >= 9.5f) break; continue; }
@@ -196,7 +196,7 @@ MYE_TEST(SmokeBridgeAboveBelowNoCollision) {
     // 여러 스텝: A가 B의 XY를 지나쳐 이동해야 하며 벽 충돌 없어야 한다.
     const float dt = 1.0f / 60.0f;
     for (int i = 0; i < 300; ++i) {
-        phys.Step(w, &bus, dt);
+        MYE_EXPECT(phys.Step(w, &bus, dt));
         if (BodyXY(w, above).x >= 8.0f) break;
     }
     // A가 B(x=5.5)를 지나 멀리 이동 → 층 분리로 통과 성공.
@@ -216,7 +216,7 @@ MYE_TEST(SmokeBridgeAboveBelowNoCollision) {
     a2kb.velocity = Vec2{2.0f, 0.0f};
     bool blocked = false;
     for (int i = 0; i < 300; ++i) {
-        phys2.Step(w2, &bus2, dt);
+        MYE_EXPECT(phys2.Step(w2, &bus2, dt));
         if (w2.TryGet<KinematicBody2D>(a2)->hitWall) blocked = true;
     }
     // 같은 층에서는 B 좌면(5.5-0.3=5.2)에 A 우면이 막힘 → A 중심 ≤ 5.2-0.3 근방.
@@ -252,7 +252,7 @@ MYE_TEST(SmokeBridgeTriggerFloorFiltered) {
     bkb.velocity = Vec2{3.0f, 0.0f};
 
     const float dt = 1.0f / 60.0f;
-    for (int i = 0; i < 120; ++i) phys.Step(w, &bus, dt);
+    for (int i = 0; i < 120; ++i) MYE_EXPECT(phys.Step(w, &bus, dt));
     // 아래 캐릭터는 트리거를 통과했지만 층이 달라 이벤트 없음.
     MYE_EXPECT(BodyXY(w, below).x > 8.0f);
     MYE_EXPECT(enterAbove == 0);
@@ -262,7 +262,7 @@ MYE_TEST(SmokeBridgeTriggerFloorFiltered) {
     Entity above = SpawnBody(w, Vec2{3.0f, 5.5f}, Shape2D::MakeBox(0.3f, 0.3f), 1);
     auto& akb = w.Add<KinematicBody2D>(above);
     akb.velocity = Vec2{3.0f, 0.0f};
-    for (int i = 0; i < 200; ++i) phys.Step(w, &bus, dt);
+    for (int i = 0; i < 200; ++i) MYE_EXPECT(phys.Step(w, &bus, dt));
 
     MYE_EXPECT(enterAbove == 1);
     MYE_EXPECT(exitAbove == 1);

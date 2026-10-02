@@ -130,6 +130,25 @@ $mapLog = Get-Content -LiteralPath (Join-Path $playerDir "step-$script:playerSte
 if ($mapLog -notmatch 'Scene loaded: assets/scenes/cottage.scene' -or $mapLog -notmatch 'player-map-spawn-pass') {
     throw 'Authored map request, destination spawn and Lua initialization did not complete'
 }
+# The authored Lua path can change a body after load validation. Runtime physics must
+# refuse non-finite movement, propagate the failure to MyGame and leave scene data intact.
+$validSceneJson = Get-Content -LiteralPath $sceneFile -Raw -Encoding UTF8
+$character = $village.entities | Where-Object { $_.components.CharacterController2D.enabled }
+if (-not $character) { throw 'Starter 2D character fixture missing' }
+$character.components.PSObject.Properties.Remove('CharacterController2D')
+$character.components | Add-Member -MemberType NoteProperty -Name ObjectBehavior -Force -Value ([pscustomobject]@{
+    connections = @(); luaSource = 'return { on_init = function(self) mye.world.entity_from_packed(self.entity):set_velocity(mye.Vec2(0/0, 0)) end }'
+})
+[IO.File]::WriteAllText($sceneFile, ($village | ConvertTo-Json -Depth 24), [Text.UTF8Encoding]::new($false))
+$sceneHash = (Get-FileHash -LiteralPath $sceneFile).Hash
+Invoke-PlayerCheck 1 @('--project', $projectFile, '--headless', '--frames', '120')
+$physicsLog = Get-Content -LiteralPath (Join-Path $playerDir "step-$script:playerStep.log") -Raw -Encoding UTF8
+if ($physicsLog -notmatch '2D motion requires a solid body, finite velocity' -or
+    (Get-FileHash -LiteralPath $sceneFile).Hash -ne $sceneHash) {
+    throw 'Runtime 2D physics error was not propagated or modified the authored scene'
+}
+Write-Output 'PASS: authored Lua invalid velocity -> shared 2D physics refusal -> MyGame exit 1, scene preserved'
+[IO.File]::WriteAllText($sceneFile, $validSceneJson, [Text.UTF8Encoding]::new($false))
 $sceneHash = (Get-FileHash -LiteralPath $sceneFile).Hash
 $manifest.version = 99
 [IO.File]::WriteAllText($projectFile, ($manifest | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))

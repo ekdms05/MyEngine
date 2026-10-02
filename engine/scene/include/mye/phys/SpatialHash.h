@@ -1,15 +1,16 @@
 // mye/phys/SpatialHash.h — 균일 공간 해시 그리드(브로드페이즈) (docs/03 §8)
 //
-// 타일맵 셀 크기에 정렬 가능한 균일 그리드. 각 콜라이더의 AABB를 덮는 셀들에 엔티티를
-// 삽입하고, 질의 시 후보 쌍을 O(엔티티 + 후보쌍)에 산출한다(전수 O(n²) 회피).
-// 결정성: 셀 방문·후보 산출은 삽입 순서를 보존하는 안정 순회(테스트가 전수와 대조 가능).
+// 일반 AABB는 셀에 등록하며 큰 영역/셀 정수 범위 밖 항목은 선형 검사한다.
+// 후보 결과는 삽입 인덱스로 정렬·중복 제거한다. 큰 항목이 많으면 최악 O(n²)이다.
 #pragma once
 
+#include "mye/core/Base.h"
 #include "mye/core/Math.h"
 #include "mye/ecs/Entity.h"
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -27,24 +28,25 @@ struct BroadphaseItem {
 
 class SpatialHash {
 public:
-    explicit SpatialHash(float cellSize = 1.0f) : m_cellSize(cellSize > 0 ? cellSize : 1.0f) {}
+    explicit SpatialHash(float cellSize = 1.0f) { SetCellSize(cellSize); }
 
-    void SetCellSize(float cellSize) { m_cellSize = cellSize > 0 ? cellSize : 1.0f; }
+    // Changing the grid discards its items; the owner rebuilds them at the next step.
+    void SetCellSize(float cellSize);
     float CellSize() const { return m_cellSize; }
 
     void Clear();
     void Reserve(size_t itemCount);
 
-    // 항목 삽입 — AABB가 덮는 모든 셀에 등록. 삽입 순서(등록 인덱스)를 보존한다.
-    void Insert(const BroadphaseItem& item);
+    // 유한·순서가 올바른 AABB만 삽입한다. 실패 시 항목 수는 변하지 않는다.
+    Expected<void, Error> Insert(const BroadphaseItem& item);
 
-    // 후보 쌍 산출: AABB가 셀을 공유하는 (i, j) 쌍을 중복 없이 콜백. i<j(삽입 인덱스 기준).
+    // 겹치는 AABB 쌍을 중복 없이 콜백. i<j(삽입 인덱스 기준).
     // 콜백 인자는 Insert 순서로 부여된 항목 인덱스(0-based).
     void QueryPairs(const std::function<void(uint32_t i, uint32_t j)>& fn) const;
 
-    // 한 AABB와 겹치는 후보 항목 인덱스 산출(질의 자신은 결과에서 제외 옵션).
-    void QueryAABB(Vec2 min, Vec2 max,
-                   const std::function<void(uint32_t itemIndex)>& fn) const;
+    // 한 AABB와 겹치는 항목 인덱스 산출. 잘못된 범위는 콜백 전에 거부한다.
+    Expected<void, Error> QueryAABB(Vec2 min, Vec2 max,
+                                   const std::function<void(uint32_t itemIndex)>& fn) const;
 
     size_t ItemCount() const { return m_items.size(); }
     const BroadphaseItem& Item(uint32_t idx) const { return m_items[idx]; }
@@ -64,12 +66,13 @@ private:
         }
     };
 
-    int32_t CellCoord(float v) const {
-        return static_cast<int32_t>(std::floor(v / m_cellSize));
-    }
+    struct CellRange { int32_t x0, y0, x1, y1; };
+    // Large/out-of-grid bounds use exact linear overlap checks instead of cell insertion.
+    std::optional<CellRange> IndexedRange(Vec2 min, Vec2 max) const;
 
     float m_cellSize = 1.0f;
     std::vector<BroadphaseItem> m_items;
+    std::vector<uint32_t> m_unindexed;
     // 셀 → 그 셀에 등록된 항목 인덱스 목록.
     std::unordered_map<CellKey, std::vector<uint32_t>, CellKeyHash> m_cells;
 };

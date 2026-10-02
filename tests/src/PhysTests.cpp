@@ -1,4 +1,4 @@
-// PhysTests.cpp — 충돌·물리(경량 2D) 단위 테스트 (M2-B / docs/03 §8)
+// PhysTests.cpp — 충돌·물리(경량 2D) 회귀 검사 (docs/03)
 //
 // 검증 불변식:
 //   - AABB/원 겹침·MTV 정확
@@ -19,6 +19,7 @@
 #include "mye/scene/Transform.h"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,10 @@ MYE_TEST(PhysAabbOverlapAndMtv) {
         MYE_EXPECT_NEAR(mtv->x, 0.5f, 1e-4f);
         MYE_EXPECT_NEAR(mtv->y, 0.0f, 1e-4f);
     }
+    const auto huge = Shape2D::MakeBox(2e38f, 2e38f);
+    auto hugeMtv = ResolveMTV(huge, {}, huge, {1e38f, 0});
+    MYE_EXPECT(hugeMtv && std::isfinite(hugeMtv->x) && std::isfinite(hugeMtv->y));
+    if (hugeMtv) MYE_EXPECT_NEAR(hugeMtv->x / 1e38f, 3, .001f);
 }
 
 MYE_TEST(PhysCircleOverlapAndMtv) {
@@ -84,6 +89,11 @@ MYE_TEST(PhysCircleOverlapAndMtv) {
     auto mtv = ResolveMTV(a, Vec2{0, 0}, b, Vec2{1.5f, 0});
     MYE_EXPECT(mtv.has_value());
     if (mtv) MYE_EXPECT_NEAR(mtv->x, 0.5f, 1e-4f);   // pen = 2 - 1.5
+    const auto large = Shape2D::MakeCircle(1e20f);
+    MYE_EXPECT(Overlap(large, {}, large, {1.5e20f, 0}));
+    auto largeMtv = ResolveMTV(large, {}, large, {1.5e20f, 0});
+    MYE_EXPECT(largeMtv && std::isfinite(largeMtv->x));
+    if (largeMtv) MYE_EXPECT_NEAR(largeMtv->x / 1e20f, .5f, .001f);
 }
 
 MYE_TEST(PhysCircleAabbMixed) {
@@ -95,6 +105,10 @@ MYE_TEST(PhysCircleAabbMixed) {
     MYE_EXPECT(!Overlap(circ, Vec2{0, 0}, box, Vec2{2.5f, 0}));
     // 대각선 분리(모서리).
     MYE_EXPECT(!Overlap(circ, Vec2{0, 0}, box, Vec2{2.0f, 2.0f}));
+    auto largeMtv = ResolveMTV(Shape2D::MakeBox(1e20f, 1e20f), {},
+                               Shape2D::MakeCircle(1e20f), {1.5e20f, 0});
+    MYE_EXPECT(largeMtv && std::isfinite(largeMtv->x));
+    if (largeMtv) MYE_EXPECT_NEAR(largeMtv->x / 1e20f, .5f, .001f);
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +147,7 @@ MYE_TEST(PhysSpatialHashMatchesBruteForce) {
         BroadphaseItem it;
         it.entity = Entity{i + 1, 1};
         it.min = boxes[i].min; it.max = boxes[i].max; it.userIndex = i;
-        hash.Insert(it);
+        MYE_EXPECT(hash.Insert(it));
     }
     std::vector<uint64_t> got;
     hash.QueryPairs([&](uint32_t i, uint32_t j) {
@@ -151,6 +165,148 @@ MYE_TEST(PhysSpatialHashMatchesBruteForce) {
 // ---------------------------------------------------------------------------
 // move-and-slide — 정면 벽 차단 + 접선 슬라이드
 // ---------------------------------------------------------------------------
+MYE_TEST(PhysSharedMotionMatchesWorldOffsetsAndFilters) {
+    using namespace mye::phys;
+    for (auto shape : {Shape2D::MakeBox(.5f, .5f), Shape2D::MakeCircle(.5f)}) {
+        World world;
+        PhysicsWorld2D physics;
+        const Entity mover = MakeBody(world, {.8f, -.1f}, shape);
+        world.TryGet<Collider2D>(mover)->offset = {.2f, .1f};
+        world.Add<KinematicBody2D>(mover).velocity = {2, 1};
+        const Entity wall = MakeBody(world, {2, 0}, Shape2D::MakeBox(.5f, 5));
+        const Entity upper = MakeBody(world, {1, .1f}, Shape2D::MakeBox(2, 2));
+        world.Add<FloorLevel>(upper).level = 1;
+        const Entity masked = MakeBody(world, {1, .1f}, Shape2D::MakeBox(2, 2));
+        world.TryGet<Collider2D>(masked)->layerMask = 2;
+        world.TryGet<Collider2D>(masked)->collidesWith = 2;
+        world.TryGet<Collider2D>(mover)->layerMask = 1;
+        world.TryGet<Collider2D>(mover)->collidesWith = 1;
+
+        CollisionBody2D body;
+        body.id = mover.Packed(); body.shape = shape; body.pos = {1, 0};
+        body.layerMask = body.collidesWith = 1;
+        CollisionBody2D obstacle;
+        obstacle.id = wall.Packed(); obstacle.shape = Shape2D::MakeBox(.5f, 5);
+        obstacle.pos = {2, 0};
+        CollisionBody2D otherFloor;
+        otherFloor.id = upper.Packed(); otherFloor.shape = Shape2D::MakeBox(2, 2);
+        otherFloor.pos = {1, .1f}; otherFloor.floorMask = FloorBit(1);
+        CollisionBody2D otherLayer = otherFloor;
+        otherLayer.id = masked.Packed(); otherLayer.floorMask = FloorBit(0);
+        otherLayer.layerMask = otherLayer.collidesWith = 2;
+        const CollisionBody2D obstacles[]{body, obstacle, otherFloor, otherLayer};
+        auto result = MoveAndSlide2D(body, obstacles, {2, 1}, .1f, 4);
+        MYE_EXPECT(result);
+        MYE_EXPECT(physics.Step(world, nullptr, .1f));
+        if (!result) continue;
+        MYE_EXPECT_NEAR(result.Value().position.x, 1, 1e-5f);
+        MYE_EXPECT_NEAR(result.Value().position.y, .1f, 1e-5f);
+        const auto& local = *world.TryGet<LocalTransform>(mover);
+        const auto& kinematic = *world.TryGet<KinematicBody2D>(mover);
+        MYE_EXPECT_NEAR(local.position.x, result.Value().position.x - .2f, 1e-5f);
+        MYE_EXPECT_NEAR(local.position.y, result.Value().position.y - .1f, 1e-5f);
+        MYE_EXPECT_NEAR(kinematic.lastMove.x, result.Value().lastMove.x, 1e-5f);
+        MYE_EXPECT_NEAR(kinematic.lastMove.y, result.Value().lastMove.y, 1e-5f);
+        MYE_EXPECT(kinematic.hitWall == result.Value().hitWall);
+    }
+}
+
+MYE_TEST(PhysFailedStepPreservesBodiesAndTriggerHistory) {
+    World world;
+    EventBus bus;
+    PhysicsWorld2D physics;
+    int enters = 0, exits = 0;
+    auto enter = bus.Subscribe<mye::phys::TriggerEnterEvent>([&](const auto&) { ++enters; return false; });
+    auto exit = bus.Subscribe<mye::phys::TriggerExitEvent>([&](const auto&) { ++exits; return false; });
+    MakeBody(world, {0, 0}, Shape2D::MakeBox(1, 1), true);
+    const Entity first = MakeBody(world, {0, 0}, Shape2D::MakeBox(.2f, .2f));
+    world.Add<KinematicBody2D>(first);
+    const Entity second = MakeBody(world, {10, 0}, Shape2D::MakeBox(.2f, .2f));
+    world.Add<KinematicBody2D>(second);
+    MYE_EXPECT(physics.Step(world, &bus, .1f));
+    MYE_EXPECT(enters == 1 && exits == 0);
+    world.TryGet<KinematicBody2D>(first)->velocity = {2, 0};
+    world.TryGet<KinematicBody2D>(first)->lastMove = {.7f, .8f};
+    world.TryGet<KinematicBody2D>(first)->hitWall = true;
+    world.TryGet<KinematicBody2D>(second)->velocity.x = std::numeric_limits<float>::quiet_NaN();
+    MYE_EXPECT(!physics.Step(world, &bus, .1f));
+    MYE_EXPECT_NEAR(world.TryGet<LocalTransform>(first)->position.x, 0, 1e-6f);
+    MYE_EXPECT_NEAR(world.TryGet<WorldTransform>(first)->matrix.m[3][0], 0, 1e-6f);
+    MYE_EXPECT_NEAR(world.TryGet<KinematicBody2D>(first)->lastMove.x, .7f, 1e-6f);
+    MYE_EXPECT(world.TryGet<KinematicBody2D>(first)->hitWall);
+    MYE_EXPECT(enters == 1 && exits == 0);
+    world.TryGet<KinematicBody2D>(first)->velocity = {};
+    world.TryGet<KinematicBody2D>(second)->velocity = {};
+    MYE_EXPECT(physics.Step(world, &bus, .1f));
+    MYE_EXPECT(enters == 1 && exits == 0);
+    world.Add<mye::scene::Parent>(first).parent = second;
+    MYE_EXPECT(!physics.Step(world, &bus, .1f));
+    MYE_EXPECT(!physics.Step(world, &bus, std::numeric_limits<float>::infinity()));
+    MYE_EXPECT(enters == 1 && exits == 0);
+}
+
+MYE_TEST(PhysSharedMotionRejectsMalformedInputAndTileResults) {
+    using namespace mye::phys;
+    CollisionBody2D body;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    MYE_EXPECT(!MoveAndSlide2D(body, {}, {nan, 0}, .1f, 4));
+    MYE_EXPECT(!MoveAndSlide2D(body, {}, {}, nan, 4));
+    MYE_EXPECT(!MoveAndSlide2D(body, {}, {}, .1f, 0));
+    CollisionBody2D invalid = body;
+    invalid.shape.kind = static_cast<ShapeKind>(9);
+    MYE_EXPECT(!MoveAndSlide2D(body, std::span(&invalid, 1), {}, .1f, 4));
+    invalid.shape = Shape2D::MakeBox(0, 1);
+    MYE_EXPECT(!MoveAndSlide2D(invalid, {}, {}, .1f, 4));
+    invalid = body;
+    invalid.floorLevel = 8;
+    MYE_EXPECT(!MoveAndSlide2D(body, std::span(&invalid, 1), {}, .1f, 4));
+    invalid.floorLevel = 0;
+    invalid.shape = Shape2D::MakeCircle(std::numeric_limits<float>::max());
+    invalid.pos.x = std::numeric_limits<float>::max();
+    MYE_EXPECT(!MoveAndSlide2D(invalid, {}, {}, .1f, 4));
+    class InvalidTiles final : public ITileCollision {
+        std::optional<Vec2> ResolveSolid(const Shape2D&, Vec2, int8_t) const override {
+            return Vec2{std::numeric_limits<float>::quiet_NaN(), 0};
+        }
+    } tiles;
+    MYE_EXPECT(!MoveAndSlide2D(body, {}, {1, 0}, .1f, 4, &tiles));
+    MYE_EXPECT_NEAR(body.pos.x, 0, 1e-6f);
+}
+
+MYE_TEST(PhysSpatialHashLargeBoundsAndInvalidInputs) {
+    using namespace mye::phys;
+    SpatialHash hash;
+    MYE_EXPECT(hash.Insert({Entity::Null(), {-100000, -100000}, {100000, 100000}, 0}));
+    MYE_EXPECT(hash.Insert({Entity::Null(), {0, 0}, {1, 1}, 1}));
+    MYE_EXPECT(hash.Insert({Entity::Null(), {1e20f, 1e20f}, {1e20f, 1e20f}, 2}));
+    MYE_EXPECT(hash.Insert({Entity::Null(), {1e20f, 1e20f}, {1e20f, 1e20f}, 3}));
+    std::vector<uint64_t> pairs;
+    hash.QueryPairs([&](uint32_t a, uint32_t b) { pairs.push_back((uint64_t{a} << 32) | b); });
+    MYE_EXPECT((pairs == std::vector<uint64_t>{1, (uint64_t{2} << 32) | 3}));
+    std::vector<uint32_t> items;
+    MYE_EXPECT(hash.QueryAABB({0, 0}, {1, 1}, [&](uint32_t i) { items.push_back(i); }));
+    MYE_EXPECT((items == std::vector<uint32_t>{0, 1}));
+    items.clear();
+    MYE_EXPECT(hash.QueryAABB({-1e25f, -1e25f}, {1e25f, 1e25f},
+                             [&](uint32_t i) { items.push_back(i); }));
+    MYE_EXPECT((items == std::vector<uint32_t>{0, 1, 2, 3}));
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    MYE_EXPECT(!hash.Insert({Entity::Null(), {nan, 0}, {1, 1}, 4}));
+    MYE_EXPECT(!hash.Insert({Entity::Null(), {2, 0}, {1, 1}, 4}));
+    MYE_EXPECT(hash.ItemCount() == 4);
+    items.clear();
+    MYE_EXPECT(!hash.QueryAABB({0, 0}, {nan, 1}, [&](uint32_t i) { items.push_back(i); }));
+    MYE_EXPECT(items.empty());
+    hash.SetCellSize(std::numeric_limits<float>::denorm_min());
+    MYE_EXPECT(hash.ItemCount() == 0);
+    MYE_EXPECT(hash.Insert({Entity::Null(), {0, 0}, {1, 1}, 0}));
+    MYE_EXPECT(hash.QueryAABB({0, 0}, {1, 1}, [&](uint32_t i) { items.push_back(i); }));
+    MYE_EXPECT((items == std::vector<uint32_t>{0}));
+    hash.SetCellSize(std::numeric_limits<float>::infinity());
+    MYE_EXPECT_NEAR(hash.CellSize(), 1, 1e-6f);
+    MYE_EXPECT(hash.ItemCount() == 0);
+}
+
 MYE_TEST(PhysMoveAndSlideWall) {
     World w;
     EventBus bus;
@@ -167,7 +323,7 @@ MYE_TEST(PhysMoveAndSlideWall) {
     kb.velocity = Vec2{10.0f, 0.0f};   // 벽을 향해 빠르게
 
     // 여러 스텝: 벽면(x=1.5-0.5=1.0)에 막혀야 한다(mover 중심 ≤ 1.0).
-    for (int i = 0; i < 20; ++i) phys.Step(w, &bus, 1.0f / 60.0f);
+    for (int i = 0; i < 20; ++i) MYE_EXPECT(phys.Step(w, &bus, 1.0f / 60.0f));
 
     Vec2 mp{w.TryGet<LocalTransform>(mover)->position.x, w.TryGet<LocalTransform>(mover)->position.y};
     // 벽 좌면 = 2 - 0.5 = 1.5; mover 우면이 거기 닿으면 중심 = 1.5 - 0.5 = 1.0.
@@ -178,7 +334,7 @@ MYE_TEST(PhysMoveAndSlideWall) {
     Entity mover2 = MakeBody(w, Vec2{-3.0f, 0.0f}, Shape2D::MakeBox(0.5f, 0.5f));
     auto& kb2 = w.Add<KinematicBody2D>(mover2);
     kb2.velocity = Vec2{0.0f, 5.0f};
-    for (int i = 0; i < 10; ++i) phys.Step(w, &bus, 1.0f / 60.0f);
+    for (int i = 0; i < 10; ++i) MYE_EXPECT(phys.Step(w, &bus, 1.0f / 60.0f));
     MYE_EXPECT(w.TryGet<LocalTransform>(mover2)->position.y > 0.5f);
 }
 
@@ -195,7 +351,7 @@ MYE_TEST(PhysWallSlideDoesNotRepeatTangentialTravel) {
         body.velocity = Vec2{2, 1};
         body.maxSlideIters = iterations;
 
-        physics.Step(world, nullptr, .1f);
+        MYE_EXPECT(physics.Step(world, nullptr, .1f));
 
         const auto* pose = world.TryGet<LocalTransform>(mover);
         MYE_EXPECT_NEAR(pose->position.x, 1, .0001f);
@@ -221,7 +377,7 @@ MYE_TEST(PhysFloorLevelFilter) {
     w.Add<FloorLevel>(b).level = 1;    // 다리 위
 
     // A는 B를 무시하고 통과해야 한다(다른 층).
-    for (int i = 0; i < 20; ++i) phys.Step(w, &bus, 1.0f / 60.0f);
+    for (int i = 0; i < 20; ++i) MYE_EXPECT(phys.Step(w, &bus, 1.0f / 60.0f));
     MYE_EXPECT(w.TryGet<LocalTransform>(a)->position.x > 1.0f);   // B 위치를 지나쳐 이동
     MYE_EXPECT(!w.TryGet<KinematicBody2D>(a)->hitWall);
 
@@ -235,7 +391,7 @@ MYE_TEST(PhysFloorLevelFilter) {
     ckb.velocity = Vec2{5.0f, 0.0f};
     Entity d = MakeBody(w2, Vec2{1.5f, 0.0f}, Shape2D::MakeBox(0.5f, 0.5f));
     w2.Add<FloorLevel>(d).level = 0;   // 같은 층 → 막힘
-    for (int i = 0; i < 30; ++i) phys2.Step(w2, &bus2, 1.0f / 60.0f);
+    for (int i = 0; i < 30; ++i) MYE_EXPECT(phys2.Step(w2, &bus2, 1.0f / 60.0f));
     MYE_EXPECT(w2.TryGet<LocalTransform>(c)->position.x <= 0.55f);  // d 좌면(1.0)에 막힘
     MYE_EXPECT(w2.TryGet<KinematicBody2D>(c)->hitWall);
 }
@@ -271,11 +427,11 @@ MYE_TEST(PhysTriggerEnterExitEvents) {
     kb.velocity = Vec2{3.0f, 0.0f};
 
     // 처음엔 겹침 없음 → 이벤트 없음.
-    phys.Step(w, &bus, 1.0f / 60.0f);
+    MYE_EXPECT(phys.Step(w, &bus, 1.0f / 60.0f));
     MYE_EXPECT(enterCount == 0 && exitCount == 0);
 
     // 통과 시뮬레이션(충분히 많은 스텝).
-    for (int i = 0; i < 120; ++i) phys.Step(w, &bus, 1.0f / 60.0f);
+    for (int i = 0; i < 120; ++i) MYE_EXPECT(phys.Step(w, &bus, 1.0f / 60.0f));
 
     // 정확히 1회 Enter, 1회 Exit — 중복 없음.
     MYE_EXPECT(enterCount == 1);
@@ -306,7 +462,7 @@ MYE_TEST(PhysTriggerNoDuplicateWhileStaying) {
     w.Add<KinematicBody2D>(body);   // 속도 0(정지)
     (void)trig;
 
-    for (int i = 0; i < 10; ++i) phys.Step(w, &bus, 1.0f / 60.0f);
+    for (int i = 0; i < 10; ++i) MYE_EXPECT(phys.Step(w, &bus, 1.0f / 60.0f));
     MYE_EXPECT(enterCount == 1);   // 진입 1회
     MYE_EXPECT(exitCount == 0);    // 머무는 동안 재발행 없음(Stay)
 }

@@ -1,10 +1,9 @@
-// mye/phys/Collision.h — 충돌·간이 물리(경량 2D) 컴포넌트·이벤트·인터페이스 (docs/03 §8) [M2-B]
+// mye/phys/Collision.h — ECS collision components and world-local trigger events.
 //
 // 자체 경량 2D: 키네마틱 이동 + 벽 슬라이드 + 트리거 + 층(FloorLevel) 인지 충돌.
-// 본격 물리엔진은 IPhysicsWorld 플러그인으로 교체(docs/03 §8, §확장 6).
 //
 // 규약(docs/03 §8):
-//   - 셰이프: AABB·원(캡슐 확장). Collider2D = 셰이프+오프셋+isTrigger+layerMask+floorMask.
+//   - 셰이프: AABB·원. Collider2D = 셰이프+오프셋+isTrigger+layerMask+floorMask.
 //   - 브로드페이즈: 균일 공간 해시 그리드(타일맵 셀 크기 정렬).
 //   - KinematicBody2D: move-and-slide, 벽 슬라이드, FloorLevel 전이.
 //   - 쿼리(Raycast/OverlapArea)는 모두 floorLevel 필터 인자를 받는다 — 다리 위/아래는
@@ -13,7 +12,7 @@
 //   - 실행: PhaseFixedUpdate 내 고정 스텝.
 #pragma once
 
-#include "mye/core/Math.h"
+#include "mye/phys/Motion2D.h"
 #include "mye/ecs/ComponentType.h"
 #include "mye/ecs/Entity.h"
 #include "mye/scene/RenderExtract.h"   // scene::FloorLevel(공유 컴포넌트) — 정본 소유는 렌더 추출 계약
@@ -25,25 +24,6 @@ namespace mye::phys {
 
 using ecs::Entity;
 using scene::FloorLevel;   // int8_t level — 충돌 필터·전이가 참조하는 공유 컴포넌트
-
-// ---------------------------------------------------------------------------
-// 셰이프 — AABB(반경 half-extents) 또는 원(반지름). 캡슐은 확장.
-// ---------------------------------------------------------------------------
-enum class ShapeKind : uint8_t { AABB, Circle };
-
-struct Shape2D {
-    ShapeKind kind = ShapeKind::AABB;
-    // AABB: half = 반폭·반높이(중심 기준). Circle: half.x = 반지름(half.y 무시).
-    Vec2 half{0.5f, 0.5f};
-
-    static constexpr Shape2D MakeBox(float halfW, float halfH) {
-        return Shape2D{ShapeKind::AABB, Vec2{halfW, halfH}};
-    }
-    static constexpr Shape2D MakeCircle(float radius) {
-        return Shape2D{ShapeKind::Circle, Vec2{radius, radius}};
-    }
-    constexpr float Radius() const { return half.x; }
-};
 
 // ---------------------------------------------------------------------------
 // Collider2D 컴포넌트 — 셰이프 + 오프셋 + 트리거 플래그 + 레이어/floor 마스크
@@ -111,26 +91,5 @@ struct TriggerExitEvent {
     Entity   other = Entity::Null();
     uint32_t triggerId = 0;
 };
-
-// ---------------------------------------------------------------------------
-// 층 인지 충돌 판정 헬퍼 — 다리 위/아래 분리.
-//
-// 규칙: 두 콜라이더의 floorMask가 겹치는(AND != 0) 층이 하나도 없으면 충돌하지 않는다.
-//   엔티티가 FloorLevel 컴포넌트를 가지면 그 level 비트를 floorMask에 강제한다(단일 층 존재).
-// ---------------------------------------------------------------------------
-constexpr uint8_t FloorBit(int8_t level) {
-    // level 음수/범위 밖은 0층으로 클램프(간이 모델: 최대 8층).
-    return (level >= 0 && level < 8) ? static_cast<uint8_t>(1u << level) : 0x01u;
-}
-constexpr bool FloorsOverlap(uint8_t a, uint8_t b) { return (a & b) != 0; }
-
-// ---------------------------------------------------------------------------
-// 셰이프 겹침 판정(월드 좌표, 중심 위치 기준). floorLevel 필터는 상위 층에서 적용.
-// ---------------------------------------------------------------------------
-bool Overlap(const Shape2D& a, Vec2 posA, const Shape2D& b, Vec2 posB);
-
-// 최소 이동 벡터(MTV): b가 a에서 빠져나오는 최소 분리(a 기준 b를 미는 방향·크기).
-// 겹치지 않으면 nullopt.
-std::optional<Vec2> ResolveMTV(const Shape2D& a, Vec2 posA, const Shape2D& b, Vec2 posB);
 
 } // namespace mye::phys

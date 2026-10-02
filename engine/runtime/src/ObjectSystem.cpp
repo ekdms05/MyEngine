@@ -160,7 +160,8 @@ Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& input) {
         b.velocity = c.enabled && std::isfinite(c.speed) && c.speed >= 0 && c.speed <= 100 ? movement * c.speed : Vec2{};
     });
     scene::UpdateWorldTransforms(s.world);
-    s.physics.Step(s.world, s.world.Events(), dt);
+    if (auto moved = s.physics.Step(s.world, s.world.Events(), dt); !moved)
+        return moved.GetError();
     if (auto gathered = phys::GatherPhysicsWorld3D(s.world, s.physics3D); !gathered)
         return gathered.GetError();
     if (auto camera = scene::UpdateGameCamera(s.world, s.physics3D, dt, input.cameraAxis, input.cameraMouseX);

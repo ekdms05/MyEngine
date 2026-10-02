@@ -26,7 +26,13 @@
 
 [TilemapWorld](../engine/scene/include/mye/tilemap/Tilemap.h)는 32×32 청크와 셀별 다중 컬럼·높이·경사를 표현한다. 다리 위/아래는 같은 화면 위치에 다른 층의 컬럼을 두어 표현한다. `FloorLevel`과 렌더 sortLayer의 연결은 [렌더 계약](02-rendering.md)을 따른다.
 
-[PhysicsWorld2D](../engine/scene/include/mye/phys/PhysicsWorld2D.h)는 AABB/원 충돌·공간 해시·move-and-slide·트리거를 제공하고 [PhysicsSystem](../engine/scene/include/mye/phys/PhysicsSystem.h)이 ECS와 연결한다. MyEditor Play와 MyGame은 공용 ObjectSystem에서 콜라이더·이동 본체·조작을 고정 틱으로 처리한다. 타일 높이·층 전이와 서버 권위 이동의 완전한 통합은 별도 완료 조건이다.
+[Motion2D](../engine/scene/include/mye/phys/Motion2D.h)의 `MoveAndSlide2D`는 값 타입으로 상자/원·층/레이어를 계산하고 `Expected<MotionResult2D, Error>`를 반환한다. `mye_physics2d`는 core만 링크하며 ECS·에셋·렌더를 포함하지 않는다. [PhysicsWorld2D](../engine/scene/include/mye/phys/PhysicsWorld2D.h)는 기존 World에서 중심 위치(변환+오프셋)와 충돌 데이터를 추출하는 어댑터다. MyEditor Play와 MyGame은 `ObjectSystem::Tick → PhysicsWorld2D::Step → MoveAndSlide2D`의 고정 틱 경로를 사용한다. `Step`도 `Expected<void, Error>`를 반환하며 계산/검증 실패 시 그 틱의 물리 위치·lastMove/hitWall·트리거 이력을 반영하지 않는다. 앞서 실행한 Lua·조작 입력까지 롤백하는 트랜잭션은 아니다.
+
+공통 함수는 유한한 크기/범위/속도, 층 `0..7`, dt `(0,1]`, 반복 상한 `1..16`을 검사한다. 이동체는 root LocalTransform이 필요하며, 부모 변환 역변환을 자동 수행하지 않는다. 공간 해시는 잘못된 AABB를 거부하고 큰 영역이나 셀 정수 범위 밖의 항목을 선형 검사해 누락·셀 반복 폭증을 피한다. 한 항목/쿼리의 셀 등록 상한은 4,096이며 월드 크기나 충돌 크기의 제한이 아니다. 큰 항목끼리의 후보 검사 비용은 최악 O(n²)이다.
+
+충돌 크기 합과 원 거리 계산의 중간값은 double/hypot을 사용해 유한한 float 입력의 합·제곱 오버플로를 피한다. 저장 좌표와 반환 이동은 기존 Vec2(float)이며 float로 표현할 수 없는 결과는 이동 경계에서 오류로 거부한다. 이 처리는 좌표 정밀도나 큰 월드 렌더 지원을 확대하는 기능이 아니다.
+
+현재 이동은 최대 16개 이산 substep이다. 얇은 장애물에 대한 연속 형상 캐스트와 서버/예측 소비는 아직 없다. skin·snapToGround는 보존된 데이터이며 2D 계산에서 사용하지 않는다. 타일 높이·층 전이의 완전한 통합도 별도 완료 조건이다. 호출자가 없는 PhysicsSystem 등록 함수와 단일 구현용 IPhysicsWorld는 제거했다. 실제 교체 구현/스케줄러 소비가 생기면 그 수명·오류 전달 요구를 기준으로 다시 검토한다.
 
 [Pathfinding](../engine/scene/include/mye/nav/Pathfinding.h)은 그리드·층을 고려한 A*와 비동기 경로 요청을 제공한다. 모든 NPC·컷신이 이를 자동 사용하지 않는다. 컷신의 현재 이동과 NPC 경로 추종은 각 소비자의 호출을 확인한다.
 

@@ -38,22 +38,6 @@ void ShapeAabb(const Shape2D& s, Vec2 pos, Vec2& outMin, Vec2& outMax) {
 
 PhysicsWorld2D::PhysicsWorld2D(float cellSize) : m_broadphase(cellSize) {}
 
-bool PhysicsWorld2D::CanInteract(const ColliderInst& a, const ColliderInst& b) {
-    // 층 필터: floorMask 교차 없으면 비충돌(다리 위/아래 분리).
-    if (!FloorsOverlap(a.floorMask, b.floorMask)) return false;
-    // 레이어 필터: 서로 상대 레이어에 관심 있어야(양방향 중 하나라도).
-    const bool aWantsB = (a.collidesWith & b.layerMask) != 0;
-    const bool bWantsA = (b.collidesWith & a.layerMask) != 0;
-    return aWantsB || bWantsA;
-}
-
-uint64_t PhysicsWorld2D::TriggerPairKey(Entity trigger, Entity other) {
-    // (해시 버킷 용도 전용) trigger·other 순서 보존. 정렬·diff 전순서는 XOR 충돌을 피하려
-    // 사전식 (trigger.Packed(), other.Packed()) 비교(TriggerPairLess)를 쓴다 — 아래 Step 참조.
-    return (static_cast<uint64_t>(trigger.index) << 32) ^ static_cast<uint64_t>(other.index)
-           ^ (static_cast<uint64_t>(trigger.generation) << 16);
-}
-
 // 트리거 쌍 전순서(사전식). XOR 키와 달리 서로 다른 쌍이 절대 같은 순서로 뭉치지 않아
 // 정렬·Enter/Exit diff 병합 스캔이 안정적이다(키 충돌로 Enter/Exit가 뒤바뀌거나 유실되지 않음).
 bool PhysicsWorld2D::TriggerPairLess(const TriggerPair& a, const TriggerPair& b) {
@@ -65,7 +49,7 @@ bool PhysicsWorld2D::TriggerPairLess(const TriggerPair& a, const TriggerPair& b)
 void PhysicsWorld2D::GatherColliders(ecs::World& world, std::vector<ColliderInst>& out) const {
     world.Query<Collider2D>().Each([&](Entity e, Collider2D& col) {
         ColliderInst inst;
-        inst.entity = e;
+        inst.id = e.Packed();
         inst.shape = col.shape;
         inst.pos = EntityWorldXY(world, e) + col.offset;
         inst.isTrigger = col.isTrigger;
@@ -86,130 +70,61 @@ void PhysicsWorld2D::GatherColliders(ecs::World& world, std::vector<ColliderInst
     });
 }
 
-void PhysicsWorld2D::RebuildBroadphase(const std::vector<ColliderInst>& insts) {
+Expected<void, Error> PhysicsWorld2D::RebuildBroadphase(const std::vector<ColliderInst>& insts) {
     m_broadphase.Clear();
     m_broadphase.Reserve(insts.size());
     for (uint32_t i = 0; i < insts.size(); ++i) {
         BroadphaseItem item;
-        item.entity = insts[i].entity;
+        item.entity = Entity::FromPacked(insts[i].id);
         item.userIndex = i;
         ShapeAabb(insts[i].shape, insts[i].pos, item.min, item.max);
-        m_broadphase.Insert(item);
+        if (auto inserted = m_broadphase.Insert(item); !inserted) return inserted.GetError();
     }
+    return {};
 }
 
-void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
-    // 1) 콜라이더 추출.
+Expected<void, Error> PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
+    if (!std::isfinite(dt) || dt <= 0 || dt > 1)
+        return Error{"2D physics dt must be in (0,1]", 1};
     std::vector<ColliderInst> insts;
     GatherColliders(world, insts);
+    if (auto valid = ValidateCollisionBodies2D(insts); !valid) return valid.GetError();
 
-    // entity → inst 인덱스(이동 반영용).
-    // 2) 키네마틱 이동: move-and-slide (솔리드 콜라이더·타일 대상 슬라이드).
-    for (uint32_t ki = 0; ki < insts.size(); ++ki) {
-        ColliderInst& body = insts[ki];
+    struct PendingMove { Entity entity; MotionResult2D result; Vec2 origin; };
+    std::vector<PendingMove> moves;
+    for (auto& body : insts) {
         if (!body.kinematic || body.isTrigger) continue;
-        auto* kb = world.TryGet<KinematicBody2D>(body.entity);
-        if (!kb) continue;
+        const Entity entity = Entity::FromPacked(body.id);
+        const auto* kb = world.TryGet<KinematicBody2D>(entity);
+        const auto* parent = world.TryGet<scene::Parent>(entity);
+        if (!world.Has<LocalTransform>(entity) || (parent && !parent->parent.IsNull()))
+            return Error{"2D kinematic movement requires a root LocalTransform", 1};
+        auto moved = MoveAndSlide2D(body, insts, kb->velocity, dt, kb->maxSlideIters, m_tiles);
+        if (!moved) return moved.GetError();
+        const Vec2 origin = moved.Value().position - world.TryGet<Collider2D>(entity)->offset;
+        if (!std::isfinite(origin.x) || !std::isfinite(origin.y))
+            return Error{"2D kinematic origin overflow", 1};
+        moves.push_back({entity, moved.Value(), origin});
+        body.pos = moved.Value().position;
+    }
+    if (auto rebuilt = RebuildBroadphase(insts); !rebuilt) return rebuilt.GetError();
 
-        const Vec2 desired = kb->velocity * dt;
-        Vec2 pos = body.pos;
-        bool hitWall = false;
-
-        // 터널링 방지: 한 스텝 변위가 body half-extent를 넘으면 스윕 근사로 서브스텝 분할한다
-        // (이산 겹침 테스트만 하므로 고속 이동 시 얇은 콜라이더/타일을 관통할 수 있음). 각 서브스텝은
-        // 아래 move-and-slide를 그대로 수행한다. 저속(1 서브스텝)에서는 기존과 동일 동작.
-        const Vec2 bodyHalf = (body.shape.kind == ShapeKind::Circle)
-                                  ? Vec2{body.shape.Radius(), body.shape.Radius()}
-                                  : body.shape.half;
-        const float minHalf = std::max(1e-3f, std::min(bodyHalf.x, bodyHalf.y));
-        const float dispLen = desired.Length();
-        int substeps = 1 + static_cast<int>(dispLen / minHalf);
-        if (substeps < 1) substeps = 1;
-        if (substeps > 16) substeps = 16;   // 상한(폭주 방지)
-        const Vec2 subDesired = desired / static_cast<float>(substeps);
-
-      for (int ss = 0; ss < substeps; ++ss) {
-        Vec2 remaining = subDesired;
-
-        for (int iter = 0; iter < kb->maxSlideIters; ++iter) {
-            if (Abs(remaining.x) < 1e-7f && Abs(remaining.y) < 1e-7f) break;
-            Vec2 tryPos = pos + remaining;
-
-            // 이 후보 위치에서 솔리드와의 침투를 찾아 밀어냄. MTV 누적으로 접촉 법선을 잡는다.
-            Vec2 correction{0, 0};
-            bool collided = false;
-
-            // 엔티티 솔리드 대 슬라이드.
-            for (uint32_t j = 0; j < insts.size(); ++j) {
-                if (j == ki) continue;
-                const ColliderInst& o = insts[j];
-                if (o.isTrigger) continue;            // 트리거는 물리 응답 없음
-                if (!CanInteract(body, o)) continue;
-                auto mtv = ResolveMTV(o.shape, o.pos, body.shape, tryPos);
-                if (mtv) {
-                    tryPos += *mtv;                   // body를 o에서 분리
-                    correction += *mtv;               // 분리 벡터 누적(법선 추정)
-                    collided = true;
-                    hitWall = true;
-                }
-            }
-
-            // 타일 솔리드 대 슬라이드(선택 소스).
-            if (m_tiles) {
-                if (auto mtv = m_tiles->ResolveSolid(body.shape, tryPos, body.floorLevel)) {
-                    tryPos += *mtv;
-                    correction += *mtv;
-                    collided = true;
-                    hitWall = true;
-                }
-            }
-
-            // The candidate already consumed its tangent travel; only the unapplied
-            // displacement may be projected and retried after resolving penetration.
-            remaining = remaining - (tryPos - pos);
-            pos = tryPos;
-            if (!collided) break;
-
-            // move-and-slide: 남은 이동에서 '법선 성분'만 제거하고 접선 성분은 유지해 다음 반복이
-            // 벽을 따라 미끄러지게 한다(remaining -= dot(remaining, n)*n). 법선 n은 누적 분리 벡터
-            // 방향. 이렇게 해야 정면 벽에 막히되 접선 이동은 살아남는다(move-and-stop 회피).
-            const float clen = correction.Length();
-            if (clen > 1e-7f) {
-                const Vec2 n = correction / clen;            // 접촉 법선(정규화)
-                const float vn = remaining.x * n.x + remaining.y * n.y;
-                if (vn < 0.0f) remaining = remaining - n * vn;  // 벽으로 파고드는 성분만 제거
-                else remaining = Vec2{0, 0};                    // 이미 분리 방향이면 종료
-            } else {
-                remaining = Vec2{0, 0};
-            }
-        }
-      } // 서브스텝 루프
-
-        kb->lastMove = pos - body.pos;
-        kb->hitWall = hitWall;
-        body.pos = pos;
-
-        // The solver position is the collider center, not the transform origin.
-        // Removing the offset prevents it accumulating even when velocity is zero.
-        const Vec2 origin = pos - world.TryGet<Collider2D>(body.entity)->offset;
-        // 이동 결과를 Transform에 반영(LocalTransform XY만; Z·회전 불변).
-        // 주: 부모 계층이 있으면 로컬≠월드지만 M2-B 키네마틱은 루트 이동을 가정한다.
-        if (auto* lt = world.TryGet<LocalTransform>(body.entity)) {
-            lt->position.x = origin.x;
-            lt->position.y = origin.y;
-            lt->dirty = true;
-        }
-        // WorldTransform도 즉시 반영(다음 트리거 diff가 최신 위치 사용).
-        if (auto* wt = world.TryGet<WorldTransform>(body.entity)) {
-            wt->matrix.m[3][0] = origin.x;
-            wt->matrix.m[3][1] = origin.y;
+    // Solve in value storage first. One failed body must not commit the earlier bodies.
+    for (const auto& move : moves) {
+        auto* kb = world.TryGet<KinematicBody2D>(move.entity);
+        kb->lastMove = move.result.lastMove;
+        kb->hitWall = move.result.hitWall;
+        auto* lt = world.TryGet<LocalTransform>(move.entity);
+        lt->position.x = move.origin.x;
+        lt->position.y = move.origin.y;
+        lt->dirty = true;
+        if (auto* wt = world.TryGet<WorldTransform>(move.entity)) {
+            wt->matrix.m[3][0] = move.origin.x;
+            wt->matrix.m[3][1] = move.origin.y;
         }
     }
 
-    // 3) 브로드페이즈 리빌드(이동 반영된 위치 기준).
-    RebuildBroadphase(insts);
-
-    // 4) 트리거 겹침 집합 산출 → Enter/Exit diff.
+    // 트리거 겹침 집합 산출 → Enter/Exit diff.
     std::vector<TriggerPair> current;
     m_broadphase.QueryPairs([&](uint32_t i, uint32_t j) {
         const ColliderInst& A = insts[i];
@@ -217,12 +132,12 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
         // 트리거 이벤트는 (isTrigger 콜라이더) vs (임의 콜라이더) 겹침에서 발생.
         const bool aT = A.isTrigger, bT = B.isTrigger;
         if (aT == bT) return;                        // 둘 다 트리거거나 둘 다 아님 → 스킵
-        if (!CanInteract(A, B)) return;              // 층·레이어 필터
+        if (!CanInteract2D(A, B)) return;            // 층·레이어 필터
         if (!Overlap(A.shape, A.pos, B.shape, B.pos)) return;
 
         const ColliderInst& trig = aT ? A : B;
         const ColliderInst& oth = aT ? B : A;
-        current.push_back(TriggerPair{trig.entity, oth.entity, trig.triggerId});
+        current.push_back(TriggerPair{Entity::FromPacked(trig.id), Entity::FromPacked(oth.id), trig.triggerId});
     });
 
     // 정렬(diff·결정성). 충돌 없는 사전식 전순서 사용.
@@ -254,6 +169,7 @@ void PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
     }
 
     m_prevTriggers = std::move(current);
+    return {};
 }
 
 std::optional<RayHit> PhysicsWorld2D::Raycast(ecs::World& world, Vec2 from, Vec2 dir,

@@ -136,6 +136,81 @@ MYE_TEST(ScanCodeVirtualKeyFallback) {
     MYE_EXPECT(ScanCodeToKeyCode(0, false, false, 0) == KeyCode::Unknown);
 }
 
+MYE_TEST(GamepadRawSamplesKeepEndpointsFiltersAndDisconnectEdges) {
+    InputState input;
+    GamepadSample sample;
+    sample.connected = true; sample.leftX = -32768; sample.leftY = 32767;
+    sample.rightX = 32767; sample.rightY = -32768;
+    sample.leftTrigger = 20; sample.rightTrigger = 255;
+    sample.buttons[static_cast<size_t>(GamepadButton::X)] = true;
+    input.UpdateGamepad(3, sample);
+    MYE_EXPECT(input.IsGamepadConnected(3) && input.WasPressed(GamepadButton::X, 3));
+    MYE_EXPECT(input.RawGamepadAxis(0, 3) == -1 && input.RawGamepadAxis(1, 3) == 1);
+    MYE_EXPECT(input.RawGamepadAxis(2, 3) == 1 && input.RawGamepadAxis(3, 3) == -1);
+    MYE_EXPECT_NEAR(input.RawGamepadAxis(4, 3), 20.0f / 255, 1e-7f);
+    MYE_EXPECT(input.RawGamepadAxis(5, 3) == 1);
+    MYE_EXPECT(input.LeftTrigger(3) == 0 && input.RightTrigger(3) == 1);
+    MYE_EXPECT_NEAR(std::hypot(input.LeftStick(3).x, input.LeftStick(3).y), 1, 1e-6f);
+    input.UpdateGamepad(3, sample);
+    MYE_EXPECT(input.IsDown(GamepadButton::X, 3) && !input.WasPressed(GamepadButton::X, 3));
+    input.UpdateGamepad(-1, sample); input.UpdateGamepad(4, sample);
+    MYE_EXPECT(!input.IsGamepadConnected(-1) && !input.IsGamepadConnected(4));
+    MYE_EXPECT(input.RawGamepadAxis(-1, 3) == 0 && input.RawGamepadAxis(6, 3) == 0 && input.RawGamepadAxis(0, 4) == 0);
+    GamepadSample small; small.connected = true; small.leftX = 5000; small.rightX = 7000;
+    input.UpdateGamepad(0, small);
+    MYE_EXPECT(input.LeftStick() == Vec2{} && input.RightStick() == Vec2{});
+    MYE_EXPECT(input.RawGamepadAxis(0) > 0 && input.RawGamepadAxis(2) > 0);
+    MYE_EXPECT(input.RawGamepadAxis(0, 3) == -1); // Slots remain independent.
+    sample.connected = false; input.UpdateGamepad(3, sample);
+    MYE_EXPECT(!input.IsGamepadConnected(3) && !input.IsDown(GamepadButton::X, 3));
+    MYE_EXPECT(input.WasReleased(GamepadButton::X, 3) && input.RawGamepadAxis(0, 3) == 0);
+    MYE_EXPECT(input.LeftStick(3) == Vec2{} && input.LeftTrigger(3) == 0);
+    input.UpdateGamepad(3, {}); MYE_EXPECT(!input.WasReleased(GamepadButton::X, 3));
+}
+
+MYE_TEST(GamepadActionsApplyOnlyAuthoredDeadzoneAndCancelOnFocusAndDisconnect) {
+    auto map = runtime::DefaultGameInputMap();
+    for (auto& action : map.actions) {
+        if (action.name.starts_with("move_")) action.deadzone = .1f;
+        for (auto& binding : action.bindings)
+            if (binding.device == InputDevice::GamepadAxis || binding.device == InputDevice::GamepadButton) binding.pad = 3;
+    }
+    runtime::GameInputBuffer buffer; MYE_EXPECT(buffer.Configure(map));
+    InputState input;
+    GamepadSample sample; sample.connected = true; sample.leftX = 5000;
+    sample.buttons[static_cast<size_t>(GamepadButton::X)] = true;
+    input.UpdateGamepad(3, sample); buffer.Capture(input, true);
+    const auto first = buffer.ConsumeTick();
+    MYE_EXPECT(input.LeftStick(3) == Vec2{}); // Legacy filter rejects this sample.
+    MYE_EXPECT_NEAR(first.movement.x, .058436f, 2e-6f); // Raw 5000/32767 with authored 0.1.
+    MYE_EXPECT(first.movement.y == 0 && first.interact);
+    MYE_EXPECT_NEAR(buffer.Actions().Action("move_right").rawStrength, 5000.0f / 32767, 1e-7f);
+    MYE_EXPECT(!buffer.ConsumeTick().interact);
+    sample.leftX = 32767; sample.leftY = 32767;
+    input.UpdateGamepad(3, sample); buffer.Capture(input, true);
+    const auto diagonal = buffer.ConsumeTick();
+    MYE_EXPECT_NEAR(std::hypot(diagonal.movement.x, diagonal.movement.y), 1, 1e-6f);
+    input.SetKeyboardSuppressed(true); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().movement == Vec2{});
+    input.NewFrame(); input.OnWheel(.5f); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().cameraZoomSteps == .5f);
+    MYE_EXPECT(buffer.Actions().Action("zoom_in").pressed); // Keyboard capture leaves mouse input enabled.
+    input.NewFrame();
+    input.SetKeyboardSuppressed(false); input.UpdateGamepad(3, sample); buffer.Capture(input, true);
+    const auto resumed = buffer.ConsumeTick();
+    MYE_EXPECT(resumed.movement.x > 0 && !resumed.interact); // Held pad on focus recovery is not a new press.
+    input.UpdateGamepad(3, {}); buffer.Capture(input, true);
+    const auto disconnected = buffer.ConsumeTick();
+    MYE_EXPECT(disconnected.movement == Vec2{} && !disconnected.interact);
+    MYE_EXPECT(buffer.Actions().Action("interact").released);
+    MYE_EXPECT(!buffer.ConsumeTick().actions->Action("interact").released);
+    sample.buttons[static_cast<size_t>(GamepadButton::X)] = false;
+    input.UpdateGamepad(3, sample); buffer.Capture(input, true); buffer.ConsumeTick();
+    sample.buttons[static_cast<size_t>(GamepadButton::X)] = true;
+    input.UpdateGamepad(3, sample); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().interact); // A fresh press still fires after recovery.
+}
+
 MYE_TEST(InputActionRemapKeepsQuickTapUntilOneFixedTick) {
     auto map = runtime::DefaultGameInputMap();
     for (auto& action : map.actions) if (action.name == "interact")

@@ -31,9 +31,7 @@ Sample ReadBinding(const InputState& input, const InputBinding& binding) {
     }
     case InputDevice::GamepadAxis: {
         if (input.IsKeyboardSuppressed()) return {};
-        const auto left = input.LeftStick(binding.pad), right = input.RightStick(binding.pad);
-        const std::array axes{left.x, left.y, right.x, right.y, input.LeftTrigger(binding.pad), input.RightTrigger(binding.pad)};
-        return {std::max(0.0f, axes[binding.code] * binding.direction)};
+        return {std::max(0.0f, input.RawGamepadAxis(binding.code, binding.pad) * binding.direction)};
     }
     case InputDevice::Wheel: return {std::max(0.0f, input.WheelDelta() * binding.direction), false, false, true};
     }
@@ -165,6 +163,7 @@ void InputActions::Clear() {
     m_wasEnabled = false;
 }
 void InputActions::Capture(const InputState& input, bool enabled) {
+    const bool resumingGamepad = m_keyboardSuppressed && !input.IsKeyboardSuppressed();
     if ((input.IsKeyboardSuppressed() && !m_keyboardSuppressed) || (input.IsMouseSuppressed() && !m_mouseSuppressed)) Clear();
     m_keyboardSuppressed = input.IsKeyboardSuppressed();
     m_mouseSuppressed = input.IsMouseSuppressed();
@@ -172,16 +171,19 @@ void InputActions::Capture(const InputState& input, bool enabled) {
     for (size_t i = 0; i < m_map.actions.size(); ++i) {
         const auto& action = m_map.actions[i];
         auto& state = m_pending[i];
-        float raw = 0, wheel = 0, heldRaw = 0;
+        float raw = 0, wheel = 0, heldRaw = 0, pressRaw = 0;
         bool pressed = false, released = false;
         for (const auto& binding : action.bindings) {
             const auto sample = ReadBinding(input, binding);
             raw = std::max(raw, std::min(1.0f, sample.value));
+            // Held pads resume movement without reactivating one-shot actions.
+            if (!resumingGamepad || (binding.device != InputDevice::GamepadAxis && binding.device != InputDevice::GamepadButton))
+                pressRaw = std::max(pressRaw, sample.value);
             if (sample.wheel) wheel = std::max(wheel, sample.value);
             else { heldRaw = std::max(heldRaw, sample.value); pressed |= sample.pressed; released |= sample.released; }
         }
         const bool wasDown = state.rawStrength > action.deadzone, down = raw > action.deadzone;
-        const bool firstPress = !wasDown && (down || pressed) && (m_wasEnabled || pressed);
+        const bool firstPress = !wasDown && (pressRaw > action.deadzone || pressed) && (m_wasEnabled || pressed);
         state.pressed |= firstPress;
         state.released |= (wasDown && !down) || (!wasDown && !down && pressed && released);
         state.rawStrength = raw;

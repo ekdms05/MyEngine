@@ -14,8 +14,7 @@ namespace mye {
 
 // 물리 스캔코드 기반 키 코드 — USB HID Usage(Keyboard/Keypad Page 0x07) 순서 준용.
 // 가상 키(VK_*)가 아니라 물리 위치이므로 레이아웃(QWERTY/AZERTY)과 무관하다.
-// (M0의 KeyEvent는 win32 VK를 그대로 전달하는 임시 이벤트 — M1에서 이 KeyCode 기반
-//  RawKeyEvent로 대체. 06 입력 매핑은 RawKeyEvent를 소비한다.)
+// RawKeyEvent preserves the physical position; TextInputEvent carries text separately.
 enum class KeyCode : uint16_t {
     Unknown = 0,
     A = 4, B, C, D, E, F, G, H, I, J, K, L, M,
@@ -46,6 +45,15 @@ enum class GamepadButton : uint8_t {
 
 inline constexpr int kMaxGamepads = 4;
 
+// Backend sample before filtering: signed sticks [-32768,32767], triggers [0,255].
+// Axes use +Y up. Disconnected samples are canonicalized to zero.
+struct GamepadSample {
+    bool connected = false;
+    bool buttons[static_cast<size_t>(GamepadButton::Count)] = {};
+    int16_t leftX = 0, leftY = 0, rightX = 0, rightY = 0;
+    uint8_t leftTrigger = 0, rightTrigger = 0;
+};
+
 // ---- 버스로 발행되는 저수준 입력 이벤트 (06·게임 코드 구독) ----
 struct RawKeyEvent       { MYE_EVENT(RawKeyEvent);       KeyCode key; bool pressed; bool repeat; };
 struct RawMouseMoveEvent { MYE_EVENT(RawMouseMoveEvent); Vec2 delta;      // Raw Input 고해상도 델타
@@ -59,8 +67,8 @@ struct ImeRawMessageEvent { MYE_EVENT(ImeRawMessageEvent);
                             void* hwnd; uint32_t msg; uint64_t wparam; int64_t lparam; };
 
 // 즉시 상태 조회(폴링) — 프레임 경계에서 스냅샷 갱신. WasPressed/WasReleased는
-// "이번 프레임에 상태가 바뀌었나"(엣지) 질의. 갱신 지점: 메인 루프가 PumpMessages
-// 직후 NewFrame()을 1회 호출해 이전 프레임 상태를 롤오버한다.
+// "이번 프레임에 상태가 바뀌었나"(엣지) 질의. 메인 루프는 NewFrame 후 메시지를 받고
+// 패드를 한 번 폴링한다. 게임 액션은 별도 InputActions가 고정 틱에서 소비한다.
 class InputState {
 public:
     MYE_SERVICE(InputState);
@@ -70,7 +78,7 @@ public:
     // 발생한 상태 전이를 관측한다. 따라서 프레임당 정확히 1회 실행되는 페이즈(PreUpdate/Update/
     // PostUpdate)에서 소비해야 한다. FixedUpdate는 한 프레임에 0회(대기)·1회·2회 이상 실행될 수
     // 있어(고정스텝 누산기) 같은 엣지를 중복 관측하거나(다중 실행) 유실할 수 있다(0회 실행 시 다음
-    // NewFrame이 previous로 덮음). 지속 입력(IsDown)은 어느 페이즈에서든 안전하다.
+    // NewFrame이 엣지를 지움). 지속 입력(IsDown)은 어느 페이즈에서든 안전하다.
     bool IsDown(KeyCode key) const;         // 현재 눌림
     bool WasPressed(KeyCode key) const;     // 이번 프레임에 down 엣지
     bool WasReleased(KeyCode key) const;    // 이번 프레임에 up 엣지
@@ -92,12 +100,18 @@ public:
     Vec2  RightStick(int pad = 0) const;
     float LeftTrigger(int pad = 0) const;   // 0..1
     float RightTrigger(int pad = 0) const;  // 0..1
+    // Unfiltered normalized axes: 0/1 left X/Y, 2/3 right X/Y, 4/5 triggers.
+    // Sticks are [-1,1], triggers [0,1]; invalid/disconnected slots return zero.
+    float RawGamepadAxis(int axis, int pad = 0) const;
 
     // ---- 갱신(엔진 루프·입력 백엔드 전용) ----
-    // 프레임 경계: 이전 프레임 상태 저장 + 엣지/델타 리셋. PumpMessages 직후 1회.
+    // 프레임 경계: 키/마우스 엣지·델타 리셋. PumpMessages 전에 1회.
     void NewFrame();
     // 게임패드 폴링(XInput). 프레임당 1회(NewFrame 근처). 자체 이전상태를 롤오버해 엣지 계산.
     void PollGamepads();
+    // One sample per pad/frame, shared by the native poller and deterministic checks.
+    // This is a sampled state boundary, not an event stream for sub-frame pad taps.
+    void UpdateGamepad(int pad, GamepadSample sample);
     // 입력 백엔드(win32 Raw Input)가 이벤트 처리 중 호출해 현재 상태를 밀어넣는다.
     void OnKey(KeyCode key, bool pressed);
     void OnMouseButton(MouseButton btn, bool pressed);
@@ -119,19 +133,10 @@ private:
         bool  keys[static_cast<size_t>(KeyCode::Count)] = {};
         bool  mouseButtons[static_cast<size_t>(MouseButton::Count)] = {};
     };
-    struct GamepadSnapshot {
-        bool  connected = false;
-        bool  buttons[static_cast<size_t>(GamepadButton::Count)] = {};
-        Vec2  leftStick{};
-        Vec2  rightStick{};
-        float leftTrigger = 0.0f;
-        float rightTrigger = 0.0f;
-    };
-
     Snapshot m_current{};
     Snapshot m_pressed{}, m_released{};
-    GamepadSnapshot m_pads[kMaxGamepads]{};
-    GamepadSnapshot m_padsPrev[kMaxGamepads]{};
+    GamepadSample m_pads[kMaxGamepads]{};
+    GamepadSample m_padsPrev[kMaxGamepads]{};
     uint32_t m_gamepadPoll = 0;   // 미연결 슬롯 재검색 주기용 카운터
     Vec2i    m_mousePos{};
     Vec2     m_mouseDelta{};

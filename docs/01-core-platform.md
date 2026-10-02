@@ -21,7 +21,9 @@
 
 ## 플랫폼과 입력
 
-[Win32Window](../engine/core/src/platform/Win32Window.cpp)는 창·메시지·크기·창 모드를 처리한다. [Win32Input](../engine/core/src/platform/Win32Input.cpp)은 Raw Input·문자 입력·게임패드 상태를 코어 입력 표면으로 전달한다. Win32 경계에서 문자열을 변환하고 엔진 내부 문자열은 UTF-8로 유지한다.
+[Win32Window](../engine/core/src/platform/Win32Window.cpp)는 창·메시지·크기·창 모드를 처리한다. [Win32Input](../engine/core/src/platform/Win32Input.cpp)은 Raw Input·문자 입력을 코어 입력 표면으로 전달한다. XInput 패드는 InputState::PollGamepads가 프레임마다 수집한다. 메인 입력은 NewFrame → 메시지 펌프 → 패드 폴링 → 액션 캡처 순서다. Win32 경계에서 문자열을 변환하고 엔진 내부 문자열은 UTF-8로 유지한다.
+
+main 소스의 GamepadSample/UpdateGamepad는 스틱 signed 16-bit·트리거 8-bit 원시 샘플을 보관한다. RawGamepadAxis는 데드존 전 -1~1/0~1 값을 반환해 [프로젝트 입력 액션](25-input-actions.md)이 저장한 데드존을 한 번 적용하게 한다. 기존 LeftStick/RightStick/트리거 함수의 플랫폼 필터는 조회 시 유지한다. 미연결 샘플은 버튼·축을 0으로 정리하며 패드 버튼 엣지는 슬롯별 프레임 샘플 사이에서 계산한다. 프레임 사이의 짧은 패드 탭과 직접 장치 검증은 별도다.
 
 윈도우 메시지 훅은 ImGui와 문자/IME 처리 같은 동기 소비자가 사용한다. 게임 UI 입력 라우팅은 `engine/ui`, 게임 고유 입력 해석은 앱·게임 코드의 책임이다. 입력이 있다는 사실을 완성된 게임 채팅/IME UX로 확대하지 않는다.
 

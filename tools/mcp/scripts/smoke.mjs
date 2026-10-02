@@ -213,6 +213,8 @@ async function main() {
   check("engine_reference — 사용자 액션 Lua와 온라인 권한 경계", inputLimits.result?.isError !== true && firstText(inputLimits.result).includes("is_action_just_pressed") && firstText(inputLimits.result).includes("클라이언트 Lua를 실행하지 않는다"));
   const inputLua = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "입력 버퍼" } });
   check("engine_reference — 실제 고정 틱 액션과 종료 수명", inputLua.result?.isError !== true && firstText(inputLua.result).includes("on_destroy") && firstText(inputLua.result).includes("비소유"));
+  const padInput = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", search: "원시 패드 축" } });
+  check("engine_reference — 원시 패드와 단일 작성 데드존", padInput.result?.isError !== true && firstText(padInput.result).includes("한 번 적용") && firstText(padInput.result).includes("겹쳐 적용하지 않는다"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

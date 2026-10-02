@@ -185,6 +185,8 @@ return {
 | `mye.input.left_trigger([pad=0])`, `.right_trigger(...)` | 트리거 숫자 |
 
 이 선택 모듈의 was_pressed/was_released는 입력 **프레임**의 이벤트다. main 소스는 같은 프레임의 짧은 키/마우스 탭도 두 엣지를 보존한다. 여러 고정 틱에 직접 조회하면 프레임 엣지를 반복해서 읽을 수 있으므로 틱 소비를 직접 관리해야 한다. 공식 Play/MyGame은 [프로젝트 입력 설정](25-input-actions.md)과 GameInputBuffer에서 한 번 소비하며 이름 기반 Lua 액션은 그 고정 틱 상태를 읽는다.
+
+선택 모듈의 left_stick/right_stick·트리거 함수는 기존 플랫폼 필터를 유지한다. 프로젝트 이름 기반 액션은 원시 축/트리거에 저장 데드존을 한 번 적용하므로 작은 입력의 결과가 다를 수 있다. 액션의 get_action_raw_strength는 해당 방향의 데드존 전 0~1 세기다. 기본 조작/사용자 액션에는 이름 기반 함수를 사용한다.
 | `mye.audio.play_cue(name[, x, y])` | 큐 재생. x와 y를 함께 주면 공간화 |
 | `mye.audio.play_music(name[, fade=0.5])`, `.stop_music([fade=0])` | 음악 재생·중지. fade는 초 |
 | `mye.audio.set_bus_volume(bus, volume)`, `.get_bus_volume(bus)` | 버스 볼륨 쓰기·읽기 |

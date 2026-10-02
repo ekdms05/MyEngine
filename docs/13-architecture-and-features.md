@@ -35,7 +35,7 @@ assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/
 
 입력은 게임 창이 활성일 때만 PlayWorld에 전달한다. 창을 닫거나 Stop을 누르면 PlayWorld를 폐기한다. Pause는 시뮬레이션만 멈추고 표시를 유지한다. 플레이는 같은 프로세스의 별도 Win32 창이며 장애 격리는 제공하지 않는다.
 
-main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서로 읽는다. core InputActions가 이름/바인딩/세기와 프레임→고정 틱 소비를 담당하고 runtime GameInputBuffer가 기본 이동/상호작용/카메라/종료를 조합한다. 파일 메뉴에서 기본/사용자 조작을 작성·제거·별도 저장하며 기존 필드 없는 프로젝트는 기본값을 사용한다. InputBindingModule을 재사용해 로컬 ObjectSystem의 Lua에 이름 기반 조회를 등록했다. GameInput의 비소유 액션 상태는 Tick 동안만 연결하고 반환/종료 전에 해제한다. 조회는 소비하지 않으며 raw InputState는 이 경로에 연결하지 않는다. Play 창은 다섯 마우스 버튼·휠과 XInput 폴링을 연결했다. 저장 실패·짧은 탭/중복 소비·캡처 취소·합성 Win32 메시지·저장 사용자 액션의 Play/로컬 Lua·앱의 등록/오류 종료를 검증한다. 원시 패드 축·직접 장치/확장 위젯 검수는 [25](25-input-actions.md)의 다음 단위다.
+main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서로 읽는다. core InputActions가 이름/바인딩/세기와 프레임→고정 틱 소비를 담당하고 runtime GameInputBuffer가 기본 이동/상호작용/카메라/종료를 조합한다. 파일 메뉴에서 기본/사용자 조작을 작성·제거·별도 저장하며 기존 필드 없는 프로젝트는 기본값을 사용한다. InputBindingModule을 재사용해 로컬 ObjectSystem의 Lua에 이름 기반 조회를 등록했다. GameInput의 비소유 액션 상태는 Tick 동안만 연결하고 반환/종료 전에 해제한다. 조회는 소비하지 않으며 raw InputState는 이 경로에 연결하지 않는다. Play 창은 다섯 마우스 버튼·휠과 XInput 폴링을 연결했다. 폴링은 원시 GamepadSample을 보관하고 액션은 RawGamepadAxis에서 저장 데드존을 한 번 적용한다. 기존 저수준 필터는 조회 시 유지한다. 저장 실패·짧은 탭/중복 소비·캡처 취소·합성 Win32/패드 샘플·저장 사용자 액션의 Play/로컬 Lua·앱의 등록/오류 종료를 검증한다. 직접 장치/확장 위젯 검수는 [25](25-input-actions.md)의 다음 단위다.
 
 프로젝트 생성·열기는 후보 파일과 경로를 검증한 후 기존 문서를 바꾼다. 저장 실패는 `Expected<T, Error>`로 전달한다. 에셋 가져오기는 내용을 검사하고 중복 파일을 덮어쓰지 않는다. 삭제는 사용 중인 참조를 검사하고 파일·메타를 휴지통으로 보낸다. 편집 레이아웃은 `.myeditor/`에 저장하며 버전관리에서 제외한다.
 

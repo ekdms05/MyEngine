@@ -53,19 +53,18 @@ bool InRange(int pad) { return pad >= 0 && pad < kMaxGamepads; }
 } // namespace
 
 void InputState::PollGamepads() {
-    for (int i = 0; i < kMaxGamepads; ++i) m_padsPrev[i] = m_pads[i];
     ++m_gamepadPoll;
 
     for (int i = 0; i < kMaxGamepads; ++i) {
         // 미연결 슬롯을 매 프레임 XInputGetState 하면 지연이 크다(알려진 스톨). 연결됐던 슬롯은
         // 매 프레임 폴링하고, 미연결 슬롯은 슬롯별로 엇갈려 주기적으로만(≈90프레임) 재검색한다.
         if (!m_pads[i].connected && (m_gamepadPoll % 90u) != static_cast<uint32_t>(i)) {
-            m_pads[i] = GamepadSnapshot{};
+            UpdateGamepad(i, {});
             continue;
         }
 
         XINPUT_STATE st{};
-        GamepadSnapshot s{};
+        GamepadSample s{};
         if (XInputGetState(static_cast<DWORD>(i), &st) == ERROR_SUCCESS) {
             s.connected = true;
             const XINPUT_GAMEPAD& g = st.Gamepad;
@@ -86,15 +85,19 @@ void InputState::PollGamepads() {
             set(GamepadButton::Start, XINPUT_GAMEPAD_START);
             set(GamepadButton::Back, XINPUT_GAMEPAD_BACK);
 
-            s.leftStick  = ApplyDeadzone(g.sThumbLX, g.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-            s.rightStick = ApplyDeadzone(g.sThumbRX, g.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
-            s.leftTrigger  = g.bLeftTrigger  > XINPUT_GAMEPAD_TRIGGER_THRESHOLD
-                             ? static_cast<float>(g.bLeftTrigger) / 255.0f : 0.0f;
-            s.rightTrigger = g.bRightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD
-                             ? static_cast<float>(g.bRightTrigger) / 255.0f : 0.0f;
+            s.leftX = g.sThumbLX; s.leftY = g.sThumbLY;
+            s.rightX = g.sThumbRX; s.rightY = g.sThumbRY;
+            s.leftTrigger = g.bLeftTrigger; s.rightTrigger = g.bRightTrigger;
         }
-        m_pads[i] = s;
+        UpdateGamepad(i, s);
     }
+}
+
+void InputState::UpdateGamepad(int pad, GamepadSample sample) {
+    if (!InRange(pad)) return;
+    if (!sample.connected) sample = {};
+    m_padsPrev[pad] = m_pads[pad];
+    m_pads[pad] = sample;
 }
 
 bool InputState::IsGamepadConnected(int pad) const {
@@ -109,10 +112,31 @@ bool InputState::WasPressed(GamepadButton btn, int pad) const {
 bool InputState::WasReleased(GamepadButton btn, int pad) const {
     return InRange(pad) && Idx(btn) < Idx(GamepadButton::Count) && !m_pads[pad].buttons[Idx(btn)] && m_padsPrev[pad].buttons[Idx(btn)];
 }
-Vec2  InputState::LeftStick(int pad) const  { return InRange(pad) ? m_pads[pad].leftStick  : Vec2{}; }
-Vec2  InputState::RightStick(int pad) const { return InRange(pad) ? m_pads[pad].rightStick : Vec2{}; }
-float InputState::LeftTrigger(int pad) const  { return InRange(pad) ? m_pads[pad].leftTrigger  : 0.0f; }
-float InputState::RightTrigger(int pad) const { return InRange(pad) ? m_pads[pad].rightTrigger : 0.0f; }
+Vec2 InputState::LeftStick(int pad) const {
+    return InRange(pad) ? ApplyDeadzone(m_pads[pad].leftX, m_pads[pad].leftY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE) : Vec2{};
+}
+Vec2 InputState::RightStick(int pad) const {
+    return InRange(pad) ? ApplyDeadzone(m_pads[pad].rightX, m_pads[pad].rightY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE) : Vec2{};
+}
+float InputState::LeftTrigger(int pad) const {
+    return InRange(pad) && m_pads[pad].leftTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD ? m_pads[pad].leftTrigger / 255.0f : 0.0f;
+}
+float InputState::RightTrigger(int pad) const {
+    return InRange(pad) && m_pads[pad].rightTrigger > XINPUT_GAMEPAD_TRIGGER_THRESHOLD ? m_pads[pad].rightTrigger / 255.0f : 0.0f;
+}
+float InputState::RawGamepadAxis(int axis, int pad) const {
+    if (!IsGamepadConnected(pad)) return 0;
+    const auto& sample = m_pads[pad];
+    if (axis == 4) return sample.leftTrigger / 255.0f;
+    if (axis == 5) return sample.rightTrigger / 255.0f;
+    int16_t value = 0;
+    switch (axis) {
+    case 0: value = sample.leftX; break; case 1: value = sample.leftY; break;
+    case 2: value = sample.rightX; break; case 3: value = sample.rightY; break;
+    default: return 0;
+    }
+    return value / (value < 0 ? 32768.0f : 32767.0f);
+}
 
 void InputState::OnKey(KeyCode key, bool pressed) {
     if (m_keyboardSuppressed || Idx(key) >= Idx(KeyCode::Count)) return;

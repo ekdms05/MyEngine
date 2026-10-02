@@ -115,7 +115,8 @@ MYE_TEST(SavedUserInputActionReachesLuaInPlayAndLocalGameWorld) {
         end
     })";
     auto settings = project.InputSettings();
-    settings.actions.push_back({"attack", .2f, {{InputDevice::Key, static_cast<int>(KeyCode::F)}}});
+    settings.actions.push_back({"attack", .05f, {{InputDevice::Key, static_cast<int>(KeyCode::F)},
+        {InputDevice::GamepadAxis, 4, 1, 3}}});
     MYE_EXPECT(project.SaveInputSettings(settings) && project.Save());
     const auto manifest = std::string(project.ProjectFilePath());
     ed::ProjectContext reopened, game;
@@ -134,6 +135,17 @@ MYE_TEST(SavedUserInputActionReachesLuaInPlayAndLocalGameWorld) {
         MYE_EXPECT(objects.Message().empty());
         MYE_EXPECT(play.ActiveWorld()->TryGet<scene::LocalTransform>(marker)->position.x == 1);
         MYE_EXPECT(game.Active()->World().TryGet<scene::LocalTransform>(marker)->position.x == 1);
+    }
+    GamepadSample sample; sample.connected = true; sample.leftTrigger = 20;
+    input.NewFrame(); input.UpdateGamepad(3, sample);
+    MYE_EXPECT(input.LeftTrigger(3) == 0); // The old platform threshold hid this authored input.
+    playInput.Capture(input, true); gameInput.Capture(input, true);
+    for (int i = 0; i < 2; ++i) {
+        MYE_EXPECT(play.Tick(1.0f / 60, playInput.ConsumeTick(), Utf8String(root)));
+        MYE_EXPECT(objects.Tick(1.0f / 60, gameInput.ConsumeTick()));
+        MYE_EXPECT(objects.Message().empty());
+        MYE_EXPECT(play.ActiveWorld()->TryGet<scene::LocalTransform>(marker)->position.x == 2);
+        MYE_EXPECT(game.Active()->World().TryGet<scene::LocalTransform>(marker)->position.x == 2);
     }
     play.Stop();
     MYE_EXPECT(reopened.Active()->World().TryGet<scene::LocalTransform>(marker)->position.x == 0);

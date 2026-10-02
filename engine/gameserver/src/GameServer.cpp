@@ -10,6 +10,7 @@ void GameServer::LoadRecordInto(const persist::CharacterRecord& rec, PlayerSessi
     s.characterId = rec.id;
     s.x = rec.posX; s.y = rec.posY;
     s.z=rec.posZ; s.facingRadians=rec.facingRadians; s.world3D=rec.world3D;
+    s.floorLevel = rec.floorLevel;
     s.sceneId = rec.sceneId;
 
     s.prog.level = rec.level;
@@ -35,6 +36,7 @@ void GameServer::LoadRecordInto(const persist::CharacterRecord& rec, PlayerSessi
 void GameServer::WriteSessionInto(const PlayerSession& s, persist::CharacterRecord& rec) {
     rec.posX = s.x; rec.posY = s.y;
     rec.posZ=s.z; rec.facingRadians=s.facingRadians; rec.world3D=s.world3D;
+    rec.floorLevel = s.floorLevel;
     rec.sceneId = s.sceneId;
     rec.level = s.prog.level;
     rec.xp    = s.prog.xp;

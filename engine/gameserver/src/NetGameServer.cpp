@@ -9,17 +9,9 @@ namespace mye::gameserver {
 NetGameServer::NetGameServer(persist::PersistenceService& persist)
     : m_persist(persist), m_game(persist) {
     // 인증기: 자격증명 → accountId(0=거부). 세션은 인증된 계정만 얻는다.
-    m_net.SetAuthenticator([this, &persist](std::string_view u, std::string_view p) -> uint64_t {
+    m_net.SetAuthenticator([&persist](std::string_view u, std::string_view p) -> uint64_t {
         persist::LoginResult r = persist.Accounts().Login(u, p);
-        if (!r.ok) return 0;
-        if (!m_net.Is3D()) {
-            const auto characters = persist.Characters().ListByAccount(r.accountId);
-            if (!characters.empty()) {
-                const auto* character = persist.Characters().Get(characters.front());
-                if (character && character->world3D) return 0;
-            }
-        }
-        return r.accountId;
+        return r.ok ? r.accountId : 0;
     });
 }
 
@@ -41,6 +33,46 @@ Expected<void, Error> NetGameServer::Stop() {
 SessionId NetGameServer::SessionOf(uint32_t netId) const {
     auto it = m_netToSession.find(netId);
     return it == m_netToSession.end() ? 0 : it->second;
+}
+Expected<void, Error> NetGameServer::Configure2D(std::span<const phys::CollisionBody2D> colliders,
+    const phys::MotionSettings2D& settings, uint64_t hash, std::string scene, Vec2 spawn) {
+    if (scene.empty()) return Error{"Online 2D requires a scene identity", 1};
+    phys::MotionState2D initial;
+    initial.position = spawn; initial.floorLevel = settings.body.floorLevel;
+    if (!net::ValidState2D(initial)) return Error{"2D spawn is outside protocol state bounds", 1};
+    auto body = settings.body;
+    body.pos = spawn + settings.offset;
+    if (auto valid = phys::ValidateSpawn2D(body, colliders); !valid) return valid.GetError();
+    return m_net.Configure2D(colliders, settings, hash,
+        [this, colliders, settings, scene = std::move(scene), spawn](
+            uint32_t netId, uint64_t account, uint64_t character) -> Expected<phys::MotionState2D, Error> {
+            if (!character) {
+                const auto characters = m_persist.Characters().ListByAccount(account);
+                if (characters.empty()) return Error{"Account has no character", 1};
+                character = characters.front();
+            }
+            const auto* rec = m_persist.Characters().Get(character);
+            if (!rec || rec->accountId != account) return Error{"Character ownership mismatch", 1};
+            if (rec->world3D || rec->posZ != 0 || (!rec->sceneId.empty() &&
+                (rec->sceneId != scene || rec->floorLevel != settings.body.floorLevel)))
+                return Error{"Character belongs to a different scene, floor or coordinate contract", 1};
+            phys::MotionState2D state;
+            state.position = rec->sceneId.empty() ? spawn : Vec2{rec->posX, rec->posY};
+            state.facingRadians = rec->facingRadians;
+            state.floorLevel = settings.body.floorLevel;
+            if (!net::ValidState2D(state)) return Error{"2D spawn is outside protocol state bounds", 1};
+            auto body = settings.body;
+            body.pos = state.position + settings.offset;
+            if (auto valid = phys::ValidateSpawn2D(body, colliders); !valid) return valid.GetError();
+            auto joined = m_game.Join(account, character);
+            if (!joined) return joined.GetError();
+            m_netToSession[netId] = joined.Value();
+            auto* session = m_game.Get(joined.Value());
+            session->sceneId = scene; session->world3D = false; session->floorLevel = state.floorLevel;
+            session->x = state.position.x; session->y = state.position.y; session->z = 0;
+            session->facingRadians = state.facingRadians;
+            return state;
+        });
 }
 Expected<void, Error> NetGameServer::Configure3D(const phys::PhysicsWorld3D& physics,
                                                  const phys::MotionSettings3D& settings, uint64_t hash,
@@ -86,15 +118,22 @@ void NetGameServer::Tick(float dt) {
     // 신규 접속 → 계정의 캐릭터를 세션으로 로드.
     for (uint32_t netId : ids) {
         if (m_netToSession.count(netId)) continue;
+        if (m_net.Is2D() || m_net.Is3D()) continue; // Authenticated admission creates the validated session.
         const uint64_t acc = m_net.AccountOf(netId);
         if (acc == 0) continue;   // 익명은 세션(캐릭터) 없음
+        const auto characters = m_persist.Characters().ListByAccount(acc);
+        const auto* record = characters.empty() ? nullptr : m_persist.Characters().Get(characters.front());
+        if (!record || record->world3D || !record->sceneId.empty()) {
+            m_net.DisconnectClient(netId);
+            continue;
+        }
         auto sid = m_game.Join(acc);
         if (sid) {
             m_netToSession[netId] = sid.Value();
             // 로드된 캐릭터 위치를 넷 권위 위치로 주입(재접속 복원).
             if (const PlayerSession* s = m_game.Get(sid.Value()))
                 m_net.SetEntity(netId, s->x, s->y);
-        }
+        } else m_net.DisconnectClient(netId);
     }
 
     // 퇴장(넷에서 사라진 매핑) → 세션 저장 후 제거.
@@ -114,6 +153,15 @@ void NetGameServer::Tick(float dt) {
 
     // 권위 위치를 세션에 동기(영속 대비 — 다음 저장/퇴장 시 반영).
     for (const auto& [netId, sid] : m_netToSession) {
+        if (m_net.Is2D()) {
+            phys::MotionState2D state;
+            if (m_net.GetEntity2D(netId, state))
+                if (auto* s = m_game.Get(sid)) {
+                    s->x = state.position.x; s->y = state.position.y;
+                    s->facingRadians = state.facingRadians; s->floorLevel = state.floorLevel;
+                }
+            continue;
+        }
         if (m_net.Is3D()) {
             phys::MotionState3D state;
             if (m_net.GetEntity3D(netId, state))

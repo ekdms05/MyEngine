@@ -33,6 +33,7 @@ struct PlayerSession {
     float                  x = 0.0f, y = 0.0f;
     float                  z = 0.0f, facingRadians = 0.0f;
     bool                   world3D = false;
+    int8_t                 floorLevel = 0;
     std::string            sceneId;
 };
 

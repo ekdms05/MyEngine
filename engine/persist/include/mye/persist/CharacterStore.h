@@ -40,6 +40,7 @@ struct CharacterRecord {
     float       posY = 0.0f;
     float       posZ = 0.0f, facingRadians = 0.0f;
     bool        world3D = false;
+    int8_t      floorLevel = 0; // Online 2D authored floor; older records default to zero.
 
     // 성장.
     int32_t     level = 1;

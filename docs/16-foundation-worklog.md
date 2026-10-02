@@ -229,3 +229,31 @@ API 정본 03·08·13·14·20·22, README/MCP 안내와 로컬 개발·게임 �
 최종 기존 build/dev의 Debug/Release 빌드와 순차 CTest가 각각 **563/563** 통과했다. Release foundation은 기존 서버 저장/재시작/손상 거부·60 Hz 120틱(**2.069초**), 실제 Lua Box/Circle 고속 얇은 벽/정확한 4틱·NaN 물리 오류/exit 1·씬 보존·맵/스폰/캡처·버전 거부를 통과했다. MCP build와 smoke **24개**가 통과했다. 기존 9개 도구 중 scene 참조가 공통 로더/추출을 반환하는 한 스모크만 추가했으며 도구/프로토콜은 늘리지 않았다. 최종 빌드 로그에 새 C계열 오류/경고는 없고 diff --check도 통과했다. 실패한 검증 스크립트 로그와 성공 로그를 앱 결함/검사 결함으로 구분해 보존한다.
 
 정본 03·13·14·22와 로컬 개발/게임 제작/릴리즈 세 스킬의 실제 지원 상태를 갱신했다. 새 외부 코드·패키지·스킬 설치는 필요하지 않았다. 사용자 프로젝트·에셋/GUID·Project E 피드백/답변·외부 코드 고지·기존 0.3.0 태그/공개 설치본은 변경하지 않았다. 다음 단위는 D03/D04의 저장 기록 소유권·장면/층 검사와 인증 세션/입력·실제 ack에 공통 2D 계산을 연결하는 것이다. 이어 D05에서 두 공식 MyGame의 이동/충돌·재접속을 확인한다. 최종 엔진 목표는 진행 중이며 아직 새 릴리즈를 발행하지 않는다.
+
+## 2026-10-03 — D03/D04 인증 2D 권위·예측·저장 연결
+
+이전 목표 작업은 코드/문서·검증을 커밋·푸시한 진행이었다. 최종 목표는 계속 온라인 2D 픽셀 MMORPG 제작이며 이번 단위는 그 실제 플레이에 필요한 인증 이동 경계다. NetServer/NetClient의 기존 XYZ handshake·입력/ack·스냅샷·예측/재실행, NetGameServer의 Join/Leave, GameServer/CharacterStore의 위치 저장과 MyServer/MyGame 소비자를 추적했다. 앱이 제공하는 온라인 프로젝트 경로는 아직 XYZ다. 공식 벤치마킹의 인증 완료 전 입장/복제 분리와 권위 입력/상태 전송 경계를 확인하고, 기존 MyEngine UDP/계정/ECS·고정 틱 계약을 재사용한다. 새 외부 코드나 ENet/RPC·노드 모델을 복사하지 않았다. 검토한 공식 자료와 차이는 로컬 `build/2d-foundation/d04-benchmark.md`에 남긴다.
+
+MotionSettings2D에는 작성 캐릭터의 형상/불투명 prototype ID·필터·offset·속도/slide 상한을, MotionState2D에는 Transform 원점·lastMove·방향·층·벽 접촉을 둔다. `StepMotion2D`는 입력의 유한 범위/정규화, 중심=원점+offset과 최종 원점 복원을 처리하며 기존 MoveAndSlide2D/CastMotion2D만 사용한다. 로컬 World 어댑터를 복제하거나 다른 벽 solver를 만들지 않는다. 모든 계산/원점 검증 뒤 state를 갱신하므로 실패한 계산은 기존 상태를 보존한다. 방향은 +Y=0, +X=π/2로 명시했다. net의 PUBLIC 의존성은 core와 값 타입 physics2d/physics3d이고 runtime·ECS·에셋/UI를 역참조하지 않는다.
+
+2D 인증 메시지는 version 3/type 11..15다. legacy XY의 version 1/위치 양자화나 XYZ의 version 2를 재해석하지 않는다. 기존 Receive3D는 ReceiveAuthenticated로 바꾸고 차원별 메시지/상태만 분기한다. 인증·nonce/무작위 token·endpoint·재접속 handshake·해제·길이/padding·연속 입력/중복 거부 경계를 함께 사용한다. Input3D 값/읽기/쓰기 이름은 두 소비자가 사용하는 MovementInput/ReadMovementInput/WriteMovementInput으로 정리했다. XYZ의 실제 wire 필드는 바뀌지 않으며 2D의 예약 jump 비트는 false만 허용한다. 소스 호출자를 모두 갱신했으며 호환을 위한 빈 alias/새 전송 추상화는 만들지 않았다.
+
+서버는 60 Hz 한 틱에 대기열 입력 하나를 실제 계산한 뒤에만 ack를 올린다. 앞의 미확인 8개를 반복 전송해 유실 구간을 복구하고, 누락 순서가 있는 batch는 일부 적용 없이 거부한다. 입력 큐는 240개이며 5초 수신 정지 또는 물리 실패/상태 범위 위반은 연결을 해제한다. 물리 Expected 오류는 서버 로그에 이유를 남긴다. 클라이언트의 SendInput2D/SendInput3D는 같은 전송/대기열 경계를 사용하고 각 차원의 값 계산으로 예측한다. 권위 상태에서 이미 처리한 입력을 제거한 뒤 나머지를 동일 계산으로 재실행한다. 기존 EntityCount/PendingInputs 조회도 실제 구성 차원의 데이터를 반환하며 legacy 입력/예측 API로 인증 모드 상태를 바꾸지 않는다.
+
+2D 원점/lastMove/방향은 float32, 층은 0..7, 상태 원점은 각 축 ±100,000이며 고정 틱 lastMove 길이는 2 이하로 검사한다. 최대 40개 엔티티의 전체 상태가 1400 bytes 아래에 들어가는 것을 실제 writer로 확인한다. 이 값은 전송/파싱 상한이며 처리량이나 동접 성능 측정이 아니다. 상태 span은 기존 XYZ 물리 참조처럼 비소유이므로 구성부터 종료까지 작성 장면 데이터의 수명과 내용을 유지해야 한다. 연결 중 또는 handshake 대기 중에는 차원 설정을 바꾸지 않는다.
+
+NetGameServer::Configure2D는 신규 캐릭터의 작성 스폰, 기존 캐릭터의 저장 원점을 엄격하게 검사하고 Join 후 권위 상태를 세션에 연결한다. 캐릭터 없음/다른 계정/단일 세션 중복, 다른 sceneId/world3D/floorLevel, 범위 밖 위치/방향과 막힌 스폰은 Join 전에 거부한다. 2D 저장의 비영 Z도 지우지 않고 거부한다. 장면의 시각 높이/3D 에셋은 서버 XY 기록과 별개다. 추가 kinematic/3D 물리·동적 상대 이동이나 층 전환을 지원처럼 설명하지 않는다. 잘못된 저장 좌표를 밀어내거나 다른 장면/층으로 자동 변환하지 않는다.
+
+floorLevel은 기존 CharacterRecord·PlayerSession·GameServer 로드/저장과 JSON에 연결했다. 누락한 구 기록은 0이고 정수 0..7만 읽으며 Upsert도 범위를 검사한다. 음수/8/실수/문자열의 로드는 기존 저장소를 바꾸지 않는다. 실제 저장/LoadAll·재접속으로 층/장면/원점/방향을 검증했다. 기록/세션의 기존 직접 mutable 접근과 전체 저장 검증·강제 장애 복구는 기존 D30 범위이며 이번 검사로 운영 영속의 완성을 주장하지 않는다.
+
+회귀 작성 중 **564/566**을 재현했다. 첫째, 새 tick의 snapshot에 과거 ack를 넣으면 이미 확인한 입력이 누락된 상태로 예측 원점이 되돌아갔다(두 기대 실패). session 입력은 UINT32_MAX에서 종료하여 wrap하지 않으므로 ack를 보낸 최대 순서와 이전 ack 사이로 제한한다. 같은 검사 위치를 2D/XYZ에 적용해 미래 ack·반범위 차이/최댓값도 거부한다. snapshot tick의 wrap/재정렬 처리는 기존 SequenceNewer를 유지한다.
+
+둘째, 앱이 점검용 인증 콜백을 교체하면 constructor에만 있던 좌표 계약 거부가 사라졌다(한 기대 실패). 저장된 온라인 캐릭터가 legacy XY의 충돌 없는 적분 세션에 들어갈 수 있었다. 계정 로그인만 인증기에 두고, GameServer의 legacy Join 직전에 기록의 장면/3D 계약·캐릭터 존재를 검사한다. 거부와 Join 실패는 기존 KickIndex를 호출하는 DisconnectClient 정책 경계로 연결한다. 인증된 차원의 Join은 별도 검증한 admission만 수행하며 legacy fallback으로 재시도하지 않는다. 회귀는 실제 앱처럼 인증 콜백을 교체한 뒤에도 입장/세션/기록 변경이 거부되는지 검사한다.
+
+기존 NetGameServerTests에 세 실제 UDP 시나리오를 추가했다. 두 계정의 offset/층·정적 얇은 벽/다른 층/트리거, 세 입력의 실제 ack 1→2→3과 틱률 거부, 고속 원의 벽 접촉/예측 일치와 다른 플레이어 이동, 소유권/hash/중복 입장·저장/재시작/재접속 및 다섯 저장 계약 거부를 검사한다. 독립 authority socket은 미확인 두 틱의 replay·stale/future/retracting ack·token/floor/NaN/잔여 바이트·40개 스냅샷·240개 확인 대기 상한을 검사한다. raw peer는 위조 token·누락 batch·jump·다른 차원·NaN·잔여 바이트를 보내도 움직이지 않고, 유효 중복은 한 번만 소비하며 수신 정지로 해제되는지 검사한다. 기존 영속 회귀에는 층 7 파일 roundtrip과 누락 필드/범위 오류를 추가했다. 검사 fixture/계정/파일은 기존 framework와 새 build 하위 경로에만 둔다.
+
+최종 기존 build/dev Debug/Release 빌드와 순차 CTest는 각각 **566/566** 통과했다. Release foundation은 CLI·서버 저장/재시작/손상 거부, 120 서버 틱 **2.058초**, 실제 Lua Box/Circle 고속 얇은 벽과 4개 고정 틱/최종 캡처·NaN 물리 오류/exit 1·씬 보존·기존 맵/스폰/버전 경계를 통과했다. 실제 Release XYZ MyServer/MyGame도 인증 스폰·MyGame 30틱/960×540 BMP·서버 300틱/정상 종료·world3D/장면 저장을 통과했다. 기존 wire 변경이 없다는 설명은 헤더/필드 검토뿐 아니라 이 앱 회귀로 확인했다. 새 C계열 컴파일 경고/오류는 없으며 기존 D9025 예외 옵션 경고는 유지한다. diff --check도 통과했다. 실패/성공·소스 검토·앱/저장 로그는 로컬 `build/2d-foundation/d04-*`와 새 foundation/XYZ fixture에 보존한다.
+
+MCP build·smoke **25개**가 통과했다. 도구 수는 기존 9개이며 scene 참조의 공통 2D 권위 계산과 앱 미연결 상태를 확인하는 스모크만 추가했다. 정본 03·08·13·14·21·22와 로컬 개발/게임 제작/릴리즈 세 스킬을 실제 소비 상태로 갱신했다. 관련 헤더의 오래된 단계명/없는 문서 경로는 새 계약 설명으로 바꿨다. 사용자 원본 프로젝트·에셋/GUID·피드백/답변·기존 공개 0.3.0 태그/설치본과 필요한 외부 고지는 변경하지 않았다. 새 스킬 패키지나 물리/네트워크 라이브러리는 추가하지 않았다.
+
+현재 결과는 **인증 2D 서버·예측·재실행·저장/재접속 라이브러리 연결**이다. 공식 MyServer/MyGame은 여전히 XYZ 프로젝트 온라인 경로를 사용한다. 다음 D05에서 작성한 2D 장면/설정을 기존 두 실행 파일의 입장·표현·조작에 연결하고, 두 계정의 실제 앱 이동/벽 충돌·재접속·재시작을 검증한다. 동일 정적 장면/고정 층·float 정밀도/선형 탐색의 한계, 원격 보간·게임 규칙/온라인 Lua·포털/맵·HUD·보호 전송/운영 저장·배포와 네이티브 입력/장시간 부하는 계속 남았다. 전체 엔진 목표와 D02~D05는 진행 상태로 유지하고 이번 단위에서 버전/tag/Release를 발행하지 않는다.

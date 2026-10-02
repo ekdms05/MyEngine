@@ -1,4 +1,4 @@
-// mye/net/NetClient.h — 최소 클라이언트(UDP) (docs/mmorpg/02, M9)
+// mye/net/NetClient.h — UDP 클라이언트와 2D/XYZ 권위 상태의 예측·재실행
 //
 // 서버에 접속(Connect→Accept로 clientId 수신)하고, 입력을 보내며, 스냅샷을 받아 원격 엔티티
 // 상태를 보관하고 미확인 입력을 재적용해 클라이언트 예측을 보정한다.
@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 #include <chrono>
+#include <optional>
 
 namespace mye::net {
 
@@ -28,8 +29,16 @@ public:
     void Disconnect();
     Expected<void,Error> Configure3D(const phys::PhysicsWorld3D& physics,const phys::MotionSettings3D& settings,uint64_t sceneHash,uint64_t characterId);
     Expected<void,Error> SendInput3D(Vec2 movement,bool jump);
-    bool GetPredicted3D(phys::MotionState3D& state) const { if (!m_hasPred) return false; state=m_prediction3D; return true; }
+    bool GetPredicted3D(phys::MotionState3D& state) const { if (!m_physics3D || !m_hasPred) return false; state=m_prediction3D; return true; }
     const std::vector<EntitySnap3D>& LatestSnapshot3D() const { return m_snapshot3D; }
+    Expected<void, Error> Configure2D(std::span<const phys::CollisionBody2D> colliders,
+        const phys::MotionSettings2D& settings, uint64_t sceneHash, uint64_t characterId);
+    Expected<void, Error> SendInput2D(Vec2 movement);
+    bool GetPredicted2D(phys::MotionState2D& state) const {
+        if (!m_settings2D || !m_hasPred) return false;
+        state = m_prediction2D; return true;
+    }
+    const std::vector<EntitySnap2D>& LatestSnapshot2D() const { return m_snapshot2D; }
     std::string_view Failure() const { return m_failure; }
 
     void Receive();   // 소켓 드레인 + Accept/Snapshot 처리(+ 재조정)
@@ -38,7 +47,7 @@ public:
     bool Connected() const { return m_connected; }
     uint32_t LastTick() const { return m_tick; }
     bool GetEntity(uint32_t netId, float& x, float& y) const;
-    size_t EntityCount() const { return m_snapshot.size(); }
+    size_t EntityCount() const { return m_settings2D ? m_snapshot2D.size() : m_physics3D ? m_snapshot3D.size() : m_snapshot.size(); }
     // 최근 수신 스냅샷 읽기 전용 뷰(원격 엔티티 보간 렌더용). 갱신은 Receive() 만.
     const std::vector<EntitySnap>& LatestSnapshot() const { return m_snapshot; }
 
@@ -50,18 +59,24 @@ public:
     }
     // 예측된 로컬 플레이어 위치(렌더에 사용). Connect 전/스폰 전이면 false.
     bool GetPredicted(float& x, float& y) const;
-    size_t PendingInputs() const { return m_pending.size(); }   // 미확인 입력 수(재조정 대기)
+    size_t PendingInputs() const { return m_settings2D || m_physics3D ? m_pendingMovement.size() : m_pending.size(); }
 
 private:
     void Reconcile3D();
-    void Receive3D(MsgType type,BitReader& reader,size_t bytes);
+    void Reconcile2D();
+    void ReceiveAuthenticated(MsgType type,BitReader& reader,size_t bytes);
+    Expected<void, Error> SendMovementInput(Vec2 movement, bool jump);
     const phys::PhysicsWorld3D* m_physics3D=nullptr;
     phys::MotionSettings3D m_settings3D;
     phys::MotionState3D m_prediction3D;
     uint64_t m_sceneHash=0, m_characterId=0, m_token=0, m_nonce=0;
-    uint32_t m_inputSeq=0;
-    std::vector<Input3D> m_pending3D;
+    uint32_t m_inputSeq=0, m_lastAck=0;
+    std::vector<MovementInput> m_pendingMovement;
     std::vector<EntitySnap3D> m_snapshot3D;
+    std::span<const phys::CollisionBody2D> m_colliders2D; // Non-owning; scene data outlives configuration.
+    std::optional<phys::MotionSettings2D> m_settings2D;
+    phys::MotionState2D m_prediction2D;
+    std::vector<EntitySnap2D> m_snapshot2D;
     std::string m_failure;
     std::vector<uint8_t> m_handshake;
     std::chrono::steady_clock::time_point m_lastHandshake;

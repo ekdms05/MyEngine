@@ -47,6 +47,7 @@ std::vector<CharacterId> CharacterStore::ListByAccount(AccountId accountId) cons
 }
 
 Expected<void, Error> CharacterStore::Upsert(const CharacterRecord& rec) {
+    if (rec.floorLevel < 0 || rec.floorLevel > 7) return Error{"Upsert: floor must be in 0..7", 1};
     if (!std::isfinite(rec.posX) || !std::isfinite(rec.posY) || !std::isfinite(rec.posZ) || !std::isfinite(rec.facingRadians))
         return Error{"Upsert: character position and facing must be finite",1};
     if (rec.id == 0) return Error{"Upsert: id=0 은 허용되지 않음(Create 사용)", 1};
@@ -101,6 +102,7 @@ json::Value CharacterStore::ToJson() const {
         o["posZ"]      = json::Value(static_cast<double>(c.posZ));
         o["facingRadians"] = json::Value(static_cast<double>(c.facingRadians));
         o["world3D"]   = json::Value(c.world3D);
+        o["floorLevel"] = json::Value(static_cast<int64_t>(c.floorLevel));
         o["level"]     = json::Value(static_cast<std::int64_t>(c.level));
         o["xp"]        = json::Value(static_cast<std::int64_t>(c.xp));
         o["str"]       = json::Value(static_cast<std::int64_t>(c.strength));
@@ -163,6 +165,8 @@ Expected<void, Error> CharacterStore::LoadJson(const json::Value& root) {
             }
             if (const auto* p = v.Find("sceneId"); p && !p->IsString())
                 return Error{"CharacterStore: invalid scene id", 1};
+            if (!detail::IntegerInRange(v, "floorLevel", 0, 7, false))
+                return Error{"CharacterStore: floor must be an integer in 0..7", 1};
             if (const auto* p = v.Find("items"); p && !p->IsArray())
                 return Error{"CharacterStore: invalid items array", 1};
             if (const auto* p = v.Find("id"))        c.id        = static_cast<CharacterId>(p->AsInt());
@@ -177,6 +181,7 @@ Expected<void, Error> CharacterStore::LoadJson(const json::Value& root) {
                 if (!p->IsBool()) return Error{"CharacterStore: world3D must be boolean",1};
                 c.world3D=p->AsBool();
             }
+            if (const auto* p = v.Find("floorLevel")) c.floorLevel = static_cast<int8_t>(p->AsInt());
             if (const auto* p = v.Find("level"))     c.level     = static_cast<int32_t>(p->AsInt());
             if (const auto* p = v.Find("xp"))        c.xp        = p->AsInt();
             if (const auto* p = v.Find("str"))       c.strength  = static_cast<int32_t>(p->AsInt());

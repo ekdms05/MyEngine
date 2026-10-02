@@ -69,6 +69,23 @@ struct MotionResult2D {
     bool hitWall = false;
 };
 
+struct MotionSettings2D {
+    CollisionBody2D body; // Scene prototype identity and collision filters, not a network id.
+    Vec2 offset{};
+    float speed = 3;
+    int maxSlideIters = 4;
+};
+struct MotionState2D {
+    Vec2 position{}, lastMove{}; // Transform origin; the collider center includes settings.offset.
+    float facingRadians = 0; // Zero faces +Y; positive angles turn toward +X.
+    int8_t floorLevel = 0;
+    bool onWall = false;
+};
+Expected<void, Error> ValidateMotionSettings2D(const MotionSettings2D& settings);
+// Fixed-tick consumers share normalization, offset restoration and failure preservation.
+Expected<void, Error> StepMotion2D(MotionState2D& state, Vec2 movement, float dt,
+    const MotionSettings2D& settings, std::span<const CollisionBody2D> obstacles);
+
 // Value-only calculation: neither body nor obstacles are changed, including on failure.
 Expected<MotionResult2D, Error> MoveAndSlide2D(
     const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles,

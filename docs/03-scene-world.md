@@ -44,9 +44,21 @@
 
 개발 소스의 [LoadOnlineScene2D](../engine/runtime/include/mye/runtime/OnlineScene.h)는 `.myeproj`와 프로젝트 내부 `.scene`을 공용 SceneSerializer/ObjectComponents로 검증한다. 캐릭터의 Collider2D 중심·offset·층/레이어, 속도와 반복 상한, Transform 원점 스폰을 추출하며 캐릭터를 제외한 정적 충돌/트리거를 값 타입으로 보관한다. `GatherCollisionBodies2D`를 로컬 PhysicsWorld2D와 함께 사용하므로 계층 변환·오프셋·FloorLevel의 우선순위가 달라지지 않는다. 그래픽 파일 로딩·Lua 실행·클라이언트가 제공한 충돌 데이터는 이 경로에 포함하지 않는다.
 
-활성 CharacterController2D는 정확히 하나여야 하고, 트리거 캐릭터·추가 KinematicBody2D·3D 물리 컴포넌트는 거부한다. 삽입된 3D 시각 에셋을 삭제하지 않는다. `ValidateSpawn2D`는 지정한 본체 중심의 유한 범위와 실제 막는 형상의 겹침을 공통 캐스트로 검사하며 접촉은 허용하고 잘못된 좌표를 자동으로 밀어내지 않는다. 저장 기록의 소유권·장면/층 동일성과 실제 admission 연결은 후속 작업이다. 두 차원의 장면 로더는 같은 파일 경계에서 버전/name/mainScene, 절대/드라이브/NUL/잘못된 UTF-8 경로와 assets 밖의 canonical 위치를 거부하며 장면 ID를 정규화한다. hash는 파일 내용의 호환 지문이며 인증 증명이 아니다.
+활성 CharacterController2D는 정확히 하나여야 하고, 트리거 캐릭터·추가 KinematicBody2D·3D 물리 컴포넌트는 거부한다. 삽입된 3D 시각 에셋을 삭제하지 않는다. `ValidateSpawn2D`는 지정한 본체 중심의 유한 범위와 실제 막는 형상의 겹침을 공통 캐스트로 검사하며 접촉은 허용하고 잘못된 좌표를 자동으로 밀어내지 않는다. 두 차원의 장면 로더는 같은 파일 경계에서 버전/name/mainScene, 절대/드라이브/NUL/잘못된 UTF-8 경로와 assets 밖의 canonical 위치를 거부하며 장면 ID를 정규화한다. hash는 파일 내용의 호환 지문이며 인증 증명이 아니다.
 
-이 단계는 장면 로더/물리 데이터 계약의 검증이다. `MyServer --project`·`MyGame --connect`는 아직 기존 XYZ 경로를 사용한다. 2D admission/권위·예측/앱 연결을 검증하기 전에는 온라인 2D 지원으로 설명하지 않는다.
+`MyServer --project`·`MyGame --connect`는 아직 기존 XYZ 경로를 사용한다. 아래 라이브러리 검증과 별도로 공식 앱 연결을 끝내기 전에는 온라인 2D 게임 제작 지원으로 설명하지 않는다.
+
+## 인증된 2D 이동의 라이브러리 연결
+
+개발 소스의 `StepMotion2D`는 MotionSettings2D의 캐릭터 형상/offset·속도·반복 상한과 MotionState2D의 원점·방향·층을 공통 MoveAndSlide2D에 전달한다. NetGameServer::Configure2D/NetClient::Configure2D가 같은 값과 정적 충돌 span을 보관하며 서버 Tick, 즉시 예측과 ack 이후 재실행에서 이 함수를 사용한다. 이 연결은 실제 UDP 라이브러리에서 검증했으며 아직 MyServer/MyGame의 2D 온라인 앱 지원은 아니다. 충돌 span은 비소유 참조이므로 설정부터 연결 종료까지 장면 데이터의 수명/내용을 유지한다.
+
+2D 입력은 60 Hz 틱당 정규화된 XY 방향과 순서만 전달한다. 서버가 실제 계산을 마친 입력에만 ack를 주며 틱당 하나를 처리한다. 미확인 입력은 최대 240개, 재전송은 앞의 8개다. 예약된 jump 비트는 2D에서 false만 허용한다. 2D 메시지는 protocol version 3/type 11..15로 구분하여 legacy XY(version 1)와 XYZ(version 2)를 오인하지 않는다. 두 인증 차원은 nonce/무작위 세션 token·송신 주소·길이/padding·연속 순서 검사와 접속/해제 경계를 공유한다.
+
+상태는 float32 원점/lastMove·방향과 0..7 층/벽 접촉을 전달한다. 원점은 각 축 ±100,000, 고정 틱 lastMove 길이는 2 이하, 방향은 +Y가 0이고 +X가 π/2다. 최대 40개 엔티티의 전체 스냅샷은 1400 bytes 이하다. 이것은 데이터그램 상한이며 처리량/목표 동접 측정이 아니다. 더 오래된 tick, 이미 확인한 입력보다 낮은 ack, 아직 전송하지 않은 ack, 잘못된 token/형상 상태/층/중복 ID·잔여 바이트는 예측을 바꾸지 않는다.
+
+NetGameServer의 2D admission은 계정 소유권·단일 세션·저장 sceneId/world3D/floorLevel과 물리 배치를 Join 전에 검사한다. 신규 캐릭터는 작성 스폰/층, 기존 캐릭터는 저장된 원점/방향을 사용한다. 다른 장면/층이나 겹친 저장 위치를 자동 변환하지 않는다. 권위 상태는 기존 GameServer/CharacterStore의 위치·방향·층으로 저장하며 floorLevel이 없는 구 기록은 0이다. 인증 콜백을 앱에서 교체해도 장면 계약이 있는 캐릭터는 legacy XY의 세션 생성 경계에서 거부한다.
+
+2D 권위 기록은 Z=0이어야 한다. 저장된 비영 Z를 조용히 지우지 않고 admission에서 거부한다. 장면의 시각 높이/3D 에셋과 서버의 XY 이동 좌표는 별개다. 현재 한계는 동일 정적 장면·고정 층과 정적 형상에 대한 이동이다. 캐릭터끼리의 solid 충돌, 층 전환, 온라인 Lua/게임 규칙·포털·UI·보간과 공식 2D 앱 연결은 후속 작업이다. 전송은 기존 loopback UDP이며 공개 보호 전송으로 설명하지 않는다.
 
 ## 애니메이션·씬 데이터
 

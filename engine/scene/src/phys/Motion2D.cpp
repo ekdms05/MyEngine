@@ -72,6 +72,38 @@ Expected<void, Error> ValidateSpawn2D(
     return {};
 }
 
+Expected<void, Error> ValidateMotionSettings2D(const MotionSettings2D& settings) {
+    if (!ValidBody(settings.body) || settings.body.isTrigger || !Finite(settings.offset) ||
+        !std::isfinite(settings.speed) || settings.speed < 0 || settings.speed > 100 ||
+        settings.maxSlideIters < 1 || settings.maxSlideIters > 16)
+        return Error{"2D character requires solid bounds, finite offset, speed 0..100 and 1..16 slides", 1};
+    return {};
+}
+
+Expected<void, Error> StepMotion2D(MotionState2D& state, Vec2 movement, float dt,
+    const MotionSettings2D& settings, std::span<const CollisionBody2D> obstacles) {
+    if (auto valid = ValidateMotionSettings2D(settings); !valid) return valid.GetError();
+    if (!Finite(state.position) || !Finite(state.lastMove) || !std::isfinite(state.facingRadians) ||
+        std::abs(state.facingRadians) > kPi || state.floorLevel != settings.body.floorLevel ||
+        !Finite(movement))
+        return Error{"2D character state/input must be finite and match the authored floor", 1};
+    movement.x = std::clamp(movement.x, -1.0f, 1.0f);
+    movement.y = std::clamp(movement.y, -1.0f, 1.0f);
+    const float length = std::hypot(movement.x, movement.y);
+    if (length > 1) movement = movement / length;
+    auto body = settings.body;
+    body.pos = state.position + settings.offset;
+    auto moved = MoveAndSlide2D(body, obstacles, movement * settings.speed, dt, settings.maxSlideIters);
+    if (!moved) return moved.GetError();
+    const auto origin = moved.Value().position - settings.offset;
+    if (!Finite(origin)) return Error{"2D character origin is outside float bounds", 1};
+    state.position = origin;
+    state.lastMove = moved.Value().lastMove;
+    state.onWall = moved.Value().hitWall;
+    if (length > 0) state.facingRadians = std::atan2(movement.x, movement.y);
+    return {};
+}
+
 Expected<MotionResult2D, Error> MoveAndSlide2D(
     const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles,
     Vec2 velocity, float dt, int maxSlideIters) {

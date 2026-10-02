@@ -1,4 +1,4 @@
-// mye/net/NetServer.h — 최소 권위 서버(UDP) (docs/mmorpg/02, M9)
+// mye/net/NetServer.h — UDP 권위 서버와 인증된 2D/XYZ 고정 틱 이동
 //
 // 클라 접속을 수락하고 클라별 엔티티를 서버권위로 시뮬(입력 적용)한 뒤, 매 tick 스냅샷을 전원에게
 // 브로드캐스트한다. 이동은 서버가 계산 → 클라는 결과만 본다(스피드핵 방지의 기본). 순수 UDP 로직.
@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -41,6 +42,7 @@ public:
     void Receive();          // 소켓 드레인 + Connect/Input/Disconnect 처리
     void Tick(float dt);     // 서버 시뮬: 클라 입력을 각 엔티티에 적용
     void Broadcast();        // 스냅샷을 전 클라에 송신
+    void DisconnectClient(uint32_t netId); // Server policy rejection after network authentication.
 
     // ---- 조회(테스트/디버그) ----
     size_t ClientCount() const { return m_clients.size(); }
@@ -57,12 +59,18 @@ public:
         uint64_t sceneHash,Admission3D admission);
     bool GetEntity3D(uint32_t id,phys::MotionState3D& state) const;
     bool Is3D() const { return m_physics3D!=nullptr; }
+    using Admission2D = std::function<Expected<phys::MotionState2D, Error>(uint32_t, uint64_t, uint64_t)>;
+    Expected<void, Error> Configure2D(std::span<const phys::CollisionBody2D> colliders,
+        const phys::MotionSettings2D& settings, uint64_t sceneHash, Admission2D admission);
+    bool GetEntity2D(uint32_t id, phys::MotionState2D& state) const;
+    bool Is2D() const { return m_settings2D.has_value(); }
 
 private:
     struct Client {
         uint64_t token=0, characterId=0, nonce=0;
         phys::MotionState3D state;
-        std::deque<Input3D> inputs;
+        phys::MotionState2D state2D;
+        std::deque<MovementInput> inputs;
         uint32_t receivedSeq=0, idleTicks=0;
         Endpoint ep;
         uint32_t id = 0;
@@ -73,7 +81,7 @@ private:
         uint32_t violations = 0;       // 안티치트 위반 누적(범위초과 입력)
     };
     Client* Find(const Endpoint& ep);
-    void Receive3D(MsgType type,BitReader& reader,size_t bytes,const Endpoint& from);
+    void ReceiveAuthenticated(MsgType type,BitReader& reader,size_t bytes,const Endpoint& from);
     void KickIndex(size_t i);          // 인덱스 클라 제거(+ Disconnect 회신)
 
     UdpSocket           m_sock;
@@ -83,6 +91,9 @@ private:
     phys::MotionSettings3D m_settings3D;
     uint64_t m_sceneHash=0;
     Admission3D m_admission3D;
+    std::span<const phys::CollisionBody2D> m_colliders2D; // Non-owning; scene data outlives configuration.
+    std::optional<phys::MotionSettings2D> m_settings2D;
+    Admission2D m_admission2D;
     uint32_t            m_nextId = 1;
     uint32_t            m_tick = 0;
     float               m_speed = 6.0f;

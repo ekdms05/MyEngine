@@ -17,6 +17,18 @@ MYE_TEST(CharacterRejectsMalformedPositionAndInventoryWithoutReplacingState) {
     if (!root) return;
     MYE_EXPECT(!store.LoadJson(root.Value()));
     MYE_EXPECT(store.FindByName("Kept") != nullptr);
+    for (const auto floor : {"-1", "8", "1.5", "\"1\""}) {
+        root = json::Parse(std::string(R"({"nextId":2,"characters":[{"id":1,"accountId":1,"name":"Replaced","floorLevel":)") + floor + "}]}");
+        MYE_EXPECT(root);
+        if (!root) return;
+        MYE_EXPECT(!store.LoadJson(root.Value()));
+        MYE_EXPECT(store.FindByName("Kept") != nullptr);
+    }
+    auto invalid = *store.FindByName("Kept"); invalid.floorLevel = 8;
+    MYE_EXPECT(!store.Upsert(invalid) && store.FindByName("Kept")->floorLevel == 0);
+    const auto oldJson = json::Parse(R"({"nextId":2,"characters":[{"id":1,"accountId":1,"name":"Old"}]})");
+    CharacterStore oldRecord;
+    MYE_EXPECT(oldJson && oldRecord.LoadJson(oldJson.Value()) && oldRecord.Get(1)->floorLevel == 0);
     root = json::Parse(R"({"nextId":2,"characters":[{"id":1,"accountId":1,"name":"Replaced","items":"invalid"}]})");
     MYE_EXPECT(root);
     if (!root) return;
@@ -91,6 +103,7 @@ MYE_TEST(CharacterPersistRoundtrip) {
         CharacterRecord* c = store.GetMutable(erisId);
         c->sceneId = "dungeon_03";
         c->posX = 42.0f; c->posY = 7.5f;
+        c->floorLevel = 7;
         c->level = 30; c->xp = 123456;
         c->intellect = 40; c->hp = 500; c->mp = 300; c->gold = 250000;
         c->items = {{10, 99}, {11, 1}, {12, 3}};
@@ -107,6 +120,7 @@ MYE_TEST(CharacterPersistRoundtrip) {
         MYE_EXPECT(c->name == "Eris" && c->accountId == 5);
         MYE_EXPECT(c->sceneId == "dungeon_03");
         MYE_EXPECT(c->posX == 42.0f && c->posY == 7.5f);
+        MYE_EXPECT(c->floorLevel == 7);
         MYE_EXPECT(c->level == 30 && c->xp == 123456);
         MYE_EXPECT(c->intellect == 40 && c->hp == 500 && c->mp == 300);
         MYE_EXPECT(c->gold == 250000);

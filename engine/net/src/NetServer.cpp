@@ -30,8 +30,8 @@ void NetServer::Receive() {
         BitReader r(buf, static_cast<size_t>(n));
         MsgType type;
         if (!ReadHeader(r, type)) continue;
-        if (m_physics3D) {
-            Receive3D(type, r, static_cast<size_t>(n), from);
+        if (m_physics3D || Is2D()) {
+            ReceiveAuthenticated(type, r, static_cast<size_t>(n), from);
             continue;
         }
 
@@ -105,14 +105,16 @@ void NetServer::Receive() {
 }
 
 void NetServer::Tick(float dt) {
-    if (m_physics3D) {
+    if (m_physics3D || Is2D()) {
         if (!std::isfinite(dt) || std::abs(dt - kFixedDelta3D) > 1e-6f) return;
         for (size_t i = m_clients.size(); i-- > 0;) {
             auto& c = m_clients[i];
-            Input3D input;
+            MovementInput input;
             if (!c.inputs.empty()) input = c.inputs.front();
-            auto moved = m_physics3D->Step(c.state, input.movement, input.jump, dt, m_settings3D);
-            if (!moved || !ValidState3D(c.state) || ++c.idleTicks > 300) {
+            auto moved = Is2D() ? phys::StepMotion2D(c.state2D, input.movement, dt, *m_settings2D, m_colliders2D)
+                               : m_physics3D->Step(c.state, input.movement, input.jump, dt, m_settings3D);
+            if (!moved || (Is2D() ? !ValidState2D(c.state2D) : !ValidState3D(c.state)) || ++c.idleTicks > 300) {
+                if (!moved) MYE_LOG_WARN("Net", "Motion failed for client {}: {}", c.id, moved.GetError().message);
                 KickIndex(i);
                 continue;
             }
@@ -146,8 +148,8 @@ void NetServer::Tick(float dt) {
 void NetServer::KickIndex(size_t i) {
     if (i >= m_clients.size()) return;
     BitWriter w;
-    WriteHeader(w, m_physics3D ? MsgType::Disconnect3D : MsgType::Disconnect);
-    if (m_physics3D) {
+    WriteHeader(w, Is2D() ? MsgType::Disconnect2D : m_physics3D ? MsgType::Disconnect3D : MsgType::Disconnect);
+    if (m_physics3D || Is2D()) {
         WriteU64(w, m_clients[i].token);
         WriteU64(w, m_clients[i].nonce);
     }
@@ -155,6 +157,10 @@ void NetServer::KickIndex(size_t i) {
     m_sock.SendTo(m_clients[i].ep, bytes.data(), bytes.size());
     m_clients.erase(m_clients.begin() + static_cast<std::ptrdiff_t>(i));
     ++m_kicked;
+}
+void NetServer::DisconnectClient(uint32_t netId) {
+    for (size_t i = 0; i < m_clients.size(); ++i)
+        if (m_clients[i].id == netId) { KickIndex(i); return; }
 }
 
 uint32_t NetServer::ViolationsOf(uint32_t netId) const {
@@ -164,17 +170,18 @@ uint32_t NetServer::ViolationsOf(uint32_t netId) const {
 }
 
 void NetServer::Broadcast() {
-    if (m_physics3D) {
+    if (m_physics3D || Is2D()) {
         for (const auto& recipient : m_clients) {
             BitWriter w;
-            WriteHeader(w, MsgType::Snapshot3D);
+            WriteHeader(w, Is2D() ? MsgType::Snapshot2D : MsgType::Snapshot3D);
             WriteU64(w, recipient.token);
             w.WriteBits(m_tick, 32);
             w.WriteBits(static_cast<uint32_t>(m_clients.size()), 8);
             for (const auto& c : m_clients) {
                 w.WriteBits(c.id, 32);
                 w.WriteBits(c.lastInputSeq, 32);
-                WriteState3D(w, c.state);
+                if (Is2D()) WriteState2D(w, c.state2D);
+                else WriteState3D(w, c.state);
             }
             const auto& bytes = w.Finish();
             if (bytes.size() <= 1400) m_sock.SendTo(recipient.ep, bytes.data(), bytes.size());
@@ -223,12 +230,35 @@ Expected<void, Error> NetServer::Configure3D(const phys::PhysicsWorld3D& physics
         return Error{"Configure 3D before starting with a scene hash and admission callback", 1};
     if (auto valid = phys::ValidateMotionSettings3D(settings); !valid) return valid.GetError();
     m_physics3D = &physics;
+    m_settings2D.reset();
+    m_admission2D = {};
     m_settings3D = settings;
     m_sceneHash = hash;
     m_admission3D = std::move(admission);
     return {};
 }
+Expected<void, Error> NetServer::Configure2D(std::span<const phys::CollisionBody2D> colliders,
+    const phys::MotionSettings2D& settings, uint64_t hash, Admission2D admission) {
+    if (IsRunning() || !admission || hash == 0)
+        return Error{"Configure 2D before starting with a scene hash and admission callback", 1};
+    if (auto valid = phys::ValidateMotionSettings2D(settings); !valid) return valid.GetError();
+    if (auto valid = phys::ValidateCollisionBodies2D(colliders); !valid) return valid.GetError();
+    m_settings2D = settings;
+    m_colliders2D = colliders;
+    m_physics3D = nullptr;
+    m_admission3D = {};
+    m_sceneHash = hash;
+    m_admission2D = std::move(admission);
+    return {};
+}
+bool NetServer::GetEntity2D(uint32_t id, phys::MotionState2D& state) const {
+    if (!Is2D()) return false;
+    for (const auto& c : m_clients)
+        if (c.id == id) { state = c.state2D; return true; }
+    return false;
+}
 bool NetServer::GetEntity3D(uint32_t id, phys::MotionState3D& state) const {
+    if (!Is3D()) return false;
     for (const auto& c : m_clients)
         if (c.id == id) {
             state = c.state;
@@ -236,8 +266,10 @@ bool NetServer::GetEntity3D(uint32_t id, phys::MotionState3D& state) const {
         }
     return false;
 }
-void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoint& from) {
-    if (type == MsgType::Connect3D) {
+void NetServer::ReceiveAuthenticated(MsgType type, BitReader& r, size_t size, const Endpoint& from) {
+    const auto connectType = Is2D() ? MsgType::Connect2D : MsgType::Connect3D;
+    const auto disconnectType = Is2D() ? MsgType::Disconnect2D : MsgType::Disconnect3D;
+    if (type == connectType) {
         std::string user, pass;
         if (!ReadConnect(r, user, pass)) return;
         const auto hash = ReadU64(r), character = ReadU64(r), nonce = ReadU64(r);
@@ -245,7 +277,7 @@ void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoin
         const auto reject = [&] {
             ++m_rejected;
             BitWriter w;
-            WriteHeader(w, MsgType::Disconnect3D);
+            WriteHeader(w, disconnectType);
             WriteU64(w, 0);
             WriteU64(w, nonce);
             const auto& bytes = w.Finish();
@@ -257,7 +289,7 @@ void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoin
         }
         auto* c = Find(from);
         if (!c) {
-            if (m_clients.size() >= kMaxSnapshotEntities3D) {
+            if (m_clients.size() >= (Is2D() ? kMaxSnapshotEntities2D : kMaxSnapshotEntities3D) || !m_nextId) {
                 reject();
                 return;
             }
@@ -278,13 +310,24 @@ void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoin
                 reject();
                 return;
             }
-            auto admitted = m_admission3D(candidate.id, account, character);
-            if (!admitted) {
-                MYE_LOG_WARN("Net", "3D admission rejected: {}", admitted.GetError().message);
-                reject();
-                return;
+            if (Is2D()) {
+                auto admitted = m_admission2D(candidate.id, account, character);
+                if (!admitted || !ValidState2D(admitted.Value()) ||
+                    admitted.Value().floorLevel != m_settings2D->body.floorLevel) {
+                    if (!admitted) MYE_LOG_WARN("Net", "2D admission rejected: {}", admitted.GetError().message);
+                    reject();
+                    return;
+                }
+                candidate.state2D = admitted.Value();
+            } else {
+                auto admitted = m_admission3D(candidate.id, account, character);
+                if (!admitted) {
+                    MYE_LOG_WARN("Net", "3D admission rejected: {}", admitted.GetError().message);
+                    reject();
+                    return;
+                }
+                candidate.state = admitted.Value();
             }
-            candidate.state = admitted.Value();
             m_clients.push_back(std::move(candidate));
             c = &m_clients.back();
         } else if (c->characterId != character || c->nonce != nonce || m_auth(user, pass) != c->accountId) {
@@ -292,7 +335,7 @@ void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoin
             return;
         }
         BitWriter w;
-        WriteHeader(w, MsgType::Accept3D);
+        WriteHeader(w, Is2D() ? MsgType::Accept2D : MsgType::Accept3D);
         w.WriteBits(c->id, 32);
         WriteU64(w, c->token);
         WriteU64(w, c->nonce);
@@ -301,9 +344,9 @@ void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoin
         return;
     }
     auto* c = Find(from);
-    if (!c || (type != MsgType::Input3D && type != MsgType::Disconnect3D)) return;
+    if (!c || (type != (Is2D() ? MsgType::Input2D : MsgType::Input3D) && type != disconnectType)) return;
     if (ReadU64(r) != c->token || !r.Ok()) return;
-    if (type == MsgType::Disconnect3D) {
+    if (type == disconnectType) {
         const auto nonce = ReadU64(r);
         if (nonce == c->nonce && PacketComplete(r, size))
             m_clients.erase(m_clients.begin() + (c - m_clients.data()));
@@ -311,11 +354,11 @@ void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoin
     }
     const auto count = r.ReadBits(8);
     if (count == 0 || count > 8) return;
-    std::vector<Input3D> batch;
+    std::vector<MovementInput> batch;
     batch.reserve(count);
     for (unsigned i = 0; i < count; ++i) {
-        Input3D input;
-        if (!ReadInput3D(r, input)) return;
+        MovementInput input;
+        if (!ReadMovementInput(r, input) || (Is2D() && input.jump)) return;
         batch.push_back(input);
     }
     if (!PacketComplete(r, size)) return;

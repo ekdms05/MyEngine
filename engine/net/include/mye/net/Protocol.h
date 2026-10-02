@@ -1,12 +1,13 @@
-// mye/net/Protocol.h — 클라이언트↔서버 메시지 프로토콜 (docs/mmorpg/02, M9)
+// mye/net/Protocol.h — legacy XY와 인증된 2D/XYZ 메시지 프로토콜
 //
 // UDP 패킷 위에 얹는 최소 메시지 집합: 접속·수락·입력·스냅샷·해제. BitStream+양자화로 인코딩.
-// 스냅샷은 엔티티 위치를 유계 좌표계에서 16비트로 압축. 서버권위 전제.
+// legacy XY 위치는 16비트 양자화, 인증된 2D/XYZ 상태는 float32. 서버권위 전제.
 #pragma once
 
 #include "mye/net/BitStream.h"
 #include "mye/net/Quantization.h"
 #include "mye/phys/PhysicsWorld3D.h"
+#include "mye/phys/Motion2D.h"
 #include <bit>
 
 #include <cstdint>
@@ -37,6 +38,11 @@ enum class MsgType : uint8_t {
     Input3D = 8,
     Snapshot3D = 9,
     Disconnect3D = 10,
+    Connect2D = 11,
+    Accept2D = 12,
+    Input2D = 13,
+    Snapshot2D = 14,
+    Disconnect2D = 15,
 };
 
 // 복제 엔티티 상태(스냅샷 원소). lastInputSeq 는 소유 클라의 마지막 처리 입력(재조정용).
@@ -50,7 +56,7 @@ struct EntitySnap {
 // ---- 헤더(모든 패킷 공통) ----
 inline void WriteHeader(BitWriter& w, MsgType type) {
     w.WriteBits(kProtocolId, 32);
-    w.WriteBits(type >= MsgType::Connect3D ? 2 : kProtocolVersion, 16);
+    w.WriteBits(type >= MsgType::Connect2D ? 3 : type >= MsgType::Connect3D ? 2 : kProtocolVersion, 16);
     w.WriteBits(static_cast<uint32_t>(type), 8);
 }
 // 헤더 검증 + 타입 반환. 실패 시 false.
@@ -58,7 +64,8 @@ inline bool ReadHeader(BitReader& r, MsgType& outType) {
     const uint32_t proto = r.ReadBits(32);
     const uint32_t version = r.ReadBits(16);
     const uint32_t t = r.ReadBits(8);
-    if (!r.Ok() || proto != kProtocolId || t < 1 || t > 10 || version != (t >= 6 ? 2u : kProtocolVersion))
+    if (!r.Ok() || proto != kProtocolId || t < 1 || t > 15 ||
+        version != (t >= 11 ? 3u : t >= 6 ? 2u : kProtocolVersion))
         return false;
     outType = static_cast<MsgType>(t);
     return true;
@@ -122,7 +129,9 @@ inline void NormalizeMove(float& x, float& y) {
 
 inline constexpr size_t kMaxSnapshotEntities3D = 24;
 inline constexpr float kFixedDelta3D = 1.0f / 60;
-struct Input3D {
+inline constexpr size_t kMaxSnapshotEntities2D = 40; // Complete float snapshots stay below 1400 bytes.
+inline constexpr float kFixedDelta2D = kFixedDelta3D;
+struct MovementInput {
     uint32_t seq = 0;
     Vec2 movement{};
     bool jump = false;
@@ -130,6 +139,10 @@ struct Input3D {
 struct EntitySnap3D {
     uint32_t netId = 0, ack = 0;
     phys::MotionState3D state;
+};
+struct EntitySnap2D {
+    uint32_t netId = 0, ack = 0;
+    phys::MotionState2D state;
 };
 inline bool PacketComplete(BitReader& r, size_t bytes) {
     const size_t remaining = bytes * 8 - r.BitsRead();
@@ -149,6 +162,26 @@ inline uint64_t ReadU64(BitReader& r) {
 }
 inline float ReadFloat(BitReader& r) {
     return std::bit_cast<float>(r.ReadBits(32));
+}
+inline bool ValidState2D(const phys::MotionState2D& s) {
+    return std::isfinite(s.position.x) && std::isfinite(s.position.y) &&
+           std::abs(s.position.x) <= 100000 && std::abs(s.position.y) <= 100000 &&
+           std::isfinite(s.lastMove.x) && std::isfinite(s.lastMove.y) && s.lastMove.Length() <= 2 &&
+           std::isfinite(s.facingRadians) && std::abs(s.facingRadians) <= kPi &&
+           s.floorLevel >= 0 && s.floorLevel < 8;
+}
+inline void WriteState2D(BitWriter& w, const phys::MotionState2D& s) {
+    for (const auto v : {s.position, s.lastMove}) { WriteFloat(w, v.x); WriteFloat(w, v.y); }
+    WriteFloat(w, s.facingRadians);
+    w.WriteBits(static_cast<uint32_t>(s.floorLevel), 3);
+    w.WriteBits(s.onWall, 1);
+}
+inline bool ReadState2D(BitReader& r, phys::MotionState2D& s) {
+    for (auto* v : {&s.position, &s.lastMove}) { v->x = ReadFloat(r); v->y = ReadFloat(r); }
+    s.facingRadians = ReadFloat(r);
+    s.floorLevel = static_cast<int8_t>(r.ReadBits(3));
+    s.onWall = r.ReadBits(1) != 0;
+    return r.Ok() && ValidState2D(s);
 }
 inline void WriteState3D(BitWriter& w, const phys::MotionState3D& s) {
     for (auto v : {s.position, s.velocity, s.floorNormal}) {
@@ -182,13 +215,13 @@ inline bool ReadState3D(BitReader& r, phys::MotionState3D& s) {
     s.onCeiling = r.ReadBits(1) != 0;
     return r.Ok() && ValidState3D(s);
 }
-inline void WriteInput3D(BitWriter& w, const Input3D& input) {
+inline void WriteMovementInput(BitWriter& w, const MovementInput& input) {
     w.WriteBits(input.seq, 32);
     WriteFloat(w, input.movement.x);
     WriteFloat(w, input.movement.y);
     w.WriteBits(input.jump, 1);
 }
-inline bool ReadInput3D(BitReader& r, Input3D& input) {
+inline bool ReadMovementInput(BitReader& r, MovementInput& input) {
     input.seq = r.ReadBits(32);
     input.movement.x = ReadFloat(r);
     input.movement.y = ReadFloat(r);

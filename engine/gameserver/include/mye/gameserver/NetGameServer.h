@@ -25,6 +25,8 @@ public:
     void SetMoveSpeed(float s) { m_speed = s; m_net.SetMoveSpeed(s); }
     Expected<void,Error> Configure3D(const phys::PhysicsWorld3D& physics,const phys::MotionSettings3D& settings,
         uint64_t sceneHash,std::string sceneId,Vec3 spawn);
+    Expected<void, Error> Configure2D(std::span<const phys::CollisionBody2D> colliders,
+        const phys::MotionSettings2D& settings, uint64_t sceneHash, std::string sceneId, Vec2 spawn);
 
     // 한 서버 틱: 수신 → 세션 diff → 시뮬 → 위치 동기 → 브로드캐스트.
     void Tick(float dt);

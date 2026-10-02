@@ -5,10 +5,13 @@
 #include "mye/editor/Command.h"
 #include "mye/editor/EditorContext.h"
 #include "mye/runtime/ObjectSystem.h"
+#include "mye/runtime/OnlineScene.h"
 #include "mye/scene/SceneSerializer.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
 #include "mye/phys/Collision.h"
+#include "mye/phys/PhysicsWorld2D.h"
+#include "mye/phys/PhysicsComponents3D.h"
 #include "mye/ecs/World.h"
 #include "mye/core/JsonFile.h"
 #include "mye/ser/JsonArchive.h"
@@ -36,6 +39,149 @@ ecs::Entity Player(ecs::World& world) {
 std::filesystem::path FreshObjectRoot() {
     return Utf8Path(MYE_TEST_DATA_DIR) / "object-workflow" / std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
 }
+std::filesystem::path OnlineProject(ecs::World& world) {
+    const auto root = FreshObjectRoot();
+    std::filesystem::create_directories(root / "assets/scenes");
+    MYE_EXPECT(WriteJsonFile(root / "project.myeproj", json::Value::Object{
+        {"version", int64_t{1}}, {"name", std::string("Online fixture")},
+        {"mainScene", std::string("assets/scenes/main.scene")}}));
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/main.scene")));
+    return root;
+}
+}
+
+MYE_TEST(OnlineScene2DUsesSharedCentersFloorsAndValidatedSpawns) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World();
+    const auto player = Player(world);
+    world.TryGet<phys::Collider2D>(player)->shape = phys::Shape2D::MakeCircle(.2f);
+    world.TryGet<phys::Collider2D>(player)->offset = {.05f, .1f};
+    world.Add<scene::FloorLevel>(player).level = 1;
+    const auto parent = Object(world, "Parent", {2, 0});
+    const auto wall = Object(world, "Wall", {.3f, .4f});
+    auto& collider = world.Add<phys::Collider2D>(wall);
+    collider.shape = phys::Shape2D::MakeBox(.005f, 10);
+    collider.offset = {.1f, .2f};
+    scene::ApplyReparent(world, wall, parent, false);
+    world.Add<scene::FloorLevel>(wall).level = 1;
+    const auto upper = Object(world, "Upper floor");
+    world.Add<phys::Collider2D>(upper);
+    world.Add<scene::FloorLevel>(upper).level = 2;
+    const auto trigger = Object(world, "Trigger");
+    world.Add<phys::Collider2D>(trigger).isTrigger = true;
+    world.Add<scene::FloorLevel>(trigger).level = 1;
+    scene::UpdateWorldTransforms(world);
+    const auto root = OnlineProject(world);
+    const auto project = Utf8String(root / "project.myeproj");
+    auto loaded = runtime::LoadOnlineScene2D(project);
+    MYE_EXPECT(loaded);
+    if (!loaded) return;
+    const auto& online = loaded.Value();
+    MYE_EXPECT(online.colliders.size() == 3 && online.hash != 0);
+    MYE_EXPECT(online.character.shape.kind == phys::ShapeKind::Circle);
+    MYE_EXPECT(online.character.floorMask == phys::FloorBit(1));
+    MYE_EXPECT_NEAR(online.character.pos.x, .05f, .00001f);
+    MYE_EXPECT_NEAR(online.character.pos.y, .1f, .00001f);
+    MYE_EXPECT_NEAR(online.spawn.x, 0, .00001f);
+    MYE_EXPECT_NEAR(online.offset.y, .1f, .00001f);
+    MYE_EXPECT_NEAR(online.speed, 2, .00001f);
+    const auto alias = runtime::LoadOnlineScene2D(project, "assets/scenes/../scenes/main.scene");
+    MYE_EXPECT(alias && alias.Value().sceneId == online.sceneId && alias.Value().hash == online.hash);
+    const auto moved = phys::MoveAndSlide2D(online.character, online.colliders, {30, 0}, .1f, online.maxSlideIters);
+    MYE_EXPECT(moved);
+    if (!moved) return;
+    MYE_EXPECT_NEAR(moved.Value().position.x - online.offset.x, 2.145f, .00001f);
+    world.TryGet<phys::KinematicBody2D>(player)->velocity = {30, 0};
+    MYE_EXPECT(phys::PhysicsWorld2D{}.Step(world, nullptr, .1f));
+    MYE_EXPECT_NEAR(world.TryGet<scene::LocalTransform>(player)->position.x,
+                    moved.Value().position.x - online.offset.x, .00001f);
+    auto saved = online.character;
+    saved.pos = {2.4f, .6f};
+    MYE_EXPECT(!phys::ValidateSpawn2D(saved, online.colliders));
+    MYE_EXPECT_NEAR(saved.pos.x, 2.4f, .00001f); // Invalid stored positions are never repaired.
+    saved.pos = {.05f, .1f};
+    MYE_EXPECT(phys::ValidateSpawn2D(saved, online.colliders));
+    MYE_EXPECT(runtime::LoadOnlineScene2D(Utf8String(Utf8Path(MYE_STARTER_SOURCE_DIR) / "project.myeproj")));
+}
+
+MYE_TEST(OnlineScene2DRefusesInvalidPrototypesAndPreservesSceneFiles) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World();
+    const auto player = Player(world);
+    const auto root = OnlineProject(world);
+    const auto project = Utf8String(root / "project.myeproj");
+    const auto sceneFile = root / "assets/scenes/main.scene";
+    const auto verify = [&] {
+        MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(sceneFile)));
+        const auto before = ReadJsonFile(sceneFile);
+        MYE_EXPECT(before);
+        MYE_EXPECT(!runtime::LoadOnlineScene2D(project));
+        const auto after = ReadJsonFile(sceneFile);
+        MYE_EXPECT(after);
+        if (before && after) MYE_EXPECT(json::Stringify(before.Value()) == json::Stringify(after.Value()));
+    };
+    world.TryGet<runtime::CharacterController2D>(player)->enabled = false;
+    verify();
+    world.TryGet<runtime::CharacterController2D>(player)->enabled = true;
+    world.TryGet<phys::Collider2D>(player)->isTrigger = true;
+    verify();
+    world.TryGet<phys::Collider2D>(player)->isTrigger = false;
+    const auto duplicate = Player(world);
+    world.TryGet<scene::ObjectName>(duplicate)->value = "Second player";
+    verify();
+    world.Destroy(duplicate);
+    const auto moving = Object(world, "Unsupported mover", {4, 0});
+    world.Add<phys::Collider2D>(moving);
+    world.Add<phys::KinematicBody2D>(moving);
+    verify();
+    world.Destroy(moving);
+    const auto wall = Object(world, "Blocking spawn");
+    world.Add<phys::Collider2D>(wall);
+    verify();
+    world.Destroy(wall);
+    world.Add<scene::FloorLevel>(player).level = 8;
+    verify();
+}
+
+MYE_TEST(OnlineScenePathBoundsAndExisting3DLoad) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World();
+    const auto player = Object(world, "Player");
+    world.Add<phys::Collider3D>(player).offset = {0, .8f, 0};
+    world.TryGet<phys::Collider3D>(player)->half = {.3f, .8f, .3f};
+    world.Add<phys::KinematicBody3D>(player);
+    world.Add<runtime::CharacterController3D>(player);
+    const auto root = OnlineProject(world);
+    const auto project = Utf8String(root / "project.myeproj");
+    MYE_EXPECT(runtime::LoadOnlineScene3D(project));
+    const auto previousDirectory = std::filesystem::current_path();
+    std::filesystem::current_path(root);
+    const auto relativeProject = runtime::LoadOnlineScene3D("project.myeproj");
+    std::filesystem::current_path(previousDirectory);
+    MYE_EXPECT(relativeProject);
+    MYE_EXPECT(!runtime::LoadOnlineScene2D(project));
+    for (auto path : {"../outside.scene", "assets/scenes/missing.scene", "assets/scenes/main.txt"}) {
+        MYE_EXPECT(!runtime::LoadOnlineScene2D(project, path));
+        MYE_EXPECT(!runtime::LoadOnlineScene3D(project, path));
+    }
+    const auto absolute = Utf8String(root / "assets/scenes/main.scene");
+    MYE_EXPECT(!runtime::LoadOnlineScene2D(project, absolute));
+    MYE_EXPECT(!runtime::LoadOnlineScene3D(project, absolute));
+    std::string nul = "assets/scenes/main.scene";
+    nul.push_back('\0'); nul += "outside";
+    MYE_EXPECT(!runtime::LoadOnlineScene3D(project, nul));
+    MYE_EXPECT(!runtime::LoadOnlineScene2D(project, nul));
+    const std::string invalidUtf8 = "assets/scenes/" + std::string(1, static_cast<char>(0xFF)) + ".scene";
+    MYE_EXPECT(!runtime::LoadOnlineScene3D(project, invalidUtf8));
+    MYE_EXPECT(!runtime::LoadOnlineScene2D(project, invalidUtf8));
+    const auto invalidProject = project + std::string(1, static_cast<char>(0xFF)) + ".myeproj";
+    MYE_EXPECT(!runtime::LoadOnlineScene3D(invalidProject));
+    MYE_EXPECT(!runtime::LoadOnlineScene2D(invalidProject));
+    MYE_EXPECT(WriteJsonFile(root / "project.myeproj", json::Value::Object{
+        {"version", int64_t{99}}, {"name", std::string("Unsupported")},
+        {"mainScene", std::string("assets/scenes/main.scene")}}));
+    MYE_EXPECT(!runtime::LoadOnlineScene3D(project));
+    MYE_EXPECT(!runtime::LoadOnlineScene2D(project));
 }
 
 MYE_TEST(ObjectControlsCollisionTriggerAndLuaInteraction) {

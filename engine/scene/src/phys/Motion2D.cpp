@@ -64,6 +64,14 @@ Expected<void, Error> ValidateCollisionBodies2D(std::span<const CollisionBody2D>
     return {};
 }
 
+Expected<void, Error> ValidateSpawn2D(
+    const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles) {
+    auto cast = CastMotion2D(body, obstacles, {});
+    if (!cast) return cast.GetError();
+    if (cast.Value()) return Error{"2D spawn overlaps a blocking collider", 1};
+    return {};
+}
+
 Expected<MotionResult2D, Error> MoveAndSlide2D(
     const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles,
     Vec2 velocity, float dt, int maxSlideIters) {

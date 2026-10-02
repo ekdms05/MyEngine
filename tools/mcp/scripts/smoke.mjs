@@ -197,6 +197,8 @@ async function main() {
   check("engine_reference — 2D 목표와 앱 연결 완료 조건", roadmap.result?.isError !== true && firstText(roadmap.result).includes("22-2d-mmorpg-roadmap.md") && firstText(roadmap.result).includes("두 계정"));
   const motion = await request("tools/call", { name: "engine_reference", arguments: { topic: "scene", search: "MoveAndSlide2D" } });
   check("engine_reference — 연속 2D 계산과 실제 오류 전달 경로", motion.result?.isError !== true && firstText(motion.result).includes("MotionResult2D") && firstText(motion.result).includes("CastMotion2D") && firstText(motion.result).includes("ObjectSystem::Tick") && !firstText(motion.result).includes("PhysicsSystem.h"));
+  const scene2D = await request("tools/call", { name: "engine_reference", arguments: { topic: "scene", search: "LoadOnlineScene2D" } });
+  check("engine_reference — 2D 로더의 검증된 계약과 공유 추출", scene2D.result?.isError !== true && firstText(scene2D.result).includes("GatherCollisionBodies2D") && firstText(scene2D.result).includes("SceneSerializer"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

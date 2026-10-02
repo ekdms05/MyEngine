@@ -40,6 +40,14 @@
 
 [Pathfinding](../engine/scene/include/mye/nav/Pathfinding.h)은 그리드·층을 고려한 A*와 비동기 경로 요청을 제공한다. 모든 NPC·컷신이 이를 자동 사용하지 않는다. 컷신의 현재 이동과 NPC 경로 추종은 각 소비자의 호출을 확인한다.
 
+## 온라인 2D 장면 계약 준비
+
+개발 소스의 [LoadOnlineScene2D](../engine/runtime/include/mye/runtime/OnlineScene.h)는 `.myeproj`와 프로젝트 내부 `.scene`을 공용 SceneSerializer/ObjectComponents로 검증한다. 캐릭터의 Collider2D 중심·offset·층/레이어, 속도와 반복 상한, Transform 원점 스폰을 추출하며 캐릭터를 제외한 정적 충돌/트리거를 값 타입으로 보관한다. `GatherCollisionBodies2D`를 로컬 PhysicsWorld2D와 함께 사용하므로 계층 변환·오프셋·FloorLevel의 우선순위가 달라지지 않는다. 그래픽 파일 로딩·Lua 실행·클라이언트가 제공한 충돌 데이터는 이 경로에 포함하지 않는다.
+
+활성 CharacterController2D는 정확히 하나여야 하고, 트리거 캐릭터·추가 KinematicBody2D·3D 물리 컴포넌트는 거부한다. 삽입된 3D 시각 에셋을 삭제하지 않는다. `ValidateSpawn2D`는 지정한 본체 중심의 유한 범위와 실제 막는 형상의 겹침을 공통 캐스트로 검사하며 접촉은 허용하고 잘못된 좌표를 자동으로 밀어내지 않는다. 저장 기록의 소유권·장면/층 동일성과 실제 admission 연결은 후속 작업이다. 두 차원의 장면 로더는 같은 파일 경계에서 버전/name/mainScene, 절대/드라이브/NUL/잘못된 UTF-8 경로와 assets 밖의 canonical 위치를 거부하며 장면 ID를 정규화한다. hash는 파일 내용의 호환 지문이며 인증 증명이 아니다.
+
+이 단계는 장면 로더/물리 데이터 계약의 검증이다. `MyServer --project`·`MyGame --connect`는 아직 기존 XYZ 경로를 사용한다. 2D admission/권위·예측/앱 연결을 검증하기 전에는 온라인 2D 지원으로 설명하지 않는다.
+
 ## 애니메이션·씬 데이터
 
 [AnimationSystem](../engine/scene/include/mye/anim/AnimationSystem.h)·SpriteAnimator·ClipPlayback은 클립·방향 세트·상태·이벤트를 처리한다. 발소리·공격 타이밍 같은 이벤트의 최종 소비자는 게임/오디오/스크립트 시스템이다.

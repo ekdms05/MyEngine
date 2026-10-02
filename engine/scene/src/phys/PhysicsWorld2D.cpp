@@ -46,9 +46,10 @@ bool PhysicsWorld2D::TriggerPairLess(const TriggerPair& a, const TriggerPair& b)
     return a.other.Packed() < b.other.Packed();
 }
 
-void PhysicsWorld2D::GatherColliders(ecs::World& world, std::vector<ColliderInst>& out) const {
+Expected<std::vector<CollisionBody2D>, Error> GatherCollisionBodies2D(ecs::World& world) {
+    std::vector<CollisionBody2D> out;
     world.Query<Collider2D>().Each([&](Entity e, Collider2D& col) {
-        ColliderInst inst;
+        CollisionBody2D inst;
         inst.id = e.Packed();
         inst.shape = col.shape;
         inst.pos = EntityWorldXY(world, e) + col.offset;
@@ -68,6 +69,8 @@ void PhysicsWorld2D::GatherColliders(ecs::World& world, std::vector<ColliderInst
         inst.kinematic = world.Has<KinematicBody2D>(e);
         out.push_back(inst);
     });
+    if (auto valid = ValidateCollisionBodies2D(out); !valid) return valid.GetError();
+    return out;
 }
 
 Expected<void, Error> PhysicsWorld2D::RebuildBroadphase(const std::vector<ColliderInst>& insts) {
@@ -86,9 +89,9 @@ Expected<void, Error> PhysicsWorld2D::RebuildBroadphase(const std::vector<Collid
 Expected<void, Error> PhysicsWorld2D::Step(ecs::World& world, EventBus* worldBus, float dt) {
     if (!std::isfinite(dt) || dt <= 0 || dt > 1)
         return Error{"2D physics dt must be in (0,1]", 1};
-    std::vector<ColliderInst> insts;
-    GatherColliders(world, insts);
-    if (auto valid = ValidateCollisionBodies2D(insts); !valid) return valid.GetError();
+    auto gathered = GatherCollisionBodies2D(world);
+    if (!gathered) return gathered.GetError();
+    auto insts = std::move(gathered.Value());
 
     struct PendingMove { Entity entity; MotionResult2D result; Vec2 origin; };
     std::vector<PendingMove> moves;

@@ -60,6 +60,10 @@ struct ShapeCastHit2D {
 Expected<std::optional<ShapeCastHit2D>, Error> CastMotion2D(
     const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles, Vec2 displacement);
 
+// Accepts contact, but never repairs an invalid authored or persisted spawn position.
+Expected<void, Error> ValidateSpawn2D(
+    const CollisionBody2D& body, std::span<const CollisionBody2D> obstacles);
+
 struct MotionResult2D {
     Vec2 position{}, lastMove{};
     bool hitWall = false;

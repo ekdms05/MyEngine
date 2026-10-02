@@ -207,3 +207,25 @@ MCP의 기존 engine_run에 선택 ticks 입력을 추가했다. MyGame/MyServer
 API 정본 03·08·13·14·20·22, README/MCP 안내와 로컬 개발·게임 제작·릴리즈 스킬의 영향받은 설명을 갱신했다. 기존 guide 생성기를 실행하면 수동 보완한 XYZ anchor/online 링크까지 바뀌는 것을 확인하여 그 무관한 재생성은 되돌리고 해당 2D 필드 설명만 수정했다. 기존 3D 안내·사용자 씬/에셋/GUID·외부 코드 고지·0.3.0 태그/공개 설치본은 보존했다. 새 의존성/스킬 패키지는 필요하지 않았다.
 
 남은 한계는 정적 축 정렬 상자/원, float 좌표 정밀도, 선형 후보 탐색, 최종 위치에서만 산출하는 트리거 이벤트다. 이동 장애물의 상대 속도/푸시·회전 형상·타일 높이/층 전이·서버/예측 소비·온라인 2D 앱·네이티브 UI/실제 키·마우스·패드 입력·부하 검증은 완료하지 않았다. 다음은 D03의 작성 2D 장면/충돌/캐릭터 설정·저장 스폰 검증, 이어 D04의 인증 입력/ack와 공유 계산 연결, D05의 두 공식 클라이언트/재접속이다. 전체 엔진 목표는 진행 중이며 이번 단위로 새 Release를 발행하지 않는다.
+
+## 2026-10-03 — D03 작성 2D 장면의 공통 로딩 경계
+
+서버가 에디터에서 작성한 충돌·층·속도를 읽어야 로컬과 권위 이동을 같은 규칙으로 계산할 수 있다. `LoadOnlineScene3D`, PhysicsWorld2D의 추출/Step, SceneSerializer, ObjectComponents 검증과 MyServer/MyGame의 호출자를 확인했다. 기존 앱의 프로젝트 온라인 경로는 XYZ이며 legacy XY는 별도의 적분이다. 이번 작업은 새 실행기나 두 번째 씬 파서를 만들지 않고 기존 runtime에 2D 값 추출 경계를 추가한다. **장면 로더를 검증한 진행 단위이며 D03 전체나 온라인 2D 앱 완료가 아니다.**
+
+`LoadOnlineScene2D`는 기존 `.myeproj`·SceneSerializer·ObjectComponents로 임시 World를 읽는다. 정확히 하나의 활성 CharacterController2D와 solid Collider2D/KinematicBody2D를 요구하며, 캐릭터 원형·Transform 원점/offset·층/레이어·속도·slide 반복 상한과 캐릭터를 제외한 정적 충돌/트리거를 값 타입으로 반환한다. 로컬 Step의 기존 추출을 `GatherCollisionBodies2D`로 옮겨 두 소비자가 같은 WorldTransform + offset·FloorLevel 우선순위·불투명 엔티티 ID를 사용한다. 데이터 유효성 검사도 이 공통 함수에 둔다. ECS/렌더 타입을 core-only mye_physics2d에 넣거나 net에서 runtime/UI를 참조하게 만들지 않는다.
+
+추가 kinematic 이동체·3D 물리 콜라이더·겹친 스폰을 거부한다. 서버가 현재 시뮬레이션하지 않는 움직임을 정적으로 받아들이거나 잘못된 좌표를 성공처럼 복구하지 않기 위함이다. 3D 시각 에셋은 허용하며 기존 씬/에셋은 삭제하지 않는다. `ValidateSpawn2D`는 이미 검증한 CastMotion2D의 zero-motion 겹침/필터 경계를 재사용하고 접촉은 허용한다. const 입력을 수정하지 않으며, 저장 위치를 벽 밖으로 조용히 이동시키지 않는다. 이 검사는 물리 배치만 확인한다. 계정 소유권·저장 장면/층 동일성·신규/기존 캐릭터 구분·실제 admission은 후속 소비자에서 검사해야 한다. 로더는 텍스처/메시를 로드하거나 Lua를 실행하지 않는다.
+
+기존 3D 로더의 프로젝트/씬 파싱을 공통 LoadOnlineWorld로 옮겼다. version 1/name/mainScene, `.myeproj`, 프로젝트 상대 `.scene`, canonical assets 경계와 NUL/절대/드라이브 경로를 검사하며 장면 ID를 정규화한다. 단순 `project.myeproj`의 빈 parent는 현재 디렉터리로 해석한다. 내용 hash는 호환 지문이며 클라이언트 데이터의 권위/인증을 증명하지 않는다. 사용자 파일은 읽기만 한다. 통상적인 manifest와 경로는 보존하며 별칭 경로는 같은 canonical ID로 반환한다. 기존 XYZ의 물리 설정/zero-input 스폰 계산은 그대로 사용한다.
+
+잘못된 UTF-8 scene 경로 회귀를 추가한 첫 실행에서 MSVC filesystem 변환의 system_error가 Expected 경계 밖으로 나갔다. 테스트 프로세스가 `Microsoft Visual C++ Runtime Library` 오류 대화상자에서 멈췄으며, 실행 파일/시작 시각/CPU 정지와 ctest 상태를 확인한 뒤 해당 테스트 프로세스만 종료했다. 이 실행은 최종 검사 수가 출력되기 전 중단되어 통과 수로 계산하지 않는다. 공통 로더에서 system_error를 기존 Error로 변환해 두 차원과 project/scene 입력에 적용했다. 예외를 끄거나 호출자별 catch·새 인코딩 라이브러리를 추가하지 않았다. 실패 로그는 로컬 `d03-boundary-before*.log`, 수정 후 결과는 `d03-*-last-test.log`에 보존한다.
+
+기존 ObjectWorkflowTests에 세 시나리오를 추가했다. 부모가 있는 얇은 정적 벽과 offset·층/트리거를 가진 원 캐릭터에서 추출된 값 이동과 실제 PhysicsWorld2D 결과가 같다. 저장 중심의 겹침은 수정 없이 거부하고 안전한 중심과 기본 프로젝트는 읽힌다. 비활성/중복 컨트롤러·트리거 캐릭터·추가 이동체·겹친 스폰·층 8은 파일 보존과 함께 거부한다. 기존 XYZ 씬의 성공, 상대 project 경로, 내부 별칭과 외부/누락/확장자/절대/NUL/잘못된 UTF-8 경로·버전 거부를 검사한다. 기존 검사 프레임워크와 build 하위 새 데이터 경로를 사용했다.
+
+공통 경계가 기존 XYZ 앱에도 쓰이므로 새 build fixture에 기존 테스트 프로젝트를 복사해 실제 Release MyServer/MyGame을 실행했다. 첫 검증에서 stdout의 시작/동적 포트 로그가 fwrite 버퍼에 남아 supervisor가 살아 있는 서버의 준비 상태를 읽지 못했다. MyServer의 기존 시작 로그 직후 표준 `fflush(stdout)` 한 줄을 둔다. 처음 존재하지 않는 Log::Flush API를 호출해 컴파일 오류가 났으며 헤더/ConsoleSink를 확인하고 stdlib 호출로 바로잡았다. 로그 프레임워크 API를 새로 만들지 않는다. 별도로 PowerShell 5의 BOM 없는 스크립트 한글 정규식과 Start-Process 종료 코드 조회는 검증 스크립트 문제였다. ASCII 패턴과 실행 중인 소유 프로세스 Handle 확보로 수정했으며 서버 종료를 성공으로 추정하지 않는다.
+
+최종 실제 XYZ 검사는 인증 스폰, MyGame 30개 고정 틱/exit 0·960×540 캡처와 ERROR 부재, MyServer 300틱/exit 0, 캐릭터의 world3D/정규화 sceneId 저장을 통과했다. 등록·캐릭터·자격증명·저장 데이터는 새 `build/2d-foundation/d03-xyz-*`에만 생성했다. 키/마우스/패드나 온라인 이동 조작을 검증한 것은 아니다. 해당 검사와 세부 로그는 로컬에 유지한다.
+
+최종 기존 build/dev의 Debug/Release 빌드와 순차 CTest가 각각 **563/563** 통과했다. Release foundation은 기존 서버 저장/재시작/손상 거부·60 Hz 120틱(**2.069초**), 실제 Lua Box/Circle 고속 얇은 벽/정확한 4틱·NaN 물리 오류/exit 1·씬 보존·맵/스폰/캡처·버전 거부를 통과했다. MCP build와 smoke **24개**가 통과했다. 기존 9개 도구 중 scene 참조가 공통 로더/추출을 반환하는 한 스모크만 추가했으며 도구/프로토콜은 늘리지 않았다. 최종 빌드 로그에 새 C계열 오류/경고는 없고 diff --check도 통과했다. 실패한 검증 스크립트 로그와 성공 로그를 앱 결함/검사 결함으로 구분해 보존한다.
+
+정본 03·13·14·22와 로컬 개발/게임 제작/릴리즈 세 스킬의 실제 지원 상태를 갱신했다. 새 외부 코드·패키지·스킬 설치는 필요하지 않았다. 사용자 프로젝트·에셋/GUID·Project E 피드백/답변·외부 코드 고지·기존 0.3.0 태그/공개 설치본은 변경하지 않았다. 다음 단위는 D03/D04의 저장 기록 소유권·장면/층 검사와 인증 세션/입력·실제 ack에 공통 2D 계산을 연결하는 것이다. 이어 D05에서 두 공식 MyGame의 이동/충돌·재접속을 확인한다. 최종 엔진 목표는 진행 중이며 아직 새 릴리즈를 발행하지 않는다.

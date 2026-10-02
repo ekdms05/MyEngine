@@ -32,6 +32,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <charconv>
 #include <limits>
@@ -212,6 +213,7 @@ int main(int argc, char** argv) {
     MYE_LOG_INFO("Server", "MyServer 시작 — port {}, tickrate {}Hz, data '{}', 계정 {}명, maint {}",
                  server.Port(), tickrate, dataDir, persistence.Accounts().Count(),
                  config.MaintenanceMode() ? "ON" : "off");
+    std::fflush(stdout); // Supervisors must receive readiness while redirected stdout is still buffered.
 
     // ---- 배회 봇(--bots) — 계정/캐릭터 자동 등록 후 루프백 접속(실제 클라 경로) ----
     std::vector<std::unique_ptr<ServerBot>> bots;

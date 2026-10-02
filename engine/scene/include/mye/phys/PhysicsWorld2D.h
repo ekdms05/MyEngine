@@ -20,6 +20,9 @@ namespace mye::ecs { class World; }
 
 namespace mye::phys {
 
+// WorldTransforms must be current. Uses the same center/offset/floor contract as Step.
+Expected<std::vector<CollisionBody2D>, Error> GatherCollisionBodies2D(ecs::World& world);
+
 class PhysicsWorld2D {
 public:
     explicit PhysicsWorld2D(float cellSize = 1.0f);
@@ -39,7 +42,6 @@ private:
     // 한 콜라이더의 월드 표현(추출 캐시).
     using ColliderInst = CollisionBody2D;
 
-    void GatherColliders(ecs::World& world, std::vector<ColliderInst>& out) const;
     Expected<void, Error> RebuildBroadphase(const std::vector<ColliderInst>& insts);
 
     SpatialHash              m_broadphase;

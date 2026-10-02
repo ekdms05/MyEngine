@@ -1,6 +1,7 @@
 #include "mye/script/bindings/EngineBindings.h"
 #include "mye/script/LuaApi.h"
 #include "mye/core/Input.h"
+#include "mye/core/InputActions.h"
 
 namespace mye::script {
 namespace {
@@ -8,10 +9,41 @@ KeyCode ToKey(lua_Integer key) { return key >= 0 && key < static_cast<int>(KeyCo
 int PadIndex(lua_State* L, int index) { const auto pad = luaL_optinteger(L, index, 0); return pad >= 0 && pad < kMaxGamepads ? static_cast<int>(pad) : -1; }
 bool ValidPad(lua_Integer button) { return button >= 0 && button < static_cast<int>(GamepadButton::Count); }
 void Constant(lua_State* L, const char* name, int value) { lua_pushinteger(L, value); lua_setfield(L, -2, name); }
+std::string_view ActionName(lua_State* L, int index) {
+    luaL_checktype(L, index, LUA_TSTRING);
+    size_t length = 0;
+    const char* name = luaL_checklstring(L, index, &length);
+    luaL_argcheck(L, length > 0 && length <= 64, index, "action name requires 1..64 bytes");
+    return {name, length};
+}
+InputActionState ReadAction(lua_State* L, const InputActions* actions) {
+    const auto name = ActionName(L, 1);
+    return actions ? actions->Action(name) : InputActionState{};
+}
 } // namespace
 void InputBindingModule::Register(lua_State* L) {
     LuaStackGuard stack(L);
     lua_getglobal(L, "mye"); EnsureTable(L, -1, "input");
+    PushFunction(L, [](lua_State* L) -> int {
+        lua_pushboolean(L, ReadAction(L, Context<InputBindingModule>(L)->m_actions).strength > 0); return 1;
+    }, this); lua_setfield(L, -2, "is_action_pressed");
+    PushFunction(L, [](lua_State* L) -> int {
+        lua_pushboolean(L, ReadAction(L, Context<InputBindingModule>(L)->m_actions).pressed); return 1;
+    }, this); lua_setfield(L, -2, "is_action_just_pressed");
+    PushFunction(L, [](lua_State* L) -> int {
+        lua_pushboolean(L, ReadAction(L, Context<InputBindingModule>(L)->m_actions).released); return 1;
+    }, this); lua_setfield(L, -2, "is_action_just_released");
+    PushFunction(L, [](lua_State* L) -> int {
+        lua_pushnumber(L, ReadAction(L, Context<InputBindingModule>(L)->m_actions).strength); return 1;
+    }, this); lua_setfield(L, -2, "get_action_strength");
+    PushFunction(L, [](lua_State* L) -> int {
+        lua_pushnumber(L, ReadAction(L, Context<InputBindingModule>(L)->m_actions).rawStrength); return 1;
+    }, this); lua_setfield(L, -2, "get_action_raw_strength");
+    PushFunction(L, [](lua_State* L) -> int {
+        const auto left = ActionName(L, 1), right = ActionName(L, 2), down = ActionName(L, 3), up = ActionName(L, 4);
+        const auto* actions = Context<InputBindingModule>(L)->m_actions;
+        PushVec2(L, actions ? actions->Vector(left, right, down, up) : Vec2{}); return 1;
+    }, this); lua_setfield(L, -2, "get_vector");
     PushFunction(L, [](lua_State* L) -> int {
         const auto* input = Context<InputBindingModule>(L)->m_input;
         const auto key = ToKey(luaL_checkinteger(L, 1));

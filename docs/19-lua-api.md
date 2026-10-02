@@ -27,7 +27,7 @@ return Object
 
 | 실행 경로 | 등록되는 API |
 |---|---|
-| 에디터·프로젝트의 `ObjectSystem` | 로그, 코루틴, 수학 값, ECS 오브젝트 접근 |
+| 에디터·프로젝트의 `ObjectSystem` | 로그, 코루틴, 수학 값, ECS 오브젝트 접근, 이름 기반 입력 액션(현재 main 소스) |
 | `MakeStandardBindings`를 사용하는 앱 | 위 API와 입력, 오디오, Lua 사용자 이벤트 |
 | 앱이 추가 등록한 모듈 | 리플렉션, 데이터 컴포넌트, 대화·컷신·카메라·저장·번역·씬 전환, NPC |
 
@@ -149,6 +149,28 @@ end
 
 Entity 접근 값은 월드의 소유권을 가지지 않는다. Play 종료·씬 교체 뒤에는 다시 얻는다. 스크립트에 없는 컴포넌트를 임의로 추가하는 범용 API나 프리팹 스폰 API는 현재 없다.
 
+## 프로젝트 입력 액션
+
+**파일 → 입력 설정…**에서 `attack`을 추가하고 F를 연결한 뒤 로컬 Play/MyGame의 `on_update`에서 조회한다. [입력 설정](25-input-actions.md)에 저장·취소·바인딩 작성과 전체 계약이 있다. 인증 클라이언트는 Lua를 실행하지 않는다.
+
+```lua
+return {
+    on_update = function(self, dt)
+        if mye.input.is_action_just_pressed("attack") then mye.log("첫 누름") end
+        local direction = mye.input.get_vector("move_left", "move_right", "move_down", "move_up")
+    end
+}
+```
+
+| API | 결과 |
+|---|---|
+| `mye.input.is_action_pressed(name)` | held bool; 적용 세기 > 0 |
+| `.is_action_just_pressed(name)`, `.is_action_just_released(name)` | 현재 고정 틱의 누름·해제 bool |
+| `.get_action_strength(name)`, `.get_action_raw_strength(name)` | 데드존 적용 후·전 0~1 |
+| `.get_vector(left, right, down, up)` | 원형 데드존·길이 1 이하 Vec2 |
+
+조회는 소비하지 않으며 한 틱의 모든 오브젝트가 같은 상태를 읽는다. 짧은 탭은 누름/해제가 모두 true, held/세기는 0이다. 없는 이름은 중립 값이다. 빈 이름·65바이트 이상·문자열이 아닌 인자는 오류다. 초기 프로젝트의 on_init·틱 밖 콜백·월드 종료의 on_destroy는 중립이다. 틱 안에서 생성한 인스턴스/콜백과 삭제 감지의 on_destroy는 해당 틱을 읽는다. 입력 버퍼는 틱 동안만 비소유로 연결하고 반환 시 해제한다. 원시 키/패드 함수는 공식 ObjectSystem에 장치를 연결하지 않아 중립 값을 반환한다.
+
 ## 추가 모듈: 입력·오디오·사용자 이벤트
 
 입력은 `InputBindingModule`, 오디오는 `AudioBindingModule`, 이벤트는 `EventBindingModule`을 등록한 앱에서 사용한다.
@@ -162,7 +184,7 @@ Entity 접근 값은 월드의 소유권을 가지지 않는다. Play 종료·�
 | `mye.input.left_stick([pad=0])`, `.right_stick(...)` | 스틱 Vec2 |
 | `mye.input.left_trigger([pad=0])`, `.right_trigger(...)` | 트리거 숫자 |
 
-이 선택 모듈의 was_pressed/was_released는 입력 **프레임**의 이벤트다. main 소스는 같은 프레임의 짧은 키/마우스 탭도 두 엣지를 보존한다. 여러 고정 틱에 직접 조회하면 프레임 엣지를 반복해서 읽을 수 있으므로 틱 소비를 직접 관리해야 한다. 공식 Play/MyGame의 기본 조작은 [프로젝트 입력 설정](25-input-actions.md)과 GameInputBuffer에서 한 번 소비한다. 이름으로 사용자 액션을 조회하는 Lua API는 아직 등록하지 않았다.
+이 선택 모듈의 was_pressed/was_released는 입력 **프레임**의 이벤트다. main 소스는 같은 프레임의 짧은 키/마우스 탭도 두 엣지를 보존한다. 여러 고정 틱에 직접 조회하면 프레임 엣지를 반복해서 읽을 수 있으므로 틱 소비를 직접 관리해야 한다. 공식 Play/MyGame은 [프로젝트 입력 설정](25-input-actions.md)과 GameInputBuffer에서 한 번 소비하며 이름 기반 Lua 액션은 그 고정 틱 상태를 읽는다.
 | `mye.audio.play_cue(name[, x, y])` | 큐 재생. x와 y를 함께 주면 공간화 |
 | `mye.audio.play_music(name[, fade=0.5])`, `.stop_music([fade=0])` | 음악 재생·중지. fade는 초 |
 | `mye.audio.set_bus_volume(bus, volume)`, `.get_bus_volume(bus)` | 버스 볼륨 쓰기·읽기 |

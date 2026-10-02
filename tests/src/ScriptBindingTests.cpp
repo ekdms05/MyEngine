@@ -13,6 +13,7 @@
 #include "mye/audio/AudioTypes.h"
 #include "mye/anim/SpriteAnimator.h"
 #include "mye/core/Input.h"
+#include "mye/core/InputActions.h"
 #include "mye/core/Math.h"
 #include "mye/ecs/World.h"
 #include "mye/phys/Collision.h"
@@ -322,6 +323,43 @@ MYE_TEST(ScriptSafeErrors) {
     // 정상 스크립트는 성공(에러 격리가 이후 실행을 막지 않음).
     auto r3 = rt.DoString("return mye.Vec2(1,2).x", "ok");
     MYE_EXPECT(r3.HasValue());
+}
+
+MYE_TEST(ScriptNamedInputReadsOneConsumedTickWithoutMutatingIt) {
+    InputState input;
+    InputActions actions;
+    MYE_EXPECT(actions.Configure({{{"attack", .2f, {{InputDevice::Key, static_cast<int>(KeyCode::F)}}},
+                                  {"right", .2f, {{InputDevice::Key, static_cast<int>(KeyCode::D)}}},
+                                  {"up", .2f, {{InputDevice::Key, static_cast<int>(KeyCode::W)}}}}}));
+    ScriptRuntime rt;
+    rt.Initialize(DefaultPolicy(), nullptr, nullptr);
+    rt.AddBindingModule(std::make_unique<MathBindingModule>());
+    auto binding = std::make_unique<InputBindingModule>(&input);
+    auto* api = binding.get();
+    rt.AddBindingModule(std::move(binding));
+    MYE_EXPECT(rt.DoString("assert(not mye.input.is_action_just_pressed('attack'))", "no-tick.lua"));
+    input.NewFrame(); input.OnKey(KeyCode::F, true); input.OnKey(KeyCode::F, false);
+    input.OnKey(KeyCode::D, true); input.OnKey(KeyCode::W, true);
+    actions.Capture(input); actions.ConsumeTick(); api->SetActions(&actions);
+    for (int i = 0; i < 2; ++i) MYE_EXPECT(rt.DoString(R"(
+        assert(mye.input.is_action_just_pressed('attack'))
+        assert(mye.input.is_action_just_released('attack'))
+        assert(not mye.input.is_action_pressed('attack'))
+        assert(mye.input.get_action_strength('attack') == 0)
+        assert(mye.input.get_action_raw_strength('right') == 1)
+        local vector = mye.input.get_vector('left', 'right', 'down', 'up')
+        assert(math.abs(vector:length() - 1) < .00001 and vector.x > 0 and vector.y > 0)
+        assert(not mye.input.is_action_pressed('missing'))
+        assert(mye.input.get_action_strength('missing') == 0)
+    )", "one-tick.lua"));
+    actions.ConsumeTick();
+    MYE_EXPECT(rt.DoString("assert(not mye.input.is_action_just_pressed('attack') and mye.input.is_action_pressed('right'))", "next-tick.lua"));
+    MYE_EXPECT(!rt.DoString("mye.input.is_action_pressed(1)", "bad-name.lua"));
+    MYE_EXPECT(!rt.DoString("mye.input.get_action_strength(string.rep('a',65))", "long-name.lua"));
+    MYE_EXPECT(!rt.DoString("mye.input.get_vector('left','right','down',nil)", "bad-vector.lua"));
+    MYE_EXPECT(rt.DoString("assert(not mye.input.is_action_pressed('right\\0other'))", "embedded-null.lua"));
+    api->SetActions(nullptr);
+    MYE_EXPECT(rt.DoString("assert(mye.input.get_action_strength('right') == 0 and mye.input.get_vector('left','right','down','up') == mye.Vec2())", "cleared-tick.lua"));
 }
 
 MYE_TEST(ScriptNativeArgumentBounds) {

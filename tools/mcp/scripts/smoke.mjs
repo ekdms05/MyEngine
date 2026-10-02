@@ -209,8 +209,10 @@ async function main() {
   check("engine_reference — 실제 카메라 Entity Lua API", cameraLua.result?.isError !== true && firstText(cameraLua.result).includes("0~10") && firstText(cameraLua.result).includes("고정 틱"));
   const inputSettings = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", search: "inputMap" } });
   check("engine_reference — 저장 입력 설정과 이전 프로젝트 호환", inputSettings.result?.isError !== true && firstText(inputSettings.result).includes("25-input-actions.md") && firstText(inputSettings.result).includes("기본 조작"));
-  const inputLimits = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", search: "Lua" } });
-  check("engine_reference — 사용자 액션 Lua 미연결 경계", inputLimits.result?.isError !== true && firstText(inputLimits.result).includes("아직 제공하지 않는다"));
+  const inputLimits = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", lines: 120 } });
+  check("engine_reference — 사용자 액션 Lua와 온라인 권한 경계", inputLimits.result?.isError !== true && firstText(inputLimits.result).includes("is_action_just_pressed") && firstText(inputLimits.result).includes("클라이언트 Lua를 실행하지 않는다"));
+  const inputLua = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "입력 버퍼" } });
+  check("engine_reference — 실제 고정 틱 액션과 종료 수명", inputLua.result?.isError !== true && firstText(inputLua.result).includes("on_destroy") && firstText(inputLua.result).includes("비소유"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

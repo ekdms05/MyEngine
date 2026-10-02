@@ -14,6 +14,7 @@
 namespace mye {
 class EventBus;
 class InputState;
+class InputActions;
 }
 namespace mye::ecs { class World; class CommandBuffer; }
 namespace mye::audio { class AudioEngine; struct AudioCue; }
@@ -66,8 +67,13 @@ public:
     std::string_view Name() const override { return "input"; }
     void Register(lua_State* lua) override;
 
+    // Borrow only during the caller's fixed tick; clear before the source changes
+    // or is destroyed. Raw InputState queries retain their separate frame contract.
+    void SetActions(const InputActions* actions) { m_actions = actions; }
+
 private:
     const InputState* m_input;   // 비소유
+    const InputActions* m_actions = nullptr;
 };
 
 // ---------------------------------------------------------------------------

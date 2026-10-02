@@ -51,7 +51,7 @@ std::string_view GameActionDescription(std::string_view name) {
     if (name == kZoomIn) return "2D 카메라 확대 — 휠 또는 첫 누름";
     if (name == kZoomOut) return "2D 카메라 축소 — 휠 또는 첫 누름";
     if (name == kExitGame) return "실행 종료 — Play는 편집으로 돌아감";
-    return "사용자 액션 — 스크립트 연결 준비 중";
+    return "사용자 액션 — Lua mye.input에서 이름으로 조회";
 }
 Expected<void, Error> GameInputBuffer::Configure(InputMap map) {
     if (auto configured = m_actions.Configure(std::move(map)); !configured) return configured.GetError();
@@ -76,6 +76,7 @@ GameInput GameInputBuffer::ConsumeTick() {
     input.cameraMouseX = std::exchange(m_mouseX, 0.0f);
     input.cameraZoomSteps = std::clamp(m_actions.Action(kZoomIn).pulse - m_actions.Action(kZoomOut).pulse, -16.0f, 16.0f);
     input.exitGame = m_actions.Action(kExitGame).pressed;
+    input.actions = &m_actions;
     return input;
 }
 } // namespace mye::runtime

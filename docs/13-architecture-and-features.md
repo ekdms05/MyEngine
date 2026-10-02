@@ -35,7 +35,7 @@ assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/
 
 입력은 게임 창이 활성일 때만 PlayWorld에 전달한다. 창을 닫거나 Stop을 누르면 PlayWorld를 폐기한다. Pause는 시뮬레이션만 멈추고 표시를 유지한다. 플레이는 같은 프로세스의 별도 Win32 창이며 장애 격리는 제공하지 않는다.
 
-main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서로 읽는다. core InputActions가 이름/바인딩/세기와 프레임→고정 틱 소비를 담당하고 runtime GameInputBuffer가 기본 이동/상호작용/카메라/종료를 조합한다. 파일 메뉴에서 기본 조작을 편집·별도 저장하며 기존 필드 없는 프로젝트는 기본값을 사용한다. Play 창은 다섯 마우스 버튼·휠과 XInput 폴링을 연결했다. 저장 실패·짧은 탭/중복 소비·캡처 취소·합성 Win32 메시지와 앱의 로딩/오류 종료를 검증한다. 사용자 액션 Lua·원시 패드 축·직접 장치 검수는 [25](25-input-actions.md)의 다음 단위다.
+main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서로 읽는다. core InputActions가 이름/바인딩/세기와 프레임→고정 틱 소비를 담당하고 runtime GameInputBuffer가 기본 이동/상호작용/카메라/종료를 조합한다. 파일 메뉴에서 기본/사용자 조작을 작성·제거·별도 저장하며 기존 필드 없는 프로젝트는 기본값을 사용한다. InputBindingModule을 재사용해 로컬 ObjectSystem의 Lua에 이름 기반 조회를 등록했다. GameInput의 비소유 액션 상태는 Tick 동안만 연결하고 반환/종료 전에 해제한다. 조회는 소비하지 않으며 raw InputState는 이 경로에 연결하지 않는다. Play 창은 다섯 마우스 버튼·휠과 XInput 폴링을 연결했다. 저장 실패·짧은 탭/중복 소비·캡처 취소·합성 Win32 메시지·저장 사용자 액션의 Play/로컬 Lua·앱의 등록/오류 종료를 검증한다. 원시 패드 축·직접 장치/확장 위젯 검수는 [25](25-input-actions.md)의 다음 단위다.
 
 프로젝트 생성·열기는 후보 파일과 경로를 검증한 후 기존 문서를 바꾼다. 저장 실패는 `Expected<T, Error>`로 전달한다. 에셋 가져오기는 내용을 검사하고 중복 파일을 덮어쓰지 않는다. 삭제는 사용 중인 참조를 검사하고 파일·메타를 휴지통으로 보낸다. 편집 레이아웃은 `.myeditor/`에 저장하며 버전관리에서 제외한다.
 
@@ -51,7 +51,7 @@ main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서
 
 좌표·깊이의 정본은 [02](02-rendering.md): 왼손, +Y up, PPU 48, 내부 960×540, Y/높이 기반 깊이·alpha cutout. 시뮬레이션은 고정 틱, UI·렌더는 표현 단계다.
 
-에디터 오브젝트 Lua는 Math·ECS·log·co만 기본 연결된다. audio/input/events/reflect/DDC/대화·저장·NPC 모듈은 별도 앱 등록이 필요하다. 라이브러리 함수가 있다는 사실을 에디터 제공 API로 설명하지 않는다. [19](19-lua-api.md)에 각 API의 범위가 있다.
+에디터 오브젝트 Lua는 Math·ECS·log·co와 이름 기반 입력 액션이 기본 연결된다. 원시 입력 장치/audio/events/reflect/DDC/대화·저장·NPC 서비스는 별도 앱 등록이 필요하다. 라이브러리 함수가 있다는 사실을 에디터 제공 API로 설명하지 않는다. [19](19-lua-api.md)에 각 API의 범위가 있다.
 
 네트워크·영속·게임 UI 등의 라이브러리는 유지하지만 완성 MMORPG 제작·출시 통합을 뜻하지 않는다. 게임 UI 시각 편집, 스크립트 자동 완성·중단점, 온라인 맵 전환·게임 규칙, 파일 감시 자동 반영, 범용 게임 내보내기는 남아 있다. DX11 외 백엔드와 범용 GPU timestamp/readback에는 미구현 경계가 있다.
 

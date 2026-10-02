@@ -51,6 +51,8 @@ Expected<void, Error> EditorApp::RequestInputSettings() {
     if (!m_project || !m_project->IsOpen()) return Error{"입력 설정을 변경할 프로젝트를 먼저 여세요.", 1};
     if (m_playMode->IsPlaying()) return Error{"실행을 중지한 뒤 입력 설정을 변경하세요.", 1};
     m_inputDraft = m_project->InputSettings();
+    m_inputActionName.fill(0);
+    m_inputActionError.clear();
     m_showInputSettings = true;
     return {};
 }
@@ -68,10 +70,28 @@ void EditorApp::DrawInputSettings() {
         if (playing) ImGui::TextWrapped("실행을 중지한 뒤 설정을 변경하세요.");
         ImGui::Separator();
         ImGui::BeginDisabled(playing);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
+        if (ImGui::InputTextWithHint("##ActionName", "새 조작 이름 (예: attack)", m_inputActionName.data(), m_inputActionName.size())) m_inputActionError.clear();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(m_inputDraft.actions.size() >= 64 || !m_inputActionName[0]);
+        if (ImGui::Button("조작 추가")) {
+            InputMap addition{{{m_inputActionName.data(), .2f, {}}}};
+            auto valid = addition.Validate();
+            const bool duplicate = std::any_of(m_inputDraft.actions.begin(), m_inputDraft.actions.end(),
+                [&](const auto& action) { return action.name == addition.actions.front().name; });
+            if (!valid) m_inputActionError = valid.GetError().message;
+            else if (duplicate) m_inputActionError = "같은 이름의 조작이 이미 있습니다.";
+            else { m_inputDraft.actions.push_back(std::move(addition.actions.front())); m_inputActionName.fill(0); m_inputActionError.clear(); }
+        }
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("영문·숫자·밑줄 1~64자. 첫 글자는 숫자 제외. Lua에서 같은 이름으로 조회합니다.");
+        if (!m_inputActionError.empty()) ImGui::TextWrapped("%s", m_inputActionError.c_str());
         const float footerHeight = ImGui::GetFrameHeightWithSpacing() * 3;
         if (ImGui::BeginChild("Actions", {0, -footerHeight})) {
             if (m_inputDraft.actions.empty()) ImGui::TextWrapped("저장된 조작이 없습니다. 아래의 기본 조작 복원으로 시작하세요.");
-            for (auto& action : m_inputDraft.actions) {
+            for (size_t actionIndex = 0; actionIndex < m_inputDraft.actions.size();) {
+                auto& action = m_inputDraft.actions[actionIndex];
+                bool removeAction = false;
                 ImGui::PushID(action.name.c_str());
                 const auto description = runtime::GameActionDescription(action.name);
                 if (ImGui::TreeNodeEx(action.name.c_str(), ImGuiTreeNodeFlags_None, "%s · %s", action.name.c_str(), description.data())) {
@@ -90,9 +110,14 @@ void EditorApp::DrawInputSettings() {
                     ImGui::BeginDisabled(action.bindings.size() >= 16);
                     if (ImGui::Button("입력 추가")) action.bindings.push_back({});
                     ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    removeAction = ImGui::Button("조작 제거");
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("이 조작의 모든 바인딩을 제거합니다. 저장 전 취소로 되돌릴 수 있습니다.");
                     ImGui::TreePop();
                 }
                 ImGui::PopID();
+                if (removeAction) m_inputDraft.actions.erase(m_inputDraft.actions.begin() + actionIndex);
+                else ++actionIndex;
                 ImGui::Spacing();
             }
         }

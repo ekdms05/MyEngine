@@ -1202,6 +1202,39 @@ MYE_TEST(EditorWorkspaceImGuiRoutingAndDialogs) {
     MYE_EXPECT(!ImGui::FindWindowByName("하이어라키###mye.hierarchy"));
     MYE_EXPECT(app.CreateProject("UI", Utf8String(root / "project")));
     frame(); frame();
+    // Exercise the actual input widgets with ImGui activation, not a draft setter.
+    const auto defaults = app.Project().InputSettings();
+    MYE_EXPECT(app.RequestInputSettings()); frame(); frame();
+    auto* settings = ImGui::FindWindowByName("입력 설정###MyEngineInputSettings");
+    MYE_EXPECT(settings && settings->Active);
+    if (settings) {
+        ImGui::ActivateItemByID(settings->GetID("##ActionName")); frame();
+        io.AddInputCharactersUTF8("attack"); frame();
+        ImGui::ActivateItemByID(settings->GetID("조작 추가")); frame();
+        MYE_EXPECT(app.Project().InputSettings() == defaults); // Still a draft.
+        ImGui::ActivateItemByID(settings->GetID("프로젝트에 저장")); frame();
+        MYE_EXPECT(app.Project().InputSettings().actions.size() == defaults.actions.size() + 1);
+        MYE_EXPECT(app.Project().InputSettings().actions.back().name == "attack");
+        MYE_EXPECT(app.RequestInputSettings()); frame(); frame();
+        ImGuiWindow* actions = nullptr;
+        for (auto* window : ImGui::GetCurrentContext()->Windows)
+            if (window->ParentWindow == settings && window->ChildId == settings->GetID("Actions")) actions = window;
+        MYE_EXPECT(actions);
+        if (actions) {
+            const auto scope = ImHashStr("attack", 0, actions->ID);
+            const auto tree = ImHashStr("attack", 0, scope);
+            if (!actions->StateStorage.GetBool(tree)) { ImGui::ActivateItemByID(tree); frame(); }
+            ImGui::ActivateItemByID(ImHashStr("입력 추가", 0, tree)); frame();
+            ImGui::ActivateItemByID(settings->GetID("프로젝트에 저장")); frame();
+            MYE_EXPECT(app.Project().InputSettings().actions.back().bindings ==
+                std::vector<InputBinding>{{InputDevice::Key, static_cast<int>(KeyCode::Space)}});
+            MYE_EXPECT(app.RequestInputSettings()); frame(); frame();
+            ImGui::ActivateItemByID(ImHashStr("조작 제거", 0, tree)); frame();
+            MYE_EXPECT(app.Project().InputSettings().actions.size() == defaults.actions.size() + 1);
+            ImGui::ActivateItemByID(settings->GetID("프로젝트에 저장")); frame();
+            MYE_EXPECT(app.Project().InputSettings() == defaults);
+        }
+    }
     const auto* hierarchy = ImGui::FindWindowByName("하이어라키###mye.hierarchy");
     const auto* assets = ImGui::FindWindowByName("에셋###mye.assets");
     const auto* inspector = ImGui::FindWindowByName("인스펙터###mye.inspector");

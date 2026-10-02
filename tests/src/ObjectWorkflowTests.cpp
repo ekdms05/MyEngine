@@ -262,6 +262,62 @@ MYE_TEST(OnlineScenePathBoundsAndExisting3DLoad) {
     MYE_EXPECT(!runtime::LoadOnlineScene2D(project));
 }
 
+MYE_TEST(ObjectNamedActionsAreVisibleOnlyInsideTheirFixedTick) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World();
+    const auto player = Player(world);
+    const auto marker = Object(world, "Input marker");
+    world.Add<runtime::ObjectBehavior>(marker).luaSource = R"(
+        return {
+            on_init = function(self)
+                assert(not mye.input.is_action_just_pressed('attack'))
+            end,
+            on_update = function(self, dt)
+                local entity = mye.world.entity_from_packed(self.entity)
+                local p = entity:get_position()
+                if mye.input.is_action_just_pressed('attack') then p.x = p.x + 1 end
+                if mye.input.is_action_just_released('attack') then p.y = p.y + 1 end
+                entity:set_position(p)
+            end,
+            on_interact = function(self)
+                assert(not mye.input.is_action_just_pressed('attack'))
+                assert(not mye.input.is_action_pressed('attack'))
+                mye.world.entity_from_packed(self.entity):set_position(mye.Vec2(10, 10))
+            end,
+            on_destroy = function(self)
+                assert(not mye.input.is_action_pressed('attack'))
+                mye.world.entity_from_packed(self.entity):set_position(mye.Vec2(20, 20))
+            end
+        }
+    )";
+    {
+        runtime::ObjectSystem objects(world); MYE_EXPECT(objects.Initialize());
+        {
+            runtime::GameInputBuffer buffer;
+            MYE_EXPECT(buffer.Configure({{{"attack", .2f, {{InputDevice::Key, static_cast<int>(KeyCode::F)}}}}}));
+            InputState input; input.NewFrame(); input.OnKey(KeyCode::F, true); input.OnKey(KeyCode::F, false);
+            buffer.Capture(input, true);
+            MYE_EXPECT(objects.Tick(1.0f / 60, buffer.ConsumeTick()));
+            MYE_EXPECT(world.TryGet<scene::LocalTransform>(marker)->position == Vec3(1, 1, 0));
+            MYE_EXPECT(objects.Tick(1.0f / 60, buffer.ConsumeTick()));
+            MYE_EXPECT(world.TryGet<scene::LocalTransform>(marker)->position == Vec3(1, 1, 0));
+            input.NewFrame(); input.OnKey(KeyCode::F, true); buffer.Capture(input, true);
+            MYE_EXPECT(objects.Tick(1.0f / 60, buffer.ConsumeTick()));
+            world.TryGet<phys::KinematicBody2D>(player)->maxSlideIters = 0;
+            MYE_EXPECT(!objects.Tick(1.0f / 60, buffer.ConsumeTick()));
+            world.TryGet<phys::KinematicBody2D>(player)->maxSlideIters = 4;
+            objects.Dispatch(marker, runtime::ObjectEvent::Interact);
+            MYE_EXPECT(objects.Message().empty());
+        } // The input source dies before callbacks outside Tick and VM teardown.
+        objects.Dispatch(marker, runtime::ObjectEvent::Interact);
+        MYE_EXPECT(objects.Message().empty());
+        MYE_EXPECT(world.TryGet<scene::LocalTransform>(marker)->position == Vec3(10, 10, 0));
+        MYE_EXPECT(!objects.Tick(0, runtime::GameInput{}));
+        MYE_EXPECT(objects.Tick(1.0f / 60, runtime::GameInput{}));
+    }
+    MYE_EXPECT(world.TryGet<scene::LocalTransform>(marker)->position == Vec3(20, 20, 0));
+}
+
 MYE_TEST(ObjectControlsCollisionTriggerAndLuaInteraction) {
     editor::Document document({1}, editor::Document::Kind::Scene, "");
     auto& world = document.World();

@@ -95,6 +95,52 @@ MYE_TEST(ProjectInputSettingsSaveReloadAndPlayKeepSceneAndUnknownMetadata) {
     MYE_EXPECT(project.Save());
     MYE_EXPECT(ReadJsonFile(manifestPath).Value().Find("userSetting")->AsString() == "keep");
 }
+MYE_TEST(SavedUserInputActionReachesLuaInPlayAndLocalGameWorld) {
+    const auto root = FreshRoot();
+    ed::ProjectContext project;
+    MYE_EXPECT(project.Create("User input", Utf8String(root), false, MYE_STARTER_SOURCE_DIR));
+    if (!project.Active()) return;
+    auto& authored = project.Active()->World();
+    const auto marker = authored.Create();
+    authored.Add<scene::ObjectName>(marker).value = "Input witness";
+    authored.Add<scene::LocalTransform>(marker);
+    authored.Add<scene::WorldTransform>(marker);
+    authored.Add<runtime::ObjectBehavior>(marker).luaSource = R"(return {
+        on_update = function(self, dt)
+            if mye.input.is_action_just_pressed('attack') then
+                local entity = mye.world.entity_from_packed(self.entity)
+                local p = entity:get_position()
+                entity:set_position(mye.Vec2(p.x + 1, p.y))
+            end
+        end
+    })";
+    auto settings = project.InputSettings();
+    settings.actions.push_back({"attack", .2f, {{InputDevice::Key, static_cast<int>(KeyCode::F)}}});
+    MYE_EXPECT(project.SaveInputSettings(settings) && project.Save());
+    const auto manifest = std::string(project.ProjectFilePath());
+    ed::ProjectContext reopened, game;
+    MYE_EXPECT(reopened.Open(manifest) && game.Open(manifest));
+    if (!reopened.Active() || !game.Active()) return;
+    ed::PlayModeController play; play.SetEditWorld(&reopened.Active()->World());
+    MYE_EXPECT(play.Play());
+    runtime::ObjectSystem objects(game.Active()->World()); MYE_EXPECT(objects.Initialize());
+    runtime::GameInputBuffer playInput, gameInput;
+    MYE_EXPECT(playInput.Configure(reopened.InputSettings()) && gameInput.Configure(game.InputSettings()));
+    InputState input; input.NewFrame(); input.OnKey(KeyCode::F, true); input.OnKey(KeyCode::F, false);
+    playInput.Capture(input, true); gameInput.Capture(input, true);
+    for (int i = 0; i < 2; ++i) {
+        MYE_EXPECT(play.Tick(1.0f / 60, playInput.ConsumeTick(), Utf8String(root)));
+        MYE_EXPECT(objects.Tick(1.0f / 60, gameInput.ConsumeTick()));
+        MYE_EXPECT(objects.Message().empty());
+        MYE_EXPECT(play.ActiveWorld()->TryGet<scene::LocalTransform>(marker)->position.x == 1);
+        MYE_EXPECT(game.Active()->World().TryGet<scene::LocalTransform>(marker)->position.x == 1);
+    }
+    play.Stop();
+    MYE_EXPECT(reopened.Active()->World().TryGet<scene::LocalTransform>(marker)->position.x == 0);
+    settings.actions.pop_back(); MYE_EXPECT(project.SaveInputSettings(settings));
+    MYE_EXPECT(project.Open(manifest) && project.InputSettings() == settings);
+}
+
 asset::AnimationAsset ReadAnimation(const std::filesystem::path& path) {
     auto value = ReadJsonFile(path);
     MYE_EXPECT(value);

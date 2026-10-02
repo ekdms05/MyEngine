@@ -10,6 +10,7 @@
 <a href="#section-5">로그·코루틴</a>
 <a href="#section-6">수학 값</a>
 <a href="#section-7">ECS 오브젝트</a>
+<a href="#input-actions">프로젝트 입력 액션</a>
 <a href="#section-8">추가 모듈: 입력·오디오·사용자 이벤트</a>
 <a href="#section-9">추가 모듈: 대화·연출·저장·번역·씬</a>
 <a href="#section-10">추가 모듈: NPC</a>
@@ -33,7 +34,7 @@ end
 return Object</code></pre>
 <p>선택한 오브젝트에 <strong>상호작용</strong> 컴포넌트를 추가하면 플레이어가 반경 안에서 상호작용할 때 <code>on_interact</code>를 호출한다. 콜라이더를 트리거로 설정하면 <code>on_trigger_enter</code>와 <code>on_trigger_exit</code>도 사용할 수 있다. Lua 코드 자체는 오브젝트의 동작 컴포넌트에 저장한다. 편집 중에는 실행하지 않으며 Play에서 별도 월드에 인스턴스를 만든다.</p>
 <h2 id="section-2">사용 가능한 API 범위</h2>
-<div class="table-scroll"><table><tr><th>실행 경로</th><th>등록되는 API</th></tr><tr><td>에디터·프로젝트의 <code>ObjectSystem</code></td><td>로그, 코루틴, 수학 값, ECS 오브젝트 접근</td></tr><tr><td><code>MakeStandardBindings</code>를 사용하는 앱</td><td>위 API와 입력, 오디오, Lua 사용자 이벤트</td></tr><tr><td>앱이 추가 등록한 모듈</td><td>리플렉션, 데이터 컴포넌트, 대화·컷신·카메라·저장·번역·씬 전환, NPC</td></tr></table></div>
+<div class="table-scroll"><table><tr><th>실행 경로</th><th>등록되는 API</th></tr><tr><td>에디터·프로젝트의 <code>ObjectSystem</code></td><td>로그, 코루틴, 수학 값, ECS 오브젝트 접근, 이름 기반 입력 액션(현재 main 소스)</td></tr><tr><td><code>MakeStandardBindings</code>를 사용하는 앱</td><td>위 API와 입력, 오디오, Lua 사용자 이벤트</td></tr><tr><td>앱이 추가 등록한 모듈</td><td>리플렉션, 데이터 컴포넌트, 대화·컷신·카메라·저장·번역·씬 전환, NPC</td></tr></table></div>
 <p>아래의 <strong>추가 모듈</strong>은 라이브러리 API다. 에디터에 모두 자동 등록되는 기능으로 가정하지 않는다. <code>if mye.dialogue then ... end</code>처럼 등록 여부를 확인할 수 있지만, 실제 동작에는 해당 C++ 서비스 초기화와 갱신도 필요하다. 이름이 <code>__</code> 또는 <code>_</code>로 시작하는 엔진 내부 테이블은 호출·수정하지 않는다.</p>
 <h2 id="section-3">변수·수명·단위</h2>
 <div class="table-scroll"><table><tr><th>값</th><th>의미</th></tr><tr><td><code>self</code></td><td>이 오브젝트의 Lua 인스턴스. 콜론 메서드의 첫 인자</td></tr><tr><td><code>self.entity</code></td><td>세대 번호가 포함된 정수 엔티티 핸들. 직접 숫자를 만들어 넣지 않는다</td></tr><tr><td><code>self.state</code></td><td>인스턴스 상태 테이블. 에셋 핫 리로드 시 보존되며 Stop 후 다음 Play에는 새로 생성</td></tr><tr><td><code>dt</code></td><td>직전 시뮬레이션 갱신의 초 단위 시간</td></tr><tr><td>위치·반경</td><td>월드 단위. 기본 48px = 1 unit, +Y는 위쪽</td></tr><tr><td>속도</td><td>월드 단위/초</td></tr><tr><td>Lua 배열</td><td>첫 항목 인덱스 1. 대화 선택 인덱스만 0부터 시작</td></tr></table></div>
@@ -68,10 +69,20 @@ end</code></pre>
 <div class="table-scroll"><table><tr><th>메서드</th><th>결과·제약</th></tr><tr><td><code>entity:set_camera_zoom(zoom)</code></td><td>유한한 0.25~8 배. PlayWorld/런타임의 줌만 변경</td></tr><tr><td><code>entity:shake_camera(amplitude, seconds)</code></td><td>0~10 월드 unit, 0~60초. 0은 무동작. 고정 틱으로 감쇠하며 렌더에만 적용</td></tr><tr><td><code>entity:world_to_screen(Vec2)</code></td><td>월드 XY → 내부 960×540 픽셀, 좌상단/+Y 아래</td></tr><tr><td><code>entity:screen_to_world(Vec2)</code></td><td>내부 픽셀 → 월드 XY. 논리 카메라 기준으로 왕복</td></tr></table></div>
 <p>좌표 변환은 흔들림·픽셀 스냅을 제외한다. 네이티브 창 좌표는 레터박스/배율을 제거한 뒤 넣는다. 같은 Lua 콜백의 트랜스폼 변경은 후속 틱 경계에서 반영된다. 삭제된 Entity·없는 Camera2D·비유한/범위 밖 인수·잘못된 카메라 설정은 오류다. 기존 <code>mye.camera</code> 추가 모듈과 다른 실제 Play/MyGame 경로다.</p>
 <p>Entity 접근 값은 월드의 소유권을 가지지 않는다. Play 종료·씬 교체 뒤에는 다시 얻는다. 스크립트에 없는 컴포넌트를 임의로 추가하는 범용 API나 프리팹 스폰 API는 현재 없다.</p>
+<h2 id="input-actions">프로젝트 입력 액션</h2>
+<p><strong>파일 → 입력 설정…</strong>에서 <code>attack</code>을 추가하고 F를 연결한 뒤 로컬 Play/MyGame의 <code>on_update</code>에서 조회한다. <a href="input.html">입력 설정</a>에 저장·취소·바인딩 작성과 전체 계약이 있다. 인증 클라이언트는 Lua를 실행하지 않는다.</p>
+<pre><code>return {
+    on_update = function(self, dt)
+        if mye.input.is_action_just_pressed(&quot;attack&quot;) then mye.log(&quot;첫 누름&quot;) end
+        local direction = mye.input.get_vector(&quot;move_left&quot;, &quot;move_right&quot;, &quot;move_down&quot;, &quot;move_up&quot;)
+    end
+}</code></pre>
+<div class="table-scroll"><table><tr><th>API</th><th>결과</th></tr><tr><td><code>mye.input.is_action_pressed(name)</code></td><td>held bool; 적용 세기 &gt; 0</td></tr><tr><td><code>.is_action_just_pressed(name)</code>, <code>.is_action_just_released(name)</code></td><td>현재 고정 틱의 누름·해제 bool</td></tr><tr><td><code>.get_action_strength(name)</code>, <code>.get_action_raw_strength(name)</code></td><td>데드존 적용 후·전 0~1</td></tr><tr><td><code>.get_vector(left, right, down, up)</code></td><td>원형 데드존·길이 1 이하 Vec2</td></tr></table></div>
+<p>조회는 소비하지 않으며 한 틱의 모든 오브젝트가 같은 상태를 읽는다. 짧은 탭은 누름/해제가 모두 true, held/세기는 0이다. 없는 이름은 중립 값이다. 빈 이름·65바이트 이상·문자열이 아닌 인자는 오류다. 초기 프로젝트의 on_init·틱 밖 콜백·월드 종료의 on_destroy는 중립이다. 틱 안에서 생성한 인스턴스/콜백과 삭제 감지의 on_destroy는 해당 틱을 읽는다. 입력 버퍼는 틱 동안만 비소유로 연결하고 반환 시 해제한다. 원시 키/패드 함수는 공식 ObjectSystem에 장치를 연결하지 않아 중립 값을 반환한다.</p>
 <h2 id="section-8">추가 모듈: 입력·오디오·사용자 이벤트</h2>
 <p>입력은 <code>InputBindingModule</code>, 오디오는 <code>AudioBindingModule</code>, 이벤트는 <code>EventBindingModule</code>을 등록한 앱에서 사용한다.</p>
 <div class="table-scroll"><table><tr><th>함수</th><th>결과</th></tr><tr><td><code>mye.input.is_down(key)</code>, <code>.was_pressed(key)</code>, <code>.was_released(key)</code></td><td>유지·누름·뗌 bool</td></tr><tr><td><code>mye.input.move_axis(negativeX, positiveX, negativeY, positiveY)</code></td><td>각 축 -1~1인 Vec2. 대각선을 자동 정규화하지 않음</td></tr><tr><td><code>mye.input.pad_connected([pad=0])</code></td><td>0~3 패드 연결 여부</td></tr><tr><td><code>mye.input.pad_down(button[, pad=0])</code>, <code>.pad_pressed(...)</code>, <code>.pad_released(...)</code></td><td>패드 버튼 bool</td></tr><tr><td><code>mye.input.left_stick([pad=0])</code>, <code>.right_stick(...)</code></td><td>스틱 Vec2</td></tr><tr><td><code>mye.input.left_trigger([pad=0])</code>, <code>.right_trigger(...)</code></td><td>트리거 숫자</td></tr><tr><td><code>mye.audio.play_cue(name[, x, y])</code></td><td>큐 재생. x와 y를 함께 주면 공간화</td></tr><tr><td><code>mye.audio.play_music(name[, fade=0.5])</code>, <code>.stop_music([fade=0])</code></td><td>음악 재생·중지. fade는 초</td></tr><tr><td><code>mye.audio.set_bus_volume(bus, volume)</code>, <code>.get_bus_volume(bus)</code></td><td>버스 볼륨 쓰기·읽기</td></tr><tr><td><code>mye.audio.set_listener(x, y)</code></td><td>청취 위치</td></tr><tr><td><code>mye.events.on(name, function)</code></td><td>핸들러 ID 반환</td></tr><tr><td><code>mye.events.off(name, id)</code></td><td>구독 해제</td></tr><tr><td><code>mye.events.emit(name, ...)</code></td><td>등록 순서의 핸들러 호출. 오류를 보고하고 다음 핸들러 진행</td></tr></table></div>
-<p id="input-frame-edges">이 선택 모듈의 was_pressed/was_released는 입력 <strong>프레임</strong>의 이벤트다. main 소스는 같은 프레임의 짧은 키/마우스 탭도 두 엣지를 보존한다. 여러 고정 틱에 직접 조회하면 프레임 엣지를 반복해서 읽을 수 있으므로 틱 소비를 직접 관리해야 한다. 공식 Play/MyGame의 기본 조작은 <a href="input.html">프로젝트 입력 설정</a>과 GameInputBuffer에서 한 번 소비한다. 이름으로 사용자 액션을 조회하는 Lua API는 아직 등록하지 않았다.</p>
+<p id="input-frame-edges">이 선택 모듈의 was_pressed/was_released는 입력 <strong>프레임</strong>의 이벤트다. main 소스는 같은 프레임의 짧은 키/마우스 탭도 두 엣지를 보존한다. 여러 고정 틱에 직접 조회하면 프레임 엣지를 반복해서 읽을 수 있으므로 틱 소비를 직접 관리해야 한다. 공식 Play/MyGame은 <a href="input.html">프로젝트 입력 설정</a>과 GameInputBuffer에서 한 번 소비하며 이름 기반 Lua 액션은 그 고정 틱 상태를 읽는다.</p>
 <p>키 상수는 <code>mye.Key.A</code>~<code>Z</code>, <code>NUM0</code>~<code>NUM9</code>, <code>SPACE</code>, <code>ENTER</code>, <code>ESCAPE</code>, <code>TAB</code>, <code>LEFT</code>, <code>RIGHT</code>, <code>UP</code>, <code>DOWN</code>, <code>LSHIFT</code>, <code>LCTRL</code>, <code>LALT</code>다. 패드 상수는 <code>mye.Pad.A/B/X/Y</code>, <code>DUP/DDOWN/DLEFT/DRIGHT</code>, <code>LB/RB</code>, <code>LSTICK/RSTICK</code>, <code>START/BACK</code>이다. 버스는 <code>mye.Bus.MASTER/BGM/SFX/UI/VOICE</code>다. 범위를 벗어난 키·패드는 false 또는 0으로 처리한다.</p>
 <p>오디오 이름은 앱이 설치한 Cue/Clip resolver가 해석한다. resolver가 없거나 이름을 찾지 못하면 재생하지 않는다. 함수 존재와 실제 출력 장치 연결은 구분한다.</p>
 <h2 id="section-9">추가 모듈: 대화·연출·저장·번역·씬</h2>

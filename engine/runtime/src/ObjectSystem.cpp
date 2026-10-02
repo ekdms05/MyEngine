@@ -24,6 +24,7 @@ struct ObjectSystem::Impl {
     phys::PhysicsWorld3D physics3D;
     std::vector<std::pair<ecs::Entity, ecs::Entity>> triggers3D;
     script::ScriptRuntime lua;
+    script::InputBindingModule inputBindings{nullptr};
     std::unique_ptr<script::EcsBindingModule> bindings;
     std::unique_ptr<script::ScriptSystem> scripts;
     std::vector<ScopedSubscription> subscriptions;
@@ -77,6 +78,7 @@ Expected<void, Error> ObjectSystem::Initialize() {
     s.bindings = std::make_unique<script::EcsBindingModule>(&s.world);
     s.lua.AddBindingModule(std::make_unique<script::MathBindingModule>());
     s.lua.AddBindingModule(s.bindings.get());
+    s.lua.AddBindingModule(&s.inputBindings);
     s.scripts = std::make_unique<script::ScriptSystem>(s.lua, s.world, s.world.Events(), nullptr);
     s.scripts->RegisterComponent();
     std::vector<ecs::Entity> scriptedObjects;
@@ -149,6 +151,11 @@ Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& input) {
         return Error{"Movement input must be finite", 1};
     const float length = std::sqrt(movement.x * movement.x + movement.y * movement.y);
     if (length > 1) movement = movement / length;
+    s.inputBindings.SetActions(input.actions);
+    struct ClearInputOnExit {
+        script::InputBindingModule& bindings;
+        ~ClearInputOnExit() { bindings.SetActions(nullptr); }
+    } clearInput{s.inputBindings};
     s.scripts->EnsureInstances();
     s.scripts->Update(dt);
     s.bindings->FlushDeferred();

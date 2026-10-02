@@ -14,6 +14,31 @@ Copy-Item -LiteralPath (Join-Path $repo 'game/starter/meadow_village') -Destinat
 $project = Join-Path $run 'project/project.myeproj'
 $manifest = Get-Content -LiteralPath $project -Raw -Encoding UTF8 | ConvertFrom-Json
 $scene = Join-Path (Split-Path -Parent $project) $manifest.mainScene
+$sceneValue = Get-Content -LiteralPath $scene -Raw -Encoding UTF8 | ConvertFrom-Json
+$witness = $sceneValue.entities | Where-Object { $null -ne $_.components.ObjectBehavior } | Select-Object -First 1
+if ($null -eq $witness) { throw 'Starter scene lacks an object behavior for the local Lua gate' }
+$witness.components.ObjectBehavior.luaSource = @'
+return {
+    on_init = function(self)
+        assert(not mye.input.is_action_just_pressed('attack'))
+        mye.log('named-input-init-neutral')
+    end,
+    on_update = function(self, dt)
+        assert(not mye.input.is_action_pressed('attack'))
+        assert(not mye.input.is_action_just_pressed('attack'))
+        assert(not mye.input.is_action_just_released('attack'))
+        assert(mye.input.get_action_strength('attack') == 0)
+        assert(mye.input.get_action_raw_strength('attack') == 0)
+        assert(mye.input.get_vector('move_left','move_right','move_down','move_up') == mye.Vec2())
+        mye.log('named-input-fixed-tick')
+    end,
+    on_destroy = function(self)
+        assert(not mye.input.is_action_pressed('attack'))
+        mye.log('named-input-destroy-neutral')
+    end
+}
+'@
+[IO.File]::WriteAllText($scene, ($sceneValue | ConvertTo-Json -Depth 32), [Text.UTF8Encoding]::new($false))
 $sceneHash = (Get-FileHash -LiteralPath $scene).Hash
 function Save-Manifest {
     [IO.File]::WriteAllText($project, ($manifest | ConvertTo-Json -Depth 32), [Text.UTF8Encoding]::new($false))
@@ -34,16 +59,25 @@ function Require-Capture([string]$Name) {
     $path = Join-Path $run ($Name + '.bmp')
     if (-not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -lt 1024) { throw "$Name capture missing" }
 }
+function Require-Lua([string]$Name, [int]$Ticks = 0) {
+    $log = Get-Content -LiteralPath (Join-Path $run ($Name + '.out.log')) -Raw -Encoding UTF8
+    foreach ($marker in @('named-input-init-neutral', 'named-input-fixed-tick', 'named-input-destroy-neutral')) {
+        if (-not $log.Contains($marker)) { throw "$Name missing Lua marker: $marker" }
+    }
+    if ($Ticks -gt 0 -and [regex]::Matches($log, 'named-input-fixed-tick').Count -ne $Ticks) { throw "$Name did not run exactly $Ticks Lua fixed ticks" }
+}
 $inputMap = [pscustomobject]@{ version = 1; actions = @(
     [pscustomobject]@{ name = 'move_right'; deadzone = .2; bindings = @([pscustomobject]@{ device = 'key'; code = 15; direction = 1; pad = 0 }) },
     [pscustomobject]@{ name = 'move_up'; deadzone = .2; bindings = @([pscustomobject]@{ device = 'key'; code = 12; direction = 1; pad = 0 }) },
-    [pscustomobject]@{ name = 'interact'; deadzone = .2; bindings = @([pscustomobject]@{ device = 'mouse'; code = 3; direction = 1; pad = 0 }) }
+    [pscustomobject]@{ name = 'interact'; deadzone = .2; bindings = @([pscustomobject]@{ device = 'mouse'; code = 3; direction = 1; pad = 0 }) },
+    [pscustomobject]@{ name = 'attack'; deadzone = .2; bindings = @([pscustomobject]@{ device = 'key'; code = 9; direction = 1; pad = 0 }) }
 ) }
 $manifest | Add-Member -MemberType NoteProperty -Name inputMap -Value $inputMap -Force
 Save-Manifest
 Run-App $game 'authored-game' @('--project', $project, '--headless', '--ticks', '4', '--dump', (Join-Path $run 'authored-game.bmp'))
-Run-App $editor 'authored-play' @('--project', $project, '--headless', '--play', '--frames', '8', '--dump', (Join-Path $run 'authored-play.bmp'))
+Run-App $editor 'authored-play' @('--project', $project, '--headless', '--play', '--frames', '60', '--dump', (Join-Path $run 'authored-play.bmp'))
 Require-Capture 'authored-game'; Require-Capture 'authored-play'
+Require-Lua 'authored-game' 4; Require-Lua 'authored-play'
 Run-App $editor 'settings-ui' @('--project', $project, '--input-settings-dialog', '--frames', '12', '--dump', (Join-Path $run 'settings-ui.bmp'))
 Require-Capture 'settings-ui'
 Run-App $editor 'settings-while-playing' @('--project', $project, '--input-settings-dialog', '--play', '--headless', '--frames', '3') 1

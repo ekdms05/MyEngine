@@ -7,6 +7,9 @@ struct GameInput {
     bool interact = false, jump = false;
     float cameraAxis = 0, cameraMouseX = 0, cameraZoomSteps = 0;
     bool exitGame = false;
+    // Non-owning consumed snapshot. Use before its GameInputBuffer changes; runtime
+    // exposes it to Lua only for this tick, never to online authority or teardown.
+    const InputActions* actions = nullptr;
 };
 InputMap DefaultGameInputMap();
 Expected<InputMap, Error> LoadGameInputMap(const json::Value* value);

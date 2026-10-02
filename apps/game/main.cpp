@@ -121,17 +121,10 @@ public:
             m_input->SetKeyboardSuppressed(!m_inputFocused);
             m_input->SetMouseSuppressed(!m_inputFocused);
             if (!m_inputFocused) {
-                m_interact = false;
-                m_jump = false;
-                m_cameraMouseX = 0;
-                m_cameraZoomSteps = 0;
+                m_gameInput.Clear();
                 return;
             }
-            m_interact |= m_input->WasPressed(KeyCode::E);
-            m_jump |= m_input->WasPressed(KeyCode::Space) || m_input->WasPressed(GamepadButton::A);
-            m_cameraZoomSteps += m_input->WheelDelta();
-            if (m_input->IsDown(MouseButton::Right)) m_cameraMouseX += m_input->MouseDelta().x;
-            if (m_input->WasPressed(KeyCode::Escape)) m_exit(0);
+            m_gameInput.Capture(*m_input, true);
         });
         ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& step) { Tick(static_cast<float>(step.deltaSeconds)); });
         ctx.Modules().AddTick(this, UpdatePhase::PreRender, [this](const TimeStep&) { Render(); });
@@ -259,6 +252,9 @@ private:
             !name || !name->IsString() || !mainScene || !mainScene->IsString())
             return Error{"Invalid project manifest (version 1 required)", 1};
         m_title = "MyGame - " + std::string(name->AsString());
+        auto inputMap = runtime::LoadGameInputMap(manifest.Value().Find("inputMap"));
+        if (!inputMap) return inputMap.GetError();
+        if (auto configured = m_gameInput.Configure(std::move(inputMap).Value()); !configured) return configured.GetError();
         std::error_code ec;
         m_root = fs::canonical(Utf8Path(m_cli.project).parent_path().empty() ? fs::path(".") : Utf8Path(m_cli.project).parent_path(), ec);
         if (ec) return Error{"Project directory unavailable: " + ec.message(), ec.value()};
@@ -547,18 +543,8 @@ private:
     void Tick(float dt) {
         // Catch-up may schedule several fixed ticks before the next render.
         if (!m_ready || m_replayFinished || (m_cli.ticks && m_tick >= m_cli.ticks)) return;
-        Vec2 movement{};
-        if (m_input && m_inputFocused) {
-            movement.x = float(m_input->IsDown(KeyCode::D) || m_input->IsDown(KeyCode::Right)) - float(m_input->IsDown(KeyCode::A) || m_input->IsDown(KeyCode::Left));
-            movement.y = float(m_input->IsDown(KeyCode::W) || m_input->IsDown(KeyCode::Up)) - float(m_input->IsDown(KeyCode::S) || m_input->IsDown(KeyCode::Down));
-            movement = movement + m_input->LeftStick(0);
-        }
-        runtime::GameInput controls{movement, std::exchange(m_interact, false), std::exchange(m_jump, false)};
-        controls.cameraMouseX = std::exchange(m_cameraMouseX, 0.0f);
-        controls.cameraZoomSteps = std::exchange(m_cameraZoomSteps, 0.0f);
-        if (m_input && m_inputFocused)
-            controls.cameraAxis = float(m_input->IsDown(KeyCode::R)) - float(m_input->IsDown(KeyCode::Q)) +
-                                  m_input->RightStick().x;
+        auto controls = m_gameInput.ConsumeTick();
+        if (controls.exitGame) { m_exit(0); return; }
         if (!m_cli.input.empty()) controls = m_replayTick < m_replay.size() ? m_replay[m_replayTick] : runtime::GameInput{};
         const auto previousReplayTick = m_replayTick;
         const auto tick = m_online ? TickOnline(dt, controls) : m_scene->objects->Tick(dt, controls);
@@ -669,9 +655,8 @@ private:
     std::size_t m_replayTick = 0;
     std::string m_title, m_currentTitle;
     uint64_t m_frame = 0, m_tick = 0;
-    bool m_ready = false, m_interact = false, m_jump = false, m_replayFinished = false;
-    float m_cameraMouseX = 0;
-    float m_cameraZoomSteps = 0;
+    bool m_ready = false, m_replayFinished = false;
+    runtime::GameInputBuffer m_gameInput;
     bool m_onlineSpawnLogged = false;
     bool m_inputFocused = true;
 };
@@ -698,7 +683,7 @@ int main() {
         ::LocalFree(argv);
     }
     for (const auto& arg : launch.args) if (arg == "--help") {
-        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--ticks N] [--dump frame.bmp] [--headless]\nOnline: --connect 127.0.0.1:port --credentials file.json [--character ID]; the scene selects 2D or 3D.\nInput replay: --input file.json; version 1, steps [{ticks:60,x:1,y:0,jump:false}].\nReplay starts after online admission and exits after all inputs are acknowledged.\n--ticks limits fixed simulation steps; when both limits are set, the first ends play.\nWASD/arrows or gamepad: movement, E: interact, Escape: exit.");
+        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--ticks N] [--dump frame.bmp] [--headless]\nOnline: --connect 127.0.0.1:port --credentials file.json [--character ID]; the scene selects 2D or 3D.\nInput replay: --input file.json; version 1, steps [{ticks:60,x:1,y:0,jump:false}].\nReplay starts after online admission and exits after all inputs are acknowledged.\n--ticks limits fixed simulation steps; when both limits are set, the first ends play.\nDefault controls: WASD/arrows or gamepad movement, E interact, Escape exit. Configure bindings in the project inputMap.");
         return 0;
     }
     auto cli = mye::ParseCli(launch.args);

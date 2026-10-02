@@ -31,6 +31,7 @@ add_library(mye_core STATIC
     src/Time.cpp
     src/Module.cpp
     src/Input.cpp
+    src/InputActions.cpp
     src/Memory.cpp
     src/Jobs.cpp
     src/App.cpp

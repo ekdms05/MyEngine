@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mye/runtime/ObjectComponents.h"
+#include "mye/runtime/GameInput.h"
 #include "mye/core/Math.h"
 #include "mye/ecs/Entity.h"
 #include "mye/render/Camera2D.h"
@@ -8,12 +9,6 @@
 
 namespace mye::runtime {
 struct MapRequest { std::string scenePath, spawnName; };
-struct GameInput {
-    Vec2 movement{};
-    bool interact = false, jump = false;
-    float cameraAxis = 0, cameraMouseX = 0;
-    float cameraZoomSteps = 0;
-};
 
 // Compatibility for scenes without a saved camera: initialize at the controller,
 // then follow the same fixed-tick deadzone in Play and MyGame.

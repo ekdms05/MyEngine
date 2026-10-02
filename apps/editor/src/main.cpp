@@ -69,6 +69,8 @@ public:
                 m_importDestination = a[++i];
             } else if (a[i] == "--add-element-dialog") {
                 m_addElementDialog = true;
+            } else if (a[i] == "--input-settings-dialog") {
+                m_inputSettingsDialog = true;
             } else if (a[i] == "--workspace" && i + 1 < a.size()) {
                 m_workspace = a[++i];
             } else if (a[i] == "--view3d") {
@@ -103,7 +105,7 @@ public:
         // EditorModule 에 CLI 제어를 주입(프레임 한도 도달 시 이 Application 을 종료).
         if (auto* em = ctx.GetService<editor::EditorModule>()) {
             const bool automatedStartup = !ctx.GetServiceRaw(kMainWindowServiceId) ||
-                m_frameLimit || m_dumpEnabled || m_startPlaying || m_view3d || m_addElementDialog ||
+                m_frameLimit || m_dumpEnabled || m_startPlaying || m_view3d || m_addElementDialog || m_inputSettingsDialog ||
                 !m_importSource.empty() || !m_importDestination.empty() || !m_animationPath.empty() ||
                 !m_workspace.empty() || !m_selectName.empty();
             // File associations and interactive --project opens recover in the launcher.
@@ -140,6 +142,11 @@ public:
                 if (!started) { MYE_LOG_ERROR("MyEditor", "{}", started.GetError().message); RequestExit(1); }
             }
             if (em->App()) em->App()->RefreshDocumentContext();
+            if (m_inputSettingsDialog) {
+                auto opened = em->App() ? em->App()->RequestInputSettings()
+                    : Expected<void, Error>{Error{"Editor initialization failed", 1}};
+                if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); return; }
+            }
             if (em->App() && !m_selectName.empty()) {
                 if (auto* world = em->App()->PlayMode().ActiveWorld())
                     world->Query<scene::ObjectName>().Each([&](ecs::Entity entity, const scene::ObjectName& name) {
@@ -159,6 +166,7 @@ private:
     std::string   m_projectPath, m_executableDirectory, m_animationPath, m_selectName, m_workspace;
     std::string   m_importSource, m_importDestination;
     bool          m_addElementDialog = false;
+    bool          m_inputSettingsDialog = false;
     bool m_view3d = false;
     bool          m_startPlaying = false;
     bool          m_frameLimit = false;

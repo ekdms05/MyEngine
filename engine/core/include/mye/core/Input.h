@@ -1,8 +1,8 @@
 // mye/core/Input.h — 저수준 입력: KeyCode·입력 이벤트·InputState 폴링 (docs/01 §저수준 입력)
 //
-// 책임 경계(01): "무슨 물리 키가 눌렸다"까지. 입력 매핑(액션·축·리바인딩)·IME 조합은 06.
+// Physical state/events only. InputActions maps controls; runtime names game actions.
 // 스트림 분리: 물리 키(RawKeyEvent, 스캔코드 KeyCode) vs 문자(TextInputEvent, UTF-8).
-// InputState는 즉시성이 필요한 소비자용 폴링 스냅샷 — 매 프레임 PumpMessages 직후 1회 갱신.
+// NewFrame clears edges before message pumping. A short press/release keeps both edges.
 #pragma once
 
 #include "mye/core/Base.h"
@@ -129,7 +129,7 @@ private:
     };
 
     Snapshot m_current{};
-    Snapshot m_previous{};
+    Snapshot m_pressed{}, m_released{};
     GamepadSnapshot m_pads[kMaxGamepads]{};
     GamepadSnapshot m_padsPrev[kMaxGamepads]{};
     uint32_t m_gamepadPoll = 0;   // 미연결 슬롯 재검색 주기용 카운터

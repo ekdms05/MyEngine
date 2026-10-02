@@ -207,6 +207,10 @@ async function main() {
   check("engine_reference — 저장 2D 카메라의 추종 계약", camera2D.result?.isError !== true && firstText(camera2D.result).includes("24-2d-camera.md") && firstText(camera2D.result).includes("월드 XY"));
   const cameraLua = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "shake_camera" } });
   check("engine_reference — 실제 카메라 Entity Lua API", cameraLua.result?.isError !== true && firstText(cameraLua.result).includes("0~10") && firstText(cameraLua.result).includes("고정 틱"));
+  const inputSettings = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", search: "inputMap" } });
+  check("engine_reference — 저장 입력 설정과 이전 프로젝트 호환", inputSettings.result?.isError !== true && firstText(inputSettings.result).includes("25-input-actions.md") && firstText(inputSettings.result).includes("기본 조작"));
+  const inputLimits = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", search: "Lua" } });
+  check("engine_reference — 사용자 액션 Lua 미연결 경계", inputLimits.result?.isError !== true && firstText(inputLimits.result).includes("아직 제공하지 않는다"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

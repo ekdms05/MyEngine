@@ -52,18 +52,33 @@ bool PlayWindow::HasFocus() const {
 bool PlayWindow::OnMessage(void* handle, uint32_t message, uint64_t wparam, int64_t lparam) {
     if (message == WM_SETFOCUS) { m_input.SetKeyboardSuppressed(false); m_input.SetMouseSuppressed(false); }
     if (message == WM_KILLFOCUS) { m_input.SetKeyboardSuppressed(true); m_input.SetMouseSuppressed(true); ReleaseCapture(); }
-    if ((message==WM_RBUTTONDOWN || message==WM_RBUTTONUP) && !m_input.IsMouseSuppressed()) {
-        m_input.OnMouseButton(MouseButton::Right,message==WM_RBUTTONDOWN);
-        if (message==WM_RBUTTONDOWN) {
+    MouseButton button = MouseButton::Count;
+    bool pressed = false;
+    switch (message) {
+    case WM_LBUTTONDOWN: pressed = true; [[fallthrough]];
+    case WM_LBUTTONUP: button = MouseButton::Left; break;
+    case WM_RBUTTONDOWN: pressed = true; [[fallthrough]];
+    case WM_RBUTTONUP: button = MouseButton::Right; break;
+    case WM_MBUTTONDOWN: pressed = true; [[fallthrough]];
+    case WM_MBUTTONUP: button = MouseButton::Middle; break;
+    case WM_XBUTTONDOWN: pressed = true; [[fallthrough]];
+    case WM_XBUTTONUP: button = HIWORD(wparam) == XBUTTON1 ? MouseButton::X1 : MouseButton::X2; break;
+    }
+    if (button != MouseButton::Count && !m_input.IsMouseSuppressed()) {
+        m_input.OnMouseButton(button, pressed);
+        if (pressed) {
             const Vec2i position{static_cast<int16_t>(lparam&0xffff),static_cast<int16_t>((lparam>>16)&0xffff)};
             m_input.OnMouseMove(position,{}); SetCapture(static_cast<HWND>(handle));
-        } else ReleaseCapture();
+        } else if (!m_input.IsDown(MouseButton::Left) && !m_input.IsDown(MouseButton::Right) &&
+                   !m_input.IsDown(MouseButton::Middle) && !m_input.IsDown(MouseButton::X1) && !m_input.IsDown(MouseButton::X2)) ReleaseCapture();
     }
-    if (message==WM_CAPTURECHANGED) m_input.OnMouseButton(MouseButton::Right,false);
+    if (message == WM_CAPTURECHANGED)
+        for (int i = 0; i < static_cast<int>(MouseButton::Count); ++i) m_input.OnMouseButton(static_cast<MouseButton>(i), false);
+    if (message == WM_MOUSEWHEEL) m_input.OnWheel(static_cast<int16_t>(HIWORD(wparam)) / float(WHEEL_DELTA));
     if (message==WM_MOUSEMOVE && !m_input.IsMouseSuppressed()) {
         const Vec2i position{static_cast<int16_t>(lparam&0xffff),static_cast<int16_t>((lparam>>16)&0xffff)};
         const auto previous=m_input.MousePosition();
-        m_input.OnMouseMove(position,m_input.IsDown(MouseButton::Right) ? Vec2{float(position.x-previous.x),float(position.y-previous.y)} : Vec2{});
+        m_input.OnMouseMove(position, Vec2{float(position.x-previous.x),float(position.y-previous.y)});
     }
     if (!m_input.IsKeyboardSuppressed() && (message == WM_KEYDOWN || message == WM_KEYUP || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP)) {
         const auto key = win32::ScanCodeToKeyCode(static_cast<uint16_t>((lparam >> 16) & 0xff),

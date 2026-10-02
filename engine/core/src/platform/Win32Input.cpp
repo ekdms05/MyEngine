@@ -187,6 +187,12 @@ bool Win32InputBackend::OnMessage(void* hwnd, uint32_t msg, uint64_t wparam, int
     // 담당한다 — OnKey/OnMouse* 호출이 억제 시 no-op이 되므로 아래 갱신은 그대로 두어도 안전.
     // (DebugUi가 프레임마다 WantCaptureKeyboard/Mouse를 InputState에 주입한다.)
     switch (msg) {
+    case WM_KILLFOCUS:
+        if (m_state) { m_state->SetKeyboardSuppressed(true); m_state->SetMouseSuppressed(true); }
+        break;
+    case WM_SETFOCUS:
+        if (m_state) { m_state->SetKeyboardSuppressed(false); m_state->SetMouseSuppressed(false); }
+        break;
     case WM_INPUT: {
         UINT size = 0;
         ::GetRawInputData(reinterpret_cast<HRAWINPUT>(lparam), RID_INPUT, nullptr, &size,

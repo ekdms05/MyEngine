@@ -17,6 +17,7 @@ add_library(mye_runtime STATIC
     src/OnlineScene.cpp
     src/ObjectComponents.cpp
     src/ObjectSystem.cpp
+    src/GameInput.cpp
     # ---- 공용 값 타입·계약 ----
     include/mye/runtime/RuntimeTypes.h
     src/RuntimeTypes.cpp

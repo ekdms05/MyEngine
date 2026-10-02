@@ -112,6 +112,7 @@ Expected<void, Error> EditorApp::CreateProject(std::string_view name, std::strin
     if (!layout) return layout.GetError();
     auto created = m_project->Create(name, directory, discardUnsaved, useStarter ? m_templateDirectory : "");
     if (!created) return created.GetError();
+    m_showInputSettings = false;
     m_animationId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
@@ -127,6 +128,7 @@ Expected<void, Error> EditorApp::OpenProject(std::string_view path, bool discard
     if (!layout) return layout.GetError();
     auto opened = m_project->Open(path, discardUnsaved);
     if (!opened) return opened.GetError();
+    m_showInputSettings = false;
     m_animationId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();

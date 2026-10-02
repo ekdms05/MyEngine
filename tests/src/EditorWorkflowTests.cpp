@@ -1,6 +1,6 @@
-// EditorWorkflowTests.cpp — M4 완료기준 엔드투엔드 워크플로우 검증 (docs/00 §7 M4)
+// EditorWorkflowTests.cpp — editor authoring, persistence and Play workflows.
 //
-// M4 완료기준: 에디터에서 스프라이트·프랍·NPC 프리팹을 뷰포트에 배치 → 인스펙터로 값 수정 →
+// 에디터에서 스프라이트·프랍·NPC 프리팹을 뷰포트에 배치 → 인스펙터로 값 수정 →
 //   Ctrl+S 저장 → ▶Play 로 즉시 걸어보고 → ■Stop 으로 편집 상태 복귀. 모든 편집이 Ctrl+Z 로 되돌려짐.
 //
 // 이 테스트는 GUI 를 헤드리스로 대체해, 실제 에디터 진입점(InstantiateAssetToWorld 드롭 처리,
@@ -24,6 +24,8 @@
 #include "mye/editor/Project.h"
 #include "mye/editor/Viewport.h"
 #include "mye/runtime/ObjectComponents.h"
+#include "mye/runtime/GameInput.h"
+#include <Windows.h>
 #include "mye/phys/Collision.h"
 #include "mye/asset/AssetDatabase.h"
 #include "mye/asset/AssetManager.h"
@@ -1012,6 +1014,31 @@ MYE_TEST(PlayWindowReopensWithoutRetainingInputOrResources) {
     window.Input().SetKeyboardSuppressed(false);
     window.Input().OnKey(KeyCode::D, true);
     MYE_EXPECT(window.Input().IsDown(KeyCode::D));
+    const auto handle = FindWindowW(nullptr, L"MyEngine — Play");
+    DWORD processId = 0; GetWindowThreadProcessId(handle, &processId);
+    MYE_EXPECT(handle && processId == GetCurrentProcessId());
+    if (handle && processId == GetCurrentProcessId()) {
+        SendMessageW(handle, WM_SETFOCUS, 0, 0);
+        auto bindings = runtime::DefaultGameInputMap();
+        for (auto& action : bindings.actions) if (action.name == "interact")
+            action.bindings = {{InputDevice::MouseButton, static_cast<int>(MouseButton::X1)}};
+        runtime::GameInputBuffer buffer; MYE_EXPECT(buffer.Configure(bindings));
+        window.Input().OnKey(KeyCode::D, false);
+        window.Input().NewFrame();
+        SendMessageW(handle, WM_XBUTTONDOWN, MAKEWPARAM(MK_XBUTTON1, XBUTTON1), MAKELPARAM(10,10));
+        SendMessageW(handle, WM_XBUTTONUP, MAKEWPARAM(0, XBUTTON1), MAKELPARAM(10,10));
+        SendMessageW(handle, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), 0);
+        SendMessageW(handle, WM_KEYDOWN, 'W', LPARAM{0x11} << 16);
+        buffer.Capture(window.Input(), true);
+        const auto controls = buffer.ConsumeTick();
+        MYE_EXPECT(controls.interact && controls.cameraZoomSteps == 1 && controls.movement == Vec2{0,1});
+        MYE_EXPECT(!buffer.ConsumeTick().interact && buffer.ConsumeTick().cameraZoomSteps == 0);
+        SendMessageW(handle, WM_KILLFOCUS, 0, 0);
+        MYE_EXPECT(!window.Input().IsDown(KeyCode::W) && window.Input().IsMouseSuppressed());
+        SendMessageW(handle, WM_SETFOCUS, 0, 0);
+        window.Input().NewFrame(); buffer.Capture(window.Input(), true);
+        MYE_EXPECT(buffer.ConsumeTick().movement == Vec2{});
+    }
     window.Close();
     MYE_EXPECT(!window.IsOpen() && !window.HasFocus() && !window.Input().IsDown(KeyCode::D));
     MYE_EXPECT(window.Open(*device.Value()));
@@ -1026,8 +1053,10 @@ MYE_TEST(EditorWorkspacePreservesDocumentsAndSwitchesProjection) {
     TestEditorViewport viewport;
     MYE_EXPECT(app.Initialize(engine, ""));
     app.SetViewport(&viewport);
+    MYE_EXPECT(!app.RequestInputSettings());
     MYE_EXPECT(!app.CreateScene(false));
     MYE_EXPECT(app.CreateProject("Workspace", Utf8String(root / "project")));
+    MYE_EXPECT(app.RequestInputSettings());
     const auto* initial = app.Project().Active();
     const auto count = app.Project().Documents().size();
     const auto position = app.Commands().Position();
@@ -1127,6 +1156,7 @@ MYE_TEST(EditorTwoDCameraElementUndoSaveReopenAndPlayIsolation) {
     const auto other = app.CreateSceneElement(EditorApp::SceneElement::Camera);
     MYE_EXPECT(other && !world.TryGet<scene::Camera3D>(other.Value())->current);
     MYE_EXPECT(app.PlayMode().Play());
+    MYE_EXPECT(!app.RequestInputSettings());
     auto* playWorld = app.PlayMode().ActiveWorld();
     playWorld->Query<scene::Camera2D>().Each([](ecs::Entity, auto& c) { c.zoom = 3; });
     MYE_EXPECT(app.PlayMode().Tick(.02f, runtime::GameInput{}, ""));

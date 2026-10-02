@@ -86,6 +86,7 @@ public:
     Expected<ecs::Entity, Error> CreateSceneElement(SceneElement element, ecs::Entity parent = ecs::Entity::Null());
     void NewScene(); // Request the 2D/3D choice, shared by menu, shortcut and panels.
     void RequestAddElement(ecs::Entity parent = ecs::Entity::Null());
+    Expected<void, Error> RequestInputSettings();
     void DrawDocumentTabs(); // Scene documents belong to the viewport work area.
     void RequestOpenScene();
     void SaveActive();
@@ -111,6 +112,7 @@ private:
     void TogglePlay();
     void DrawFileDialogs();
     void DrawWorkspaceDialogs();
+    void DrawInputSettings();
     void RequestNewProject();
     void RequestOpenProject(bool folder = false);
     void RequestSaveAs();
@@ -134,6 +136,8 @@ private:
     bool           m_showNewProject = false;
     bool           m_showNewScene = false;
     bool           m_showAddElement = false;
+    bool           m_showInputSettings = false;
+    InputMap       m_inputDraft;
     bool           m_toolbarInMenu = false;
     Workspace      m_workspace = Workspace::Scene2D;
     ecs::Entity    m_elementParent = ecs::Entity::Null();

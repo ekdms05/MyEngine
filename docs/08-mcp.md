@@ -62,6 +62,8 @@ MCP 요청 → 입력/경로 검증 → 작업 직렬화 → CLI 실행·로그 
 
 `engine_reference(topic="roadmap")`은 [온라인 2D MMORPG 작업 목록](22-2d-mmorpg-roadmap.md)의 목표·현재 경로·작은 작업/완료 조건을 읽는다. 미완료 작업을 현재 제공 API로 설명하지 않는다. 기존 `online` 주제의 XYZ 계약은 유지한다.
 
+`engine_reference(topic="input")`은 [프로젝트 입력 설정](25-input-actions.md)의 기본 조작·저장 `inputMap`·공통 고정 틱 소비·캡처 취소와 미완료 Lua/직접 장치 검수 범위를 읽는다. MyEditor의 `--input-settings-dialog`는 실제 설정 창을 열어 캡처하는 CLI이며 원격 편집 API가 아니다. MyGame의 기존 `--input`은 의미 입력 재생으로 물리 키 재매핑/직접 장치 검증을 대신하지 않는다.
+
 `engine_reference(topic="online")`은 [XYZ/온라인](21-3d-play-and-online.md)의 장면 구성·카메라 입력·인증 CLI·예측/영속·지원 한계를 읽는다. `engine_run(sample="MyServer", frames=N)`은 서버의 `--ticks N`으로 변환된다. 개발 MCP와 릴리즈 소비자용 도구의 연결은 구분한다.
 
 `engine_reference(topic="camera2d")`는 main 소스의 [저장 2D 게임 카메라](24-2d-camera.md)를 읽는다. 이름/부모 추종·경계·데드존·줌/흔들림·실제 프레임 근거와 온라인 Lua 격리를 설명한다. Entity의 `set_camera_zoom`·`shake_camera`·좌표 변환은 `topic="lua"`, 저장 필드는 `topic="components"`로 조회한다. `MyGame --input`의 선택 cameraZoomSteps는 각 고정 틱의 -16~16 휠 단계이며 신규 프로토콜이나 서버 권위 입력이 아니다.

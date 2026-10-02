@@ -3,6 +3,8 @@
 
 #include "mye/core/Input.h"
 #include "mye/core/platform/Win32Input.h"
+#include "mye/runtime/GameInput.h"
+#include <limits>
 
 using namespace mye;
 
@@ -44,14 +46,12 @@ MYE_TEST(InputKeyPressReleaseEdges) {
 MYE_TEST(InputPressAndReleaseSameFrame) {
     InputState in;
     in.NewFrame();
-    // 같은 프레임 안에서 down 후 up(빠른 탭) — 마지막 상태는 up, 이전 프레임은 not-down이므로
-    // 현재 프레임 릴리즈 엣지 판정(WasReleased)은 이전=false, 현재=false → false.
-    // (이 정책은 프레임 경계 스냅샷 기반 — 프레임 내 순간 토글은 IsDown으로 포착 불가.)
+    // A quick tap keeps both edges even if no fixed tick ran while it was held.
     in.OnKey(KeyCode::Space, true);
     in.OnKey(KeyCode::Space, false);
     MYE_EXPECT(!in.IsDown(KeyCode::Space));
-    MYE_EXPECT(!in.WasPressed(KeyCode::Space));
-    MYE_EXPECT(!in.WasReleased(KeyCode::Space));
+    MYE_EXPECT(in.WasPressed(KeyCode::Space));
+    MYE_EXPECT(in.WasReleased(KeyCode::Space));
 }
 
 MYE_TEST(InputMouseButtonEdges) {
@@ -134,4 +134,101 @@ MYE_TEST(ScanCodeVirtualKeyFallback) {
     MYE_EXPECT(ScanCodeToKeyCode(0, false, false, 'Q') == KeyCode::Q);
     // 알 수 없는 조합(make 0, vkey 0) → Unknown.
     MYE_EXPECT(ScanCodeToKeyCode(0, false, false, 0) == KeyCode::Unknown);
+}
+
+MYE_TEST(InputActionRemapKeepsQuickTapUntilOneFixedTick) {
+    auto map = runtime::DefaultGameInputMap();
+    for (auto& action : map.actions) if (action.name == "interact")
+        action.bindings = {{InputDevice::Key, static_cast<int>(KeyCode::F)}};
+    runtime::GameInputBuffer buffer;
+    MYE_EXPECT(buffer.Configure(map));
+    InputState input;
+    input.NewFrame(); input.OnKey(KeyCode::E, true);
+    buffer.Capture(input, true);
+    MYE_EXPECT(!buffer.ConsumeTick().interact);
+    input.NewFrame(); input.OnKey(KeyCode::F, true); input.OnKey(KeyCode::F, false);
+    buffer.Capture(input, true);
+    input.NewFrame(); buffer.Capture(input, true); // Render frame without a fixed tick.
+    MYE_EXPECT(buffer.ConsumeTick().interact);
+    MYE_EXPECT(buffer.Actions().Action("interact").pressed && buffer.Actions().Action("interact").released);
+    MYE_EXPECT(!buffer.ConsumeTick().interact); // Catch-up never repeats the tap.
+    input.NewFrame(); input.OnKey(KeyCode::F, true); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().interact);
+    input.NewFrame(); input.OnKey(KeyCode::F, true); buffer.Capture(input, true);
+    MYE_EXPECT(!buffer.ConsumeTick().interact); // OS repeat is not another press.
+    buffer.Capture(input, false); MYE_EXPECT(!buffer.ConsumeTick().interact);
+    input.NewFrame(); buffer.Capture(input, true);
+    MYE_EXPECT(!buffer.ConsumeTick().interact); // Held key on resume does not fire.
+    input.NewFrame(); input.OnKey(KeyCode::F, false); buffer.Capture(input, true); buffer.ConsumeTick();
+    input.NewFrame(); input.OnKey(KeyCode::F, true); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().interact);
+    input.NewFrame(); input.OnKey(KeyCode::Escape, true); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().exitGame);
+    MYE_EXPECT(!buffer.ConsumeTick().exitGame);
+}
+
+MYE_TEST(InputActionsNormalizeDirectionsConsumeMouseAndHonorCapture) {
+    runtime::GameInputBuffer buffer;
+    MYE_EXPECT(buffer.Configure(runtime::DefaultGameInputMap()));
+    InputState input;
+    input.NewFrame(); input.OnKey(KeyCode::D, true); input.OnKey(KeyCode::W, true);
+    input.OnMouseButton(MouseButton::Right, true); input.OnMouseMove({}, {3, 1}); input.OnWheel(1.5f);
+    buffer.Capture(input, true);
+    const auto first = buffer.ConsumeTick();
+    MYE_EXPECT_NEAR(first.movement.x, std::sqrt(.5f), 1e-6f);
+    MYE_EXPECT_NEAR(first.movement.y, std::sqrt(.5f), 1e-6f);
+    MYE_EXPECT(first.cameraMouseX == 3 && first.cameraZoomSteps == 1.5f);
+    const auto second = buffer.ConsumeTick();
+    MYE_EXPECT(second.movement == first.movement && second.cameraMouseX == 0 && second.cameraZoomSteps == 0);
+    input.NewFrame(); input.OnWheel(-.5f); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().cameraZoomSteps == -.5f);
+    input.NewFrame(); input.OnKey(KeyCode::A, true); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().movement == Vec2{0,1}); // Opposing directions cancel.
+    input.SetKeyboardSuppressed(true); input.SetMouseSuppressed(true);
+    input.OnKey(KeyCode::E, true); input.OnMouseButton(MouseButton::Right, true); input.OnWheel(2);
+    buffer.Capture(input, true);
+    const auto captured = buffer.ConsumeTick();
+    MYE_EXPECT(captured.movement == Vec2{} && !captured.interact && captured.cameraMouseX == 0 && captured.cameraZoomSteps == 0);
+    input.SetKeyboardSuppressed(false); input.SetMouseSuppressed(false);
+    input.NewFrame(); input.OnMouseButton(MouseButton::Left, true); input.OnMouseButton(MouseButton::Left, false);
+    MYE_EXPECT(input.WasPressed(MouseButton::Left) && input.WasReleased(MouseButton::Left));
+    const auto invalidKey = static_cast<KeyCode>(65535);
+    input.OnKey(invalidKey, true); input.OnMouseButton(static_cast<MouseButton>(255), true);
+    MYE_EXPECT(!input.IsDown(invalidKey) && !input.WasPressed(invalidKey) && !input.WasReleased(invalidKey));
+    MYE_EXPECT(!input.IsDown(static_cast<MouseButton>(255)) && !input.WasPressed(static_cast<GamepadButton>(255)));
+    input.NewFrame(); input.OnKey(KeyCode::E, true); input.OnMouseButton(MouseButton::Right, true);
+    input.OnMouseMove({}, {4, 0}); input.OnWheel(2); buffer.Capture(input, true);
+    // UI captures the next render frame before the pending fixed tick.
+    input.SetKeyboardSuppressed(true); input.SetMouseSuppressed(true); buffer.Capture(input, true);
+    const auto cancelled = buffer.ConsumeTick();
+    MYE_EXPECT(!cancelled.interact && cancelled.cameraMouseX == 0 && cancelled.cameraZoomSteps == 0);
+}
+
+MYE_TEST(InputMapRejectsMalformedDataAndPreservesConfiguredActions) {
+    const auto defaults = runtime::DefaultGameInputMap();
+    const auto roundTrip = InputMap::FromJson(defaults.ToJson());
+    MYE_EXPECT(roundTrip && roundTrip.Value() == defaults);
+    MYE_EXPECT(runtime::LoadGameInputMap(nullptr).Value() == defaults);
+    InputActions actions; MYE_EXPECT(actions.Configure(defaults));
+    auto malformed = defaults;
+    malformed.actions[0].bindings[0].code = 65540;
+    MYE_EXPECT(!actions.Configure(malformed) && actions.Map() == defaults);
+    malformed = defaults; malformed.actions[0].deadzone = std::numeric_limits<float>::quiet_NaN();
+    MYE_EXPECT(!malformed.Validate());
+    malformed = defaults; malformed.actions[0].deadzone = 1; MYE_EXPECT(!malformed.Validate());
+    malformed = defaults; malformed.actions[0].bindings[0].pad = 1; MYE_EXPECT(!malformed.Validate());
+    malformed = defaults; malformed.actions.push_back(malformed.actions[0]); MYE_EXPECT(!malformed.Validate());
+    malformed = defaults; malformed.actions[0].bindings.push_back(malformed.actions[0].bindings[0]); MYE_EXPECT(!malformed.Validate());
+    malformed = defaults; malformed.actions[0].name = "bad name"; MYE_EXPECT(!malformed.Validate());
+    for (const auto text : {
+        R"({"version":2,"actions":[]})", R"({"version":1,"actions":false})",
+        R"({"version":1,"actions":[{"name":"test","deadzone":0.2,"bindings":[{"device":"key","code":999999999999,"direction":1,"pad":0}]}]})",
+        R"({"version":1,"actions":[{"name":"test","deadzone":0.2,"bindings":[{"device":"unknown","code":4,"direction":1,"pad":0}]}]})",
+        R"({"version":1,"actions":[{"name":"test","deadzone":0.2,"bindings":[{"device":"key","code":4.0,"direction":1,"pad":0}]}]})"}) {
+        const auto parsed = json::Parse(text); MYE_EXPECT(parsed && !InputMap::FromJson(parsed.Value()));
+    }
+    auto padMap = defaults;
+    padMap.actions[0].bindings = {{InputDevice::GamepadAxis, 0,-1,3}, {InputDevice::GamepadButton, 0,1,3}};
+    MYE_EXPECT(padMap.Validate() && InputMap::FromJson(padMap.ToJson()).Value() == padMap);
+    MYE_EXPECT(InputBindingLabel(padMap.actions[0].bindings[0]) == "Pad 4 Left X -");
 }

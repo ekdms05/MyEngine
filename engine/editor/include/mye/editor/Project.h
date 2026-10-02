@@ -10,6 +10,7 @@
 #include "mye/editor/EditorTypes.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/asset/AnimationAsset.h"
+#include "mye/core/InputActions.h"
 
 #include <memory>
 #include <span>
@@ -67,6 +68,10 @@ public:
     bool HasUnsavedChanges() const;
     std::string_view Name() const;
     std::string_view ProjectFilePath() const;
+    const InputMap& InputSettings() const;
+    // Save settings without saving/replacing scene documents. Failure keeps both
+    // the manifest and the running editor settings unchanged.
+    Expected<void, Error> SaveInputSettings(const InputMap& settings);
 
     std::string_view RootDir() const;       // 프로젝트 루트
     std::string      EditorStateDir() const; // <root>/.myeditor

@@ -46,7 +46,7 @@ if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip) -or (Test-
 $publicDocs = @('README.md','01-core-platform.md','02-rendering.md','03-scene-world.md','04-asset-pipeline.md',
     '06-runtime-systems.md','07-editor-ui.md','08-mcp.md','13-architecture-and-features.md',
     '14-development-priorities.md','15-skills-and-agents.md','16-foundation-worklog.md',
-    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','23-2d-online-play.md','24-2d-camera.md','release-notes.md')
+    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','23-2d-online-play.md','24-2d-camera.md','25-input-actions.md','release-notes.md')
 foreach ($name in $publicDocs) { $null = Repo-File "docs/$name" }
 $null = Repo-File 'docs/guide/index.html'
 $null = Repo-File 'game/starter/meadow_village/project.myeproj'

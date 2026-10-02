@@ -213,6 +213,7 @@ void EditorApp::OnFrame() {
     m_animationFocused = false;
     if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
     DrawWorkspaceDialogs();
+    DrawInputSettings();
     DrawFileDialogs();
 }
 
@@ -304,6 +305,9 @@ void EditorApp::DrawMenuBar() {
         if (ImGui::MenuItem(T("file.openproject"), "Ctrl+Shift+O", false, editing)) RequestOpenProject();
         if (ImGui::MenuItem(T("file.openfolder"), nullptr, false, editing)) RequestOpenProject(true);
         if (ImGui::MenuItem(T("file.saveproject"), "Ctrl+Alt+S", false, editing && open)) RequestSaveProject();
+        if (ImGui::MenuItem("입력 설정…", nullptr, false, editing && open)) {
+            if (auto opened = RequestInputSettings(); !opened) ReportError(opened.GetError());
+        }
         ImGui::Separator();
         if (ImGui::MenuItem(T("file.newscene"), "Ctrl+N", false, editing && open)) NewScene();
         if (ImGui::MenuItem(T("file.openscene"), "Ctrl+O", false, editing && open)) RequestOpenScene();

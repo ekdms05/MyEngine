@@ -161,6 +161,8 @@ Entity 접근 값은 월드의 소유권을 가지지 않는다. Play 종료·�
 | `mye.input.pad_down(button[, pad=0])`, `.pad_pressed(...)`, `.pad_released(...)` | 패드 버튼 bool |
 | `mye.input.left_stick([pad=0])`, `.right_stick(...)` | 스틱 Vec2 |
 | `mye.input.left_trigger([pad=0])`, `.right_trigger(...)` | 트리거 숫자 |
+
+이 선택 모듈의 was_pressed/was_released는 입력 **프레임**의 이벤트다. main 소스는 같은 프레임의 짧은 키/마우스 탭도 두 엣지를 보존한다. 여러 고정 틱에 직접 조회하면 프레임 엣지를 반복해서 읽을 수 있으므로 틱 소비를 직접 관리해야 한다. 공식 Play/MyGame의 기본 조작은 [프로젝트 입력 설정](25-input-actions.md)과 GameInputBuffer에서 한 번 소비한다. 이름으로 사용자 액션을 조회하는 Lua API는 아직 등록하지 않았다.
 | `mye.audio.play_cue(name[, x, y])` | 큐 재생. x와 y를 함께 주면 공간화 |
 | `mye.audio.play_music(name[, fade=0.5])`, `.stop_music([fade=0])` | 음악 재생·중지. fade는 초 |
 | `mye.audio.set_bus_volume(bus, volume)`, `.get_bus_volume(bus)` | 버스 볼륨 쓰기·읽기 |

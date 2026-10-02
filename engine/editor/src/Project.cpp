@@ -10,6 +10,7 @@
 #include "mye/anim/SpriteAnimator.h"
 #include "mye/gameplay/Progression.h"
 #include "mye/runtime/ObjectComponents.h"
+#include "mye/runtime/GameInput.h"
 #include "mye/phys/Collision.h"
 
 #include <algorithm>
@@ -44,7 +45,8 @@ json::Value ProjectMetadata(std::string_view name, std::string_view mainScene) {
     return json::Value(json::Value::Object{
         {"version", json::Value(int64_t{1})},
         {"name", json::Value(std::string(name))},
-        {"mainScene", json::Value(std::string(mainScene))}});
+        {"mainScene", json::Value(std::string(mainScene))},
+        {"inputMap", runtime::DefaultGameInputMap().ToJson()}});
 }
 
 bool SameFile(std::string_view path, const fs::path& target) {
@@ -81,6 +83,7 @@ struct ProjectContext::Impl {
     std::string projectFile;
     std::string mainScene;
     json::Value metadata;
+    InputMap inputSettings;
     bool        open = false;
     bool        metadataDirty = false;
 
@@ -146,6 +149,9 @@ Expected<void, Error> ProjectContext::Open(std::string_view projectPath, bool di
         candidate->mainScene = main->AsString();
         candidate->metadata = std::move(metadata).Value();
     }
+    auto inputSettings = runtime::LoadGameInputMap(candidate->metadata.Find("inputMap"));
+    if (!inputSettings) return inputSettings.GetError();
+    candidate->inputSettings = std::move(inputSettings).Value();
     candidate->projectFile = Utf8String(projectFile);
     if (!candidate->mainScene.empty()) {
         const auto main = Utf8Path(candidate->mainScene);
@@ -241,8 +247,11 @@ Expected<void, Error> ProjectContext::Save() {
     auto metadata = m_impl->metadata.AsObject();
     metadata["name"] = json::Value(m_impl->name);
     metadata["mainScene"] = json::Value(m_impl->mainScene);
-    auto saved = WriteJsonFile(Utf8Path(m_impl->projectFile), json::Value(std::move(metadata)));
+    metadata["inputMap"] = m_impl->inputSettings.ToJson();
+    auto value = json::Value(std::move(metadata));
+    auto saved = WriteJsonFile(Utf8Path(m_impl->projectFile), value);
     if (!saved) return saved.GetError();
+    m_impl->metadata = std::move(value);
     m_impl->metadataDirty = false;
     return {};
 }
@@ -254,6 +263,19 @@ bool ProjectContext::HasUnsavedChanges() const {
 }
 std::string_view ProjectContext::Name() const { return m_impl->name; }
 std::string_view ProjectContext::ProjectFilePath() const { return m_impl->projectFile; }
+const InputMap& ProjectContext::InputSettings() const { return m_impl->inputSettings; }
+Expected<void, Error> ProjectContext::SaveInputSettings(const InputMap& settings) {
+    if (!IsOpen()) return Error{"Open a project before editing input settings", 1};
+    if (auto valid = settings.Validate(); !valid) return valid.GetError();
+    auto metadata = m_impl->metadata.AsObject();
+    metadata["inputMap"] = settings.ToJson();
+    auto value = json::Value(std::move(metadata));
+    auto saved = WriteJsonFile(Utf8Path(m_impl->projectFile), value);
+    if (!saved) return saved.GetError();
+    m_impl->metadata = std::move(value);
+    m_impl->inputSettings = settings;
+    return {};
+}
 std::string_view ProjectContext::RootDir() const { return m_impl->rootDir; }
 
 std::string ProjectContext::EditorStateDir() const {

@@ -7,6 +7,7 @@
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/Importer.h"
 #include "mye/core/JsonFile.h"
+#include "mye/runtime/ObjectSystem.h"
 #include "mye/ecs/World.h"
 #include "mye/scene/Transform.h"
 #include "mye/scene/SpriteGeometry.h"
@@ -23,6 +24,76 @@ namespace {
 std::filesystem::path FreshRoot() {
     return Utf8Path(MYE_TEST_DATA_DIR) / "starter-editor" /
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+}
+
+MYE_TEST(ProjectInputSettingsSaveReloadAndPlayKeepSceneAndUnknownMetadata) {
+    const auto root = FreshRoot();
+    ed::ProjectContext project;
+    MYE_EXPECT(project.Create("Input settings", Utf8String(root), false, MYE_STARTER_SOURCE_DIR));
+    if (!project.IsOpen() || !project.Active()) return;
+    const auto manifestPath = Utf8Path(project.ProjectFilePath());
+    auto metadata = ReadJsonFile(manifestPath);
+    MYE_EXPECT(metadata);
+    if (!metadata) return;
+    auto object = metadata.Value().AsObject(); object["userSetting"] = json::Value(std::string("keep"));
+    MYE_EXPECT(WriteJsonFile(manifestPath, json::Value(std::move(object))));
+    MYE_EXPECT(project.Open(Utf8String(manifestPath)));
+    auto* doc = project.Active();
+    const auto sceneBefore = ReadJsonFile(Utf8Path(doc->Path()));
+    auto remap = project.InputSettings();
+    for (auto& action : remap.actions) {
+        if (action.name == "move_right") action.bindings = {{InputDevice::Key, static_cast<int>(KeyCode::L)}};
+        if (action.name == "move_up") action.bindings = {{InputDevice::Key, static_cast<int>(KeyCode::I)}};
+    }
+    MYE_EXPECT(project.SaveInputSettings(remap));
+    MYE_EXPECT(project.Active() == doc && !doc->IsDirty() && project.InputSettings() == remap);
+    const auto sceneAfter = ReadJsonFile(Utf8Path(doc->Path()));
+    MYE_EXPECT(sceneBefore && sceneAfter && json::Stringify(sceneBefore.Value()) == json::Stringify(sceneAfter.Value()));
+    const auto saved = ReadJsonFile(manifestPath);
+    MYE_EXPECT(saved && saved.Value().Find("userSetting")->AsString() == "keep");
+    ed::ProjectContext reopened;
+    MYE_EXPECT(reopened.Open(Utf8String(manifestPath)) && reopened.InputSettings() == remap);
+    runtime::GameInputBuffer buffer; MYE_EXPECT(buffer.Configure(reopened.InputSettings()));
+    ed::PlayModeController play; play.SetEditWorld(&reopened.Active()->World());
+    MYE_EXPECT(play.Play());
+    InputState input; input.NewFrame(); input.OnKey(KeyCode::D, true); buffer.Capture(input, true);
+    MYE_EXPECT(buffer.ConsumeTick().movement.x == 0);
+    input.NewFrame(); input.OnKey(KeyCode::L, true); input.OnKey(KeyCode::I, true); buffer.Capture(input, true);
+    const auto controls = buffer.ConsumeTick();
+    MYE_EXPECT_NEAR(std::hypot(controls.movement.x, controls.movement.y), 1, 1e-6f);
+    ecs::Entity player;
+    play.ActiveWorld()->Query<runtime::CharacterController2D>().Each([&](ecs::Entity e, const auto& c) { if (c.enabled) player = e; });
+    MYE_EXPECT(!player.IsNull());
+    if (player.IsNull()) return;
+    const auto before = play.ActiveWorld()->TryGet<scene::LocalTransform>(player)->position;
+    ed::ProjectContext standalone;
+    MYE_EXPECT(standalone.Open(Utf8String(manifestPath)));
+    runtime::ObjectSystem objects(standalone.Active()->World()); MYE_EXPECT(objects.Initialize());
+    runtime::GameInputBuffer gameBuffer;
+    MYE_EXPECT(gameBuffer.Configure(runtime::LoadGameInputMap(saved.Value().Find("inputMap")).Value()));
+    gameBuffer.Capture(input, true);
+    MYE_EXPECT(objects.Tick(1.0f / 60, gameBuffer.ConsumeTick()));
+    MYE_EXPECT(play.Tick(1.0f / 60, controls, Utf8String(root)));
+    const auto after = play.ActiveWorld()->TryGet<scene::LocalTransform>(player)->position;
+    MYE_EXPECT(after.x > before.x && after.y > before.y);
+    const auto standalonePosition = standalone.Active()->World().TryGet<scene::LocalTransform>(player)->position;
+    MYE_EXPECT_NEAR(after.x, standalonePosition.x, 1e-6f);
+    MYE_EXPECT_NEAR(after.y, standalonePosition.y, 1e-6f);
+    MYE_EXPECT(reopened.Active()->World().TryGet<scene::LocalTransform>(player)->position == before);
+    play.Stop();
+
+    const auto backup = root / "manifest-backup.json";
+    std::filesystem::rename(manifestPath, backup);
+    std::filesystem::create_directory(manifestPath); // Checked writer cannot replace a directory.
+    MYE_EXPECT(!project.SaveInputSettings(runtime::DefaultGameInputMap()) && project.InputSettings() == remap);
+    MYE_EXPECT(ReadJsonFile(backup).Value().Find("userSetting")->AsString() == "keep");
+    std::filesystem::remove(manifestPath); std::filesystem::rename(backup, manifestPath);
+    auto malformed = saved.Value().AsObject(); malformed["inputMap"] = json::Value(false);
+    MYE_EXPECT(WriteJsonFile(manifestPath, json::Value(std::move(malformed))));
+    MYE_EXPECT(!project.Open(Utf8String(manifestPath)) && project.Active() == doc && project.InputSettings() == remap);
+    MYE_EXPECT(WriteJsonFile(manifestPath, saved.Value()));
+    MYE_EXPECT(project.Save());
+    MYE_EXPECT(ReadJsonFile(manifestPath).Value().Find("userSetting")->AsString() == "keep");
 }
 asset::AnimationAsset ReadAnimation(const std::filesystem::path& path) {
     auto value = ReadJsonFile(path);

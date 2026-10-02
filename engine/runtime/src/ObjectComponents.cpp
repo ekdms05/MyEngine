@@ -14,7 +14,7 @@ using namespace mye::runtime;
 template <> void mye::refl::Reflect(TypeBuilder<CharacterController3D>& b) {
     b.Field("enabled", &CharacterController3D::enabled)
         .Field("cameraRelative", &CharacterController3D::cameraRelative)
-        .Attr(Attribute::MakeTooltip("현재 게임 카메라의 XZ 축으로 WASD 입력을 변환합니다. 속도/점프는 "
+        .Attr(Attribute::MakeTooltip("현재 게임 카메라의 XZ 축으로 프로젝트 이동 입력을 변환합니다. 속도/점프는 "
                                      "KinematicBody3D.settings에서 지정합니다."))
         .Field("idleAnimation", &CharacterController3D::idleAnimation)
         .Field("walkAnimation", &CharacterController3D::walkAnimation);
@@ -24,10 +24,10 @@ template<> void mye::refl::Reflect(TypeBuilder<CharacterController2D>& b) {
         .Field("idleAnimation", &CharacterController2D::idleAnimation).Attr(Attribute::MakeTooltip("대기할 때 재생할 .anim 에셋을 드래그하세요.")).Field("walkAnimation", &CharacterController2D::walkAnimation).Attr(Attribute::MakeTooltip("이동할 때 재생할 .anim 에셋을 드래그하세요."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<InteractionTarget>& b) {
-    b.Version(1).Field("enabled", &InteractionTarget::enabled).Attr(Attribute::MakeTooltip("E 키 상호작용 대상의 활성 여부입니다.")).Field("radius", &InteractionTarget::radius).Attr(Attribute::MakeTooltip("캐릭터와 대상의 상호작용 거리. 월드 단위이며 0보다 크고 100 이하입니다.")).Field("prompt", &InteractionTarget::prompt).Attr(Attribute::MakeTooltip("상호작용 안내 문자열. 자동 게임 HUD 표시는 아직 연결되지 않았습니다."));
+    b.Version(1).Field("enabled", &InteractionTarget::enabled).Attr(Attribute::MakeTooltip("interact 조작(기본 E)의 대상 활성 여부입니다.")).Field("radius", &InteractionTarget::radius).Attr(Attribute::MakeTooltip("캐릭터와 대상의 상호작용 거리. 월드 단위이며 0보다 크고 100 이하입니다.")).Field("prompt", &InteractionTarget::prompt).Attr(Attribute::MakeTooltip("상호작용 안내 문자열. 자동 게임 HUD 표시는 아직 연결되지 않았습니다."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<ScenePortal>& b) {
-    b.Version(1).Field("scenePath", &ScenePortal::scenePath).Attr(Attribute::MakeTooltip("프로젝트 기준 assets/scenes/*.scene 경로입니다. 프로젝트 밖으로 이동할 수 없습니다.")).Field("spawnName", &ScenePortal::spawnName).Attr(Attribute::MakeTooltip("목적지 씬의 ObjectName.value와 정확히 일치하는 고유 이름입니다.")).Field("onInteract", &ScenePortal::onInteract).Attr(Attribute::MakeTooltip("켜면 InteractionTarget + E, 끄면 트리거 Collider2D 진입으로 이동합니다."));
+    b.Version(1).Field("scenePath", &ScenePortal::scenePath).Attr(Attribute::MakeTooltip("프로젝트 기준 assets/scenes/*.scene 경로입니다. 프로젝트 밖으로 이동할 수 없습니다.")).Field("spawnName", &ScenePortal::spawnName).Attr(Attribute::MakeTooltip("목적지 씬의 ObjectName.value와 정확히 일치하는 고유 이름입니다.")).Field("onInteract", &ScenePortal::onInteract).Attr(Attribute::MakeTooltip("켜면 InteractionTarget + interact 조작, 끄면 트리거 Collider2D 진입으로 이동합니다."));
 }
 template<> void mye::refl::Reflect(EnumBuilder<ObjectEvent>& b) {
     b.Value("Start", ObjectEvent::Start).Value("Interact", ObjectEvent::Interact)

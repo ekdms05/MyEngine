@@ -43,6 +43,7 @@ add_library(mye_editor STATIC
     # ---- 프로젝트·문서 (docs/07 편집 명령과 문서) ----
     include/mye/editor/Project.h
     src/Project.cpp
+    src/EditorInputSettings.cpp
     include/mye/editor/ProjectAssetOperations.h
     src/ProjectAssetOperations.cpp
 

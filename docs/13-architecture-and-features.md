@@ -35,6 +35,8 @@ assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/
 
 입력은 게임 창이 활성일 때만 PlayWorld에 전달한다. 창을 닫거나 Stop을 누르면 PlayWorld를 폐기한다. Pause는 시뮬레이션만 멈추고 표시를 유지한다. 플레이는 같은 프로세스의 별도 Win32 창이며 장애 격리는 제공하지 않는다.
 
+main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서로 읽는다. core InputActions가 이름/바인딩/세기와 프레임→고정 틱 소비를 담당하고 runtime GameInputBuffer가 기본 이동/상호작용/카메라/종료를 조합한다. 파일 메뉴에서 기본 조작을 편집·별도 저장하며 기존 필드 없는 프로젝트는 기본값을 사용한다. Play 창은 다섯 마우스 버튼·휠과 XInput 폴링을 연결했다. 저장 실패·짧은 탭/중복 소비·캡처 취소·합성 Win32 메시지와 앱의 로딩/오류 종료를 검증한다. 사용자 액션 Lua·원시 패드 축·직접 장치 검수는 [25](25-input-actions.md)의 다음 단위다.
+
 프로젝트 생성·열기는 후보 파일과 경로를 검증한 후 기존 문서를 바꾼다. 저장 실패는 `Expected<T, Error>`로 전달한다. 에셋 가져오기는 내용을 검사하고 중복 파일을 덮어쓰지 않는다. 삭제는 사용 중인 참조를 검사하고 파일·메타를 휴지통으로 보낸다. 편집 레이아웃은 `.myeditor/`에 저장하며 버전관리에서 제외한다.
 
 ## 공통 계약과 실제 한계

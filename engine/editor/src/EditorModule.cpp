@@ -237,10 +237,8 @@ struct EditorModule::Impl final : public IEditorViewport {
         }
     }
 
-    bool pendingInteract = false;
-    bool pendingJump = false;
-    float pendingCameraMouseX = 0;
-    float pendingCameraZoomSteps = 0;
+    runtime::GameInputBuffer gameInput;
+    bool inputConfigured = false;
 
     // 플레이 게이팅.
 
@@ -385,12 +383,17 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
         if (state.app && !state.headless)
             state.app->PlayMode().SetInputEnabled(state.playWindow.HasFocus());
         auto* input = state.playWindow.IsOpen() ? &state.playWindow.Input() : state.input;
-        if (input && state.app && state.app->PlayMode().InputEnabled() && state.app->PlayMode().State() == PlayState::Playing) {
-            state.pendingInteract |= input->WasPressed(KeyCode::E);
-            state.pendingJump |= input->WasPressed(KeyCode::Space);
-            state.pendingCameraZoomSteps += input->WheelDelta();
-            if (input->IsDown(MouseButton::Right)) state.pendingCameraMouseX += input->MouseDelta().x;
-        } else { state.pendingInteract = false; state.pendingJump = false; state.pendingCameraMouseX = 0; state.pendingCameraZoomSteps = 0; }
+        if (state.app && !state.app->PlayMode().IsPlaying()) state.inputConfigured = false;
+        if (state.app && state.app->PlayMode().IsPlaying() && !state.inputConfigured) {
+            auto configured = state.gameInput.Configure(state.app->Project().InputSettings());
+            if (!configured) { state.app->ReportError(configured.GetError()); state.app->PlayMode().Stop(); }
+            else state.inputConfigured = true;
+        }
+        if (state.playWindow.IsOpen()) input->PollGamepads();
+        if (input && state.app)
+            state.gameInput.Capture(*input, state.inputConfigured && state.app->PlayMode().InputEnabled() &&
+                                   state.app->PlayMode().State() == PlayState::Playing);
+        else state.gameInput.Clear();
     }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& t) {
         auto& state = *m_impl;
@@ -421,16 +424,8 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
     if (!w) return;
 
     const float dt = static_cast<float>(step.deltaSeconds > 0.0 ? step.deltaSeconds : (1.0 / 60.0));
-    Vec2 movement;
-    const auto* input = s.playWindow.IsOpen() ? &s.playWindow.Input() : s.input;
-    if (input && pm.InputEnabled()) {
-        movement.x = static_cast<float>(input->IsDown(KeyCode::D) || input->IsDown(KeyCode::Right)) - static_cast<float>(input->IsDown(KeyCode::A) || input->IsDown(KeyCode::Left));
-        movement.y = static_cast<float>(input->IsDown(KeyCode::W) || input->IsDown(KeyCode::Up)) - static_cast<float>(input->IsDown(KeyCode::S) || input->IsDown(KeyCode::Down));
-    }
-    runtime::GameInput controls{movement,std::exchange(s.pendingInteract,false),std::exchange(s.pendingJump,false)};
-    controls.cameraMouseX=std::exchange(s.pendingCameraMouseX,0.0f);
-    controls.cameraZoomSteps=std::exchange(s.pendingCameraZoomSteps,0.0f);
-    if (input && pm.InputEnabled()) controls.cameraAxis=float(input->IsDown(KeyCode::R))-float(input->IsDown(KeyCode::Q));
+    const auto controls = s.gameInput.ConsumeTick();
+    if (controls.exitGame) { pm.Stop(); s.gameInput.Clear(); s.inputConfigured = false; return; }
     auto tick = pm.Tick(dt, controls, s.app->Project().RootDir());
     if (!tick) MYE_LOG_ERROR("Editor", "{}", tick.GetError().message);
     w = pm.ActiveWorld();

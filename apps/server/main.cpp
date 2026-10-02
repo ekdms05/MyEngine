@@ -23,6 +23,8 @@
 #include "mye/liveops/ServerConfig.h"
 #include "mye/liveops/Metrics.h"
 #include "mye/core/Log.h"
+#include "mye/runtime/OnlineScene.h"
+#include <optional>
 
 #include <filesystem>
 #include <fstream>
@@ -80,6 +82,8 @@ int main(int argc, char** argv) {
     std::string charUser, charName;
     bool doMakeChar = false;
     int botCount = 0;
+    std::string project, scene;
+    bool tickrateExplicit=false;
 
     auto parseInteger = [](std::string_view text, long long min, long long max, long long& value) {
         const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -99,12 +103,14 @@ int main(int argc, char** argv) {
                 return 64;
             }
             if (a == "--port") port = static_cast<uint16_t>(value);
-            else if (a == "--tickrate") tickrate = static_cast<int>(value);
+            else if (a == "--tickrate") { tickrate = static_cast<int>(value); tickrateExplicit=true; }
             else if (a == "--ticks") maxTicks = value;
             else if (a == "--autosave") autosaveSec = static_cast<int>(value);
             else botCount = static_cast<int>(value);
         }
         else if (a == "--data" && i + 1 < argc) dataDir = argv[++i];
+        else if (a == "--project" && i + 1 < argc) project=argv[++i];
+        else if (a == "--scene" && i + 1 < argc) scene=argv[++i];
         else if (a == "--register" && i + 2 < argc) { regUser = argv[++i]; regPass = argv[++i]; doRegister = true; }
         else if (a == "--make-char" && i + 2 < argc) { charUser = argv[++i]; charName = argv[++i]; doMakeChar = true; }
         else if (a == "--ban" && i + 1 < argc) { banUser = argv[++i]; if (i + 1 < argc && argv[i+1][0] != '-') banReason = argv[++i]; }
@@ -164,7 +170,7 @@ int main(int argc, char** argv) {
         if (auto r = config.LoadFromFile(configPath); !r) MYE_LOG_WARN("Server", "config 로드 경고: {}", r.GetError().message);
     }
     // CLI 기본을 CVar 로 오버라이드(있으면).
-    const int64_t configuredTickrate = config.GetInt("tickrate", tickrate);
+    const int64_t configuredTickrate = config.GetInt("tickrate", !project.empty() && !tickrateExplicit ? 60 : tickrate);
     if (configuredTickrate < 1 || configuredTickrate > 120) {
         MYE_LOG_ERROR("Server", "config tickrate must be in [1, 120]");
         return 64;
@@ -183,7 +189,16 @@ int main(int argc, char** argv) {
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
     // 통합 게임 서버(넷↔게임플레이↔영속). 인증된 계정만 캐릭터 세션을 얻는다.
+    std::optional<runtime::OnlineScene3D> online;
     gameserver::NetGameServer server(persistence);
+    if (!project.empty()) {
+        if (tickrate!=60 || botCount!=0) { MYE_LOG_ERROR("Server","3D project requires 60 Hz; legacy --bots is unavailable"); return 64; }
+        auto loaded=runtime::LoadOnlineScene3D(project,scene);
+        if (!loaded) { MYE_LOG_ERROR("Server","{}",loaded.GetError().message); return 1; }
+        online=std::move(loaded).Value();
+        auto configured=server.Configure3D(online->physics,online->settings,online->hash,online->sceneId,online->spawn);
+        if (!configured) { MYE_LOG_ERROR("Server","{}",configured.GetError().message); return 1; }
+    } else if (!scene.empty()) { MYE_LOG_ERROR("Server","--scene requires --project"); return 64; }
     if (!server.Start(port)) { MYE_LOG_ERROR("Server", "port {} 바인드 실패", port); return 2; }
     server.SetMoveSpeed(moveSpeed);
     if (config.Has("max_violations")) server.Net().SetMaxViolations(static_cast<uint32_t>(config.GetInt("max_violations", 10)));

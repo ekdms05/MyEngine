@@ -59,3 +59,5 @@ build/dev/apps/editor/Release/MyEditor.exe --project <manifest> --import-asset <
 Windows 삭제는 [IFileOperation](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation)의 STA·휴지통·Undo·취소 결과를 사용한다. 무조건 재귀 삭제하는 경로를 만들지 않았다.
 
 게임 UI 시각 편집·스크립트 자동 완성/디버깅·복구 정책·프로세스 격리·게임 배포 UI는 [개발 우선순위](14-development-priorities.md)에 남긴다. 현재 화면은 [제작 가이드](guide/index.html)에서 확인한다.
+
+요소 추가에는 캐릭터 3D·충돌 3D·경사 3D·트리거 3D가 있다. Play의 Space 점프·Q/R 회전·오른쪽 마우스 드래그는 활성 게임 창에만 전달한다. 첫 누름과 마우스 델타는 한 고정 틱에서만 소비한다. 에디터 Play는 로컬이며 온라인 연결은 별도 MyGame CLI에서 설정한다.

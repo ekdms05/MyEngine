@@ -15,9 +15,12 @@
 | Collider2D | shape/half/offset·그룹/층 마스크 | 48px 전체 폭은 반폭 0.5. isTrigger면 이동을 막지 않고 이벤트 발생 |
 | KinematicBody2D | 충돌하며 이동하는 본체 | skin=충돌 간격, maxSlideIters=1~16. 바닥 스냅에는 바닥 서비스 필요 |
 | CharacterController2D | enabled/speed·idleAnimation/walkAnimation | 최상위 활성 1명, 속도 0~100 unit/s. 3이면 144px/s. 조작을 끄면 정지 |
+| Collider3D | enabled/shape/half/offset/isTrigger | 축 정렬 상자/+Z 경사. half·offset은 로컬 단위이며 양수 Transform 스케일 적용 |
+| KinematicBody3D | settings의 speed/gravity/jumpSpeed/floorSnap/stepHeight/skin | 접지·벽·천장 상태. 조작 캐릭터와 함께 사용; 자유 강체·메시 물리 미지원 |
+| CharacterController3D | enabled/cameraRelative/idleAnimation/walkAnimation | 씬의 활성 조작 캐릭터 1명. WASD XZ·Space 점프 |
 | SpriteAnimator | animation에 .anim 드래그, speed/playing 설정 | speed=재생 배율. 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요 |
 | InteractionTarget | enabled/radius/prompt | radius 안에서 E. 행동은 ObjectBehavior로 연결. prompt 자동 HUD는 미연결 |
-| ScenePortal | scenePath/spawnName/onInteract | assets/scenes/*.scene과 목적지 ObjectName. E면 InteractionTarget, 자동 진입이면 trigger Collider2D |
+| ScenePortal | scenePath/spawnName/onInteract | assets/scenes/*.scene과 목적지 ObjectName. E면 InteractionTarget, 자동 진입이면 trigger Collider2D/3D |
 | ObjectBehavior | 이벤트→행동 연결 또는 Lua return 테이블 | Start/Interact/TriggerEnter/TriggerExit. 연결 순서대로 실행, 최대64개. Lua64KiB |
 | Progression | level/xp/maxLevel | 현재 레벨 내 XP. 성장·보상 규칙은 게임에서 정의 |
 
@@ -40,11 +43,11 @@
 
 게임 카메라는 기본 위치 `(0,3,-8)`, `target=(0,0,0)`, 세로 FOV 45도다. current가 켜진 카메라는 씬에 하나만 둔다. 없으면 기존 2D 카메라를 사용한다. near/far는 월드 단위이며 `0 < nearPlane < farPlane`, FOV는 1~179도다. eye와 target은 같은 점이나 +Y와 평행한 방향이 될 수 없다. 잘못된 설정은 씬 검증/Play에서 오류로 표시한다.
 
-followTarget이 비어 있으면 카메라의 **월드 위치**에서 월드 target을 본다. 고유 ObjectName을 지정하면 카메라 월드 위치와 target 모두 그 대상의 월드 위치에 더할 오프셋으로 취급한다. 대상은 월드 변환을 가진 오브젝트 하나여야 한다. 회전은 target으로 지정하며 LocalTransform.rotation은 게임 카메라 방향에 사용하지 않는다. 자동 회전 입력·카메라 충돌·추종 보간은 없다. 줌은 FOV나 위치로 편집한다.
+orbitEnabled=false이면 followTarget이 비어 있을 때 카메라의 **월드 위치**에서 월드 target을 본다. 고유 ObjectName을 지정하면 카메라 월드 위치와 target 모두 그 대상에 더할 오프셋으로 취급한다. orbitEnabled=true이면 target을 중심으로 yawDegrees·pitchDegrees·distance를 사용한다. Q/R·오른쪽 드래그로 yaw를 바꾸며 정적 충돌 앞에서 거리가 줄어든다. 추종 보간·휠 줌은 없다. 대상은 월드 변환을 가진 고유 이름 하나여야 한다. LocalTransform.rotation은 게임 카메라 방향에 사용하지 않는다.
 
 빌보드 피벗은 잘라낸 프레임의 좌상단 기준 픽셀이다. `(0,0)`은 기존 계약의 발밑 중앙 자동값이다. Full/YAxis는 발 앵커와 축별 크기를 유지하고 시각적인 방향만 바꾼다. 음수 배율의 반전은 X축으로 합성하며 부모 shear의 정확한 재현은 지원하지 않는다. 모션 편집기에서 `.anim`을 지정하면 기존 방향 클립·상태·프레임 이벤트 경로를 사용한다. 시점에 따른 방향 파라미터 자동 설정은 없으며 게임 동작에서 지정해야 한다.
 
-빌보드와 메시가 표시되어도 CharacterController2D·Collider2D는 XY 물리다. XYZ 충돌·XZ 지면/Y 높이 캐릭터·온라인 상태 동기화는 제공되지 않는다. 3D 표시 성공을 3D MMORPG 제작 완료로 판정하지 않는다.
+CharacterController2D·Collider2D는 XY 물리를 유지한다. XYZ에는 별도 3D 컴포넌트를 사용하며 둘을 같은 캐릭터에 혼합하지 않는다. [XYZ/온라인 가이드](21-3d-play-and-online.md)에 구성·검증·지원 범위가 있다. 카메라 상대 8방향 에셋 자동 매핑·온라인 맵/게임 규칙은 미지원이다.
 
 ## 코드 없이 연결
 

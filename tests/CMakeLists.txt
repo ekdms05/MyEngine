@@ -3,6 +3,7 @@ add_executable(mye_tests
     src/TestFramework.h
     src/TestMain.cpp
     src/MathTests.cpp
+    src/Physics3DTests.cpp
     src/CoreTests.cpp
     src/JsonTests.cpp
     src/DiagConfigTests.cpp

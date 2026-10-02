@@ -266,3 +266,17 @@ if not ok then mye.log_error(message) end
 ```
 
 API 근거는 [ObjectSystem](../engine/runtime/src/ObjectSystem.cpp), [바인딩 구현](../engine/script/src/bindings), [RuntimeBindings](../engine/runtime/src/RuntimeBindings.cpp), [NpcBindings](../engine/runtime/src/NpcBindings.cpp), [ScriptSystem](../engine/script/src/ScriptSystem.cpp)이다. Lua 언어·C API 원칙은 [Lua 5.4 공식 매뉴얼](https://www.lua.org/manual/5.4/manual.html)을 참고한다. 확인일: 2026-10-02.
+
+## XYZ 오브젝트 API
+
+로컬 Play와 로컬 MyGame에서 `mye.world.entity_from_packed(self.entity)`로 엔티티를 얻는다. 기존 XY API는 변경하지 않는다.
+
+| 함수 | 결과·제약 |
+|---|---|
+| `entity:get_position3d()` | LocalTransform의 로컬 XYZ Vec3 복사본 |
+| `entity:set_position3d(mye.Vec3(x,y,z))` | 유한 XYZ로 순간 이동, 바디 초기 상태 재설정. 다음 물리 틱에서 충돌 검증 |
+| `entity:get_velocity3d()` | 이전 물리 틱의 XYZ 단위/초 Vec3 |
+| `entity:is_on_floor3d()` | 이전 물리 틱의 접지 bool |
+| `entity:hit_wall3d()` | 이전 물리 틱의 벽 접촉 bool |
+
+CharacterController3D가 고정 틱의 이동을 처리한다. XYZ 위치 쓰기는 경로 탐색이나 물리 이동 함수가 아니다. 깊게 충돌한 위치는 오류로 거부한다. 일반 이동 속도·중력은 KinematicBody3D.settings에서 설정한다. 트리거는 기존 `on_trigger_enter/exit`와 이벤트 연결을 사용한다. 온라인 MyGame은 권위 상태를 적용하며 클라이언트 Lua·포털을 실행하지 않는다. [XYZ/온라인](21-3d-play-and-online.md)에 지원 범위를 정리했다.

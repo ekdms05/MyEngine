@@ -6,6 +6,8 @@
 
 #include "mye/net/BitStream.h"
 #include "mye/net/Quantization.h"
+#include "mye/phys/PhysicsWorld3D.h"
+#include <bit>
 
 #include <cstdint>
 #include <algorithm>
@@ -25,11 +27,16 @@ inline constexpr float    kWorldMax = 512.0f;
 inline constexpr int      kPosBits = 16;
 
 enum class MsgType : uint8_t {
-    Connect    = 1,   // 클라 → 서버: 접속 요청
-    Accept     = 2,   // 서버 → 클라: 수락(내 clientId 통지)
-    Input      = 3,   // 클라 → 서버: 이동 입력(seq, moveX, moveY)
-    Snapshot   = 4,   // 서버 → 클라: 엔티티 상태(tick, [netId, x, y])
+    Connect = 1,  // 클라 → 서버: 접속 요청
+    Accept = 2,   // 서버 → 클라: 수락(내 clientId 통지)
+    Input = 3,    // 클라 → 서버: 이동 입력(seq, moveX, moveY)
+    Snapshot = 4, // 서버 → 클라: 엔티티 상태(tick, [netId, x, y])
     Disconnect = 5,
+    Connect3D = 6,
+    Accept3D = 7,
+    Input3D = 8,
+    Snapshot3D = 9,
+    Disconnect3D = 10,
 };
 
 // 복제 엔티티 상태(스냅샷 원소). lastInputSeq 는 소유 클라의 마지막 처리 입력(재조정용).
@@ -43,7 +50,7 @@ struct EntitySnap {
 // ---- 헤더(모든 패킷 공통) ----
 inline void WriteHeader(BitWriter& w, MsgType type) {
     w.WriteBits(kProtocolId, 32);
-    w.WriteBits(kProtocolVersion, 16);
+    w.WriteBits(type >= MsgType::Connect3D ? 2 : kProtocolVersion, 16);
     w.WriteBits(static_cast<uint32_t>(type), 8);
 }
 // 헤더 검증 + 타입 반환. 실패 시 false.
@@ -51,8 +58,8 @@ inline bool ReadHeader(BitReader& r, MsgType& outType) {
     const uint32_t proto = r.ReadBits(32);
     const uint32_t version = r.ReadBits(16);
     const uint32_t t = r.ReadBits(8);
-    if (!r.Ok() || proto != kProtocolId || version != kProtocolVersion ||
-        t < static_cast<uint32_t>(MsgType::Connect) || t > static_cast<uint32_t>(MsgType::Disconnect)) return false;
+    if (!r.Ok() || proto != kProtocolId || t < 1 || t > 10 || version != (t >= 6 ? 2u : kProtocolVersion))
+        return false;
     outType = static_cast<MsgType>(t);
     return true;
 }
@@ -111,6 +118,83 @@ inline void NormalizeMove(float& x, float& y) {
     y = std::clamp(y, -1.0f, 1.0f);
     const float length = std::hypot(x, y);
     if (length > 1) { x /= length; y /= length; }
+}
+
+inline constexpr size_t kMaxSnapshotEntities3D = 24;
+inline constexpr float kFixedDelta3D = 1.0f / 60;
+struct Input3D {
+    uint32_t seq = 0;
+    Vec2 movement{};
+    bool jump = false;
+};
+struct EntitySnap3D {
+    uint32_t netId = 0, ack = 0;
+    phys::MotionState3D state;
+};
+inline bool PacketComplete(BitReader& r, size_t bytes) {
+    const size_t remaining = bytes * 8 - r.BitsRead();
+    return r.Ok() && remaining < 8 && (remaining == 0 || r.ReadBits(static_cast<int>(remaining)) == 0) &&
+           r.Ok();
+}
+inline void WriteFloat(BitWriter& w, float f) {
+    w.WriteBits(std::bit_cast<uint32_t>(f), 32);
+}
+inline void WriteU64(BitWriter& w, uint64_t v) {
+    w.WriteBits(static_cast<uint32_t>(v), 32);
+    w.WriteBits(static_cast<uint32_t>(v >> 32), 32);
+}
+inline uint64_t ReadU64(BitReader& r) {
+    const uint64_t lo = r.ReadBits(32);
+    return lo | (uint64_t(r.ReadBits(32)) << 32);
+}
+inline float ReadFloat(BitReader& r) {
+    return std::bit_cast<float>(r.ReadBits(32));
+}
+inline void WriteState3D(BitWriter& w, const phys::MotionState3D& s) {
+    for (auto v : {s.position, s.velocity, s.floorNormal}) {
+        WriteFloat(w, v.x);
+        WriteFloat(w, v.y);
+        WriteFloat(w, v.z);
+    }
+    WriteFloat(w, s.facingRadians);
+    w.WriteBits(s.grounded, 1);
+    w.WriteBits(s.onWall, 1);
+    w.WriteBits(s.onCeiling, 1);
+}
+inline bool ValidState3D(const phys::MotionState3D& s) {
+    const auto finite = [](Vec3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); };
+    return finite(s.position) && finite(s.velocity) && finite(s.floorNormal) &&
+           std::isfinite(s.facingRadians) && std::abs(s.facingRadians) <= kPi &&
+           std::abs(s.position.x) <= 100000 && std::abs(s.position.y) <= 100000 &&
+           std::abs(s.position.z) <= 100000 && s.velocity.Length() <= 200 &&
+           std::abs(s.floorNormal.Length() - 1) < .001f;
+}
+inline bool ReadState3D(BitReader& r, phys::MotionState3D& s) {
+    for (auto* v : {&s.position, &s.velocity, &s.floorNormal}) {
+        v->x = ReadFloat(r);
+        v->y = ReadFloat(r);
+        v->z = ReadFloat(r);
+        if (!std::isfinite(v->x) || !std::isfinite(v->y) || !std::isfinite(v->z)) return false;
+    }
+    s.facingRadians = ReadFloat(r);
+    s.grounded = r.ReadBits(1) != 0;
+    s.onWall = r.ReadBits(1) != 0;
+    s.onCeiling = r.ReadBits(1) != 0;
+    return r.Ok() && ValidState3D(s);
+}
+inline void WriteInput3D(BitWriter& w, const Input3D& input) {
+    w.WriteBits(input.seq, 32);
+    WriteFloat(w, input.movement.x);
+    WriteFloat(w, input.movement.y);
+    w.WriteBits(input.jump, 1);
+}
+inline bool ReadInput3D(BitReader& r, Input3D& input) {
+    input.seq = r.ReadBits(32);
+    input.movement.x = ReadFloat(r);
+    input.movement.y = ReadFloat(r);
+    input.jump = r.ReadBits(1) != 0;
+    return r.Ok() && input.seq != 0 && std::isfinite(input.movement.x) && std::isfinite(input.movement.y) &&
+           input.movement.Length() <= 1.001f;
 }
 
 // ---- Accept ----

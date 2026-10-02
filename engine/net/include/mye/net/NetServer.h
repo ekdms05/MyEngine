@@ -5,6 +5,8 @@
 #pragma once
 
 #include "mye/net/UdpSocket.h"
+#include "mye/net/Protocol.h"
+#include <deque>
 
 #include <cstdint>
 #include <functional>
@@ -50,9 +52,18 @@ public:
     uint64_t RejectedCount() const { return m_rejected; }
 
     void SetMoveSpeed(float s) { m_speed = s; }
+    using Admission3D=std::function<Expected<phys::MotionState3D,Error>(uint32_t,uint64_t,uint64_t)>;
+    Expected<void,Error> Configure3D(const phys::PhysicsWorld3D& physics,const phys::MotionSettings3D& settings,
+        uint64_t sceneHash,Admission3D admission);
+    bool GetEntity3D(uint32_t id,phys::MotionState3D& state) const;
+    bool Is3D() const { return m_physics3D!=nullptr; }
 
 private:
     struct Client {
+        uint64_t token=0, characterId=0, nonce=0;
+        phys::MotionState3D state;
+        std::deque<Input3D> inputs;
+        uint32_t receivedSeq=0, idleTicks=0;
         Endpoint ep;
         uint32_t id = 0;
         float    x = 0.0f, y = 0.0f;   // 서버권위 위치
@@ -62,11 +73,16 @@ private:
         uint32_t violations = 0;       // 안티치트 위반 누적(범위초과 입력)
     };
     Client* Find(const Endpoint& ep);
+    void Receive3D(MsgType type,BitReader& reader,size_t bytes,const Endpoint& from);
     void KickIndex(size_t i);          // 인덱스 클라 제거(+ Disconnect 회신)
 
     UdpSocket           m_sock;
     std::vector<Client> m_clients;
     Authenticator       m_auth;
+    const phys::PhysicsWorld3D* m_physics3D=nullptr; // Non-owning, configuration outlives server.
+    phys::MotionSettings3D m_settings3D;
+    uint64_t m_sceneHash=0;
+    Admission3D m_admission3D;
     uint32_t            m_nextId = 1;
     uint32_t            m_tick = 0;
     float               m_speed = 6.0f;

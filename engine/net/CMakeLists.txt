@@ -24,6 +24,6 @@ target_include_directories(mye_net PUBLIC
 )
 
 target_link_libraries(mye_net
-    PUBLIC  mye_core
-    PRIVATE Ws2_32
+    PUBLIC  mye_core mye_physics3d
+    PRIVATE Ws2_32 bcrypt
 )

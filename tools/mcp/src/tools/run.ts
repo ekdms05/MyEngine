@@ -1,5 +1,5 @@
 /**
- * engine_run — 앱 실행(--frames N 자동 종료, 크래시 코드 해석).
+ * engine_run — 앱 실행(프레임/서버 틱 한도로 자동 종료, 크래시 코드 해석).
  * 실행 산출물은 <buildDir> 하위의 <config>/<target>.exe에서 찾는다.
  * sample 입력 이름은 기존 MCP 클라이언트 호환을 위해 유지한다.
  */
@@ -26,12 +26,12 @@ export function registerRunTool(server: McpServer, ctx: ServerContext): void {
     "engine_run",
     {
       description:
-        "앱 실행 파일을 --frames N 으로 실행해 자동 종료시키고, exit 코드(크래시 시 NTSTATUS 해석 병기)와 " +
+        "앱을 --frames N(MyServer는 --ticks N)으로 자동 종료시키고, exit 코드(크래시 시 NTSTATUS 해석 병기)와 " +
         "출력 꼬리를 반환한다. 전체 로그는 engine_logs(source=\"run\")로.",
       inputSchema: {
         sample: z.string().min(1).describe('실행 타깃(예: "MyEditor"). MyEditor의 --project는 args로 전달'),
         config: z.enum(["Debug", "Release"]).default("Debug").describe("빌드 구성"),
-        frames: z.number().int().min(1).default(120).describe("렌더할 프레임 수(--frames N 전달)"),
+        frames: z.number().int().min(1).default(120).describe("실행 한도(MyServer --ticks N, 나머지 --frames N)"),
         args: z.array(z.string()).optional().describe("앱에 넘길 추가 인자"),
         timeoutSec: z.number().int().min(1).max(600).default(30).describe("타임아웃(초)"),
       },
@@ -97,7 +97,7 @@ async function doRun(ctx: ServerContext, p: RunParams): Promise<CallToolResult> 
   const exe = findTargetExe(ctx, p.sample, p.config);
   if (exe === null) return missingExeError(ctx, p.sample, p.config);
 
-  const args = ["--frames", String(p.frames), ...(p.args ?? [])];
+  const args = [p.sample.toLowerCase() === "myserver" ? "--ticks" : "--frames", String(p.frames), ...(p.args ?? [])];
   const res = await runProcess({ command: exe, args, cwd: ctx.root, timeoutMs: p.timeoutSec * 1000 });
 
   const logPath = ctx.state.writeLog(
@@ -113,14 +113,15 @@ async function doRun(ctx: ServerContext, p: RunParams): Promise<CallToolResult> 
 
   const ok = !res.timedOut && res.exitCode === 0 && res.spawnError === undefined;
   const exitDesc = describeExitCode(res.exitCode);
-  const summary = `RUN ${p.sample} (${p.config}, ${p.frames} frames) — exit ${exitDesc} · ${res.durationMs}ms · timedOut ${String(res.timedOut)}`;
+  const unit = p.sample.toLowerCase() === "myserver" ? "ticks" : "frames";
+  const summary = `RUN ${p.sample} (${p.config}, ${p.frames} ${unit}) — exit ${exitDesc} · ${res.durationMs}ms · timedOut ${String(res.timedOut)}`;
 
   const body: string[] = [summary];
   if (res.spawnError !== undefined) body.push(`실행 실패: ${res.spawnError}`);
   if (res.timedOut) {
     body.push(
       `타임아웃(${p.timeoutSec}s) 초과 — 프로세스 트리를 강제 종료했습니다. ` +
-        `--frames 자동 종료가 동작하는지 확인하거나 timeoutSec 을 늘리세요.`,
+        `실행 한도(--${unit})를 확인하거나 timeoutSec 을 늘리세요.`,
     );
   }
   const tail = selectTailWithPriority(res.output.split(/\r?\n/), 80);

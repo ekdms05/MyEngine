@@ -17,6 +17,13 @@ struct CharacterController2D {
     asset::AssetGuid requestedMotion; // Runtime only: successors must not restart the movement state's entry clip.
 };
 
+struct CharacterController3D {
+    MYE_COMPONENT(CharacterController3D);
+    bool enabled = true, cameraRelative = true;
+    asset::AssetRef idleAnimation, walkAnimation;
+    asset::AssetGuid requestedMotion;
+};
+
 struct InteractionTarget {
     MYE_COMPONENT(InteractionTarget);
     bool enabled = true;
@@ -41,6 +48,7 @@ struct ObjectConnection {
     std::string target; // empty = this object; otherwise a unique ObjectName
     std::string text;
     float x = 0, y = 0;
+    float z = 0;
     bool visible = true;
 };
 
@@ -56,6 +64,7 @@ Expected<void, Error> ValidateObjectComponents(ecs::World& world);
 
 #include "mye/refl/TypeBuilder.h"
 MYE_REFLECT_NAME(mye::runtime::CharacterController2D, "CharacterController2D");
+MYE_REFLECT_NAME(mye::runtime::CharacterController3D, "CharacterController3D");
 MYE_REFLECT_NAME(mye::runtime::InteractionTarget, "InteractionTarget");
 MYE_REFLECT_NAME(mye::runtime::ScenePortal, "ScenePortal");
 MYE_REFLECT_NAME(mye::runtime::ObjectBehavior, "ObjectBehavior");
@@ -64,6 +73,7 @@ MYE_REFLECT_ENUM(mye::runtime::ObjectEvent);
 MYE_REFLECT_ENUM(mye::runtime::ObjectAction);
 namespace mye::refl {
 template<> void Reflect(TypeBuilder<mye::runtime::CharacterController2D>&);
+template<> void Reflect(TypeBuilder<mye::runtime::CharacterController3D>&);
 template<> void Reflect(TypeBuilder<mye::runtime::InteractionTarget>&);
 template<> void Reflect(TypeBuilder<mye::runtime::ScenePortal>&);
 template<> void Reflect(TypeBuilder<mye::runtime::ObjectBehavior>&);

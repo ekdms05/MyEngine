@@ -65,15 +65,15 @@ MYE_TEST(ObjectControlsCollisionTriggerAndLuaInteraction) {
     })lua";
     runtime::ObjectSystem system(world);
     MYE_EXPECT(system.Initialize());
-    for (int i = 0; i < 5; ++i) system.Tick(.02f, {}, false);
+    for (int i = 0; i < 5; ++i) MYE_EXPECT(system.Tick(.02f, {}, false));
     MYE_EXPECT_NEAR(world.TryGet<scene::LocalTransform>(player)->position.x, 0.0f, .001f);
     MYE_EXPECT_NEAR(world.TryGet<scene::LocalTransform>(player)->position.y, 0.0f, .001f);
-    for (int i = 0; i < 12; ++i) system.Tick(.02f, {1,0}, false);
+    for (int i = 0; i < 12; ++i) MYE_EXPECT(system.Tick(.02f, {1,0}, false));
     MYE_EXPECT(system.Message() == "entered");
-    for (int i = 0; i < 50; ++i) system.Tick(.02f, {1,0}, false);
+    for (int i = 0; i < 50; ++i) MYE_EXPECT(system.Tick(.02f, {1,0}, false));
     MYE_EXPECT(world.TryGet<scene::LocalTransform>(player)->position.x < .71f);
     MYE_EXPECT(system.Message() == "left");
-    system.Tick(.02f, {}, true);
+    MYE_EXPECT(system.Tick(.02f, {}, true));
     MYE_EXPECT_NEAR(world.TryGet<scene::LocalTransform>(sign)->position.y, -.5f, .001f);
     MYE_EXPECT(!system.Prompt().empty());
 }

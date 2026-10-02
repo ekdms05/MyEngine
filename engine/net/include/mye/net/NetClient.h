@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <chrono>
 
 namespace mye::net {
 
@@ -25,6 +26,11 @@ public:
     // 입력 송신 + 클라 예측(CSP): 로컬 위치를 즉시 이동시켜 입력 지연을 숨긴다. dt 는 서버와 일치시킬 것.
     void SendInput(uint32_t seq, float moveX, float moveY, float dt = 1.0f / 60.0f);
     void Disconnect();
+    Expected<void,Error> Configure3D(const phys::PhysicsWorld3D& physics,const phys::MotionSettings3D& settings,uint64_t sceneHash,uint64_t characterId);
+    Expected<void,Error> SendInput3D(Vec2 movement,bool jump);
+    bool GetPredicted3D(phys::MotionState3D& state) const { if (!m_hasPred) return false; state=m_prediction3D; return true; }
+    const std::vector<EntitySnap3D>& LatestSnapshot3D() const { return m_snapshot3D; }
+    std::string_view Failure() const { return m_failure; }
 
     void Receive();   // 소켓 드레인 + Accept/Snapshot 처리(+ 재조정)
 
@@ -47,6 +53,18 @@ public:
     size_t PendingInputs() const { return m_pending.size(); }   // 미확인 입력 수(재조정 대기)
 
 private:
+    void Reconcile3D();
+    void Receive3D(MsgType type,BitReader& reader,size_t bytes);
+    const phys::PhysicsWorld3D* m_physics3D=nullptr;
+    phys::MotionSettings3D m_settings3D;
+    phys::MotionState3D m_prediction3D;
+    uint64_t m_sceneHash=0, m_characterId=0, m_token=0, m_nonce=0;
+    uint32_t m_inputSeq=0;
+    std::vector<Input3D> m_pending3D;
+    std::vector<EntitySnap3D> m_snapshot3D;
+    std::string m_failure;
+    std::vector<uint8_t> m_handshake;
+    std::chrono::steady_clock::time_point m_lastHandshake;
     void Reconcile();   // 스냅샷 수신 시 서버권위 위치로 리셋 후 미확인 입력 replay
 
     struct PendingInput { uint32_t seq = 0; float mx = 0, my = 0, dt = 0; };

@@ -9,9 +9,17 @@ namespace mye::gameserver {
 NetGameServer::NetGameServer(persist::PersistenceService& persist)
     : m_persist(persist), m_game(persist) {
     // 인증기: 자격증명 → accountId(0=거부). 세션은 인증된 계정만 얻는다.
-    m_net.SetAuthenticator([&persist](std::string_view u, std::string_view p) -> uint64_t {
+    m_net.SetAuthenticator([this, &persist](std::string_view u, std::string_view p) -> uint64_t {
         persist::LoginResult r = persist.Accounts().Login(u, p);
-        return r.ok ? r.accountId : 0;
+        if (!r.ok) return 0;
+        if (!m_net.Is3D()) {
+            const auto characters = persist.Characters().ListByAccount(r.accountId);
+            if (!characters.empty()) {
+                const auto* character = persist.Characters().Get(characters.front());
+                if (character && character->world3D) return 0;
+            }
+        }
+        return r.accountId;
     });
 }
 
@@ -33,6 +41,41 @@ Expected<void, Error> NetGameServer::Stop() {
 SessionId NetGameServer::SessionOf(uint32_t netId) const {
     auto it = m_netToSession.find(netId);
     return it == m_netToSession.end() ? 0 : it->second;
+}
+Expected<void, Error> NetGameServer::Configure3D(const phys::PhysicsWorld3D& physics,
+                                                 const phys::MotionSettings3D& settings, uint64_t hash,
+                                                 std::string scene, Vec3 spawn) {
+    return m_net.Configure3D(
+        physics, settings, hash,
+        [this, &physics, settings, scene = std::move(scene), spawn](
+            uint32_t netId, uint64_t account, uint64_t character) -> Expected<phys::MotionState3D, Error> {
+            if (!character) {
+                const auto characters = m_persist.Characters().ListByAccount(account);
+                if (characters.empty()) return Error{"Account has no character", 1};
+                character = characters.front();
+            }
+            const auto* rec = m_persist.Characters().Get(character);
+            if (!rec || rec->accountId != account) return Error{"Character ownership mismatch", 1};
+            if (!rec->sceneId.empty() && (rec->sceneId != scene || !rec->world3D))
+                return Error{"Character belongs to a different scene or coordinate contract", 1};
+            phys::MotionState3D state;
+            state.position = rec->sceneId.empty() ? spawn : Vec3{rec->posX, rec->posY, rec->posZ};
+            state.facingRadians = rec->facingRadians;
+            if (auto moved = physics.Step(state, {}, false, net::kFixedDelta3D, settings); !moved)
+                return moved.GetError();
+            if (!net::ValidState3D(state)) return Error{"3D spawn is outside protocol state bounds", 1};
+            auto joined = m_game.Join(account, character);
+            if (!joined) return joined.GetError();
+            m_netToSession[netId] = joined.Value();
+            auto* session = m_game.Get(joined.Value());
+            session->sceneId = scene;
+            session->world3D = true;
+            session->x = state.position.x;
+            session->y = state.position.y;
+            session->z = state.position.z;
+            session->facingRadians = state.facingRadians;
+            return state;
+        });
 }
 
 void NetGameServer::Tick(float dt) {
@@ -71,6 +114,17 @@ void NetGameServer::Tick(float dt) {
 
     // 권위 위치를 세션에 동기(영속 대비 — 다음 저장/퇴장 시 반영).
     for (const auto& [netId, sid] : m_netToSession) {
+        if (m_net.Is3D()) {
+            phys::MotionState3D state;
+            if (m_net.GetEntity3D(netId, state))
+                if (auto* s = m_game.Get(sid)) {
+                    s->x = state.position.x;
+                    s->y = state.position.y;
+                    s->z = state.position.z;
+                    s->facingRadians = state.facingRadians;
+                }
+            continue;
+        }
         float x = 0, y = 0;
         if (m_net.GetEntity(netId, x, y)) {
             if (PlayerSession* s = m_game.Get(sid)) { s->x = x; s->y = y; }

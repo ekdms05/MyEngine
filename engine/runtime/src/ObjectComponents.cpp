@@ -1,15 +1,24 @@
 #include "mye/runtime/ObjectComponents.h"
-#include "mye/ecs/World.h"
 #include "mye/core/JsonFile.h"
-#include "mye/scene/Renderable.h"
-#include "mye/scene/Camera3D.h"
-#include "mye/scene/Transform.h"
+#include "mye/ecs/World.h"
 #include "mye/phys/Collision.h"
+#include "mye/phys/PhysicsComponents3D.h"
+#include "mye/scene/Camera3D.h"
+#include "mye/scene/Renderable.h"
+#include "mye/scene/Transform.h"
 #include <cmath>
 #include <filesystem>
 #include <unordered_set>
 
 using namespace mye::runtime;
+template <> void mye::refl::Reflect(TypeBuilder<CharacterController3D>& b) {
+    b.Field("enabled", &CharacterController3D::enabled)
+        .Field("cameraRelative", &CharacterController3D::cameraRelative)
+        .Attr(Attribute::MakeTooltip("현재 게임 카메라의 XZ 축으로 WASD 입력을 변환합니다. 속도/점프는 "
+                                     "KinematicBody3D.settings에서 지정합니다."))
+        .Field("idleAnimation", &CharacterController3D::idleAnimation)
+        .Field("walkAnimation", &CharacterController3D::walkAnimation);
+}
 template<> void mye::refl::Reflect(TypeBuilder<CharacterController2D>& b) {
     b.Version(1).Field("enabled", &CharacterController2D::enabled).Attr(Attribute::MakeTooltip("이 기능의 활성 여부입니다. 캐릭터 조작을 끄면 이동 속도가 0으로 설정됩니다.")).Field("speed", &CharacterController2D::speed).Attr(Attribute::MakeTooltip("월드 단위/초. 기본 3은 48 PPU에서 초당 144 픽셀입니다. 허용 범위 0~100."))
         .Field("idleAnimation", &CharacterController2D::idleAnimation).Attr(Attribute::MakeTooltip("대기할 때 재생할 .anim 에셋을 드래그하세요.")).Field("walkAnimation", &CharacterController2D::walkAnimation).Attr(Attribute::MakeTooltip("이동할 때 재생할 .anim 에셋을 드래그하세요."));
@@ -29,9 +38,15 @@ template<> void mye::refl::Reflect(EnumBuilder<ObjectAction>& b) {
         .Value("MoveTo", ObjectAction::MoveTo).Value("ChangeMap", ObjectAction::ChangeMap).Value("LuaCallback", ObjectAction::LuaCallback);
 }
 template<> void mye::refl::Reflect(TypeBuilder<ObjectConnection>& b) {
-    b.Version(1).Field("event", &ObjectConnection::event).Field("action", &ObjectConnection::action)
-        .Field("target", &ObjectConnection::target).Field("text", &ObjectConnection::text)
-        .Field("x", &ObjectConnection::x).Field("y", &ObjectConnection::y).Field("visible", &ObjectConnection::visible);
+    b.Version(1)
+        .Field("event", &ObjectConnection::event)
+        .Field("action", &ObjectConnection::action)
+        .Field("target", &ObjectConnection::target)
+        .Field("text", &ObjectConnection::text)
+        .Field("x", &ObjectConnection::x)
+        .Field("y", &ObjectConnection::y)
+        .Field("z", &ObjectConnection::z)
+        .Field("visible", &ObjectConnection::visible);
 }
 template<> void mye::refl::Reflect(TypeBuilder<ObjectBehavior>& b) {
     b.Version(1).Field("connections", &ObjectBehavior::connections).Attr(Attribute::MakeTooltip("발생 이벤트에서 실행할 행동 목록. 위에서 아래 순서로 처리합니다.")).Field("luaSource", &ObjectBehavior::luaSource).Attr(Attribute::MakeTooltip("return 테이블에 콜백을 작성합니다. 실행을 다시 시작하면 반영되며 씬에 저장됩니다."));
@@ -40,8 +55,10 @@ template<> void mye::refl::Reflect(TypeBuilder<ObjectBehavior>& b) {
 namespace mye::runtime {
 void RegisterObjectComponents(ecs::World& world) {
     (void)refl::GetType<CharacterController2D>(); (void)refl::GetType<InteractionTarget>();
+    (void)refl::GetType<CharacterController3D>();
     (void)refl::GetType<ScenePortal>(); (void)refl::GetType<ObjectBehavior>();
     world.RegisterComponent<CharacterController2D>("CharacterController2D");
+    world.RegisterComponent<CharacterController3D>("CharacterController3D");
     world.RegisterComponent<InteractionTarget>("InteractionTarget");
     world.RegisterComponent<ScenePortal>("ScenePortal");
     world.RegisterComponent<ObjectBehavior>("ObjectBehavior");
@@ -76,19 +93,44 @@ Expected<void, Error> ValidateObjectComponents(ecs::World& world) {
         if (!std::isfinite(c.speed) || c.speed < 0 || c.speed > 100 || !world.Has<phys::KinematicBody2D>(e) || !world.Has<phys::Collider2D>(e) || !world.Has<scene::LocalTransform>(e)) error = "Controller needs transform, body, collider and a speed in [0,100]";
     });
     if (localControllers > 1) error = "A Play scene supports one enabled local character controller";
+    world.Query<CharacterController3D>().Each([&](ecs::Entity e, const auto& controller) {
+        if (controller.enabled) ++localControllers;
+        if (auto settings = phys::CharacterSettings3D(world, e); !settings)
+            error = settings.GetError().message;
+        if (world.Has<CharacterController2D>(e)) error = "An object cannot have both 2D and 3D controllers";
+    });
+    world.Query<phys::Collider3D>().Each([&](ecs::Entity e, const auto& c) {
+        const auto finite = [](Vec3 v) {
+            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+        };
+        if (!finite(c.half) || !finite(c.offset) || c.half.x <= 0 || c.half.y <= 0 || c.half.z <= 0 ||
+            c.shape > phys::Shape3D::Ramp || !world.Has<scene::LocalTransform>(e))
+            error = "3D collider requires finite positive dimensions and a transform";
+        if (world.Has<phys::Collider2D>(e)) error = "An object cannot have both 2D and 3D colliders";
+    });
+    world.Query<phys::KinematicBody3D>().Each([&](ecs::Entity e, const auto&) {
+        if (!world.Has<CharacterController3D>(e))
+            error = "KinematicBody3D requires CharacterController3D; free rigid bodies are unsupported";
+    });
+    if (localControllers > 1) error = "A Play scene supports one enabled local character controller";
     world.Query<InteractionTarget>().Each([&](ecs::Entity e, const InteractionTarget& t) {
         if (!std::isfinite(t.radius) || t.radius <= 0 || t.radius > 100 || !world.Has<scene::LocalTransform>(e)) error = "Interaction target needs a transform and radius in (0,100]";
     });
     world.Query<ScenePortal>().Each([&](ecs::Entity e, const ScenePortal& p) {
         if (!pathValid(p.scenePath) || p.spawnName.empty()) error = "Portal needs a project assets .scene path and named spawn";
         const auto* collider = world.TryGet<phys::Collider2D>(e);
-        if (p.onInteract ? !world.Has<InteractionTarget>(e) : !collider || !collider->isTrigger)
+        const auto* collider3D = world.TryGet<phys::Collider3D>(e);
+        if (p.onInteract ? !world.Has<InteractionTarget>(e)
+                         : (!collider || !collider->isTrigger) && (!collider3D || !collider3D->isTrigger))
             error = "Portal needs InteractionTarget for E or a trigger collider for automatic entry";
     });
     world.Query<ObjectBehavior>().Each([&](ecs::Entity, const ObjectBehavior& b) {
         if (b.connections.size() > 64 || b.luaSource.size() > 65536) error = "Object behavior exceeds 64 connections or 64 KiB of Lua";
         for (const auto& c : b.connections) {
-            if (c.event < ObjectEvent::Start || c.event > ObjectEvent::TriggerExit || c.action < ObjectAction::Message || c.action > ObjectAction::LuaCallback || !std::isfinite(c.x) || !std::isfinite(c.y)) error = "Invalid event/action connection";
+            if (c.event < ObjectEvent::Start || c.event > ObjectEvent::TriggerExit ||
+                c.action < ObjectAction::Message || c.action > ObjectAction::LuaCallback ||
+                !std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.z))
+                error = "Invalid event/action connection";
             if (!c.target.empty() && !names.contains(c.target) && c.action != ObjectAction::ChangeMap) error = "Connection target object does not exist";
             if (c.action == ObjectAction::LuaCallback && (c.text.empty() || c.text.size() > 128)) error = "Lua action needs a callback name of 1..128 bytes";
             if (c.action == ObjectAction::ChangeMap && (!pathValid(c.text) || c.target.empty())) error = "Map connection needs a scene path and spawn name";
@@ -103,6 +145,19 @@ Expected<void, Error> ValidateObjectComponents(ecs::World& world) {
     });
     if (!error.empty()) return Error{error, 1};
     scene::UpdateWorldTransforms(world);
+    phys::PhysicsWorld3D physics;
+    if (auto gathered = phys::GatherPhysicsWorld3D(world, physics); !gathered) return gathered.GetError();
+    world.Query<CharacterController3D, scene::LocalTransform>().Each(
+        [&](ecs::Entity e, const auto& c, const auto& pose) {
+            if (!c.enabled) return;
+            phys::MotionState3D state;
+            state.position = pose.position;
+            auto settings = phys::CharacterSettings3D(world, e);
+            if (!settings) error = settings.GetError().message;
+            else if (auto moved = physics.Step(state, {}, false, 1.0f / 60, settings.Value()); !moved)
+                error = moved.GetError().message;
+        });
+    if (!error.empty()) return Error{error, 1};
     auto camera = scene::BuildGameView(world, render::Camera2D{});
     if (!camera) return camera.GetError();
     return {};

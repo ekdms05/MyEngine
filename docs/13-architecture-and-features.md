@@ -18,7 +18,7 @@
 | 실행 파일 | 현재 조합 |
 |---|---|
 | `MyEditor` | 프로젝트 창 → 문서 World → 에셋 GUID 해석 → 씬/모션/컴포넌트 편집 → PlayWorld 고정 틱 → 게임 창 |
-| `MyGame` | 명시한 프로젝트를 불러오는 로컬 플레이어. 구 타이틀 데모와 온라인 표현 조합은 제거 |
+| `MyGame` | 프로젝트 로컬 플레이·인증된 루프백 XYZ 플레이. 구 타이틀 데모는 제거 |
 | `MyServer` | 계정·세션·권위 이동·영속·운영 루프. 공개 운영 전 신뢰 경계 완료 조건은 [14](14-development-priorities.md) |
 | `paktool` | pak 생성·검사 CLI. 프로젝트별 완성 게임 배포 UI는 후속 작업 |
 
@@ -43,14 +43,16 @@ assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/
 
 표준 GLB 앞면은 Z/인덱스 변환 후 DX11 clockwise 컬링으로 표시한다. 0.2.3은 반대 면을 승인한 기존 렌더 검사를 여섯 축의 앞/뒤 검사로 교체했다. 공통 렌더 경계가 지정된 메시/PNG의 실패를 반환하며 MyGame과 자동 실행 에디터는 exit 1로 종료한다. 대화형 에디터는 Play를 중단하고 하단 오류/콘솔을 통해 편집을 계속할 수 있다.
 
-저장한 Camera3D의 위치·target·FOV·near/far·고유 이름 추종 오프셋을 Play/MyGame이 사용한다. 에디터 작업 카메라는 별개이며 current가 없으면 기존 2D 카메라로 표시한다. [컴포넌트 사용법](20-components.md)에 설정·검증·제한을 정리했다. 3D 선택/기즈모와 XZ 지면·Y 높이의 3D 물리는 아직 없다.
+저장한 Camera3D의 위치·target·FOV·near/far·고유 이름 추종과 orbit 설정을 Play/MyGame이 사용한다. 에디터 작업 카메라는 별개이며 current가 없으면 기존 2D 카메라로 표시한다. 3D 선택/기즈모는 아직 없다. [컴포넌트 사용법](20-components.md)에 설정·검증·제한을 정리했다.
 
 좌표·깊이의 정본은 [02](02-rendering.md): 왼손, +Y up, PPU 48, 내부 960×540, Y/높이 기반 깊이·alpha cutout. 시뮬레이션은 고정 틱, UI·렌더는 표현 단계다.
 
 에디터 오브젝트 Lua는 Math·ECS·log·co만 기본 연결된다. audio/input/events/reflect/DDC/대화·저장·NPC 모듈은 별도 앱 등록이 필요하다. 라이브러리 함수가 있다는 사실을 에디터 제공 API로 설명하지 않는다. [19](19-lua-api.md)에 각 API의 범위가 있다.
 
-네트워크·영속·게임 UI 등의 라이브러리는 유지하지만 완성 MMORPG 제작·출시 통합을 뜻하지 않는다. 게임 UI 시각 편집, 스크립트 자동 완성·중단점, 서버와 클라이언트의 공통 충돌·맵 계약, 파일 감시 자동 반영, 범용 게임 내보내기는 남아 있다. DX11 외 백엔드와 범용 GPU timestamp/readback에는 미구현 경계가 있다.
+네트워크·영속·게임 UI 등의 라이브러리는 유지하지만 완성 MMORPG 제작·출시 통합을 뜻하지 않는다. 게임 UI 시각 편집, 스크립트 자동 완성·중단점, 온라인 맵 전환·게임 규칙, 파일 감시 자동 반영, 범용 게임 내보내기는 남아 있다. DX11 외 백엔드와 범용 GPU timestamp/readback에는 미구현 경계가 있다.
 
 `render`는 `scene` 공개 타입을 PRIVATE include로 소비하는 실제 결합이 남아 있다. CMake의 링크 그래프만으로 이를 해결했다고 주장하지 않는다. 성능 개선은 동일 Release 장면과 하드웨어에서 측정한 병목을 기준으로 한다.
 
 Sol2·도트 제작·구 데모를 제거했다. 실제 사용하는 Lua VM·ImGui·디코더·FreeType는 유지한다. VM·UI·디코더 자체 재작성은 경량화 근거가 충분할 때만 검토한다.
+
+값 타입 기반 `mye_physics3d`를 로컬 Play·서버 권위·클라이언트 예측에서 함께 사용한다. Camera3D orbit/Q·R/마우스 입력과 정적 충돌에 따른 거리 축소를 연결했다. [XYZ 플레이와 온라인](21-3d-play-and-online.md)에 동일 장면의 인증·소유권·입력 순서·예측/보정·XYZ 복제·저장 및 남은 한계를 정리했다.

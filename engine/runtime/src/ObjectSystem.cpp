@@ -1,15 +1,18 @@
 #include "mye/runtime/ObjectSystem.h"
+#include "mye/anim/SpriteAnimator.h"
 #include "mye/core/Events.h"
 #include "mye/core/Log.h"
 #include "mye/ecs/World.h"
+#include "mye/phys/PhysicsComponents3D.h"
+#include "mye/phys/PhysicsWorld2D.h"
+#include "mye/scene/Camera3D.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
-#include "mye/phys/PhysicsWorld2D.h"
-#include "mye/anim/SpriteAnimator.h"
 #include "mye/script/ScriptComponent.h"
 #include "mye/script/ScriptRuntime.h"
 #include "mye/script/ScriptSystem.h"
 #include "mye/script/bindings/EngineBindings.h"
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -17,6 +20,8 @@ namespace mye::runtime {
 struct ObjectSystem::Impl {
     ecs::World& world;
     phys::PhysicsWorld2D physics;
+    phys::PhysicsWorld3D physics3D;
+    std::vector<std::pair<ecs::Entity, ecs::Entity>> triggers3D;
     script::ScriptRuntime lua;
     std::unique_ptr<script::EcsBindingModule> bindings;
     std::unique_ptr<script::ScriptSystem> scripts;
@@ -43,6 +48,11 @@ struct ObjectSystem::Impl {
     int Floor(ecs::Entity e) const {
         const auto* floor = world.TryGet<scene::FloorLevel>(e);
         return floor ? floor->level : 0;
+    }
+    Vec3 Position3D(ecs::Entity e) const {
+        if (auto* t = world.TryGet<scene::WorldTransform>(e))
+            return {t->matrix.m[3][0], t->matrix.m[3][1], t->matrix.m[3][2]};
+        return {};
     }
 };
 
@@ -105,11 +115,19 @@ void ObjectSystem::Dispatch(ecs::Entity object, ObjectEvent event) {
         case ObjectAction::Message: s.message = connection.text; MYE_LOG_INFO("Objects", "{}", s.message); break;
         case ObjectAction::SetVisible:
             if (auto* sprite = s.world.TryGet<scene::SpriteRenderer>(target)) sprite->visible = connection.visible;
+            if (auto* sprite = s.world.TryGet<scene::BillboardRenderer>(target))
+                sprite->visible = connection.visible;
+            if (auto* mesh = s.world.TryGet<scene::MeshRenderer>(target)) mesh->visible = connection.visible;
             break;
         case ObjectAction::MoveTo:
             if (auto* transform = s.world.TryGet<scene::LocalTransform>(target)) {
                 // Explicit position action; ordinary movement still goes through the kinematic body.
                 transform->position.x = connection.x; transform->position.y = connection.y; transform->dirty = true;
+                if (auto* body = s.world.TryGet<phys::KinematicBody3D>(target)) {
+                    transform->position.z = connection.z;
+                    body->state = {};
+                    body->initialized = false;
+                }
             }
             break;
         case ObjectAction::ChangeMap: s.request = {connection.text, connection.target}; break;
@@ -120,10 +138,13 @@ void ObjectSystem::Dispatch(ecs::Entity object, ObjectEvent event) {
     if (event == ObjectEvent::Interact) s.scripts->CallOnEntity(object, "on_interact", script::LuaReference{});
 }
 
-void ObjectSystem::Tick(float dt, Vec2 movement, bool interact) {
+Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& input) {
     auto& s = *m_impl;
-    if (!s.scripts || !std::isfinite(dt) || dt <= 0) return;
-    if (!std::isfinite(movement.x) || !std::isfinite(movement.y)) movement = {};
+    if (!s.scripts || !std::isfinite(dt) || dt <= 0 || dt > 1)
+        return Error{"Object tick requires initialization and dt in (0,1]", 1};
+    Vec2 movement = input.movement;
+    if (!std::isfinite(movement.x) || !std::isfinite(movement.y))
+        return Error{"Movement input must be finite", 1};
     const float length = std::sqrt(movement.x * movement.x + movement.y * movement.y);
     if (length > 1) movement = movement / length;
     s.scripts->EnsureInstances();
@@ -140,6 +161,67 @@ void ObjectSystem::Tick(float dt, Vec2 movement, bool interact) {
     });
     scene::UpdateWorldTransforms(s.world);
     s.physics.Step(s.world, s.world.Events(), dt);
+    if (auto gathered = phys::GatherPhysicsWorld3D(s.world, s.physics3D); !gathered)
+        return gathered.GetError();
+    if (auto camera = scene::UpdateGameCamera(s.world, s.physics3D, dt, input.cameraAxis, input.cameraMouseX);
+        !camera)
+        return camera.GetError();
+    std::string motionError;
+    std::vector<std::pair<ecs::Entity, ecs::Entity>> triggers;
+    s.world.Query<CharacterController3D, phys::KinematicBody3D, scene::LocalTransform>().Each(
+        [&](ecs::Entity e, CharacterController3D& c, phys::KinematicBody3D& body,
+            scene::LocalTransform& pose) {
+            if (!c.enabled || !motionError.empty()) return;
+            auto settings = phys::CharacterSettings3D(s.world, e);
+            if (!settings) {
+                motionError = settings.GetError().message;
+                return;
+            }
+            if (!body.initialized) {
+                body.state.position = pose.position;
+                body.initialized = true;
+            }
+            const auto before = body.state.position;
+            const auto moved = s.physics3D.Step(
+                body.state, c.cameraRelative ? scene::CameraRelativeMovement(s.world, movement) : movement,
+                input.jump, dt, settings.Value(), e.Packed());
+            if (!moved) {
+                motionError = moved.GetError().message;
+                return;
+            }
+            body.lastMove = body.state.position - before;
+            pose.position = body.state.position;
+            pose.dirty = true;
+            for (const auto& solid : s.physics3D.Solids())
+                if (solid.trigger &&
+                    s.physics3D.Overlaps(
+                        {body.state.position + settings.Value().offset, settings.Value().half}, solid)) {
+                    const auto trigger = ecs::Entity::FromPacked(solid.id);
+                    triggers.emplace_back(trigger, e);
+                    if (std::find(s.triggers3D.begin(), s.triggers3D.end(), std::pair{trigger, e}) ==
+                        s.triggers3D.end()) {
+                        s.events.emplace_back(trigger, ObjectEvent::TriggerEnter);
+                        if (auto* bus = s.world.Events()) {
+                            phys::TriggerEnterEvent event;
+                            event.trigger = trigger;
+                            event.other = e;
+                            bus->Publish(event);
+                        }
+                    }
+                }
+        });
+    if (!motionError.empty()) return Error{motionError, 1};
+    for (const auto& previous : s.triggers3D)
+        if (std::find(triggers.begin(), triggers.end(), previous) == triggers.end()) {
+            s.events.emplace_back(previous.first, ObjectEvent::TriggerExit);
+            if (auto* bus = s.world.Events()) {
+                phys::TriggerExitEvent event;
+                event.trigger = previous.first;
+                event.other = previous.second;
+                bus->Publish(event);
+            }
+        }
+    s.triggers3D = std::move(triggers);
     for (const auto& [e, event] : s.events) Dispatch(e, event);
     s.events.clear();
     scene::UpdateWorldTransforms(s.world);
@@ -166,8 +248,41 @@ void ObjectSystem::Tick(float dt, Vec2 movement, bool interact) {
             }
         });
     });
-    if (interact && s.world.Valid(nearest)) Dispatch(nearest, ObjectEvent::Interact);
+    s.world.Query<CharacterController3D, phys::KinematicBody3D>().Each(
+        [&](ecs::Entity player, CharacterController3D& c, const auto& body) {
+            if (!c.enabled) return;
+            if (auto* animator = s.world.TryGet<anim::SpriteAnimator>(player)) {
+                const auto& ref =
+                    body.lastMove.x * body.lastMove.x + body.lastMove.z * body.lastMove.z > 1e-6f
+                        ? c.walkAnimation
+                        : c.idleAnimation;
+                if (ref.guid.IsValid() && c.requestedMotion != ref.guid) {
+                    c.requestedMotion = ref.guid;
+                    animator->animation = ref;
+                    animator->sheet = nullptr;
+                    animator->directClip = nullptr;
+                    animator->cursor = {};
+                    animator->started = false;
+                }
+            }
+            s.world.Query<InteractionTarget>().Each([&](ecs::Entity object, const auto& target) {
+                if (!target.enabled || object == player) return;
+                const auto delta = s.Position3D(object) - s.Position3D(player);
+                const float distance = Vec3::Dot(delta, delta);
+                if (distance <= target.radius * target.radius &&
+                    (distance < nearestDistance ||
+                     (distance == nearestDistance && object.index < nearest.index))) {
+                    nearestDistance = distance;
+                    nearest = object;
+                    s.prompt = target.prompt;
+                }
+            });
+        });
+    if (input.interact && s.world.Valid(nearest)) Dispatch(nearest, ObjectEvent::Interact);
     s.bindings->FlushDeferred();
+    scene::UpdateWorldTransforms(s.world);
+    // Recast from the character's final pose, without consuming camera input twice.
+    return scene::UpdateGameCamera(s.world, s.physics3D, dt, 0, 0);
 }
 MapRequest ObjectSystem::TakeMapRequest() { return std::exchange(m_impl->request, {}); }
 std::string_view ObjectSystem::Message() const { return m_impl->message; }

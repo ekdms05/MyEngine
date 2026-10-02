@@ -8,15 +8,15 @@
 |---|---|
 | engine_build | 미구성 시 CMake configure, 지정 타깃/구성 빌드, 오류·경고 요약 |
 | engine_test | 구성된 빌드의 CTest 실행·결과 요약 |
-| engine_run | 지정 실행 타깃을 프레임 제한으로 실행하고 종료/출력 확인 |
+| engine_run | 지정 앱을 프레임 제한, MyServer를 틱 제한으로 실행하고 종료/출력 확인 |
 | engine_capture_frame | 실행 타깃 BMP 캡처를 PNG 이미지 콘텐츠로 반환 |
 | engine_logs | 빌드·테스트·실행·캡처 로그 조회 |
 | project_status | configure 상태·마지막 작업·앱 소스·캡처·버전 조회 |
 | project_inspect | 프로젝트·씬 계층/컴포넌트·에셋 GUID 읽기, 검색·페이지 조회 |
-| engine_reference | 현재 Lua API·컴포넌트·에디터·에셋·씬·렌더 문서의 검색·줄 범위 조회 |
+| engine_reference | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더·XYZ/온라인 문서의 검색·줄 범위 조회 |
 | asset_import | 에디터 CLI 임포트 경계로 원본을 assets/에 복사·등록, 기존 파일 덮어쓰기 거부 |
 
-현재 버전은 **0.2.3**, 등록 도구는 **9개**다. 픽셀 제작은 외부 도구에서 진행하고 PNG/.anim을 엔진에 가져온다. 에디터 메모리의 씬 조작·Undo 원격 명령·Lua REPL은 제공하지 않는다.
+현재 버전은 **0.3.0**, 등록 도구는 **9개**다. 픽셀 제작은 외부 도구에서 진행하고 PNG/.anim을 엔진에 가져온다. 에디터 메모리의 씬 조작·Undo 원격 명령·Lua REPL은 제공하지 않는다.
 
 ## 설치·실행·프로젝트 설정
 
@@ -57,6 +57,8 @@ MCP 요청 → 입력/경로 검증 → 작업 직렬화 → CLI 실행·로그 
 `engine_reference(topic="lua")`는 [Lua API](19-lua-api.md)를 읽는다. `search`는 일치 줄, `startLine`·`lines`는 범위 조회에 사용한다. 현재 저장소 문서가 근거이며 웹 문서의 다른 엔진 API를 반환하지 않는다.
 
 `engine_reference(topic="components")`는 [컴포넌트 사용법](20-components.md)의 단위·기본값·조작·실행 제약을 읽는다.
+
+`engine_reference(topic="online")`은 [XYZ/온라인](21-3d-play-and-online.md)의 장면 구성·카메라 입력·인증 CLI·예측/영속·지원 한계를 읽는다. `engine_run(sample="MyServer", frames=N)`은 서버의 `--ticks N`으로 변환된다. 개발 MCP와 릴리즈 소비자용 도구의 연결은 구분한다.
 
 `asset_import`는 `project`, 저장소 상대 `source`, **assets/ 기준** `destination`을 받는다. 예: `destination="characters/player.png"`. 대상 폴더는 에셋 브라우저에서 먼저 생성한다. 내부 호출은 `MyEditor --project <manifest> --import-asset <source> --asset-destination <destination> --headless --frames 1`이다. 파일 복사·지원 형식·GUID/.meta·실패 처리는 에디터의 공통 임포트 경계가 담당한다. 열린 GUI 상태 변경이나 에셋 삭제는 지원하지 않는다. 현재 프로젝트를 GUI에서 다시 스캔하거나 다시 열어 반영한다.
 

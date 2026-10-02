@@ -7,6 +7,7 @@
 
 #include "mye/anim/SpriteAnimator.h"
 #include "mye/phys/Collision.h"
+#include "mye/phys/PhysicsComponents3D.h"
 #include "mye/scene/Transform.h"      // LocalTransform
 #include "mye/scene/Renderable.h"     // SpriteRenderer
 #include "mye/scene/Camera3D.h"
@@ -157,7 +158,11 @@ template <> void mye::refl::Reflect(TypeBuilder<mye::scene::Camera3D>& b) {
         .Field("target", &C::target).Attr(Attribute::MakeTooltip("바라보는 월드 XYZ. followTarget이 있으면 대상 위치에서의 오프셋입니다."))
         .Field("followTarget", &C::followTarget).Attr(Attribute::MakeTooltip("추종할 고유 오브젝트 이름. 지정하면 카메라 위치와 target 모두 대상 월드 위치에서의 오프셋입니다."))
         .Field("fovDegrees", &C::fovDegrees).Attr(Attribute::MakeTooltip("세로 시야각 1~179도. 줌은 시야각 또는 카메라 위치로 조정합니다."))
-        .Field("nearPlane", &C::nearPlane).Field("farPlane", &C::farPlane).Attr(Attribute::MakeTooltip("절두체 거리. 0 < nearPlane < farPlane, 월드 단위입니다."));
+        .Field("nearPlane", &C::nearPlane).Field("farPlane", &C::farPlane).Attr(Attribute::MakeTooltip("절두체 거리. 0 < nearPlane < farPlane, 월드 단위입니다."))
+        .Field("orbitEnabled", &C::orbitEnabled).Attr(Attribute::MakeTooltip("Q/R 또는 마우스 오른쪽 드래그로 360도 회전. 캐릭터 방향과 분리됩니다."))
+        .Field("yawDegrees", &C::yawDegrees).Field("pitchDegrees", &C::pitchDegrees)
+        .Field("distance", &C::distance).Field("rotationSpeed", &C::rotationSpeed)
+        .Field("mouseSensitivity", &C::mouseSensitivity).Field("collisionMargin", &C::collisionMargin);
 }
 
 template <> void mye::refl::Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::anim::SpriteAnimator>& b) {
@@ -169,6 +174,30 @@ template <> void mye::refl::Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::
 MYE_REFLECT_NAME(mye::scene::ObjectName, "ObjectName");
 MYE_REFLECT_NAME(mye::phys::Collider2D, "Collider2D");
 MYE_REFLECT_NAME(mye::phys::KinematicBody2D, "KinematicBody2D");
+MYE_REFLECT_NAME(mye::phys::Collider3D, "Collider3D");
+MYE_REFLECT_NAME(mye::phys::KinematicBody3D, "KinematicBody3D");
+MYE_REFLECT(mye::phys::MotionSettings3D);
+MYE_REFLECT_ENUM(mye::phys::Shape3D);
+template<> void mye::refl::Reflect(EnumBuilder<mye::phys::Shape3D>& b) {
+    b.Value("Box",mye::phys::Shape3D::Box).Value("Ramp",mye::phys::Shape3D::Ramp);
+}
+template<> void mye::refl::Reflect(TypeBuilder<mye::phys::MotionSettings3D>& b) {
+    using C=mye::phys::MotionSettings3D;
+    b.Field("speed",&C::speed).Attr(Attribute::MakeTooltip("XZ 이동 속도, 월드 단위/초. 대각선 입력은 정규화됩니다."))
+        .Field("gravity",&C::gravity).Field("jumpSpeed",&C::jumpSpeed)
+        .Field("skin",&C::skin).Field("floorSnap",&C::floorSnap).Field("stepHeight",&C::stepHeight)
+        .Field("floorMaxAngle",&C::floorMaxAngle).Field("maxSlides",&C::maxSlides);
+}
+template<> void mye::refl::Reflect(TypeBuilder<mye::phys::Collider3D>& b) {
+    using C=mye::phys::Collider3D;
+    b.Field("enabled",&C::enabled).Field("isTrigger",&C::isTrigger)
+        .Field("shape",&C::shape).Attr(Attribute::MakeTooltip("Box는 축 정렬 상자, Ramp는 +Z 방향으로 올라가는 닫힌 경사입니다. 회전/음수 스케일은 지원하지 않습니다."))
+        .Field("half",&C::half).Attr(Attribute::MakeTooltip("XYZ 반크기, 월드 단위. 캐릭터의 중심은 offset으로 발 위에 맞춥니다."))
+        .Field("offset",&C::offset);
+}
+template<> void mye::refl::Reflect(TypeBuilder<mye::phys::KinematicBody3D>& b) {
+    b.Field("settings",&mye::phys::KinematicBody3D::settings).Attr(Attribute::MakeTooltip("중력·점프·바닥/벽/천장·경사·단차 설정. 실제 크기/중심은 Collider3D를 사용합니다."));
+}
 MYE_REFLECT(mye::phys::Shape2D);
 MYE_REFLECT_ENUM(mye::phys::ShapeKind);
 template<> void mye::refl::Reflect(EnumBuilder<mye::phys::ShapeKind>& b) {
@@ -198,6 +227,8 @@ void RegisterCoreComponentReflection() {
     (void)refl::GetType<ObjectName>();
     (void)refl::GetType<phys::Collider2D>();
     (void)refl::GetType<phys::KinematicBody2D>();
+    (void)refl::GetType<phys::Collider3D>();
+    (void)refl::GetType<phys::KinematicBody3D>();
     (void)refl::GetType<LocalTransform>();
     (void)refl::GetType<SpriteRenderer>();
     (void)refl::GetType<BillboardRenderer>();
@@ -221,6 +252,8 @@ void RegisterCoreComponents(ecs::World& world) {
     world.RegisterComponent<FloorLevel>("FloorLevel");
     world.RegisterComponent<phys::Collider2D>("Collider2D");
     world.RegisterComponent<phys::KinematicBody2D>("KinematicBody2D");
+    world.RegisterComponent<phys::Collider3D>("Collider3D");
+    world.RegisterComponent<phys::KinematicBody3D>("KinematicBody3D");
     world.RegisterComponent<anim::SpriteAnimator>("SpriteAnimator");
 }
 

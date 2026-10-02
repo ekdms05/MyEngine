@@ -31,6 +31,7 @@ Expected<void, Error> PlayWindow::Open(rhi::IDevice& device) {
     })};
     m_input = {};
     m_input.SetKeyboardSuppressed(!HasFocus());
+    m_input.SetMouseSuppressed(!HasFocus());
     m_paused = false;
     m_window->AddMessageHook(this, 0);
     return {};
@@ -48,10 +49,23 @@ bool PlayWindow::CloseRequested() const { return m_window && m_window->IsCloseRe
 bool PlayWindow::HasFocus() const {
     return m_window && GetForegroundWindow() == m_window->GetNativeHandle();
 }
-bool PlayWindow::OnMessage(void*, uint32_t message, uint64_t wparam, int64_t lparam) {
-    if (message == WM_SETFOCUS) m_input.SetKeyboardSuppressed(false);
-    if (message == WM_KILLFOCUS) m_input.SetKeyboardSuppressed(true);
-    if (message == WM_KEYDOWN || message == WM_KEYUP || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP) {
+bool PlayWindow::OnMessage(void* handle, uint32_t message, uint64_t wparam, int64_t lparam) {
+    if (message == WM_SETFOCUS) { m_input.SetKeyboardSuppressed(false); m_input.SetMouseSuppressed(false); }
+    if (message == WM_KILLFOCUS) { m_input.SetKeyboardSuppressed(true); m_input.SetMouseSuppressed(true); ReleaseCapture(); }
+    if ((message==WM_RBUTTONDOWN || message==WM_RBUTTONUP) && !m_input.IsMouseSuppressed()) {
+        m_input.OnMouseButton(MouseButton::Right,message==WM_RBUTTONDOWN);
+        if (message==WM_RBUTTONDOWN) {
+            const Vec2i position{static_cast<int16_t>(lparam&0xffff),static_cast<int16_t>((lparam>>16)&0xffff)};
+            m_input.OnMouseMove(position,{}); SetCapture(static_cast<HWND>(handle));
+        } else ReleaseCapture();
+    }
+    if (message==WM_CAPTURECHANGED) m_input.OnMouseButton(MouseButton::Right,false);
+    if (message==WM_MOUSEMOVE && !m_input.IsMouseSuppressed()) {
+        const Vec2i position{static_cast<int16_t>(lparam&0xffff),static_cast<int16_t>((lparam>>16)&0xffff)};
+        const auto previous=m_input.MousePosition();
+        m_input.OnMouseMove(position,m_input.IsDown(MouseButton::Right) ? Vec2{float(position.x-previous.x),float(position.y-previous.y)} : Vec2{});
+    }
+    if (!m_input.IsKeyboardSuppressed() && (message == WM_KEYDOWN || message == WM_KEYUP || message == WM_SYSKEYDOWN || message == WM_SYSKEYUP)) {
         const auto key = win32::ScanCodeToKeyCode(static_cast<uint16_t>((lparam >> 16) & 0xff),
             (lparam & (int64_t{1} << 24)) != 0, false, static_cast<uint16_t>(wparam));
         m_input.OnKey(key, message == WM_KEYDOWN || message == WM_SYSKEYDOWN);

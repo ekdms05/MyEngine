@@ -8,6 +8,7 @@
 | [개발 우선순위](14-development-priorities.md) | 미완료 항목, 근거와 완료 조건 |
 | [에디터](07-editor-ui.md) | 프로젝트 창, 작업대, 문서·PlayWorld 계약 |
 | [오브젝트](17-object-workflow.md) / [컴포넌트](20-components.md) | 조작·충돌·이벤트·맵 연결 |
+| [XYZ 플레이와 온라인](21-3d-play-and-online.md) | 캐릭터 물리·360° 카메라·인증 온라인 설정과 한계 |
 | [Lua API](19-lua-api.md) | 에디터에서 제공되는 함수와 별도 바인딩 모듈 |
 | [MCP](08-mcp.md) / [스킬·역할](15-skills-and-agents.md) | 개발 자동화와 검증 |
 | [렌더](02-rendering.md) / [씬](03-scene-world.md) / [에셋](04-asset-pipeline.md) | 공유 데이터·좌표·수명 계약 |

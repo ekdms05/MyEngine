@@ -40,7 +40,7 @@ build/dev/apps/editor/Release/MyEditor.exe --project game/starter/meadow_village
 build/dev/apps/game/Release/MyGame.exe --project game/starter/meadow_village/project.myeproj
 ```
 
-`MyGame` is a standalone local project player. Network, server, persistence and game service libraries remain available for integration; the local player does not provide an online client. Play inside the editor uses a separate native window in the same process, so it does not isolate process crashes.
+`MyGame` plays authored projects locally and connects to the authenticated loopback XYZ server. [3D play and online setup](docs/21-3d-play-and-online.md) describes controls, shared collision, prediction, replication and saved positions. Public Internet transport, online portals/game rules and game export remain incomplete. Play inside the editor uses a separate native window in the same process, so it does not isolate process crashes.
 
 ## Development tools
 

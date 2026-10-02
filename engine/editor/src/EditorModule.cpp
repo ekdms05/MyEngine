@@ -18,6 +18,7 @@
 #include "mye/editor/EditorModule.h"
 #include "mye/editor/EditorApp.h"
 #include "mye/editor/PlayMode.h"
+#include "mye/runtime/ObjectSystem.h"
 #include "mye/editor/PlayWindow.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/editor/Viewport.h"
@@ -237,6 +238,8 @@ struct EditorModule::Impl final : public IEditorViewport {
     }
 
     bool pendingInteract = false;
+    bool pendingJump = false;
+    float pendingCameraMouseX = 0;
 
     // 플레이 게이팅.
 
@@ -381,9 +384,11 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
         if (state.app && !state.headless)
             state.app->PlayMode().SetInputEnabled(state.playWindow.HasFocus());
         auto* input = state.playWindow.IsOpen() ? &state.playWindow.Input() : state.input;
-        if (input && state.app && state.app->PlayMode().InputEnabled() && state.app->PlayMode().State() == PlayState::Playing)
+        if (input && state.app && state.app->PlayMode().InputEnabled() && state.app->PlayMode().State() == PlayState::Playing) {
             state.pendingInteract |= input->WasPressed(KeyCode::E);
-        else state.pendingInteract = false;
+            state.pendingJump |= input->WasPressed(KeyCode::Space);
+            if (input->IsDown(MouseButton::Right)) state.pendingCameraMouseX += input->MouseDelta().x;
+        } else { state.pendingInteract = false; state.pendingJump = false; state.pendingCameraMouseX = 0; }
     }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& t) {
         auto& state = *m_impl;
@@ -420,7 +425,10 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
         movement.x = static_cast<float>(input->IsDown(KeyCode::D) || input->IsDown(KeyCode::Right)) - static_cast<float>(input->IsDown(KeyCode::A) || input->IsDown(KeyCode::Left));
         movement.y = static_cast<float>(input->IsDown(KeyCode::W) || input->IsDown(KeyCode::Up)) - static_cast<float>(input->IsDown(KeyCode::S) || input->IsDown(KeyCode::Down));
     }
-    auto tick = pm.Tick(dt, movement, std::exchange(s.pendingInteract, false), s.app->Project().RootDir());
+    runtime::GameInput controls{movement,std::exchange(s.pendingInteract,false),std::exchange(s.pendingJump,false)};
+    controls.cameraMouseX=std::exchange(s.pendingCameraMouseX,0.0f);
+    if (input && pm.InputEnabled()) controls.cameraAxis=float(input->IsDown(KeyCode::R))-float(input->IsDown(KeyCode::Q));
+    auto tick = pm.Tick(dt, controls, s.app->Project().RootDir());
     if (!tick) MYE_LOG_ERROR("Editor", "{}", tick.GetError().message);
     w = pm.ActiveWorld();
     s.app->RefreshDocumentContext();

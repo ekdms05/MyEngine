@@ -157,6 +157,9 @@ void PlayModeController::Stop() {
 }
 
 Expected<void, Error> PlayModeController::Tick(float dt, Vec2 movement, bool interact, std::string_view projectRoot) {
+    return Tick(dt,runtime::GameInput{movement,interact},projectRoot);
+}
+Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInput& input, std::string_view projectRoot) {
     auto& s = *m_impl;
     if (!IsPlaying() || !s.playWorld) return {};
     if (!s.objects) {
@@ -193,13 +196,21 @@ Expected<void, Error> PlayModeController::Tick(float dt, Vec2 movement, bool int
             if (!found) { state.loadError = "Destination spawn object not found: " + state.spawnName; return runtime::SceneLoadTicket{1}; }
             const gameplay::Progression* progression = nullptr;
             state.playWorld->Query<runtime::CharacterController2D, gameplay::Progression>().Each([&](ecs::Entity, const auto& c, const auto& p) { if (c.enabled) progression = &p; });
+            state.playWorld->Query<runtime::CharacterController3D, gameplay::Progression>().Each([&](ecs::Entity, const auto& c, const auto& p) { if (c.enabled) progression = &p; });
             bool playerFound = false;
             world->Query<runtime::CharacterController2D, scene::LocalTransform>().Each([&](ecs::Entity e, const auto& c, scene::LocalTransform& t) {
                 if (!c.enabled) return;
                 playerFound = true; t.position = spawn; t.dirty = true;
                 if (progression) if (auto* p = world->TryGet<gameplay::Progression>(e)) *p = *progression;
             });
+            world->Query<runtime::CharacterController3D, scene::LocalTransform>().Each([&](ecs::Entity e, const auto& c, scene::LocalTransform& t) {
+                if (!c.enabled) return;
+                playerFound = true; t.position = spawn; t.dirty = true;
+                if (progression) if (auto* p = world->TryGet<gameplay::Progression>(e)) *p = *progression;
+            });
             if (!playerFound) { state.loadError = "Destination map needs a character controller"; return runtime::SceneLoadTicket{1}; }
+            valid=runtime::ValidateObjectComponents(*world);
+            if (!valid) { state.loadError=valid.GetError().message; return runtime::SceneLoadTicket{1}; }
             state.candidate = std::move(world);
             return runtime::SceneLoadTicket{1};
         };
@@ -223,7 +234,10 @@ Expected<void, Error> PlayModeController::Tick(float dt, Vec2 movement, bool int
         auto initialized = s.objects->Initialize();
         if (!initialized) return initialized.GetError();
     }
-    if (!s.transition.ConsumesInput()) s.objects->Tick(dt, movement, interact);
+    if (!s.transition.ConsumesInput()) {
+        auto tick=s.objects->Tick(dt,input);
+        if (!tick) return tick.GetError();
+    }
     const auto request = s.objects->TakeMapRequest();
     if (!request.scenePath.empty() && !s.transition.IsTransitioning()) {
         s.spawnName = request.spawnName;

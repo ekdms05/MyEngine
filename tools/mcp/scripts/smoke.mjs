@@ -186,6 +186,8 @@ async function main() {
   );
 
   // Real file parsing in an isolated build/ project; no user data or engine build.
+  const online = await request("tools/call", { name: "engine_reference", arguments: { topic: "online", search: "PhysicsWorld3D" } });
+  check("engine_reference — XYZ 공통 물리/온라인 정본", online.result?.isError !== true && firstText(online.result).includes("21-3d-play-and-online.md") && firstText(online.result).includes("PhysicsWorld3D::Step"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

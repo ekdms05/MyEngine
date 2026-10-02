@@ -14,6 +14,7 @@
 #
 # 네임스페이스: mye::runtime. Lua 는 메인 스레드 전용(확정 규약).
 add_library(mye_runtime STATIC
+    src/OnlineScene.cpp
     src/ObjectComponents.cpp
     src/ObjectSystem.cpp
     # ---- 공용 값 타입·계약 ----
@@ -69,5 +70,5 @@ target_include_directories(mye_runtime PUBLIC
 
 target_link_libraries(mye_runtime
     PUBLIC  mye_core mye_ui mye_scene mye_audio mye_asset mye_reflect
-    PRIVATE mye_script
+    PRIVATE mye_script mye_gameplay
 )

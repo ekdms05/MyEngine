@@ -47,6 +47,8 @@ std::vector<CharacterId> CharacterStore::ListByAccount(AccountId accountId) cons
 }
 
 Expected<void, Error> CharacterStore::Upsert(const CharacterRecord& rec) {
+    if (!std::isfinite(rec.posX) || !std::isfinite(rec.posY) || !std::isfinite(rec.posZ) || !std::isfinite(rec.facingRadians))
+        return Error{"Upsert: character position and facing must be finite",1};
     if (rec.id == 0) return Error{"Upsert: id=0 은 허용되지 않음(Create 사용)", 1};
     if (CharacterRecord* existing = GetMutable(rec.id)) {
         // 이름 변경 시 인덱스 조정(중복 방지).
@@ -96,6 +98,9 @@ json::Value CharacterStore::ToJson() const {
         o["sceneId"]   = json::Value(c.sceneId);
         o["posX"]      = json::Value(static_cast<double>(c.posX));
         o["posY"]      = json::Value(static_cast<double>(c.posY));
+        o["posZ"]      = json::Value(static_cast<double>(c.posZ));
+        o["facingRadians"] = json::Value(static_cast<double>(c.facingRadians));
+        o["world3D"]   = json::Value(c.world3D);
         o["level"]     = json::Value(static_cast<std::int64_t>(c.level));
         o["xp"]        = json::Value(static_cast<std::int64_t>(c.xp));
         o["str"]       = json::Value(static_cast<std::int64_t>(c.strength));
@@ -150,7 +155,7 @@ Expected<void, Error> CharacterStore::LoadJson(const json::Value& root) {
             for (const char* key : {"xp", "gold"})
                 if (!detail::IntegerInRange(v, key, 0, INT64_MAX, false))
                     return Error{"CharacterStore: invalid balance", 1};
-            for (const char* key : {"posX", "posY"}) {
+            for (const char* key : {"posX", "posY", "posZ", "facingRadians"}) {
                 const auto* p = v.Find(key);
                 if (p && (!p->IsNumber() || !std::isfinite(p->AsDouble()) ||
                           std::abs(p->AsDouble()) > std::numeric_limits<float>::max()))
@@ -166,6 +171,12 @@ Expected<void, Error> CharacterStore::LoadJson(const json::Value& root) {
             if (const auto* p = v.Find("sceneId"))   c.sceneId   = std::string(p->AsString());
             if (const auto* p = v.Find("posX"))      c.posX      = static_cast<float>(p->AsDouble());
             if (const auto* p = v.Find("posY"))      c.posY      = static_cast<float>(p->AsDouble());
+            if (const auto* p = v.Find("posZ")) c.posZ=static_cast<float>(p->AsDouble());
+            if (const auto* p = v.Find("facingRadians")) c.facingRadians=static_cast<float>(p->AsDouble());
+            if (const auto* p = v.Find("world3D")) {
+                if (!p->IsBool()) return Error{"CharacterStore: world3D must be boolean",1};
+                c.world3D=p->AsBool();
+            }
             if (const auto* p = v.Find("level"))     c.level     = static_cast<int32_t>(p->AsInt());
             if (const auto* p = v.Find("xp"))        c.xp        = p->AsInt();
             if (const auto* p = v.Find("str"))       c.strength  = static_cast<int32_t>(p->AsInt());

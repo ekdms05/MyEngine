@@ -6,7 +6,9 @@
 #include "mye/ecs/CommandBuffer.h"
 #include "mye/ecs/World.h"
 #include "mye/phys/Collision.h"
+#include "mye/phys/PhysicsComponents3D.h"
 #include "mye/scene/Transform.h"
+#include <cmath>
 
 #include <new>
 
@@ -53,6 +55,45 @@ int Velocity(lua_State* L) {
     const auto* body = e.Valid() ? e.world->TryGet<phys::KinematicBody2D>(e.entity) : nullptr;
     PushVec2(L, body ? body->velocity : Vec2{}); return 1;
 }
+int Position3D(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto* t = e.Valid() ? e.world->TryGet<scene::LocalTransform>(e.entity) : nullptr;
+    PushVec3(L, t ? t->position : Vec3{});
+    return 1;
+}
+int SetPosition3D(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto p = ReadVec3(L, 2);
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z))
+        return luaL_error(L, "position3d must be finite");
+    if (auto* t = e.Valid() ? e.world->TryGet<scene::LocalTransform>(e.entity) : nullptr) {
+        t->position = p;
+        t->dirty = true;
+        if (auto* body = e.world->TryGet<phys::KinematicBody3D>(e.entity)) {
+            body->state = {};
+            body->initialized = false;
+        }
+    }
+    return 0;
+}
+int Velocity3D(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto* b = e.Valid() ? e.world->TryGet<phys::KinematicBody3D>(e.entity) : nullptr;
+    PushVec3(L, b ? b->state.velocity : Vec3{});
+    return 1;
+}
+int OnFloor3D(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto* b = e.Valid() ? e.world->TryGet<phys::KinematicBody3D>(e.entity) : nullptr;
+    lua_pushboolean(L, b && b->state.grounded);
+    return 1;
+}
+int HitWall3D(lua_State* L) {
+    const auto& e = Entity(L);
+    const auto* b = e.Valid() ? e.world->TryGet<phys::KinematicBody3D>(e.entity) : nullptr;
+    lua_pushboolean(L, b && b->state.onWall);
+    return 1;
+}
 int SetVelocity(lua_State* L) {
     const auto& e = Entity(L); const Vec2 v = ReadVec2(L, 2);
     if (auto* body = e.Valid() ? e.world->TryGet<phys::KinematicBody2D>(e.entity) : nullptr) body->velocity = v;
@@ -95,6 +136,10 @@ void EcsBindingModule::Register(lua_State* L) {
     LuaStackGuard stack(L);
     const luaL_Reg methods[] = {{"is_valid", Valid}, {"packed", Packed}, {"__eq", Equal}, {"__tostring", Text}, {"get_position", Position}, {"set_position", SetPosition}, {"get_velocity", Velocity}, {"set_velocity", SetVelocity}, {"hit_wall", HitWall}, {"set_bool", SetBool}, {"set_float", SetFloat}, {"set_trigger", SetTrigger}, {"get_float", GetFloat}, {"get_bool", GetBool}, {"face_move", FaceMove}, {"facing_vector", FacingVector}, {"facing_index", FacingIndex}, {"has_animator", HasAnimator}, {"has_body", HasBody}, {"destroy", Destroy}, {nullptr, nullptr}};
     luaL_newmetatable(L, kEntity); luaL_setfuncs(L, methods, 0);
+    const luaL_Reg methods3D[] = {{"get_position3d", Position3D}, {"set_position3d", SetPosition3D},
+                                  {"get_velocity3d", Velocity3D}, {"is_on_floor3d", OnFloor3D},
+                                  {"hit_wall3d", HitWall3D},      {nullptr, nullptr}};
+    luaL_setfuncs(L, methods3D, 0);
     lua_pushvalue(L, -1); lua_setfield(L, -2, "__index"); lua_pop(L, 1);
     lua_getglobal(L, "mye"); EnsureTable(L, -1, "world");
     PushFunction(L, [](lua_State* L) -> int {

@@ -3,6 +3,8 @@
 #include "mye/net/Protocol.h"
 
 #include "mye/core/Log.h"
+#include <Windows.h>
+#include <bcrypt.h>
 
 namespace mye::net {
 
@@ -28,6 +30,10 @@ void NetServer::Receive() {
         BitReader r(buf, static_cast<size_t>(n));
         MsgType type;
         if (!ReadHeader(r, type)) continue;
+        if (m_physics3D) {
+            Receive3D(type, r, static_cast<size_t>(n), from);
+            continue;
+        }
 
         switch (type) {
         case MsgType::Connect: {
@@ -99,6 +105,25 @@ void NetServer::Receive() {
 }
 
 void NetServer::Tick(float dt) {
+    if (m_physics3D) {
+        if (!std::isfinite(dt) || std::abs(dt - kFixedDelta3D) > 1e-6f) return;
+        for (size_t i = m_clients.size(); i-- > 0;) {
+            auto& c = m_clients[i];
+            Input3D input;
+            if (!c.inputs.empty()) input = c.inputs.front();
+            auto moved = m_physics3D->Step(c.state, input.movement, input.jump, dt, m_settings3D);
+            if (!moved || !ValidState3D(c.state) || ++c.idleTicks > 300) {
+                KickIndex(i);
+                continue;
+            }
+            if (!c.inputs.empty()) {
+                c.lastInputSeq = input.seq;
+                c.inputs.pop_front();
+            }
+        }
+        ++m_tick;
+        return;
+    }
     for (Client& c : m_clients) {
         c.x += c.inX * m_speed * dt;
         c.y += c.inY * m_speed * dt;
@@ -121,7 +146,11 @@ void NetServer::Tick(float dt) {
 void NetServer::KickIndex(size_t i) {
     if (i >= m_clients.size()) return;
     BitWriter w;
-    WriteHeader(w, MsgType::Disconnect);
+    WriteHeader(w, m_physics3D ? MsgType::Disconnect3D : MsgType::Disconnect);
+    if (m_physics3D) {
+        WriteU64(w, m_clients[i].token);
+        WriteU64(w, m_clients[i].nonce);
+    }
     const auto& bytes = w.Finish();
     m_sock.SendTo(m_clients[i].ep, bytes.data(), bytes.size());
     m_clients.erase(m_clients.begin() + static_cast<std::ptrdiff_t>(i));
@@ -135,6 +164,23 @@ uint32_t NetServer::ViolationsOf(uint32_t netId) const {
 }
 
 void NetServer::Broadcast() {
+    if (m_physics3D) {
+        for (const auto& recipient : m_clients) {
+            BitWriter w;
+            WriteHeader(w, MsgType::Snapshot3D);
+            WriteU64(w, recipient.token);
+            w.WriteBits(m_tick, 32);
+            w.WriteBits(static_cast<uint32_t>(m_clients.size()), 8);
+            for (const auto& c : m_clients) {
+                w.WriteBits(c.id, 32);
+                w.WriteBits(c.lastInputSeq, 32);
+                WriteState3D(w, c.state);
+            }
+            const auto& bytes = w.Finish();
+            if (bytes.size() <= 1400) m_sock.SendTo(recipient.ep, bytes.data(), bytes.size());
+        }
+        return;
+    }
     std::vector<EntitySnap> snap;
     snap.reserve(m_clients.size());
     for (const Client& c : m_clients) snap.push_back(EntitySnap{c.id, c.x, c.y, c.lastInputSeq});
@@ -168,6 +214,126 @@ std::vector<uint32_t> NetServer::ClientIds() const {
     ids.reserve(m_clients.size());
     for (const Client& c : m_clients) ids.push_back(c.id);
     return ids;
+}
+
+Expected<void, Error> NetServer::Configure3D(const phys::PhysicsWorld3D& physics,
+                                             const phys::MotionSettings3D& settings, uint64_t hash,
+                                             Admission3D admission) {
+    if (IsRunning() || !admission || hash == 0)
+        return Error{"Configure 3D before starting with a scene hash and admission callback", 1};
+    if (auto valid = phys::ValidateMotionSettings3D(settings); !valid) return valid.GetError();
+    m_physics3D = &physics;
+    m_settings3D = settings;
+    m_sceneHash = hash;
+    m_admission3D = std::move(admission);
+    return {};
+}
+bool NetServer::GetEntity3D(uint32_t id, phys::MotionState3D& state) const {
+    for (const auto& c : m_clients)
+        if (c.id == id) {
+            state = c.state;
+            return true;
+        }
+    return false;
+}
+void NetServer::Receive3D(MsgType type, BitReader& r, size_t size, const Endpoint& from) {
+    if (type == MsgType::Connect3D) {
+        std::string user, pass;
+        if (!ReadConnect(r, user, pass)) return;
+        const auto hash = ReadU64(r), character = ReadU64(r), nonce = ReadU64(r);
+        if (!nonce || !PacketComplete(r, size)) return;
+        const auto reject = [&] {
+            ++m_rejected;
+            BitWriter w;
+            WriteHeader(w, MsgType::Disconnect3D);
+            WriteU64(w, 0);
+            WriteU64(w, nonce);
+            const auto& bytes = w.Finish();
+            m_sock.SendTo(from, bytes.data(), bytes.size());
+        };
+        if (hash != m_sceneHash || !m_auth) {
+            reject();
+            return;
+        }
+        auto* c = Find(from);
+        if (!c) {
+            if (m_clients.size() >= kMaxSnapshotEntities3D) {
+                reject();
+                return;
+            }
+            const auto account = m_auth(user, pass);
+            if (!account) {
+                reject();
+                return;
+            }
+            Client candidate;
+            candidate.ep = from;
+            candidate.id = m_nextId++;
+            candidate.accountId = account;
+            candidate.characterId = character;
+            candidate.nonce = nonce;
+            if (BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(&candidate.token), sizeof(candidate.token),
+                                BCRYPT_USE_SYSTEM_PREFERRED_RNG) < 0 ||
+                !candidate.token) {
+                reject();
+                return;
+            }
+            auto admitted = m_admission3D(candidate.id, account, character);
+            if (!admitted) {
+                MYE_LOG_WARN("Net", "3D admission rejected: {}", admitted.GetError().message);
+                reject();
+                return;
+            }
+            candidate.state = admitted.Value();
+            m_clients.push_back(std::move(candidate));
+            c = &m_clients.back();
+        } else if (c->characterId != character || c->nonce != nonce || m_auth(user, pass) != c->accountId) {
+            reject();
+            return;
+        }
+        BitWriter w;
+        WriteHeader(w, MsgType::Accept3D);
+        w.WriteBits(c->id, 32);
+        WriteU64(w, c->token);
+        WriteU64(w, c->nonce);
+        const auto& bytes = w.Finish();
+        m_sock.SendTo(from, bytes.data(), bytes.size());
+        return;
+    }
+    auto* c = Find(from);
+    if (!c || (type != MsgType::Input3D && type != MsgType::Disconnect3D)) return;
+    if (ReadU64(r) != c->token || !r.Ok()) return;
+    if (type == MsgType::Disconnect3D) {
+        const auto nonce = ReadU64(r);
+        if (nonce == c->nonce && PacketComplete(r, size))
+            m_clients.erase(m_clients.begin() + (c - m_clients.data()));
+        return;
+    }
+    const auto count = r.ReadBits(8);
+    if (count == 0 || count > 8) return;
+    std::vector<Input3D> batch;
+    batch.reserve(count);
+    for (unsigned i = 0; i < count; ++i) {
+        Input3D input;
+        if (!ReadInput3D(r, input)) return;
+        batch.push_back(input);
+    }
+    if (!PacketComplete(r, size)) return;
+    auto received = c->receivedSeq;
+    size_t accepted = 0;
+    for (const auto& input : batch) {
+        if (!SequenceNewer(input.seq, received)) continue;
+        // Redundant contiguous inputs recover lost datagrams; never acknowledge skipped simulation.
+        if (input.seq != received + 1 || c->inputs.size() + accepted >= 240) return;
+        received = input.seq;
+        ++accepted;
+    }
+    for (const auto& input : batch) {
+        if (!SequenceNewer(input.seq, c->receivedSeq)) continue;
+        c->inputs.push_back(input);
+        c->receivedSeq = input.seq;
+    }
+    c->idleTicks = 0;
 }
 
 } // namespace mye::net

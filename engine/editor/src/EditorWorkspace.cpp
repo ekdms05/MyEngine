@@ -10,6 +10,7 @@
 #include "mye/scene/Camera3D.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/phys/Collision.h"
+#include "mye/phys/PhysicsComponents3D.h"
 #include "mye/ser/JsonArchive.h"
 #include "mye/refl/TypeRegistry.h"
 #include "imgui.h"
@@ -36,6 +37,10 @@ constexpr std::array kElements{
     ElementDescription{Element::Mesh, "3D 메시", "정적 GLB/glTF와 알베도 PNG를 지정하는 오브젝트"},
     ElementDescription{Element::Billboard, "3D 빌보드", "카메라를 향하는 PNG/.anim. 충돌은 별도로 구성"},
     ElementDescription{Element::Camera, "게임 카메라 3D", "Play/MyGame의 저장 가능한 원근 카메라"},
+    ElementDescription{Element::Character3D, "캐릭터 3D", "XZ 이동 · Space 점프 · XYZ 충돌 · 카메라 상대 이동"},
+    ElementDescription{Element::Collider3D, "충돌 3D", "축 정렬 XYZ 상자. 바닥과 벽에 사용"},
+    ElementDescription{Element::Ramp3D, "경사 3D", "+Z 방향 경사. half와 위치로 길이·높이 설정"},
+    ElementDescription{Element::Trigger3D, "트리거 3D", "XYZ 진입·이탈 이벤트와 맵 이동 영역"},
 };
 
 struct ComponentValue { const refl::TypeInfo* type; ValueBlob before, after; };
@@ -112,12 +117,15 @@ Expected<ecs::Entity, Error> EditorApp::CreateSceneElement(SceneElement element,
     if (!parent.IsNull() && !world->Valid(parent)) return Error{"선택한 부모 오브젝트가 없습니다.", 1};
     const auto description = std::find_if(kElements.begin(), kElements.end(), [element](const auto& d) { return d.kind == element; });
     if (description == kElements.end()) return Error{"지원하지 않는 씬 요소입니다.", 1};
-    if (element == SceneElement::Character) {
+    if (element == SceneElement::Character || element == SceneElement::Character3D) {
         if (!parent.IsNull()) return Error{"캐릭터는 씬 최상위에 배치하세요.", 1};
         bool occupied = false;
         world->Query<runtime::CharacterController2D>().Each([&](ecs::Entity, const auto& c) { occupied |= c.enabled; });
+        world->Query<runtime::CharacterController3D>().Each([&](ecs::Entity, const auto& c) { occupied |= c.enabled; });
         if (occupied) return Error{"씬에 조작 캐릭터가 이미 있습니다. 기존 캐릭터 조작을 먼저 끄세요.", 1};
-        for (const auto* name : {"SpriteRenderer", "Collider2D", "KinematicBody2D", "CharacterController2D"}) {
+        const std::array names2D{"SpriteRenderer", "Collider2D", "KinematicBody2D", "CharacterController2D"};
+        const std::array names3D{"BillboardRenderer", "Collider3D", "KinematicBody3D", "CharacterController3D"};
+        for (const auto* name : element==SceneElement::Character3D ? names3D : names2D) {
             const auto* type = refl::TypeRegistry::Get().Find(name);
             if (!type || !world->IsRegistered(static_cast<ecs::ComponentTypeId>(type->Id())))
                 return Error{"캐릭터 컴포넌트가 등록되지 않았습니다.", 1};
@@ -133,6 +141,17 @@ Expected<ecs::Entity, Error> EditorApp::CreateSceneElement(SceneElement element,
     if (prepared && element == SceneElement::Sprite) prepared = PrepareComponent(*world, scene::SpriteRenderer{}, components);
     if (prepared && element == SceneElement::Mesh) prepared = PrepareComponent(*world, scene::MeshRenderer{}, components);
     if (prepared && element == SceneElement::Billboard) prepared = PrepareComponent(*world, scene::BillboardRenderer{}, components);
+    if (prepared && (element==SceneElement::Collider3D || element==SceneElement::Ramp3D || element==SceneElement::Trigger3D || element==SceneElement::Character3D)) {
+        phys::Collider3D collider;
+        collider.shape=element==SceneElement::Ramp3D ? phys::Shape3D::Ramp : phys::Shape3D::Box;
+        collider.isTrigger=element==SceneElement::Trigger3D;
+        if (element==SceneElement::Character3D) { collider.half={.3f,.8f,.3f}; collider.offset={0,.8f,0}; }
+        prepared=PrepareComponent(*world,collider,components);
+        if (prepared && element==SceneElement::Trigger3D) prepared=PrepareComponent(*world,runtime::ObjectBehavior{},components);
+        if (prepared && element==SceneElement::Character3D) prepared=PrepareComponent(*world,phys::KinematicBody3D{},components);
+        if (prepared && element==SceneElement::Character3D) prepared=PrepareComponent(*world,runtime::CharacterController3D{},components);
+        if (prepared && element==SceneElement::Character3D) prepared=PrepareComponent(*world,scene::BillboardRenderer{},components);
+    }
     if (prepared && element == SceneElement::Camera) {
         bool occupied = false;
         world->Query<scene::Camera3D>().Each([&](ecs::Entity, const auto& c) { occupied |= c.current; });

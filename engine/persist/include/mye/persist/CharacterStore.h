@@ -38,6 +38,8 @@ struct CharacterRecord {
     std::string sceneId;         // 마지막 위치 씬/맵 식별자
     float       posX = 0.0f;
     float       posY = 0.0f;
+    float       posZ = 0.0f, facingRadians = 0.0f;
+    bool        world3D = false;
 
     // 성장.
     int32_t     level = 1;

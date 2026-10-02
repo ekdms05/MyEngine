@@ -103,4 +103,13 @@ end</code></pre>
 end)
 if not ok then mye.log_error(message) end</code></pre>
 <p>API 근거는 <a href="../../engine/runtime/src/ObjectSystem.cpp">ObjectSystem</a>, <a href="../../engine/script/src/bindings">바인딩 구현</a>, <a href="../../engine/runtime/src/RuntimeBindings.cpp">RuntimeBindings</a>, <a href="../../engine/runtime/src/NpcBindings.cpp">NpcBindings</a>, <a href="../../engine/script/src/ScriptSystem.cpp">ScriptSystem</a>이다. Lua 언어·C API 원칙은 <a href="https://www.lua.org/manual/5.4/manual.html">Lua 5.4 공식 매뉴얼</a>을 참고한다. 확인일: 2026-10-02.</p>
+<h2 id="xyz">XYZ 오브젝트 API</h2>
+<p>로컬 Play/MyGame에서 사용한다. 기존 XY API는 유지한다. 온라인 MyGame은 클라이언트 Lua/포털을 실행하지 않는다.</p>
+<pre><code>local entity = mye.world.entity_from_packed(self.entity)
+local position = entity:get_position3d()
+local velocity = entity:get_velocity3d()
+local grounded = entity:is_on_floor3d()
+local wall = entity:hit_wall3d()
+entity:set_position3d(mye.Vec3(0, 2, 0))</code></pre>
+<p>위치는 로컬 XYZ 복사본이고 속도·접지·벽은 이전 물리 틱 상태다. 위치 쓰기는 유한값의 순간 이동이며 다음 틱에서 충돌을 검증한다. 깊은 시작 충돌은 오류다. 일반 조작은 CharacterController3D, 속도/중력은 KinematicBody3D.settings를 사용한다. <a href="online.html">XYZ 구성과 한계</a>를 확인한다.</p>
 <footer>정본: <a href="../19-lua-api.md">19-lua-api.md</a> · 구현 범위와 실패 조건을 확인하세요.</footer></main></div></body></html>

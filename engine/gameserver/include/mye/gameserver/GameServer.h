@@ -31,6 +31,8 @@ struct PlayerSession {
     gameplay::Progression  prog;
     gameplay::Inventory    inv;
     float                  x = 0.0f, y = 0.0f;
+    float                  z = 0.0f, facingRadians = 0.0f;
+    bool                   world3D = false;
     std::string            sceneId;
 };
 

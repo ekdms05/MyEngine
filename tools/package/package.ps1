@@ -32,6 +32,7 @@ function Write-Utf8([string]$file, [string]$text) {
 
 $editor = Repo-File "$BuildDir/apps/editor/$Config/MyEditor.exe"
 $player = Repo-File "$BuildDir/apps/game/$Config/MyGame.exe"
+$server = Repo-File "$BuildDir/apps/server/$Config/MyServer.exe"
 $uiFont = Repo-File 'assets/fonts/NanumSquareRoundR.ttf'
 $uiFontLicense = Repo-File 'assets/fonts/NanumSquareRound-LICENSE.txt'
 $outRoot = [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $repo $OutDir }))
@@ -45,7 +46,7 @@ if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip) -or (Test-
 $publicDocs = @('README.md','01-core-platform.md','02-rendering.md','03-scene-world.md','04-asset-pipeline.md',
     '06-runtime-systems.md','07-editor-ui.md','08-mcp.md','13-architecture-and-features.md',
     '14-development-priorities.md','15-skills-and-agents.md','16-foundation-worklog.md',
-    '17-object-workflow.md','19-lua-api.md','20-components.md','release-notes.md')
+    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','release-notes.md')
 foreach ($name in $publicDocs) { $null = Repo-File "docs/$name" }
 $null = Repo-File 'docs/guide/index.html'
 $null = Repo-File 'game/starter/meadow_village/project.myeproj'
@@ -53,6 +54,7 @@ $null = Repo-File 'game/starter/meadow_village/project.myeproj'
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 Copy-Item -LiteralPath $editor -Destination (Join-Path $stage 'MyEditor.exe')
 Copy-Item -LiteralPath $player -Destination (Join-Path $stage 'MyGame.exe')
+Copy-Item -LiteralPath $server -Destination (Join-Path $stage 'MyServer.exe')
 New-Item -ItemType Directory -Path (Join-Path $stage 'fonts') | Out-Null
 Copy-Item -LiteralPath $uiFont -Destination (Join-Path $stage 'fonts/NanumSquareRoundR.ttf')
 New-Item -ItemType Directory -Path (Join-Path $stage 'templates') | Out-Null
@@ -86,6 +88,8 @@ $licenseDir = Join-Path $stage 'licenses'
 New-Item -ItemType Directory -Path $licenseDir | Out-Null
 Copy-Item -LiteralPath $uiFontLicense -Destination (Join-Path $licenseDir 'NanumSquareRound-LICENSE.txt')
 Copy-Item -LiteralPath (Repo-File 'third_party/imgui/LICENSE.txt') -Destination (Join-Path $licenseDir 'imgui.txt')
+Copy-Item -LiteralPath (Repo-File 'third_party/godot/LICENSE.txt') -Destination (Join-Path $licenseDir 'godot.txt')
+Copy-Item -LiteralPath (Repo-File 'third_party/godot/AUTHORS.md') -Destination (Join-Path $licenseDir 'godot-authors.md')
 Copy-Item -LiteralPath (Repo-File 'tools/package/licenses/imgui-fonts.txt') -Destination (Join-Path $licenseDir 'imgui-fonts.txt')
 Copy-Item -LiteralPath (Repo-File 'third_party/freetype/LICENSE.TXT') -Destination (Join-Path $licenseDir 'freetype-license-selection.txt')
 Copy-Item -LiteralPath (Repo-File 'tools/package/licenses/FTL.TXT') -Destination (Join-Path $licenseDir 'FTL.TXT')
@@ -117,6 +121,7 @@ Write-Utf8 (Join-Path $licenseDir 'NOTICE.txt') @'
 This software is based in part on the work of the FreeType Team.
 Portions are copyright (C) 1996-2024 The FreeType Project (https://www.freetype.org).
 ImGui (including embedded stb), Lua, cgltf, stb and miniaudio notices are included beside this file.
+Godot's MIT notice and authors cover the adapted vector slide projection; no Godot runtime is bundled.
 ImGui's embedded ProggyClean and ProggyForever font notices are retained in imgui-fonts.txt.
 FreeType's embedded zlib, X11 and Old MIT notices are retained with its selected FreeType License.
 Windows system fonts are loaded from the user's OS installation and are not redistributed.
@@ -131,6 +136,8 @@ Run MyEditor.exe, then create or open a project in the project launcher.
 The meadow village template and the offline guide (docs/guide/index.html) are included.
 Play opens the project in a separate game window; pause/stop remain in the editor toolbar.
 To play an existing project directly: MyGame.exe --project "path/to/project.myeproj".
+XYZ characters and orbit cameras work in local Play. MyServer.exe supports authenticated loopback XYZ play.
+See docs/21-3d-play-and-online.md for scene contracts, private credentials and online limits.
 
 Requirements: Windows 10/11 x64, DirectX 11 device/driver, latest Microsoft Visual C++ v14 x64 Redistributable.
 Official runtime download: https://aka.ms/vc14/vc_redist.x64.exe

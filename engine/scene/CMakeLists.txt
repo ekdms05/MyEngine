@@ -1,5 +1,9 @@
 # mye_scene — L3 씬·ECS·월드 (ECS 코어·Transform·스케줄러·CommandBuffer)
 # 의존: mye_core(수학·이벤트·모듈·잡·시간) + mye_asset(AssetRef·비동기 핸들) + mye_render(렌더 추출 타입).
+add_library(mye_physics3d STATIC src/phys/PhysicsWorld3D.cpp)
+target_include_directories(mye_physics3d PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_link_libraries(mye_physics3d PUBLIC mye_core)
+
 add_library(mye_scene STATIC
     # ---- ECS 코어 ----
     include/mye/ecs/Entity.h
@@ -60,6 +64,7 @@ add_library(mye_scene STATIC
     src/phys/SpatialHash.cpp
     src/phys/PhysicsWorld2D.cpp
     src/phys/PhysicsSystem.cpp
+    src/phys/PhysicsComponents3D.cpp
 )
 
 target_include_directories(mye_scene PUBLIC
@@ -67,6 +72,6 @@ target_include_directories(mye_scene PUBLIC
 )
 
 target_link_libraries(mye_scene
-    PUBLIC  mye_core mye_asset mye_render
+    PUBLIC  mye_core mye_asset mye_render mye_physics3d
     PRIVATE mye_reflect   # SceneSerializer: 리플렉션·JsonArchive(ser) 소비
 )

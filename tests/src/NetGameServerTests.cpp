@@ -335,6 +335,29 @@ MYE_TEST(NetClient2DRefusesMalformedSnapshotsAndReplaysOnlyUnconfirmedInputs) {
     phys::MotionState2D predicted;
     MYE_EXPECT(client.GetPredicted2D(predicted));
     for (int i = 0; i < 3; ++i) MYE_EXPECT(client.SendInput2D({1, 0}));
+    // Drop every original input packet. Receive must retry even when no new input is produced.
+    while (authority.RecvFrom(peer, buffer, sizeof(buffer)) > 0) {}
+    received = 0;
+    const auto retryStarted = std::chrono::steady_clock::now();
+    while (received <= 0 && std::chrono::steady_clock::now() - retryStarted < std::chrono::milliseconds(400)) {
+        client.Receive();
+        received = authority.RecvFrom(peer, buffer, sizeof(buffer));
+        SleepMs(2);
+    }
+    MYE_EXPECT(received > 0);
+    if (received > 0) {
+        net::BitReader retry(buffer, received);
+        MYE_EXPECT(net::ReadHeader(retry, type) && type == net::MsgType::Input2D);
+        MYE_EXPECT(net::ReadU64(retry) == 42 && retry.ReadBits(8) == 3);
+        for (uint32_t seq = 1; seq <= 3; ++seq) {
+            net::MovementInput input;
+            MYE_EXPECT(net::ReadMovementInput(retry, input) && input.seq == seq && !input.jump);
+            MYE_EXPECT_NEAR(input.movement.x, 1, .00001f);
+        }
+        MYE_EXPECT(net::PacketComplete(retry, received));
+    }
+    MYE_EXPECT(client.PendingInputs() == 3 && client.GetPredicted2D(predicted));
+    MYE_EXPECT_NEAR(predicted.position.x, .15f, .00001f); // Retry must not predict or enqueue twice.
     state.position.x = .05f;
     snapshot(2, 1, 42, 1);
     MYE_EXPECT(client.GetPredicted2D(predicted));
@@ -361,6 +384,9 @@ MYE_TEST(NetClient2DRefusesMalformedSnapshotsAndReplaysOnlyUnconfirmedInputs) {
     MYE_EXPECT(client.EntityCount() == net::kMaxSnapshotEntities2D && client.PendingInputs() == 0);
     MYE_EXPECT(client.GetPredicted2D(predicted));
     MYE_EXPECT_NEAR(predicted.position.x, .15f, .00001f);
+    while (authority.RecvFrom(peer, buffer, sizeof(buffer)) > 0) {}
+    SleepMs(110); client.Receive();
+    MYE_EXPECT(authority.RecvFrom(peer, buffer, sizeof(buffer)) <= 0); // Acknowledged inputs stop retrying.
     for (int i = 0; i < 240; ++i) MYE_EXPECT(client.SendInput2D({}));
     MYE_EXPECT(!client.SendInput2D({}) && !client.Connected());
     MYE_EXPECT(client.PendingInputs() == 240);

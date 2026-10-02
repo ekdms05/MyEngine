@@ -41,7 +41,8 @@ public:
     const std::vector<EntitySnap2D>& LatestSnapshot2D() const { return m_snapshot2D; }
     std::string_view Failure() const { return m_failure; }
 
-    void Receive();   // 소켓 드레인 + Accept/Snapshot 처리(+ 재조정)
+    // Keep polling after the final input: drains/reconciles and retries pending authenticated inputs at 100 ms.
+    void Receive();
 
     uint32_t Id() const { return m_id; }
     bool Connected() const { return m_connected; }
@@ -66,6 +67,7 @@ private:
     void Reconcile2D();
     void ReceiveAuthenticated(MsgType type,BitReader& reader,size_t bytes);
     Expected<void, Error> SendMovementInput(Vec2 movement, bool jump);
+    Expected<void, Error> SendPendingMovement();
     const phys::PhysicsWorld3D* m_physics3D=nullptr;
     phys::MotionSettings3D m_settings3D;
     phys::MotionState3D m_prediction3D;
@@ -80,6 +82,7 @@ private:
     std::string m_failure;
     std::vector<uint8_t> m_handshake;
     std::chrono::steady_clock::time_point m_lastHandshake;
+    std::chrono::steady_clock::time_point m_lastMovementSend;
     void Reconcile();   // 스냅샷 수신 시 서버권위 위치로 리셋 후 미확인 입력 replay
 
     struct PendingInput { uint32_t seq = 0; float mx = 0, my = 0, dt = 0; };

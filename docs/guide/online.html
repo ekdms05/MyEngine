@@ -11,8 +11,17 @@
   <a class="skip" href="#main">본문으로 이동</a>
   <header><a class="brand" href="index.html">▧ MyEngine</a><span>XYZ 플레이와 온라인</span><a href="../21-3d-play-and-online.md">상세 계약</a></header>
   <div class="layout">
-    <aside aria-label="가이드 탐색"><nav><a href="#character">3D 캐릭터</a><a href="#camera">회전 카메라</a><a href="#online">두 계정 접속</a><a href="#limits">지원 범위</a><a href="components.html">컴포넌트</a><a href="lua.html">Lua API</a></nav><p class="muted">MyEngine 0.3.0<br>인터넷 없이 읽을 수 있습니다.</p></aside>
+    <aside aria-label="가이드 탐색"><nav><a href="#online2d">2D 온라인 · main 소스</a><a href="#character">3D 캐릭터</a><a href="#camera">회전 카메라</a><a href="#online">두 계정 접속</a><a href="#limits">지원 범위</a><a href="components.html">컴포넌트</a><a href="lua.html">Lua API</a></nav><p class="muted">MyEngine 0.3.0 · main 소스의 추가 기능은 별도 표시<br>인터넷 없이 읽을 수 있습니다.</p></aside>
     <main id="main" tabindex="-1">
+      <section id="online2d">
+        <h2>작성한 2D 장면에서 두 계정을 접속시키세요.</h2>
+        <p class="lead">main 소스 빌드는 MyServer/MyGame의 같은 온라인 명령으로 2D 이동·벽 충돌·상대 표시·저장·재접속을 실행합니다. 기존 0.3.0 다운로드에는 이 기능이 없습니다.</p>
+        <ol><li>활성 CharacterController2D 하나에 root Transform·Collider2D·KinematicBody2D와 SpriteRenderer를 연결합니다. 스폰을 벽 밖에 두고 장면을 저장합니다.</li><li>아래 두 계정 접속 명령에 같은 .myeproj를 제공합니다. 활성 캐릭터가 2D이면 XY 입력·공통 충돌과 저장 floor를 사용합니다.</li><li>다른 계정으로 별도 MyGame을 실행합니다. 서버가 입장한 플레이어의 비주얼을 표시하고 퇴장하면 제거합니다. 클라이언트 Lua·로컬 물리·포털은 실행하지 않습니다.</li></ol>
+        <figure><img src="../images/online2d-two-accounts.png" width="960" height="540" style="max-width:100%;height:auto" alt="빈 검증 장면의 두 계정. 왼쪽은 원격 계정, 오른쪽은 얇은 벽 앞에 정지한 로컬 캐릭터."><figcaption>실제 Release 2D 프레임. 충돌 벽에는 비주얼을 넣지 않았으며 두 계정은 같은 외형 원형을 사용합니다.</figcaption></figure>
+        <figure><img src="../images/online2d-peer-left.png" width="960" height="540" style="max-width:100%;height:auto" loading="lazy" alt="다른 계정 종료 후 원격 캐릭터가 제거되고 한 계정만 남은 화면."><figcaption>먼저 종료한 계정의 비주얼이 다음 스냅샷에서 제거됩니다. 기존 starter PNG/.anim을 사용했습니다.</figcaption></figure>
+        <details><summary>고정 틱 입력을 재생하는 방법과 이유</summary><p><code>--input move.json --headless --dump final.bmp</code>로 실제 입력 경로를 재생합니다. 예시 파일은 <code>{"version":1,"steps":[{"ticks":60,"x":1,"y":0},{"ticks":30,"x":0,"y":0}]}</code>입니다. 온라인 스폰 뒤 시작하고 마지막 ack까지 기다려 최종 프레임을 저장합니다. 직접 키보드·패드·창 포커스 검증은 별도로 진행합니다.</p></details>
+        <p>현재 범위는 같은 정적 장면·고정 층·같은 외형의 이동입니다. 서버 맵 전환·전투·게임 UI와 공개 보호 전송은 남았습니다. <a href="../23-2d-online-play.md">2D 설정·재생·검증·지원 범위</a>와 <a href="../22-2d-mmorpg-roadmap.md">다음 작업</a>을 참고하세요.</p>
+      </section>
       <section id="character">
         <p class="eyebrow">XZ 지면 · Y 높이</p><h1>도트 캐릭터를 3D 공간에서 움직이세요.</h1>
         <p class="lead">캐릭터 3D와 충돌 3D를 배치하면 걷기·점프·중력·벽·천장·경사·낮은 턱을 같은 물리 계산으로 처리합니다. 메시의 모양과 충돌은 별도로 설정합니다.</p>

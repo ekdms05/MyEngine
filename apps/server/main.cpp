@@ -190,14 +190,21 @@ int main(int argc, char** argv) {
     SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
 
     // 통합 게임 서버(넷↔게임플레이↔영속). 인증된 계정만 캐릭터 세션을 얻는다.
-    std::optional<runtime::OnlineScene3D> online;
+    std::optional<runtime::OnlineScene> online;
     gameserver::NetGameServer server(persistence);
     if (!project.empty()) {
-        if (tickrate!=60 || botCount!=0) { MYE_LOG_ERROR("Server","3D project requires 60 Hz; legacy --bots is unavailable"); return 64; }
-        auto loaded=runtime::LoadOnlineScene3D(project,scene);
+        if (tickrate!=60 || botCount!=0) { MYE_LOG_ERROR("Server","Online project requires 60 Hz; legacy --bots is unavailable"); return 64; }
+        auto loaded=runtime::LoadOnlineScene(project,scene);
         if (!loaded) { MYE_LOG_ERROR("Server","{}",loaded.GetError().message); return 1; }
         online=std::move(loaded).Value();
-        auto configured=server.Configure3D(online->physics,online->settings,online->hash,online->sceneId,online->spawn);
+        Expected<void, Error> configured;
+        if (const auto* twoD = std::get_if<runtime::OnlineScene2D>(&*online)) {
+            const phys::MotionSettings2D settings{twoD->character, twoD->offset, twoD->speed, twoD->maxSlideIters};
+            configured=server.Configure2D(twoD->colliders,settings,twoD->hash,twoD->sceneId,twoD->spawn);
+        } else {
+            const auto& threeD = std::get<runtime::OnlineScene3D>(*online);
+            configured=server.Configure3D(threeD.physics,threeD.settings,threeD.hash,threeD.sceneId,threeD.spawn);
+        }
         if (!configured) { MYE_LOG_ERROR("Server","{}",configured.GetError().message); return 1; }
     } else if (!scene.empty()) { MYE_LOG_ERROR("Server","--scene requires --project"); return 64; }
     if (!server.Start(port)) { MYE_LOG_ERROR("Server", "port {} 바인드 실패", port); return 2; }

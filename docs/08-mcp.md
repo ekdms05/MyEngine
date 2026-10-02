@@ -13,7 +13,7 @@
 | engine_logs | 빌드·테스트·실행·캡처 로그 조회 |
 | project_status | configure 상태·마지막 작업·앱 소스·캡처·버전 조회 |
 | project_inspect | 프로젝트·씬 계층/컴포넌트·에셋 GUID 읽기, 검색·페이지 조회 |
-| engine_reference | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더·XYZ/온라인 문서의 검색·줄 범위 조회 |
+| engine_reference | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더·2D/XYZ 온라인 문서의 검색·줄 범위 조회 |
 | asset_import | 에디터 CLI 임포트 경계로 원본을 assets/에 복사·등록, 기존 파일 덮어쓰기 거부 |
 
 현재 버전은 **0.3.0**, 등록 도구는 **9개**다. 픽셀 제작은 외부 도구에서 진행하고 PNG/.anim을 엔진에 가져온다. 에디터 메모리의 씬 조작·Undo 원격 명령·Lua REPL은 제공하지 않는다.
@@ -64,7 +64,7 @@ MCP 요청 → 입력/경로 검증 → 작업 직렬화 → CLI 실행·로그 
 
 `engine_reference(topic="online")`은 [XYZ/온라인](21-3d-play-and-online.md)의 장면 구성·카메라 입력·인증 CLI·예측/영속·지원 한계를 읽는다. `engine_run(sample="MyServer", frames=N)`은 서버의 `--ticks N`으로 변환된다. 개발 MCP와 릴리즈 소비자용 도구의 연결은 구분한다.
 
-개발 소스의 2D 로더·인증/권위·예측·저장 계약은 `engine_reference(topic="scene", search="StepMotion2D")`와 [씬 문서](03-scene-world.md#인증된-2d-이동의-라이브러리-연결)에서 조회한다. 현재 검증은 라이브러리 경로이며 공식 MyServer/MyGame의 2D 온라인 실행 옵션을 제공하지 않는다. 기존 9개 도구/online 주제를 별도의 미완료 CLI로 확장하지 않는다.
+개발 소스의 2D 로더·인증/권위·예측·저장 계약은 `engine_reference(topic="scene", search="StepMotion2D")`와 [씬 문서](03-scene-world.md#인증된-2d-이동의-라이브러리-연결)에서 조회한다. `engine_reference(topic="online2d")`는 [공식 2D 플레이](23-2d-online-play.md)의 활성 캐릭터 판별·인증 CLI·--input 고정 틱 재생/ack·원격 비주얼·저장 재접속과 남은 범위를 읽는다. 기존 9개 도구와 XYZ online 주제는 유지한다. main 소스 전용이며 0.3.0 바이너리에는 이 기능이 없다.
 
 `asset_import`는 `project`, 저장소 상대 `source`, **assets/ 기준** `destination`을 받는다. 예: `destination="characters/player.png"`. 대상 폴더는 에셋 브라우저에서 먼저 생성한다. 내부 호출은 `MyEditor --project <manifest> --import-asset <source> --asset-destination <destination> --headless --frames 1`이다. 파일 복사·지원 형식·GUID/.meta·실패 처리는 에디터의 공통 임포트 경계가 담당한다. 열린 GUI 상태 변경이나 에셋 삭제는 지원하지 않는다. 현재 프로젝트를 GUI에서 다시 스캔하거나 다시 열어 반영한다.
 

@@ -36,7 +36,7 @@
 
 `CastMotion2D`는 변위의 `[0,1]` 비율·장애물 밖을 향한 단위 법선·충돌 ID를 반환한다. 초기 겹침은 비율 0, 접촉 없는 결과는 빈 optional이다. 트리거·동일한 비영 ID·층/레이어가 맞지 않는 항목은 막지 않는다. 정확한 동률은 접촉 비율→법선 x/y→ID 순으로 정해 입력 배열 순서의 영향을 줄인다. 현재 각 캐스트는 선형 탐색이며 동일 목표 장면의 측정이 후보 탐색 병목을 보여줄 때 기존 broadphase를 연결한다. 동적 장애물의 상대 속도/푸시·회전 형상·통과 중 트리거 이벤트는 제공하지 않는다.
 
-이 변경은 main의 개발 소스이며 기존 0.3.0 배포본에는 없다. 서버/예측 소비, 타일 높이·층 전이 통합도 남았다. skin·snapToGround는 저장 호환 필드로 유지하지만 2D 계산에는 적용하지 않는다. 호출자가 없는 PhysicsSystem/IPhysicsWorld와 구현·소비가 없는 ITileCollision/SetTileCollision은 제거했다. 타일 데이터와 경로 탐색은 보존하며, D10에서 작성한 타일의 정적 충돌을 같은 CollisionBody2D로 연결한다. 별도 물리 구현/실제 스케줄러 소비가 생기면 수명·오류 전달 요구를 기준으로 재검토한다.
+이 변경은 main의 개발 소스이며 기존 0.3.0 배포본에는 없다. 서버/예측과 공식 앱이 같은 계산을 소비한다. 타일 높이·층 전이 통합은 남았다. skin·snapToGround는 저장 호환 필드로 유지하지만 2D 계산에는 적용하지 않는다. 호출자가 없는 PhysicsSystem/IPhysicsWorld와 구현·소비가 없는 ITileCollision/SetTileCollision은 제거했다. 타일 데이터와 경로 탐색은 보존하며, D10에서 작성한 타일의 정적 충돌을 같은 CollisionBody2D로 연결한다. 별도 물리 구현/실제 스케줄러 소비가 생기면 수명·오류 전달 요구를 기준으로 재검토한다.
 
 [Pathfinding](../engine/scene/include/mye/nav/Pathfinding.h)은 그리드·층을 고려한 A*와 비동기 경로 요청을 제공한다. 모든 NPC·컷신이 이를 자동 사용하지 않는다. 컷신의 현재 이동과 NPC 경로 추종은 각 소비자의 호출을 확인한다.
 
@@ -46,19 +46,19 @@
 
 활성 CharacterController2D는 정확히 하나여야 하고, 트리거 캐릭터·추가 KinematicBody2D·3D 물리 컴포넌트는 거부한다. 삽입된 3D 시각 에셋을 삭제하지 않는다. `ValidateSpawn2D`는 지정한 본체 중심의 유한 범위와 실제 막는 형상의 겹침을 공통 캐스트로 검사하며 접촉은 허용하고 잘못된 좌표를 자동으로 밀어내지 않는다. 두 차원의 장면 로더는 같은 파일 경계에서 버전/name/mainScene, 절대/드라이브/NUL/잘못된 UTF-8 경로와 assets 밖의 canonical 위치를 거부하며 장면 ID를 정규화한다. hash는 파일 내용의 호환 지문이며 인증 증명이 아니다.
 
-`MyServer --project`·`MyGame --connect`는 아직 기존 XYZ 경로를 사용한다. 아래 라이브러리 검증과 별도로 공식 앱 연결을 끝내기 전에는 온라인 2D 게임 제작 지원으로 설명하지 않는다.
+`LoadOnlineScene`은 한 번 검증한 장면의 활성 캐릭터로 2D/3D를 선택하고 잘못된 2D 계약에서 다른 차원으로 재시도하지 않는다. 개발 소스의 `MyServer --project`·`MyGame --connect`가 이 결과를 소비한다. [공식 2D 플레이 가이드](23-2d-online-play.md)와 tools/verify-online2d.ps1의 두 앱 실행·픽셀/퇴장·저장/재접속 검증을 라이브러리 회귀와 구분한다. 기존 0.3.0 바이너리에는 이 연결이 없다.
 
 ## 인증된 2D 이동의 라이브러리 연결
 
-개발 소스의 `StepMotion2D`는 MotionSettings2D의 캐릭터 형상/offset·속도·반복 상한과 MotionState2D의 원점·방향·층을 공통 MoveAndSlide2D에 전달한다. NetGameServer::Configure2D/NetClient::Configure2D가 같은 값과 정적 충돌 span을 보관하며 서버 Tick, 즉시 예측과 ack 이후 재실행에서 이 함수를 사용한다. 이 연결은 실제 UDP 라이브러리에서 검증했으며 아직 MyServer/MyGame의 2D 온라인 앱 지원은 아니다. 충돌 span은 비소유 참조이므로 설정부터 연결 종료까지 장면 데이터의 수명/내용을 유지한다.
+개발 소스의 `StepMotion2D`는 MotionSettings2D의 캐릭터 형상/offset·속도·반복 상한과 MotionState2D의 원점·방향·층을 공통 MoveAndSlide2D에 전달한다. NetGameServer::Configure2D/NetClient::Configure2D가 같은 값과 정적 충돌 span을 보관하며 서버 Tick, 즉시 예측과 ack 이후 재실행에서 이 함수를 사용한다. 이 연결은 실제 UDP 라이브러리 및 MyServer/MyGame 두 실행 파일에서 검증했다. 충돌 span은 비소유 참조이므로 설정부터 연결 종료까지 장면 데이터의 수명/내용을 유지한다.
 
-2D 입력은 60 Hz 틱당 정규화된 XY 방향과 순서만 전달한다. 서버가 실제 계산을 마친 입력에만 ack를 주며 틱당 하나를 처리한다. 미확인 입력은 최대 240개, 재전송은 앞의 8개다. 예약된 jump 비트는 2D에서 false만 허용한다. 2D 메시지는 protocol version 3/type 11..15로 구분하여 legacy XY(version 1)와 XYZ(version 2)를 오인하지 않는다. 두 인증 차원은 nonce/무작위 세션 token·송신 주소·길이/padding·연속 순서 검사와 접속/해제 경계를 공유한다.
+2D 입력은 60 Hz 틱당 정규화된 XY 방향과 순서만 전달한다. 서버가 실제 계산을 마친 입력에만 ack를 주며 틱당 하나를 처리한다. 미확인 입력은 최대 240개, 재전송은 앞의 8개다. 입력 생성이 멈춰도 NetClient.Receive가 100ms 송신 간격을 확인해 남은 입력을 재전송하며 새 순서/예측을 추가하지 않는다. 예약된 jump 비트는 2D에서 false만 허용한다. 2D 메시지는 protocol version 3/type 11..15로 구분하여 legacy XY(version 1)와 XYZ(version 2)를 오인하지 않는다. 두 인증 차원은 nonce/무작위 세션 token·송신 주소·길이/padding·연속 순서 검사와 접속/해제 경계를 공유한다.
 
 상태는 float32 원점/lastMove·방향과 0..7 층/벽 접촉을 전달한다. 원점은 각 축 ±100,000, 고정 틱 lastMove 길이는 2 이하, 방향은 +Y가 0이고 +X가 π/2다. 최대 40개 엔티티의 전체 스냅샷은 1400 bytes 이하다. 이것은 데이터그램 상한이며 처리량/목표 동접 측정이 아니다. 더 오래된 tick, 이미 확인한 입력보다 낮은 ack, 아직 전송하지 않은 ack, 잘못된 token/형상 상태/층/중복 ID·잔여 바이트는 예측을 바꾸지 않는다.
 
 NetGameServer의 2D admission은 계정 소유권·단일 세션·저장 sceneId/world3D/floorLevel과 물리 배치를 Join 전에 검사한다. 신규 캐릭터는 작성 스폰/층, 기존 캐릭터는 저장된 원점/방향을 사용한다. 다른 장면/층이나 겹친 저장 위치를 자동 변환하지 않는다. 권위 상태는 기존 GameServer/CharacterStore의 위치·방향·층으로 저장하며 floorLevel이 없는 구 기록은 0이다. 인증 콜백을 앱에서 교체해도 장면 계약이 있는 캐릭터는 legacy XY의 세션 생성 경계에서 거부한다.
 
-2D 권위 기록은 Z=0이어야 한다. 저장된 비영 Z를 조용히 지우지 않고 admission에서 거부한다. 장면의 시각 높이/3D 에셋과 서버의 XY 이동 좌표는 별개다. 현재 한계는 동일 정적 장면·고정 층과 정적 형상에 대한 이동이다. 캐릭터끼리의 solid 충돌, 층 전환, 온라인 Lua/게임 규칙·포털·UI·보간과 공식 2D 앱 연결은 후속 작업이다. 전송은 기존 loopback UDP이며 공개 보호 전송으로 설명하지 않는다.
+2D 권위 기록은 Z=0이어야 한다. 저장된 비영 Z를 조용히 지우지 않고 admission에서 거부한다. 장면의 시각 높이/3D 에셋과 서버의 XY 이동 좌표는 별개다. 현재 한계는 동일 정적 장면·고정 층과 정적 형상에 대한 이동이다. 캐릭터끼리의 solid 충돌, 층 전환, 온라인 Lua/게임 규칙·포털·UI·보간은 후속 작업이다. 온라인 클라이언트는 ObjectSystem/Lua를 생성하지 않고 권위 상태를 표현한다. 전송은 기존 loopback UDP이며 공개 보호 전송으로 설명하지 않는다.
 
 ## 애니메이션·씬 데이터
 

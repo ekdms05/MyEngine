@@ -47,7 +47,7 @@ namespace mye {
 namespace {
 namespace fs = std::filesystem;
 struct GameCli {
-    std::string project, scene, dump, connect, credentials;
+    std::string project, scene, dump, connect, credentials, input;
     uint64_t frames = 0, ticks = 0;
     uint64_t character = 0;
 };
@@ -59,7 +59,7 @@ Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
         if (option == "--headless") continue;
         if (option.starts_with("--project=")) { cli.project = option.substr(10); continue; }
         if (option != "--project" && option != "--scene" && option != "--frames" && option != "--ticks" && option != "--dump" &&
-            option != "--connect" && option != "--credentials" && option != "--character")
+            option != "--connect" && option != "--credentials" && option != "--character" && option != "--input")
             return Error{"Unknown option: " + option, 64};
         if (++i == args.size() || args[i].empty()) return Error{"Missing value: " + option, 64};
         const auto& value = args[i];
@@ -68,6 +68,7 @@ Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
         else if (option == "--dump") cli.dump = value;
         else if (option == "--connect") cli.connect = value;
         else if (option == "--credentials") cli.credentials = value;
+        else if (option == "--input") cli.input = value;
         else if (option == "--character") {
             const auto parsed = std::from_chars(value.data(), value.data() + value.size(), cli.character);
             if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || cli.character == 0)
@@ -149,6 +150,32 @@ public:
         m_device.reset();
     }
 private:
+    Expected<void, Error> LoadInputReplay() {
+        if (m_cli.input.empty()) return {};
+        auto file = ReadJsonFile(Utf8Path(m_cli.input));
+        if (!file) return file.GetError();
+        const auto* version = file.Value().Find("version");
+        const auto* steps = file.Value().Find("steps");
+        if (!version || !version->IsInteger() || version->AsInt() != 1 || !steps || !steps->IsArray() ||
+            steps->AsArray().empty() || steps->AsArray().size() > 256)
+            return Error{"Input replay requires version 1 and 1..256 steps", 1};
+        for (const auto& step : steps->AsArray()) {
+            const auto* ticks = step.Find("ticks");
+            const auto* x = step.Find("x");
+            const auto* y = step.Find("y");
+            const auto* jump = step.Find("jump");
+            if (!ticks || !ticks->IsInteger() || ticks->AsInt() < 1 || ticks->AsInt() > 36000 ||
+                !x || !x->IsNumber() || !y || !y->IsNumber() ||
+                !std::isfinite(x->AsDouble()) || !std::isfinite(y->AsDouble()) ||
+                std::abs(x->AsDouble()) > 1 || std::abs(y->AsDouble()) > 1 || (jump && !jump->IsBool()) ||
+                m_replay.size() + static_cast<std::size_t>(ticks->AsInt()) > 36000)
+                return Error{"Input replay steps require integer ticks, axes in [-1,1] and at most 36000 total ticks", 1};
+            const runtime::GameInput input{{static_cast<float>(x->AsDouble()), static_cast<float>(y->AsDouble())},
+                                          false, jump && jump->AsBool()};
+            m_replay.insert(m_replay.end(), static_cast<std::size_t>(ticks->AsInt()), input);
+        }
+        return {};
+    }
     Expected<fs::path, Error> SceneFile(std::string_view relative) const {
         if (relative.find('\0') != std::string_view::npos || Utf8Path(relative).is_absolute())
             return Error{"Scene path must be project relative", 1};
@@ -202,9 +229,11 @@ private:
                 });
             if (!playerFound) return Error{"Destination scene needs an enabled character controller", 1};
         }
-        candidate->objects = std::make_unique<runtime::ObjectSystem>(candidate->world);
-        auto initialized = candidate->objects->Initialize();
-        if (!initialized) return initialized.GetError();
+        if (m_cli.connect.empty()) {
+            candidate->objects = std::make_unique<runtime::ObjectSystem>(candidate->world);
+            auto initialized = candidate->objects->Initialize();
+            if (!initialized) return initialized.GetError();
+        }
         m_scene = std::move(candidate);
         scene::UpdateWorldTransforms(m_scene->world);
         m_scene->world.Query<runtime::CharacterController2D, scene::LocalTransform>().Each([&](ecs::Entity, const auto& controller, const auto& transform) {
@@ -214,6 +243,7 @@ private:
         return {};
     }
     Expected<void, Error> Initialize(EngineContext& ctx) {
+        if (auto replay = LoadInputReplay(); !replay) return replay.GetError();
         auto manifest = ReadJsonFile(Utf8Path(m_cli.project));
         if (!manifest) return manifest.GetError();
         const auto* version = manifest.Value().Find("version");
@@ -277,16 +307,26 @@ private:
         if (!user || !password || !user->IsString() || !password->IsString() || user->AsString().empty() ||
             user->AsString().size() > 64 || password->AsString().empty() || password->AsString().size() > 128)
             return Error{"Credentials file requires bounded username and password strings", 64};
-        auto online = runtime::LoadOnlineScene3D(m_cli.project, m_cli.scene);
+        auto online = runtime::LoadOnlineScene(m_cli.project, m_cli.scene);
         if (!online) return online.GetError();
         m_online = std::move(online).Value();
-        m_scene->world.Query<runtime::CharacterController3D>().Each([&](ecs::Entity e, const auto& c) {
-            if (c.enabled) m_player = e;
-        });
         m_network.emplace();
         if (!m_network->ok || !m_client.Open()) return Error{"Online socket initialization failed", 1};
-        auto configured =
-            m_client.Configure3D(m_online->physics, m_online->settings, m_online->hash, m_cli.character);
+        Expected<void, Error> configured;
+        if (const auto* twoD = std::get_if<runtime::OnlineScene2D>(&*m_online)) {
+            m_scene->world.Query<runtime::CharacterController2D>().Each([&](ecs::Entity e, const auto& c) {
+                if (c.enabled) m_player = e;
+            });
+            const phys::MotionSettings2D settings{twoD->character, twoD->offset, twoD->speed, twoD->maxSlideIters};
+            configured = m_client.Configure2D(twoD->colliders, settings, twoD->hash, m_cli.character);
+        } else {
+            const auto& threeD = std::get<runtime::OnlineScene3D>(*m_online);
+            m_scene->world.Query<runtime::CharacterController3D>().Each([&](ecs::Entity e, const auto& c) {
+                if (c.enabled) m_player = e;
+            });
+            configured = m_client.Configure3D(threeD.physics, threeD.settings, threeD.hash, m_cli.character);
+        }
+        if (m_player.IsNull()) return Error{"Online character prototype changed during project loading", 1};
         if (!configured) return configured.GetError();
         m_client.Connect(net::Endpoint::Loopback(port), user->AsString(), password->AsString());
         m_networkActivity = std::chrono::steady_clock::now();
@@ -301,8 +341,59 @@ private:
         if (previousTick != m_client.LastTick()) m_networkActivity = std::chrono::steady_clock::now();
         if (std::chrono::steady_clock::now() - m_networkActivity > std::chrono::seconds(5))
             return Error{"Online connection or snapshot timed out", 1};
+        const bool send = m_cli.input.empty() || m_replayTick < m_replay.size();
+        auto result = std::holds_alternative<runtime::OnlineScene2D>(*m_online)
+                          ? TickOnline2D(dt, input, send) : TickOnline3D(dt, input, send);
+        if (!result) return result.GetError();
+        if (m_onlineSpawnLogged && !m_cli.input.empty()) {
+            if (send) ++m_replayTick;
+            else if (m_client.PendingInputs() == 0) {
+                m_replayFinished = true;
+                MYE_LOG_INFO("Game", "Input replay confirmed: steps={}, pending=0, netId={}", m_replayTick, m_client.Id());
+            }
+        }
+        RemoveRemotes();
+        return {};
+    }
+    Expected<void, Error> TickOnline2D(float dt, const runtime::GameInput& input, bool send) {
+        phys::MotionState2D predicted;
+        if (!m_client.GetPredicted2D(predicted)) return {};
+        if (!m_onlineSpawnLogged) {
+            m_onlineSpawnLogged = true;
+            MYE_LOG_INFO("Game", "Online spawn confirmed: netId={}, scene={}, entities={}, dimension=2D, position=({}, {}), floor={}",
+                         m_client.Id(), std::get<runtime::OnlineScene2D>(*m_online).sceneId,
+                         m_client.EntityCount(), predicted.position.x, predicted.position.y, int(predicted.floorLevel));
+        }
+        if (send) if (auto sent = m_client.SendInput2D(input.movement); !sent) return sent.GetError();
+        m_client.GetPredicted2D(predicted);
+        auto* body = m_scene->world.TryGet<phys::KinematicBody2D>(m_player);
+        body->lastMove = predicted.lastMove;
+        body->velocity = predicted.lastMove / dt;
+        body->hitWall = predicted.onWall;
+        const auto* controller = m_scene->world.TryGet<runtime::CharacterController2D>(m_player);
+        const auto apply = [&](ecs::Entity entity, const phys::MotionState2D& state) {
+            auto& pose = *m_scene->world.TryGet<scene::LocalTransform>(entity);
+            pose.position.x = state.position.x;
+            pose.position.y = state.position.y;
+            pose.dirty = true;
+            if (auto* floor = m_scene->world.TryGet<scene::FloorLevel>(entity)) floor->level = state.floorLevel;
+            ApplyAnimation(entity, state.lastMove.Length() > 1e-6f ? controller->walkAnimation : controller->idleAnimation,
+                           state.facingRadians);
+        };
+        apply(m_player, predicted);
+        for (const auto& snap : m_client.LatestSnapshot2D()) {
+            if (snap.netId != m_client.Id()) apply(Remote(snap.netId), snap.state);
+            else if (!send && m_client.PendingInputs() == 0)
+                MYE_LOG_INFO("Game", "Online state confirmed: ack={}, position=({}, {}), floor={}, facing={}",
+                             snap.ack, snap.state.position.x, snap.state.position.y,
+                             int(snap.state.floorLevel), snap.state.facingRadians);
+        }
+        return {};
+    }
+    Expected<void, Error> TickOnline3D(float dt, const runtime::GameInput& input, bool send) {
+        const auto& online = std::get<runtime::OnlineScene3D>(*m_online);
         scene::UpdateWorldTransforms(m_scene->world);
-        auto camera = scene::UpdateGameCamera(m_scene->world, m_online->physics, dt, input.cameraAxis,
+        auto camera = scene::UpdateGameCamera(m_scene->world, online.physics, dt, input.cameraAxis,
                                               input.cameraMouseX);
         if (!camera) return camera.GetError();
         phys::MotionState3D predicted;
@@ -310,13 +401,13 @@ private:
         if (!m_onlineSpawnLogged) {
             m_onlineSpawnLogged = true;
             MYE_LOG_INFO("Game", "Online spawn confirmed: netId={}, scene={}, entities={}", m_client.Id(),
-                         m_online->sceneId, m_client.LatestSnapshot3D().size());
+                         online.sceneId, m_client.EntityCount());
         }
         const auto* controller = m_scene->world.TryGet<runtime::CharacterController3D>(m_player);
         const auto movement = controller->cameraRelative
                                   ? scene::CameraRelativeMovement(m_scene->world, input.movement)
                                   : input.movement;
-        if (auto sent = m_client.SendInput3D(movement, input.jump); !sent) return sent.GetError();
+        if (send) if (auto sent = m_client.SendInput3D(movement, input.jump); !sent) return sent.GetError();
         m_client.GetPredicted3D(predicted);
         auto* body = m_scene->world.TryGet<phys::KinematicBody3D>(m_player);
         body->lastMove = predicted.position - body->state.position;
@@ -326,63 +417,74 @@ private:
         pose.position = predicted.position;
         pose.dirty = true;
         const auto applyMotion = [&](ecs::Entity entity, const phys::MotionState3D& state) {
-            if (auto* animator = m_scene->world.TryGet<anim::SpriteAnimator>(entity)) {
-                const bool moving =
-                    state.velocity.x * state.velocity.x + state.velocity.z * state.velocity.z > 1e-6f;
-                const auto& animation = moving ? controller->walkAnimation : controller->idleAnimation;
-                if (animation.guid.IsValid() && animator->animation.guid != animation.guid) {
-                    animator->animation = animation;
-                    animator->sheet = nullptr;
-                    animator->directClip = nullptr;
-                    animator->cursor = {};
-                    animator->started = false;
-                }
-                animator->facing = anim::Dir8FromVector(
-                    {std::sin(state.facingRadians), std::cos(state.facingRadians)}, animator->facing);
-            }
+            const bool moving = state.velocity.x * state.velocity.x + state.velocity.z * state.velocity.z > 1e-6f;
+            ApplyAnimation(entity, moving ? controller->walkAnimation : controller->idleAnimation, state.facingRadians);
         };
         applyMotion(m_player, predicted);
-        const auto prototypePose = pose;
         for (const auto& snap : m_client.LatestSnapshot3D()) {
             if (snap.netId == m_client.Id()) continue;
-            auto found = m_remotes.find(snap.netId);
-            if (found == m_remotes.end()) {
-                const auto remote = m_scene->world.Create();
-                m_scene->world.Add<scene::LocalTransform>(remote) = prototypePose;
-                m_scene->world.Add<scene::WorldTransform>(remote);
-                m_scene->world.Add<scene::ObjectName>(remote).value = "Network " + std::to_string(snap.netId);
-                if (const auto* v = m_scene->world.TryGet<scene::BillboardRenderer>(m_player)) {
-                    const auto copy = *v;
-                    m_scene->world.Add<scene::BillboardRenderer>(remote) = copy;
-                }
-                if (const auto* v = m_scene->world.TryGet<scene::MeshRenderer>(m_player)) {
-                    const auto copy = *v;
-                    m_scene->world.Add<scene::MeshRenderer>(remote) = copy;
-                }
-                if (const auto* v = m_scene->world.TryGet<anim::SpriteAnimator>(m_player)) {
-                    const auto copy = *v;
-                    m_scene->world.Add<anim::SpriteAnimator>(remote) = copy;
-                }
-                found = m_remotes.emplace(snap.netId, remote).first;
-                MYE_LOG_INFO("Game", "Network object added: netId={}", snap.netId);
-            }
-            auto* transform = m_scene->world.TryGet<scene::LocalTransform>(found->second);
+            const auto remote = Remote(snap.netId);
+            auto* transform = m_scene->world.TryGet<scene::LocalTransform>(remote);
             transform->position = snap.state.position;
             transform->dirty = true;
-            applyMotion(found->second, snap.state);
+            applyMotion(remote, snap.state);
         }
+        scene::UpdateWorldTransforms(m_scene->world);
+        return scene::UpdateGameCamera(m_scene->world, online.physics, dt, 0, 0);
+    }
+    void ApplyAnimation(ecs::Entity entity, const asset::AssetRef& animation, float facing) {
+        if (auto* animator = m_scene->world.TryGet<anim::SpriteAnimator>(entity)) {
+            if (animation.guid.IsValid() && animator->animation.guid != animation.guid) {
+                animator->animation = animation;
+                animator->sheet = nullptr;
+                animator->directClip = nullptr;
+                animator->cursor = {};
+                animator->started = false;
+            }
+            animator->facing = anim::Dir8FromVector({std::sin(facing), std::cos(facing)}, animator->facing);
+        }
+    }
+    ecs::Entity Remote(uint32_t id) {
+        if (const auto found = m_remotes.find(id); found != m_remotes.end()) return found->second;
+        auto& world = m_scene->world;
+        const auto remote = world.Create();
+        const auto pose = *world.TryGet<scene::LocalTransform>(m_player);
+        world.Add<scene::LocalTransform>(remote) = pose;
+        world.Add<scene::WorldTransform>(remote);
+        world.Add<scene::ObjectName>(remote).value = "Network " + std::to_string(id);
+        // Adding a component can reallocate its pool; copy values before adding to that same pool.
+        if (const auto* v = world.TryGet<scene::SpriteRenderer>(m_player)) {
+            const auto copy = *v; world.Add<scene::SpriteRenderer>(remote) = copy;
+        }
+        if (const auto* v = world.TryGet<scene::BillboardRenderer>(m_player)) {
+            const auto copy = *v; world.Add<scene::BillboardRenderer>(remote) = copy;
+        }
+        if (const auto* v = world.TryGet<scene::MeshRenderer>(m_player)) {
+            const auto copy = *v; world.Add<scene::MeshRenderer>(remote) = copy;
+        }
+        if (const auto* v = world.TryGet<scene::FloorLevel>(m_player)) {
+            const auto copy = *v; world.Add<scene::FloorLevel>(remote) = copy;
+        }
+        if (const auto* v = world.TryGet<anim::SpriteAnimator>(m_player)) {
+            const auto copy = *v; world.Add<anim::SpriteAnimator>(remote) = copy;
+        }
+        m_remotes.emplace(id, remote);
+        MYE_LOG_INFO("Game", "Network object added: netId={}", id);
+        return remote;
+    }
+    void RemoveRemotes() {
         for (auto it = m_remotes.begin(); it != m_remotes.end();) {
-            const bool present =
-                std::any_of(m_client.LatestSnapshot3D().begin(), m_client.LatestSnapshot3D().end(),
-                            [&](const auto& snap) { return snap.netId == it->first; });
+            const auto contains = [&](const auto& snapshots) {
+                return std::any_of(snapshots.begin(), snapshots.end(), [&](const auto& snap) { return snap.netId == it->first; });
+            };
+            const bool present = std::holds_alternative<runtime::OnlineScene2D>(*m_online)
+                                     ? contains(m_client.LatestSnapshot2D()) : contains(m_client.LatestSnapshot3D());
             if (!present) {
                 MYE_LOG_INFO("Game", "Network object removed: netId={}", it->first);
                 m_scene->world.Destroy(it->second);
                 it = m_remotes.erase(it);
             } else ++it;
         }
-        scene::UpdateWorldTransforms(m_scene->world);
-        return scene::UpdateGameCamera(m_scene->world, m_online->physics, dt, 0, 0);
     }
     const asset::Texture* Texture(asset::AssetGuid guid) {
         if (!guid.IsValid()) return nullptr;
@@ -438,7 +540,7 @@ private:
     }
     void Tick(float dt) {
         // Catch-up may schedule several fixed ticks before the next render.
-        if (!m_ready || (m_cli.ticks && m_tick >= m_cli.ticks)) return;
+        if (!m_ready || m_replayFinished || (m_cli.ticks && m_tick >= m_cli.ticks)) return;
         Vec2 movement{};
         if (m_input && m_inputFocused) {
             movement.x = float(m_input->IsDown(KeyCode::D) || m_input->IsDown(KeyCode::Right)) - float(m_input->IsDown(KeyCode::A) || m_input->IsDown(KeyCode::Left));
@@ -450,15 +552,22 @@ private:
         if (m_input && m_inputFocused)
             controls.cameraAxis = float(m_input->IsDown(KeyCode::R)) - float(m_input->IsDown(KeyCode::Q)) +
                                   m_input->RightStick().x;
+        if (!m_cli.input.empty()) controls = m_replayTick < m_replay.size() ? m_replay[m_replayTick] : runtime::GameInput{};
         const auto tick = m_online ? TickOnline(dt, controls) : m_scene->objects->Tick(dt, controls);
         if (!tick) {
             Fail(tick.GetError());
             return;
         }
-        const auto request = m_scene->objects->TakeMapRequest();
-        if (!request.scenePath.empty()) {
-            auto loaded = LoadScene(request.scenePath, request.spawnName);
-            if (!loaded) { Fail(loaded.GetError()); return; }
+        if (!m_online) {
+            if (!m_cli.input.empty() && ++m_replayTick == m_replay.size()) {
+                m_replayFinished = true;
+                MYE_LOG_INFO("Game", "Input replay completed: steps={}", m_replayTick);
+            }
+            const auto request = m_scene->objects->TakeMapRequest();
+            if (!request.scenePath.empty()) {
+                auto loaded = LoadScene(request.scenePath, request.spawnName);
+                if (!loaded) { Fail(loaded.GetError()); return; }
+            }
         }
         BindAnimations();
         anim::RunAnimationSystem(m_scene->world, dt);
@@ -469,7 +578,7 @@ private:
         if (m_window) {
             const auto title = m_online
                                    ? m_title + " | Online " + std::to_string(m_client.Id()) + " | Players " +
-                                         std::to_string(m_client.LatestSnapshot3D().size())
+                                         std::to_string(m_client.EntityCount())
                                    : m_title + " | " + std::string(m_scene->objects->Prompt()) + " | " +
                                          std::string(m_scene->objects->Message());
             if (title != m_currentTitle) { m_window->SetTitle(title); m_currentTitle = title; }
@@ -497,9 +606,14 @@ private:
         }
         if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), view.Value().geometryDepth ? Vec2{} : m_camera.SubpixelResidual());
         ++m_frame;
-        const bool finished = (m_cli.frames && m_frame >= m_cli.frames) ||
+        const bool finished = m_replayFinished || (m_cli.frames && m_frame >= m_cli.frames) ||
                               (m_cli.ticks && m_tick >= m_cli.ticks);
-        if (!m_cli.dump.empty() && (m_cli.frames || m_cli.ticks ? finished : m_frame == 3)) {
+        if (finished && ((m_online && !m_onlineSpawnLogged) || (!m_cli.input.empty() && !m_replayFinished))) {
+            m_device->EndFrame();
+            Fail(Error{"Game ended before online admission or input replay confirmation", 1});
+            return;
+        }
+        if (!m_cli.dump.empty() && (m_cli.frames || m_cli.ticks || !m_cli.input.empty() ? finished : m_frame == 3)) {
             auto captured = rhi::CaptureBackbuffer(*m_device, m_target.ColorTarget(), m_cli.dump);
             if (!captured) Fail(captured.GetError());
         }
@@ -517,8 +631,8 @@ private:
     ScopedSubscription m_resize;
     std::unique_ptr<GameScene> m_scene;
     std::optional<net::NetSubsystem> m_network;
+    std::optional<runtime::OnlineScene> m_online; // Collision data outlives the client's non-owning views.
     net::NetClient m_client;
-    std::optional<runtime::OnlineScene3D> m_online;
     ecs::Entity m_player{};
     std::map<uint32_t, ecs::Entity> m_remotes;
     std::chrono::steady_clock::time_point m_networkActivity;
@@ -534,9 +648,11 @@ private:
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Texture>> m_textures;
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Mesh>> m_meshes;
     std::map<asset::AssetGuid, asset::AnimationAsset> m_animations;
+    std::vector<runtime::GameInput> m_replay;
+    std::size_t m_replayTick = 0;
     std::string m_title, m_currentTitle;
     uint64_t m_frame = 0, m_tick = 0;
-    bool m_ready = false, m_interact = false, m_jump = false;
+    bool m_ready = false, m_interact = false, m_jump = false, m_replayFinished = false;
     float m_cameraMouseX = 0;
     bool m_onlineSpawnLogged = false;
     bool m_inputFocused = true;
@@ -564,7 +680,7 @@ int main() {
         ::LocalFree(argv);
     }
     for (const auto& arg : launch.args) if (arg == "--help") {
-        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--ticks N] [--dump frame.bmp] [--headless]\n--ticks limits fixed simulation steps; when both limits are set, the first ends play.\nWASD/arrows or gamepad: movement, E: interact, Escape: exit.");
+        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--ticks N] [--dump frame.bmp] [--headless]\nOnline: --connect 127.0.0.1:port --credentials file.json [--character ID]; the scene selects 2D or 3D.\nInput replay: --input file.json; version 1, steps [{ticks:60,x:1,y:0,jump:false}].\nReplay starts after online admission and exits after all inputs are acknowledged.\n--ticks limits fixed simulation steps; when both limits are set, the first ends play.\nWASD/arrows or gamepad: movement, E: interact, Escape: exit.");
         return 0;
     }
     auto cli = mye::ParseCli(launch.args);

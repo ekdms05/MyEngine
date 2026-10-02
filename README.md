@@ -40,9 +40,9 @@ build/dev/apps/editor/Release/MyEditor.exe --project game/starter/meadow_village
 build/dev/apps/game/Release/MyGame.exe --project game/starter/meadow_village/project.myeproj
 ```
 
-`MyGame` plays authored projects locally and connects to the authenticated loopback XYZ server. [3D play and online setup](docs/21-3d-play-and-online.md) describes controls, shared collision, prediction, replication and saved positions. Public Internet transport, online portals/game rules and game export remain incomplete. Play inside the editor uses a separate native window in the same process, so it does not isolate process crashes.
+The 0.3.0 download's `MyGame` plays authored projects locally and connects to the authenticated loopback XYZ server. [3D play and online setup](docs/21-3d-play-and-online.md) describes controls, shared collision, prediction, replication and saved positions. Public Internet transport, online portals/game rules and game export remain incomplete. Play inside the editor uses a separate native window in the same process, so it does not isolate process crashes.
 
-Current source adds continuous box/circle collision and `MyGame --ticks N` for fixed simulation checks, with an optional `--dump final.bmp` after the last tick. These changes are not in the existing 0.3.0 binaries; shared 2D authority/prediction remains pending.
+Current source adds continuous box/circle collision and `MyGame --ticks N` for fixed simulation checks, with an optional `--dump final.bmp` after the last tick. Main now connects authored 2D scenes to authenticated MyServer/MyGame using shared motion and collision, peer sprites and persisted XY/floor state. See [2D online play](docs/23-2d-online-play.md). These source changes are not in the existing 0.3.0 binaries.
 
 ## Development tools
 

@@ -59,6 +59,6 @@ Sol2·도트 제작·구 데모를 제거했다. 실제 사용하는 Lua VM·ImG
 
 2D 로컬 이동은 `ObjectSystem → PhysicsWorld2D → MoveAndSlide2D → CastMotion2D`를 사용한다. 값 타입의 `mye_physics2d`는 core만 링크하며 ECS/렌더와 분리했다. 연속 상자/원 캐스트·초기 겹침 회복·복수 벽 슬라이드를 사용한다. 모든 이동 계산과 공간 해시 검증이 성공한 뒤 물리 위치·결과·트리거 이력을 반영하고, 실패는 기존 Expected 경로로 전달한다. [씬/물리 계약](03-scene-world.md)에 오프셋·층/레이어·범위·큰 영역 검사와 정적 형상/float 정밀도 한계를 기록했다. MyGame의 --ticks는 고정 틱 한도이며 최종 틱의 렌더/캡처까지 확인할 수 있다. 이 변경은 개발 소스이며 기존 0.3.0 배포본은 그대로다.
 
-legacy XY 서버/예측은 아직 별도 속도 적분을 사용한다. 새 인증 2D 라이브러리 경로는 StepMotion2D/MoveAndSlide2D를 서버·예측·재실행에 공유한다. 프로젝트를 지정한 최신 인증 온라인 앱은 아직 XYZ 전용이다. 계산 경계·온라인 앱 연결·공개 운영은 각각 검증해야 한다. 기존 3D 타입/직렬화/실행 지원은 보존한다.
+legacy XY 서버/예측은 아직 별도 속도 적분을 사용한다. 새 인증 2D 경로는 StepMotion2D/MoveAndSlide2D를 서버·예측·재실행에 공유한다. 개발 소스의 프로젝트 온라인 앱은 활성 캐릭터로 2D/XYZ를 선택하며 2D 이동·원격 스프라이트·저장 재접속을 연결했다. 계산 경계·온라인 앱 연결·공개 운영은 각각 검증해야 한다. 기존 3D 타입/직렬화/실행 지원은 보존한다.
 
-runtime의 LoadOnlineScene2D는 공용 장면 검증과 GatherCollisionBodies2D로 단일 캐릭터 원형·정적 충돌·속도/층·원점 스폰을 추출한다. ValidateSpawn2D는 잘못된 스폰을 수정 없이 거부한다. NetGameServer::Configure2D의 소유권/장면/층 admission·실제 입력 ack·예측과 저장/재접속은 라이브러리에서 검증했다. mye_net의 PUBLIC 의존성은 core와 값 타입 physics2d/physics3d이며 ECS/runtime/UI를 링크하지 않는다. 2D 공식 앱 연결은 아직 남았다.
+runtime의 LoadOnlineScene2D는 공용 장면 검증과 GatherCollisionBodies2D로 단일 캐릭터 원형·정적 충돌·속도/층·원점 스폰을 추출한다. ValidateSpawn2D는 잘못된 스폰을 수정 없이 거부한다. NetGameServer::Configure2D의 소유권/장면/층 admission·실제 입력 ack·예측과 저장/재접속은 라이브러리에서 검증했다. mye_net의 PUBLIC 의존성은 core와 값 타입 physics2d/physics3d이며 ECS/runtime/UI를 링크하지 않는다. LoadOnlineScene은 공용 로더에서 차원을 선택하고 MyServer/MyGame이 각각 권위/표현을 소비한다. 온라인 ObjectSystem/Lua를 실행하지 않으며 원격 비주얼만 생성·제거한다. tools/verify-online2d.ps1이 두 앱·픽셀·벽 충돌/ack·저장/재접속을 검사한다. [2D 플레이](23-2d-online-play.md)는 main 소스 전용이며 배포본/장치 입력과 구분한다.

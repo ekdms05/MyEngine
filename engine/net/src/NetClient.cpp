@@ -137,6 +137,14 @@ void NetClient::Receive() {
         default: break;
         }
     }
+    // Producers can stop after their final input; packet loss must not strand the acknowledgment queue.
+    if (m_connected && !m_pendingMovement.empty() &&
+        std::chrono::steady_clock::now() - m_lastMovementSend >= std::chrono::milliseconds(100)) {
+        if (auto sent = SendPendingMovement(); !sent) {
+            m_failure = sent.GetError().message;
+            Disconnect();
+        }
+    }
 }
 
 void NetClient::Reconcile() {
@@ -230,6 +238,9 @@ Expected<void, Error> NetClient::SendMovementInput(Vec2 movement, bool jump) {
         m_prediction3D = next;
     }
     m_pendingMovement.push_back({++m_inputSeq, movement, jump});
+    return SendPendingMovement();
+}
+Expected<void, Error> NetClient::SendPendingMovement() {
     BitWriter w;
     WriteHeader(w, m_settings2D ? MsgType::Input2D : MsgType::Input3D);
     WriteU64(w, m_token);
@@ -238,6 +249,7 @@ Expected<void, Error> NetClient::SendMovementInput(Vec2 movement, bool jump) {
     for (size_t i = 0; i < count; ++i)
         WriteMovementInput(w, m_pendingMovement[i]);
     const auto& bytes = w.Finish();
+    m_lastMovementSend = std::chrono::steady_clock::now();
     if (m_sock.SendTo(m_server, bytes.data(), bytes.size()) != static_cast<int>(bytes.size()))
         return Error{"Movement input send failed", 1};
     return {};

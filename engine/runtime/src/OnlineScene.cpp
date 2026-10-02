@@ -54,14 +54,10 @@ Expected<uint64_t, Error> LoadOnlineWorld(std::string_view project, std::string_
         return Error{"Online project path error: " + std::string(error.what()), error.code().value()};
     }
 }
-} // namespace
-
-Expected<OnlineScene2D, Error> LoadOnlineScene2D(std::string_view project, std::string_view scene) {
+Expected<OnlineScene2D, Error> BuildOnlineScene2D(ecs::World& world, uint64_t hash, std::string sceneId) {
     OnlineScene2D result;
-    ecs::World world;
-    auto loaded = LoadOnlineWorld(project, scene, world, result.sceneId);
-    if (!loaded) return loaded.GetError();
-    result.hash = loaded.Value();
+    result.sceneId = std::move(sceneId);
+    result.hash = hash;
     ecs::Entity character;
     world.Query<CharacterController2D>().Each([&](ecs::Entity e, const auto& c) {
         if (c.enabled) character = e;
@@ -93,12 +89,10 @@ Expected<OnlineScene2D, Error> LoadOnlineScene2D(std::string_view project, std::
     return result;
 }
 
-Expected<OnlineScene3D, Error> LoadOnlineScene3D(std::string_view project, std::string_view scene) {
+Expected<OnlineScene3D, Error> BuildOnlineScene3D(ecs::World& world, uint64_t hash, std::string sceneId) {
     OnlineScene3D result;
-    ecs::World world;
-    auto loaded = LoadOnlineWorld(project, scene, world, result.sceneId);
-    if (!loaded) return loaded.GetError();
-    result.hash = loaded.Value();
+    result.sceneId = std::move(sceneId);
+    result.hash = hash;
     if (auto gathered = phys::GatherPhysicsWorld3D(world, result.physics); !gathered)
         return gathered.GetError();
     int count = 0;
@@ -123,5 +117,41 @@ Expected<OnlineScene3D, Error> LoadOnlineScene3D(std::string_view project, std::
         return moved.GetError();
     result.spawn = state.position;
     return result;
+}
+} // namespace
+
+Expected<OnlineScene, Error> LoadOnlineScene(std::string_view project, std::string_view scene) {
+    ecs::World world;
+    std::string sceneId;
+    auto loaded = LoadOnlineWorld(project, scene, world, sceneId);
+    if (!loaded) return loaded.GetError();
+    bool twoDimensional = false;
+    world.Query<CharacterController2D>().Each([&](ecs::Entity, const auto& c) {
+        if (c.enabled) twoDimensional = true;
+    });
+    if (twoDimensional) {
+        auto result = BuildOnlineScene2D(world, loaded.Value(), std::move(sceneId));
+        if (!result) return result.GetError();
+        return OnlineScene{std::move(result).Value()};
+    }
+    auto result = BuildOnlineScene3D(world, loaded.Value(), std::move(sceneId));
+    if (!result) return result.GetError();
+    return OnlineScene{std::move(result).Value()};
+}
+
+Expected<OnlineScene2D, Error> LoadOnlineScene2D(std::string_view project, std::string_view scene) {
+    ecs::World world;
+    std::string sceneId;
+    auto loaded = LoadOnlineWorld(project, scene, world, sceneId);
+    if (!loaded) return loaded.GetError();
+    return BuildOnlineScene2D(world, loaded.Value(), std::move(sceneId));
+}
+
+Expected<OnlineScene3D, Error> LoadOnlineScene3D(std::string_view project, std::string_view scene) {
+    ecs::World world;
+    std::string sceneId;
+    auto loaded = LoadOnlineWorld(project, scene, world, sceneId);
+    if (!loaded) return loaded.GetError();
+    return BuildOnlineScene3D(world, loaded.Value(), std::move(sceneId));
 }
 } // namespace mye::runtime

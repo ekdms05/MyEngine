@@ -46,7 +46,7 @@ if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip) -or (Test-
 $publicDocs = @('README.md','01-core-platform.md','02-rendering.md','03-scene-world.md','04-asset-pipeline.md',
     '06-runtime-systems.md','07-editor-ui.md','08-mcp.md','13-architecture-and-features.md',
     '14-development-priorities.md','15-skills-and-agents.md','16-foundation-worklog.md',
-    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','release-notes.md')
+    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','23-2d-online-play.md','release-notes.md')
 foreach ($name in $publicDocs) { $null = Repo-File "docs/$name" }
 $null = Repo-File 'docs/guide/index.html'
 $null = Repo-File 'game/starter/meadow_village/project.myeproj'
@@ -136,8 +136,8 @@ Run MyEditor.exe, then create or open a project in the project launcher.
 The meadow village template and the offline guide (docs/guide/index.html) are included.
 Play opens the project in a separate game window; pause/stop remain in the editor toolbar.
 To play an existing project directly: MyGame.exe --project "path/to/project.myeproj".
-XYZ characters and orbit cameras work in local Play. MyServer.exe supports authenticated loopback XYZ play.
-See docs/21-3d-play-and-online.md for scene contracts, private credentials and online limits.
+XYZ characters and orbit cameras work in local Play. MyServer.exe supports authenticated loopback 2D/XYZ play.
+See docs/23-2d-online-play.md and docs/21-3d-play-and-online.md for scene contracts, private credentials and online limits.
 
 Requirements: Windows 10/11 x64, DirectX 11 device/driver, latest Microsoft Visual C++ v14 x64 Redistributable.
 Official runtime download: https://aka.ms/vc14/vc_redist.x64.exe

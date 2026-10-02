@@ -257,3 +257,35 @@ floorLevel은 기존 CharacterRecord·PlayerSession·GameServer 로드/저장과
 MCP build·smoke **25개**가 통과했다. 도구 수는 기존 9개이며 scene 참조의 공통 2D 권위 계산과 앱 미연결 상태를 확인하는 스모크만 추가했다. 정본 03·08·13·14·21·22와 로컬 개발/게임 제작/릴리즈 세 스킬을 실제 소비 상태로 갱신했다. 관련 헤더의 오래된 단계명/없는 문서 경로는 새 계약 설명으로 바꿨다. 사용자 원본 프로젝트·에셋/GUID·피드백/답변·기존 공개 0.3.0 태그/설치본과 필요한 외부 고지는 변경하지 않았다. 새 스킬 패키지나 물리/네트워크 라이브러리는 추가하지 않았다.
 
 현재 결과는 **인증 2D 서버·예측·재실행·저장/재접속 라이브러리 연결**이다. 공식 MyServer/MyGame은 여전히 XYZ 프로젝트 온라인 경로를 사용한다. 다음 D05에서 작성한 2D 장면/설정을 기존 두 실행 파일의 입장·표현·조작에 연결하고, 두 계정의 실제 앱 이동/벽 충돌·재접속·재시작을 검증한다. 동일 정적 장면/고정 층·float 정밀도/선형 탐색의 한계, 원격 보간·게임 규칙/온라인 Lua·포털/맵·HUD·보호 전송/운영 저장·배포와 네이티브 입력/장시간 부하는 계속 남았다. 전체 엔진 목표와 D02~D05는 진행 상태로 유지하고 이번 단위에서 버전/tag/Release를 발행하지 않는다.
+
+## 2026-10-03 — D05: 공식 2D 온라인 앱·입력 재생·실제 픽셀/영속 검증
+
+**main 소스의 MyServer/MyGame에 작성된 2D 장면을 연결했다.** 두 계정의 이동·공통 충돌·처리 ack·원격 스프라이트 표시/퇴장·저장/서버 재시작/재접속을 실제 실행 파일에서 검증했다. D02~D05의 기본 연결 완료를 라이브러리 회귀와 구분하여 기록한다. 전체 온라인 MMORPG 제작·출시 목표는 계속 진행 중이며 기존 0.3.0 배포본에는 이 연결과 입력 재생 옵션이 없다.
+
+기존 apps/server/main.cpp는 LoadOnlineScene3D→Configure3D만 사용했고, apps/game/main.cpp는 CharacterController3D·SendInput3D·LatestSnapshot3D와 Billboard/Mesh 비주얼만 소비했다. runtime의 두 typed loader 정의/호출자와 SceneSerializer/ObjectComponents 검증, ObjectSystem.Initialize의 EnsureInstances/Lua 초기화, NetClient 설정/예측/ack 수명, SpriteRenderer/FloorLevel의 RenderExtract와 애니메이션/게임 카메라 호출을 추적했다. 새 물리·네트워크 구현이나 앱별 파싱 계약을 추가할 이유가 없었다.
+
+| 선택 | 실제 변경·근거 |
+|---|---|
+| 한 파일 경계에서 차원 선택 | LoadOnlineScene은 공용 LoadOnlineWorld로 한 번 검증하고 활성 CharacterController2D/3D의 typed builder 결과를 std::variant로 반환한다. 기존 typed API는 같은 builder를 유지한다. 잘못된 2D 장면을 3D로 재시도하여 원래 오류를 숨기지 않는다. 혼합 활성 캐릭터/경로/겹친 스폰 거부 회귀는 기존 ObjectWorkflowTests에 추가했다 |
+| 기존 서버/클라이언트 계약 소비 | MyServer는 typed Configure2D/Configure3D, MyGame은 typed 예측/입력/스냅샷을 사용한다. XY는 root 원점을 갱신하고 시각 Z·스케일을 보존한다. lastMove/벽 결과·방향을 바디/idle-walk 표현에 연결하며 카메라는 기존 2D 데드존을 유지한다 |
+| 온라인 로컬 실행 제거 | 온라인 GameScene은 ObjectSystem을 생성하지 않는다. 이전 Initialize만으로도 Lua 인스턴스와 on_init이 실행될 수 있었다. 온라인에서는 로컬 물리/Lua/이벤트·맵 요청을 소비하지 않고 권위 상태를 표현한다. 로컬 Play/MyGame의 기존 ObjectSystem/Lua/맵 경로는 그대로 검증했다 |
+| 권위 비주얼 생명주기 | 2D/XYZ가 공통 Remote/RemoveRemotes·애니메이션 적용을 사용한다. 원형의 SpriteRenderer/기존 Billboard/Mesh/Animator와 FloorLevel·root 시각 변환만 복제한다. 조작·바디·스크립트는 추가하지 않는다. 같은 풀 Add가 기존 포인터를 무효화할 수 있어 값을 복사한 뒤 추가한다. 클라이언트 collision span을 제공하는 OnlineScene은 NetClient보다 먼저 선언해 더 늦게 파괴한다 |
+| 작은 고정 틱 입력 재생 | 실제 MyGame의 입력을 반복할 기존 재생 API가 없었고 native UI는 현재 도구에서 사용할 수 없다. --input JSON을 기존 GameInput 경계에 넣어 SendInput2D/3D와 서버 계산을 실제 통과하도록 했다. 위치를 직접 대입하거나 별도 봇 적분을 쓰지 않는다. 새 프레임워크/인터페이스/패키지는 추가하지 않았다 |
+
+재생 JSON은 version 1, 1..256 step, 정수 양수 ticks·유한한 [-1,1] x/y와 선택 bool jump를 검사한다. 총 36,000틱(60 Hz에서 10분)으로 메모리/재생 시간을 제한하고 시작 시 값 배열을 준비하여 매 틱의 파싱/할당을 피한다. 2D jump는 적용하지 않는다. 온라인 스폰을 확인한 후 첫 입력을 보내며 마지막 입력 뒤에는 새 입력을 보내지 않고 Receive/보정/표현을 계속해 모든 처리 ack를 기다린다. 그 뒤 최종 960×540 프레임을 저장하고 종료한다. 로컬 재생도 최종 틱을 캡처한다. 먼저 도달한 frames/ticks 한도가 입장/재생 확인을 끊으면 성공 대신 exit 1이다. catch-up의 후속 틱은 완료 뒤 멈춘다. 실제 키보드/패드/포커스 검증을 재생으로 대신했다고 기록하지 않는다.
+
+tools/verify-online2d.ps1은 기존 스타터를 새 build/online2d/GUID에 복사한 후 검증용 장면을 구성한다. 원 반경 .2·offset(.05,.1)·층 1·speed 3, x=1.6의 .01 폭 정적 벽, 스폰의 다른 층 벽/트리거를 사용한다. 90개 입력의 A는 원점 x≈1.345에서 멈추고 ack=90, B는 -X 45개와 정지 210개를 처리해 x≈-2.25/ack=255가 된다. 두 공식 MyGame을 함께 실행하고 각 마지막 ack·pending=0, 서버의 XY/층/방향 저장, 재시작한 MyServer에서 A의 같은 스폰/20개 정지 입력을 검사한다. BMP의 실제 스프라이트 영역 픽셀을 읽어 A의 두 비주얼과 B의 상대 퇴장 후 한 비주얼을 확인한다. 엔티티 개수만으로 렌더 완료를 주장하지 않는다.
+
+장면에는 on_init에서 특정 marker와 error를 내는 Lua를 넣었다. 클라이언트에서 marker/ERROR가 나오면 검사 실패이므로 온라인 초기화 격리를 검증한다. 오프라인 재생 검사는 이 동작만 일시 제거한 복사본을 사용하고 finally에서 원래 바이트를 복원한다. 장면 SHA-256은 플레이·재접속 후 동일하다. 잘못된 버전/빈 steps/0·실수 ticks/축 범위/jump 타입/step 및 총 틱 상한, silent loopback peer에서 한 프레임 조기 종료와 로컬 한 틱 조기 종료를 검사한다. 다른 계정의 캐릭터 ID를 실제 MyGame으로 요청해 입장 marker가 없고 MyServer의 ownership mismatch 거부가 있는지도 확인한다. 계정·패스워드·상태·실패 로그는 합성 데이터이며 사용자 데이터와 분리한다.
+
+첫 앱 검사는 기대 문자열을 x=1.345로 고정해 실패했지만 실제 결과는 안전한 접촉의 float 값 1.3449999였다. 로그의 숫자를 읽어 이론 접촉 좌표와 1e-5 범위로 비교하도록 검사만 고쳤다. 이 사건은 새 물리 결함으로 기록하지 않는다. 이후 --input만 지정한 최종 캡처가 기존 frame 3 조건에 들어가는 경계를 검토해 재생도 완료 프레임에서 캡처하도록 수정했고, frames/ticks 없는 실제 재생/최종 스프라이트 픽셀 검사로 확인했다. 장치나 키 입력을 임의로 조작하지 않았다.
+
+최종 검토에서는 마지막 입력 뒤 재생이 새 SendInput을 생성하지 않으면 기존 송신 재전송도 멈추는 UDP 유실 경계를 확인했다. 원래의 세 입력 패킷을 authority socket에서 버린 뒤 Receive만 호출하는 회귀로 **565/566** 실패를 재현했다. 공통 NetClient의 SendPendingMovement를 새 입력 송신과 Receive가 함께 사용하도록 바꾸고, 남은 큐가 있으면 100ms 송신 간격 이후 재전송한다. 이 경계는 2D/XYZ가 공유하고 새 순서·예측을 만들지 않으며 ack 후에는 멈춘다. 주기적인 Receive 호출은 계속 필요하고 송신 오류는 Failure/Disconnect로 전달한다. 재시도 패킷의 token/순서/방향·3개 pending/동일 예측과 확인 뒤 재전송 중단을 기존 회귀에서 검사했다. 서버의 중복 순서 거부/처리 ack 계약과 wire는 바꾸지 않았다.
+
+기존 build/dev Debug/Release 빌드와 유실 회귀를 포함한 순차 CTest는 각각 **566/566**, **33.72초 / 30.13초** 통과했다. 두 구성의 최종 공식 2D 앱 검증은 위 시나리오·소유권·조기 종료·로컬 재생을 모두 통과했다. Release foundation은 CLI·계정/영속·손상 거부·기존 맵/스폰/Lua·Box/Circle 1000u/s와 .01 벽·정확히 4개 고정 틱/캡처·NaN 물리 오류/exit 1·씬 보존을 통과했고 120 서버 틱은 **2.055초**였다. 기존 Release XYZ MyServer/MyGame도 인증 스폰·30개 고정 틱/960×540 BMP·300개 서버 틱/정상 종료·world3D/scene 저장을 통과했다. 새 C계열 경고/오류는 없으며 기존 D9025 옵션 경고는 유지한다.
+
+MCP npm build·smoke **26개**가 통과했다. 기존 9개 도구/XYZ online 참조를 유지하고 실제 2D 앱의 online2d 참조만 추가했다. 03·08·13·14·15·21·22·23/README와 오프라인 가이드, 로컬 개발·게임 제작·릴리즈 세 스킬을 갱신했다. 최종 Release BMP 두 장을 픽셀 변경 없이 PNG로 인코딩해 실제 접속/퇴장 설명에 사용했다(합계 약 24KB). 가이드의 출처는 이 합성 검증 장면이며 완성 마을/HUD 화면으로 설명하지 않는다. 미래 패키지의 publicDocs 목록에 23을 추가하고 PowerShell 구문 및 문서/미디어 상대 경로 41개를 검사했다. 이번 단위에서 새 패키지/Release는 만들지 않았다.
+
+로컬 `build/2d-foundation/d05-*`와 새 `build/online2d/*`, foundation/XYZ fixture에 실행 로그·캡처·데이터를 보존한다. 현재 필요한 지침은 기존 myengine-development와 저장소 계약으로 충분하여 추가 스킬 패키지/병렬 에이전트/외부 물리·네트워크 라이브러리는 설치하지 않았다. 새 외부 소스 복사는 없으며 필요한 기존 라이선스·사용자 프로젝트/에셋/GUID·Project E 피드백/답변·공개 0.3.0 태그/설치본은 그대로다.
+
+완료 범위는 **main 소스의 같은 정적 2D 장면/고정 층/같은 외형을 사용하는 기본 온라인 플레이**다. 직접 장치 입력·새 PC/다른 GPU·장시간/동접 부하·새 배포본 검증은 하지 않았다. 원격 보간/개별 외형·캐릭터 solid 충돌·온라인 Lua/서버 규칙·포털/맵·게임 UI·보호 전송/운영 복구·게임 내보내기는 남았다. 다음은 D06의 저장 2D 게임 카메라부터 제작→플레이/온라인 표현에 연결하고, D07의 실제 입력/액션과 D08 방향 모션을 이어간다. 전체 목표는 활성으로 유지한다.

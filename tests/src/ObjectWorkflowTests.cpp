@@ -77,6 +77,13 @@ MYE_TEST(OnlineScene2DUsesSharedCentersFloorsAndValidatedSpawns) {
     MYE_EXPECT(loaded);
     if (!loaded) return;
     const auto& online = loaded.Value();
+    const auto selected = runtime::LoadOnlineScene(project);
+    MYE_EXPECT(selected && std::holds_alternative<runtime::OnlineScene2D>(selected.Value()));
+    if (selected) {
+        const auto& scene = std::get<runtime::OnlineScene2D>(selected.Value());
+        MYE_EXPECT(scene.hash == online.hash && scene.sceneId == online.sceneId);
+        MYE_EXPECT_NEAR(scene.offset.y, online.offset.y, .00001f);
+    }
     MYE_EXPECT(online.colliders.size() == 3 && online.hash != 0);
     MYE_EXPECT(online.character.shape.kind == phys::ShapeKind::Circle);
     MYE_EXPECT(online.character.floorMask == phys::FloorBit(1));
@@ -116,6 +123,7 @@ MYE_TEST(OnlineScene2DRefusesInvalidPrototypesAndPreservesSceneFiles) {
         const auto before = ReadJsonFile(sceneFile);
         MYE_EXPECT(before);
         MYE_EXPECT(!runtime::LoadOnlineScene2D(project));
+        MYE_EXPECT(!runtime::LoadOnlineScene(project));
         const auto after = ReadJsonFile(sceneFile);
         MYE_EXPECT(after);
         if (before && after) MYE_EXPECT(json::Stringify(before.Value()) == json::Stringify(after.Value()));
@@ -154,15 +162,23 @@ MYE_TEST(OnlineScenePathBoundsAndExisting3DLoad) {
     const auto root = OnlineProject(world);
     const auto project = Utf8String(root / "project.myeproj");
     MYE_EXPECT(runtime::LoadOnlineScene3D(project));
+    const auto selected = runtime::LoadOnlineScene(project);
+    MYE_EXPECT(selected && std::holds_alternative<runtime::OnlineScene3D>(selected.Value()));
     const auto previousDirectory = std::filesystem::current_path();
     std::filesystem::current_path(root);
     const auto relativeProject = runtime::LoadOnlineScene3D("project.myeproj");
     std::filesystem::current_path(previousDirectory);
     MYE_EXPECT(relativeProject);
     MYE_EXPECT(!runtime::LoadOnlineScene2D(project));
+    const auto other = Player(world);
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/main.scene")));
+    MYE_EXPECT(!runtime::LoadOnlineScene(project)); // Never choose a dimension for mixed enabled prototypes.
+    world.Destroy(other);
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/main.scene")));
     for (auto path : {"../outside.scene", "assets/scenes/missing.scene", "assets/scenes/main.txt"}) {
         MYE_EXPECT(!runtime::LoadOnlineScene2D(project, path));
         MYE_EXPECT(!runtime::LoadOnlineScene3D(project, path));
+        MYE_EXPECT(!runtime::LoadOnlineScene(project, path));
     }
     const auto absolute = Utf8String(root / "assets/scenes/main.scene");
     MYE_EXPECT(!runtime::LoadOnlineScene2D(project, absolute));

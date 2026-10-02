@@ -3,6 +3,7 @@
 #include "mye/phys/PhysicsWorld3D.h"
 #include <string>
 #include <vector>
+#include <variant>
 namespace mye::runtime {
 struct OnlineScene2D {
     std::vector<phys::CollisionBody2D> colliders; // Character prototype excluded.
@@ -20,7 +21,10 @@ struct OnlineScene3D {
     uint64_t hash = 0;
     std::string sceneId;
 };
+using OnlineScene = std::variant<OnlineScene2D, OnlineScene3D>;
 // Loads collision and movement contracts only; the server never loads visual assets.
+// Selects the enabled controller's dimension without retrying invalid scenes in another mode.
+Expected<OnlineScene, Error> LoadOnlineScene(std::string_view project, std::string_view scene = {});
 Expected<OnlineScene2D, Error> LoadOnlineScene2D(std::string_view project, std::string_view scene = {});
 Expected<OnlineScene3D, Error> LoadOnlineScene3D(std::string_view project, std::string_view scene = {});
 } // namespace mye::runtime

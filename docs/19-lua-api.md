@@ -134,6 +134,19 @@ end
 | `mye.world.spawn()` | 빈 엔티티 예약 생성. Sprite·Collider 등은 자동 추가하지 않음 |
 | `mye.world.destroy(entity)`, `entity:destroy()` | 페이즈 경계의 CommandBuffer에서 삭제 |
 
+### 2D 게임 카메라 Entity
+
+개발 main 소스의 Camera2D 오브젝트를 사용한다. 로컬 MyGame과 에디터 Play의 ObjectSystem에 등록되며 인증 온라인 MyGame은 Lua를 실행하지 않는다. 저장 설정·추종·경계·휠 입력은 [2D 카메라 가이드](24-2d-camera.md)를 참고한다.
+
+| 메서드 | 결과·제약 |
+|---|---|
+| `entity:set_camera_zoom(zoom)` | 유한한 0.25~8 배. PlayWorld/런타임의 줌만 변경 |
+| `entity:shake_camera(amplitude, seconds)` | 0~10 월드 unit, 0~60초. 0은 무동작. 고정 틱으로 감쇠하며 렌더에만 적용 |
+| `entity:world_to_screen(Vec2)` | 월드 XY → 내부 960×540 픽셀, 좌상단/+Y 아래 |
+| `entity:screen_to_world(Vec2)` | 내부 픽셀 → 월드 XY. 논리 카메라 기준으로 왕복 |
+
+좌표 변환은 흔들림·픽셀 스냅을 제외한다. 네이티브 창 좌표는 레터박스/배율을 제거한 뒤 넣는다. 같은 Lua 콜백의 트랜스폼 변경은 후속 틱 경계에서 반영된다. 삭제된 Entity·없는 Camera2D·비유한/범위 밖 인수·잘못된 카메라 설정은 오류다. 기존 `mye.camera` 추가 모듈과 다른 실제 Play/MyGame 경로다.
+
 Entity 접근 값은 월드의 소유권을 가지지 않는다. Play 종료·씬 교체 뒤에는 다시 얻는다. 스크립트에 없는 컴포넌트를 임의로 추가하는 범용 API나 프리팹 스폰 API는 현재 없다.
 
 ## 추가 모듈: 입력·오디오·사용자 이벤트

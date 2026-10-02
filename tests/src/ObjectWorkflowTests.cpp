@@ -9,6 +9,8 @@
 #include "mye/scene/SceneSerializer.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/Camera2D.h"
+#include "mye/scene/Camera3D.h"
 #include "mye/phys/Collision.h"
 #include "mye/phys/PhysicsWorld2D.h"
 #include "mye/phys/PhysicsComponents3D.h"
@@ -109,6 +111,66 @@ MYE_TEST(OnlineScene2DUsesSharedCentersFloorsAndValidatedSpawns) {
     saved.pos = {.05f, .1f};
     MYE_EXPECT(phys::ValidateSpawn2D(saved, online.colliders));
     MYE_EXPECT(runtime::LoadOnlineScene2D(Utf8String(Utf8Path(MYE_STARTER_SOURCE_DIR) / "project.myeproj")));
+}
+
+MYE_TEST(SavedTwoDCameraMatchesPlayAndStandaloneFixedTicks) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World();
+    Player(world);
+    const auto cameraEntity = Object(world, "Camera", {100, 100});
+    auto& camera = world.Add<scene::Camera2D>(cameraEntity);
+    camera.followTarget = "Player"; camera.offset = {.003f, .002f};
+    camera.zoom = 1.5f; camera.deadzoneHalf = {.4f, .3f};
+    camera.boundsEnabled = true; camera.bounds = {-12, -8, 24, 16};
+    world.Add<runtime::ObjectBehavior>(cameraEntity).luaSource = R"(
+        return {on_init = function(self)
+            mye.world.entity_from_packed(self.entity):shake_camera(.2, .2)
+        end}
+    )";
+    const auto saved = scene::SceneSerializer{}.WriteWorld(world);
+    MYE_EXPECT(saved);
+    if (!saved) return;
+    editor::Document standalone({2}, editor::Document::Kind::Scene, "");
+    MYE_EXPECT(scene::SceneSerializer{}.ReadInto(standalone.World(), saved.Value()));
+    runtime::ObjectSystem objects(standalone.World());
+    MYE_EXPECT(objects.Initialize());
+    render::Camera2D defaultCamera;
+    runtime::UpdateDefaultCamera2D(standalone.World(), defaultCamera, true);
+    editor::PlayModeController play;
+    play.SetEditWorld(&world);
+    MYE_EXPECT(play.Play());
+    play.Pause(); play.StepFrame();
+    MYE_EXPECT(play.ConsumeStepRequest() && !play.ConsumeStepRequest());
+    for (int i = 0; i < 120; ++i) {
+        runtime::GameInput input{{1, 0}};
+        if (i == 10) input.cameraZoomSteps = 1;
+        MYE_EXPECT(play.Tick(1.0f / 60, input, ""));
+        MYE_EXPECT(objects.Tick(1.0f / 60, input));
+        runtime::UpdateDefaultCamera2D(standalone.World(), defaultCamera);
+        const auto a = scene::BuildGameView(*play.ActiveWorld(), play.DefaultCamera());
+        const auto b = scene::BuildGameView(standalone.World(), defaultCamera);
+        MYE_EXPECT(a && b);
+        if (!a || !b) return;
+        for (int row = 0; row < 4; ++row) for (int col = 0; col < 4; ++col)
+            MYE_EXPECT_NEAR(a.Value().viewProj.m[row][col], b.Value().viewProj.m[row][col], .000001f);
+        MYE_EXPECT_NEAR(a.Value().subpixelResidual.x, b.Value().subpixelResidual.x, .000001f);
+        MYE_EXPECT_NEAR(a.Value().subpixelResidual.y, b.Value().subpixelResidual.y, .000001f);
+    }
+    play.ActiveWorld()->Query<scene::Camera2D>().Each([&](ecs::Entity, auto& c) {
+        MYE_EXPECT_NEAR(c.view.Position().x, 3.603f, .0001f);
+        MYE_EXPECT_NEAR(c.zoom, 1.65f, .0001f);
+        MYE_EXPECT(!c.view.IsShaking());
+        const auto position = c.view.Position();
+        MYE_EXPECT(scene::BuildGameView(*play.ActiveWorld(), play.DefaultCamera()));
+        MYE_EXPECT(c.view.Position() == position); // Render does not consume another follow/shake tick.
+        c.current = false;
+    });
+    standalone.World().Query<scene::Camera2D>().Each([](ecs::Entity, auto& c) { c.current = false; });
+    const auto a = scene::BuildGameView(*play.ActiveWorld(), play.DefaultCamera());
+    const auto b = scene::BuildGameView(standalone.World(), defaultCamera);
+    MYE_EXPECT(a && b && ApproxEqual(a.Value().view.m[3][0], b.Value().view.m[3][0]));
+    play.Stop();
+    MYE_EXPECT(world.TryGet<scene::Camera2D>(cameraEntity)->zoom == 1.5f && !camera.initialized);
 }
 
 MYE_TEST(OnlineScene2DRefusesInvalidPrototypesAndPreservesSceneFiles) {

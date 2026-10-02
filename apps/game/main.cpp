@@ -23,6 +23,7 @@
 #include "mye/runtime/ObjectSystem.h"
 #include "mye/runtime/OnlineScene.h"
 #include "mye/scene/Camera3D.h"
+#include "mye/scene/Camera2D.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/SceneReflection.h"
 #include "mye/scene/SceneSerializer.h"
@@ -123,10 +124,12 @@ public:
                 m_interact = false;
                 m_jump = false;
                 m_cameraMouseX = 0;
+                m_cameraZoomSteps = 0;
                 return;
             }
             m_interact |= m_input->WasPressed(KeyCode::E);
             m_jump |= m_input->WasPressed(KeyCode::Space) || m_input->WasPressed(GamepadButton::A);
+            m_cameraZoomSteps += m_input->WheelDelta();
             if (m_input->IsDown(MouseButton::Right)) m_cameraMouseX += m_input->MouseDelta().x;
             if (m_input->WasPressed(KeyCode::Escape)) m_exit(0);
         });
@@ -164,14 +167,17 @@ private:
             const auto* x = step.Find("x");
             const auto* y = step.Find("y");
             const auto* jump = step.Find("jump");
+            const auto* zoom = step.Find("cameraZoomSteps");
             if (!ticks || !ticks->IsInteger() || ticks->AsInt() < 1 || ticks->AsInt() > 36000 ||
                 !x || !x->IsNumber() || !y || !y->IsNumber() ||
                 !std::isfinite(x->AsDouble()) || !std::isfinite(y->AsDouble()) ||
                 std::abs(x->AsDouble()) > 1 || std::abs(y->AsDouble()) > 1 || (jump && !jump->IsBool()) ||
+                (zoom && (!zoom->IsNumber() || !std::isfinite(zoom->AsDouble()) || std::abs(zoom->AsDouble()) > 16)) ||
                 m_replay.size() + static_cast<std::size_t>(ticks->AsInt()) > 36000)
-                return Error{"Input replay steps require integer ticks, axes in [-1,1] and at most 36000 total ticks", 1};
-            const runtime::GameInput input{{static_cast<float>(x->AsDouble()), static_cast<float>(y->AsDouble())},
+                return Error{"Input replay requires integer ticks, axes in [-1,1], finite cameraZoomSteps in [-16,16] and at most 36000 total ticks", 1};
+            runtime::GameInput input{{static_cast<float>(x->AsDouble()), static_cast<float>(y->AsDouble())},
                                           false, jump && jump->AsBool()};
+            input.cameraZoomSteps = zoom ? static_cast<float>(zoom->AsDouble()) : 0;
             m_replay.insert(m_replay.end(), static_cast<std::size_t>(ticks->AsInt()), input);
         }
         return {};
@@ -229,6 +235,8 @@ private:
                 });
             if (!playerFound) return Error{"Destination scene needs an enabled character controller", 1};
         }
+        scene::UpdateWorldTransforms(candidate->world);
+        if (auto camera = scene::UpdateGameCamera2D(candidate->world, 0); !camera) return camera.GetError();
         if (m_cli.connect.empty()) {
             candidate->objects = std::make_unique<runtime::ObjectSystem>(candidate->world);
             auto initialized = candidate->objects->Initialize();
@@ -236,9 +244,7 @@ private:
         }
         m_scene = std::move(candidate);
         scene::UpdateWorldTransforms(m_scene->world);
-        m_scene->world.Query<runtime::CharacterController2D, scene::LocalTransform>().Each([&](ecs::Entity, const auto& controller, const auto& transform) {
-            if (controller.enabled) m_camera.SetPosition({transform.position.x, transform.position.y});
-        });
+        runtime::UpdateDefaultCamera2D(m_scene->world, m_camera, true);
         MYE_LOG_INFO("Game", "Scene loaded: {}", relative);
         return {};
     }
@@ -549,10 +555,12 @@ private:
         }
         runtime::GameInput controls{movement, std::exchange(m_interact, false), std::exchange(m_jump, false)};
         controls.cameraMouseX = std::exchange(m_cameraMouseX, 0.0f);
+        controls.cameraZoomSteps = std::exchange(m_cameraZoomSteps, 0.0f);
         if (m_input && m_inputFocused)
             controls.cameraAxis = float(m_input->IsDown(KeyCode::R)) - float(m_input->IsDown(KeyCode::Q)) +
                                   m_input->RightStick().x;
         if (!m_cli.input.empty()) controls = m_replayTick < m_replay.size() ? m_replay[m_replayTick] : runtime::GameInput{};
+        const auto previousReplayTick = m_replayTick;
         const auto tick = m_online ? TickOnline(dt, controls) : m_scene->objects->Tick(dt, controls);
         if (!tick) {
             Fail(tick.GetError());
@@ -572,9 +580,13 @@ private:
         BindAnimations();
         anim::RunAnimationSystem(m_scene->world, dt);
         scene::UpdateWorldTransforms(m_scene->world);
-        m_scene->world.Query<runtime::CharacterController2D, scene::LocalTransform>().Each([&](ecs::Entity, const auto& controller, const auto& transform) {
-            if (controller.enabled) m_camera.FollowDeadzone({transform.position.x, transform.position.y}, {2.5f, 1.5f});
-        });
+        if (m_online && m_onlineSpawnLogged) {
+            const float zoomSteps = m_cli.input.empty() || previousReplayTick != m_replayTick
+                                        ? controls.cameraZoomSteps : 0;
+            auto camera = scene::UpdateGameCamera2D(m_scene->world, dt, zoomSteps);
+            if (!camera) { Fail(camera.GetError()); return; }
+        }
+        runtime::UpdateDefaultCamera2D(m_scene->world, m_camera);
         if (m_window) {
             const auto title = m_online
                                    ? m_title + " | Online " + std::to_string(m_client.Id()) + " | Players " +
@@ -604,15 +616,20 @@ private:
             Fail(Error{m_cli.project + ": " + rendered.GetError().message, rendered.GetError().code});
             return;
         }
-        if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), view.Value().geometryDepth ? Vec2{} : m_camera.SubpixelResidual());
+        if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), view.Value().subpixelResidual);
         ++m_frame;
         const bool finished = m_replayFinished || (m_cli.frames && m_frame >= m_cli.frames) ||
-                              (m_cli.ticks && m_tick >= m_cli.ticks);
+                               (m_cli.ticks && m_tick >= m_cli.ticks);
         if (finished && ((m_online && !m_onlineSpawnLogged) || (!m_cli.input.empty() && !m_replayFinished))) {
             m_device->EndFrame();
             Fail(Error{"Game ended before online admission or input replay confirmation", 1});
             return;
         }
+        if (finished) m_scene->world.Query<scene::Camera2D>().Each([&](ecs::Entity, const auto& camera) {
+            if (camera.current)
+                MYE_LOG_INFO("Game", "Camera2D final: zoom={}, center=({}, {})", camera.zoom,
+                             camera.view.Position().x, camera.view.Position().y);
+        });
         if (!m_cli.dump.empty() && (m_cli.frames || m_cli.ticks || !m_cli.input.empty() ? finished : m_frame == 3)) {
             auto captured = rhi::CaptureBackbuffer(*m_device, m_target.ColorTarget(), m_cli.dump);
             if (!captured) Fail(captured.GetError());
@@ -654,6 +671,7 @@ private:
     uint64_t m_frame = 0, m_tick = 0;
     bool m_ready = false, m_interact = false, m_jump = false, m_replayFinished = false;
     float m_cameraMouseX = 0;
+    float m_cameraZoomSteps = 0;
     bool m_onlineSpawnLogged = false;
     bool m_inputFocused = true;
 };

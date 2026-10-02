@@ -44,6 +44,8 @@
 #include "mye/scene/Transform.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Camera3D.h"
+#include "mye/scene/Camera2D.h"
+#include "mye/runtime/ObjectSystem.h"
 
 #include <cstdio>
 #include <algorithm>
@@ -1106,6 +1108,43 @@ MYE_TEST(EditorSceneElementsUndoRedoAndValidation) {
         if (object.value == "게임 카메라 3D") cameraLoaded = loaded.Has<scene::Camera3D>(e);
     });
     MYE_EXPECT(sprite && character && cameraLoaded && runtime::ValidateObjectComponents(loaded));
+    reopened.Shutdown();
+}
+
+MYE_TEST(EditorTwoDCameraElementUndoSaveReopenAndPlayIsolation) {
+    const auto root = ProjectTestDirectory("camera2d");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(app.CreateProject("Camera", Utf8String(root / "project")));
+    auto& world = app.Project().Active()->World();
+    const auto camera = app.CreateSceneElement(EditorApp::SceneElement::Camera2D);
+    MYE_EXPECT(camera && world.TryGet<scene::Camera2D>(camera.Value())->current);
+    if (!camera) return;
+    app.Commands().Undo(); MYE_EXPECT(!world.Valid(camera.Value()));
+    app.Commands().Redo(); MYE_EXPECT(world.Has<scene::Camera2D>(camera.Value()));
+    world.TryGet<scene::Camera2D>(camera.Value())->zoom = 2;
+    const auto other = app.CreateSceneElement(EditorApp::SceneElement::Camera);
+    MYE_EXPECT(other && !world.TryGet<scene::Camera3D>(other.Value())->current);
+    MYE_EXPECT(app.PlayMode().Play());
+    auto* playWorld = app.PlayMode().ActiveWorld();
+    playWorld->Query<scene::Camera2D>().Each([](ecs::Entity, auto& c) { c.zoom = 3; });
+    MYE_EXPECT(app.PlayMode().Tick(.02f, runtime::GameInput{}, ""));
+    const auto view = scene::BuildGameView(*playWorld, app.PlayMode().DefaultCamera());
+    MYE_EXPECT(view && !view.Value().geometryDepth);
+    app.PlayMode().Stop();
+    MYE_EXPECT(world.TryGet<scene::Camera2D>(camera.Value())->zoom == 2);
+    const auto path = Utf8String(root / "project/assets/scenes/camera.scene");
+    MYE_EXPECT(app.SaveScene(path));
+    app.Shutdown();
+    EditorApp reopened;
+    MYE_EXPECT(reopened.Initialize(engine, Utf8String(root / "project/project.myeproj")));
+    MYE_EXPECT(reopened.OpenScene(path));
+    bool found = false;
+    reopened.Project().Active()->World().Query<scene::Camera2D>().Each([&](ecs::Entity, const auto& c) {
+        found = true; MYE_EXPECT(c.current && c.zoom == 2 && !c.initialized);
+    });
+    MYE_EXPECT(found);
     reopened.Shutdown();
 }
 

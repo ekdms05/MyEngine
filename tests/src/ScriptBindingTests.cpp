@@ -17,6 +17,8 @@
 #include "mye/ecs/World.h"
 #include "mye/phys/Collision.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/Camera2D.h"
+#include "mye/scene/SceneReflection.h"
 #include "mye/script/ScriptRuntime.h"
 #include "mye/script/bindings/EngineBindings.h"
 #include "mye/runtime/RuntimeBindings.h"
@@ -338,4 +340,41 @@ MYE_TEST(ScriptNativeArgumentBounds) {
     MYE_EXPECT(!runtime.DoString("mye.save.write(4294967296)", "slot.lua").HasValue());
     MYE_EXPECT(!runtime.DoString("mye.dialogue.pick(4294967296)", "choice.lua").HasValue());
     MYE_EXPECT(runtime.DoString("assert(mye.save.write(0) == false)", "missing-service.lua").HasValue());
+}
+
+MYE_TEST(ScriptTwoDCameraZoomShakeAndLogicalCoordinates) {
+    ecs::World world;
+    scene::RegisterCoreComponents(world);
+    const auto entity = world.Create();
+    world.Add<scene::LocalTransform>(entity).position = {2, 3, 0};
+    world.Add<scene::WorldTransform>(entity);
+    auto& camera = world.Add<scene::Camera2D>(entity);
+    scene::UpdateWorldTransforms(world);
+    MYE_EXPECT(scene::UpdateGameCamera2D(world, 0));
+    ScriptRuntime rt;
+    rt.Initialize(DefaultPolicy(), nullptr, nullptr);
+    rt.AddBindingModule(std::make_unique<MathBindingModule>());
+    rt.AddBindingModule(std::make_unique<EcsBindingModule>(&world));
+    luatest::SetInteger(rt.State(), "_camera", static_cast<lua_Integer>(entity.Packed()));
+    MYE_EXPECT(rt.DoString(R"(
+        camera = mye.world.entity_from_packed(_camera)
+        camera:set_camera_zoom(2)
+        camera:shake_camera(.2, .5)
+        local point = mye.Vec2(3, 4)
+        local pixel = camera:world_to_screen(point)
+        assert(pixel == mye.Vec2(576, 174))
+        assert(camera:screen_to_world(pixel) == point)
+    )", "camera.lua"));
+    MYE_EXPECT(scene::UpdateGameCamera2D(world, .1f));
+    MYE_EXPECT(camera.zoom == 2 && camera.view.IsShaking());
+    const auto position = camera.view.Position();
+    for (const auto* source : {"camera:set_camera_zoom(0/0)", "camera:set_camera_zoom(9)",
+        "camera:shake_camera(-1, 1)", "camera:shake_camera(1, math.huge)",
+        "camera:world_to_screen(mye.Vec2(0/0, 0))"})
+        MYE_EXPECT(!rt.DoString(source, "bad-camera.lua"));
+    MYE_EXPECT(camera.zoom == 2 && camera.view.Position() == position);
+    world.Remove<scene::WorldTransform>(entity);
+    MYE_EXPECT(!rt.DoString("camera:screen_to_world(mye.Vec2())", "missing-transform.lua"));
+    world.Destroy(entity);
+    MYE_EXPECT(!rt.DoString("camera:set_camera_zoom(1)", "destroyed-camera.lua"));
 }

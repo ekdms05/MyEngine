@@ -55,6 +55,7 @@ struct HybridViewInfo {
     DepthViewParams depth{};             // sortKeyY 정규화 범위(카메라 세로 뷰에서 산출)
     uint32_t viewportWidth  = kInternalWidth;
     uint32_t viewportHeight = kInternalHeight;
+    Vec2 subpixelResidual{};            // Selected camera's upscale offset; zero for 3D.
 };
 
 // GUID → 에셋 해석 콜백. 상위(통합/에셋)가 AssetManager로 해석해 넘긴다.

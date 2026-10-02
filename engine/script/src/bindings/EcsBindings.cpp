@@ -8,6 +8,7 @@
 #include "mye/phys/Collision.h"
 #include "mye/phys/PhysicsComponents3D.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/Camera2D.h"
 #include <cmath>
 
 #include <new>
@@ -50,6 +51,56 @@ int SetPosition(lua_State* L) {
     }
     return 0;
 }
+scene::Camera2D& GameCamera(lua_State* L) {
+    const auto& e = Entity(L);
+    auto* camera = e.Valid() ? e.world->TryGet<scene::Camera2D>(e.entity) : nullptr;
+    if (!camera) luaL_error(L, "a valid Camera2D entity is required");
+    return *camera;
+}
+int SetCameraZoom(lua_State* L) {
+    auto& camera = GameCamera(L);
+    const float zoom = static_cast<float>(luaL_checknumber(L, 2));
+    if (!std::isfinite(zoom) || zoom < .25f || zoom > 8)
+        return luaL_error(L, "camera zoom must be finite and in [0.25,8]");
+    camera.zoom = zoom;
+    return 0;
+}
+int ShakeCamera(lua_State* L) {
+    auto& camera = GameCamera(L);
+    const float amplitude = static_cast<float>(luaL_checknumber(L, 2));
+    const float duration = static_cast<float>(luaL_checknumber(L, 3));
+    if (!std::isfinite(amplitude) || !std::isfinite(duration) || amplitude < 0 || amplitude > 10 ||
+        duration < 0 || duration > 60)
+        return luaL_error(L, "camera shake requires amplitude in [0,10] units and duration in [0,60] seconds");
+    camera.view.AddShake(amplitude, duration);
+    return 0;
+}
+int ConvertCameraPoint(lua_State* L, bool toScreen) {
+    GameCamera(L);
+    const auto& e = Entity(L);
+    const Vec2 point = ReadVec2(L, 2);
+    if (!std::isfinite(point.x) || !std::isfinite(point.y)) return luaL_error(L, "camera point must be finite");
+    bool failed = false;
+    {
+        auto resolved = scene::ResolveGameCamera2D(*e.world, e.entity);
+        failed = !resolved;
+        if (failed) {
+            const auto& message = resolved.GetError().message;
+            lua_pushlstring(L, message.data(), message.size());
+        } else {
+            const auto result = toScreen ? resolved.Value().WorldToScreen(point) : resolved.Value().ScreenToWorld(point);
+            if (!std::isfinite(result.x) || !std::isfinite(result.y)) {
+                lua_pushliteral(L, "camera conversion overflow");
+                failed = true;
+            } else PushVec2(L, result);
+        }
+    }
+    // Expected/Error must be destroyed before Lua's error unwinds the C boundary.
+    if (failed) return lua_error(L);
+    return 1;
+}
+int WorldToScreen(lua_State* L) { return ConvertCameraPoint(L, true); }
+int ScreenToWorld(lua_State* L) { return ConvertCameraPoint(L, false); }
 int Velocity(lua_State* L) {
     const auto& e = Entity(L);
     const auto* body = e.Valid() ? e.world->TryGet<phys::KinematicBody2D>(e.entity) : nullptr;
@@ -140,6 +191,10 @@ void EcsBindingModule::Register(lua_State* L) {
                                   {"get_velocity3d", Velocity3D}, {"is_on_floor3d", OnFloor3D},
                                   {"hit_wall3d", HitWall3D},      {nullptr, nullptr}};
     luaL_setfuncs(L, methods3D, 0);
+    const luaL_Reg cameraMethods[] = {{"set_camera_zoom", SetCameraZoom}, {"shake_camera", ShakeCamera},
+                                     {"world_to_screen", WorldToScreen}, {"screen_to_world", ScreenToWorld},
+                                     {nullptr, nullptr}};
+    luaL_setfuncs(L, cameraMethods, 0);
     lua_pushvalue(L, -1); lua_setfield(L, -2, "__index"); lua_pop(L, 1);
     lua_getglobal(L, "mye"); EnsureTable(L, -1, "world");
     PushFunction(L, [](lua_State* L) -> int {

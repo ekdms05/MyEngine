@@ -203,6 +203,10 @@ async function main() {
   check("engine_reference — 인증 2D 계산과 공식 앱 소비", authority2D.result?.isError !== true && firstText(authority2D.result).includes("NetGameServer::Configure2D") && firstText(authority2D.result).includes("MyServer/MyGame"));
   const online2D = await request("tools/call", { name: "engine_reference", arguments: { topic: "online2d", search: "--input" } });
   check("engine_reference — 실제 2D 앱 입력 재생과 확인 경계", online2D.result?.isError !== true && firstText(online2D.result).includes("23-2d-online-play.md") && firstText(online2D.result).includes("고정 틱"));
+  const camera2D = await request("tools/call", { name: "engine_reference", arguments: { topic: "camera2d", search: "followTarget" } });
+  check("engine_reference — 저장 2D 카메라의 추종 계약", camera2D.result?.isError !== true && firstText(camera2D.result).includes("24-2d-camera.md") && firstText(camera2D.result).includes("월드 XY"));
+  const cameraLua = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "shake_camera" } });
+  check("engine_reference — 실제 카메라 Entity Lua API", cameraLua.result?.isError !== true && firstText(cameraLua.result).includes("0~10") && firstText(cameraLua.result).includes("고정 틱"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

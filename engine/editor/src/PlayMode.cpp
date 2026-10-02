@@ -18,6 +18,7 @@
 #include "mye/core/JsonFile.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/Camera2D.h"
 #include "mye/gameplay/Progression.h"
 #include <filesystem>
 
@@ -28,6 +29,7 @@ namespace mye::editor {
 
 struct PlayModeController::Impl {
     std::unique_ptr<runtime::ObjectSystem> objects;
+    render::Camera2D defaultCamera;
     runtime::SceneTransitionManager transition;
     std::unique_ptr<ecs::World> candidate;
     std::string root, spawnName, loadError;
@@ -40,6 +42,7 @@ struct PlayModeController::Impl {
 
 PlayModeController::PlayModeController() : m_impl(std::make_unique<Impl>()) {}
 PlayModeController::~PlayModeController() { Stop(); }
+const render::Camera2D& PlayModeController::DefaultCamera() const { return m_impl->defaultCamera; }
 
 static void PublishStateChange(EventBus* events, PlayState prev, PlayState cur) {
     if (!events || prev == cur) return;
@@ -91,6 +94,7 @@ Expected<void, Error> PlayModeController::Play() {
         if (!restored) return restored.GetError();
         auto valid = runtime::ValidateObjectComponents(*world);
         if (!valid) return valid.GetError();
+        if (auto camera = scene::UpdateGameCamera2D(*world, 0); !camera) return camera.GetError();
         // Play World 전용 월드-로컬 이벤트 버스(Stop 시 파기). 편집 World 버스를 공유하면
         //   플레이 중 publish가 편집-World 구독자로 새고, 스크립트/리스너 구독이 Stop 후
         //   dangling된다. 게임플레이 이벤트는 Play World 안에서 자족적으로 흐르게 한다
@@ -99,6 +103,7 @@ Expected<void, Error> PlayModeController::Play() {
         world->SetEventBus(m_impl->playEvents.get());
     }
     m_impl->playWorld = std::move(world);
+    runtime::UpdateDefaultCamera2D(*m_impl->playWorld, m_impl->defaultCamera, true);
 
     // 플레이 전용 Undo 스택(Stop 시 파기). 문서 스택과 분리(07 §3).
     m_impl->playCommands = std::make_unique<CommandStack>();
@@ -229,6 +234,7 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
         s.objects.reset();
         s.playWorld = std::move(s.candidate);
         s.playWorld->SetEventBus(s.playEvents.get());
+        runtime::UpdateDefaultCamera2D(*s.playWorld, s.defaultCamera, true);
         s.playCommands->Clear();
         s.objects = std::make_unique<runtime::ObjectSystem>(*s.playWorld);
         auto initialized = s.objects->Initialize();
@@ -237,6 +243,7 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
     if (!s.transition.ConsumesInput()) {
         auto tick=s.objects->Tick(dt,input);
         if (!tick) return tick.GetError();
+        runtime::UpdateDefaultCamera2D(*s.playWorld, s.defaultCamera);
     }
     const auto request = s.objects->TakeMapRequest();
     if (!request.scenePath.empty() && !s.transition.IsTransitioning()) {

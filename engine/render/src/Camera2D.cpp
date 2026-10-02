@@ -6,18 +6,22 @@
 namespace mye::render {
 
 Camera2D::Camera2D(const Camera2DDesc& desc) : m_desc(desc) {
-    if (m_desc.zoom <= 0.0f) m_desc.zoom = 1.0f;
+    if (!std::isfinite(m_desc.zoom) || m_desc.zoom <= 0.0f) m_desc.zoom = 1.0f;
     if (m_desc.viewportWidth == 0)  m_desc.viewportWidth  = kInternalWidth;
     if (m_desc.viewportHeight == 0) m_desc.viewportHeight = kInternalHeight;
 }
 
 void Camera2D::SetPosition(Vec2 worldPos) { m_desc.position = ClampToBounds(worldPos); }
 
-void Camera2D::SetZoom(float zoom) { m_desc.zoom = zoom > 0.0f ? zoom : m_desc.zoom; }
+void Camera2D::SetZoom(float zoom) {
+    if (std::isfinite(zoom) && zoom > 0.0f) m_desc.zoom = zoom;
+    m_desc.position = ClampToBounds(m_desc.position);
+}
 
 void Camera2D::SetViewportSize(uint32_t w, uint32_t h) {
     if (w > 0) m_desc.viewportWidth = w;
     if (h > 0) m_desc.viewportHeight = h;
+    m_desc.position = ClampToBounds(m_desc.position);
 }
 
 void Camera2D::SetPixelSnap(bool enabled) { m_desc.pixelSnap = enabled; }

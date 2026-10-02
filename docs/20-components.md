@@ -10,6 +10,7 @@
 | SpriteRenderer | sprite에 PNG 드래그, srcUV로 영역 선택 | 전체 UV 0,0,1,1; pivotPx는 영역 좌상단 기준 픽셀. tint 흰색은 원본 색 |
 | BillboardRenderer | PNG·프레임 UV·발 피벗·mode 설정 | Full 카메라 축, YAxis 수직 유지, None 원래 회전. SpriteAnimator 지원. 같은 오브젝트의 SpriteRenderer와 함께 사용하지 않는다 |
 | MeshRenderer | mesh에 GLB/glTF, material에 PNG 드래그 | 정적 임베디드 메시. 빈 material은 흰색. glTF 노드 변환·재질·리깅·외부 .bin 자동 연결 미지원 |
+| Camera2D | current·followTarget·offset·deadzoneHalf·zoom·pixelSnap·bounds 설정 | Play/MyGame 로컬/인증 2D 공통 시야. 2D/3D를 합쳐 활성 하나. [저장·추종·Lua 사용법](24-2d-camera.md) |
 | Camera3D | current·target·followTarget·FOV·near/far 설정 | 활성 하나; 위치는 LocalTransform. Play/MyGame용이며 에디터 작업 카메라와 별개 |
 | FloorLevel | 높이 층 level | 지면 0; 렌더·충돌 층을 함께 확인 |
 | Collider2D | shape/half/offset·그룹/층 마스크 | 48px 전체 폭은 반폭 0.5. isTrigger면 이동을 막지 않고 이벤트 발생 |
@@ -41,7 +42,7 @@
 
 빈 material은 기본 흰색이다. material에 지정한 PNG나 mesh/sprite GUID가 로드되지 않으면 오류다. 자동 Play/MyGame 검사에서는 exit 1을 확인한다. 에디터 하단 오류/콘솔의 씬 경로·오브젝트·GUID를 보고 파일과 `.meta`, 가져오기 결과를 확인한 뒤 에셋 목록을 새로고침하고 Play를 다시 실행한다. 오류 캡처를 정상 표시로 판단하지 않는다.
 
-게임 카메라는 기본 위치 `(0,3,-8)`, `target=(0,0,0)`, 세로 FOV 45도다. current가 켜진 카메라는 씬에 하나만 둔다. 없으면 기존 2D 카메라를 사용한다. near/far는 월드 단위이며 `0 < nearPlane < farPlane`, FOV는 1~179도다. eye와 target은 같은 점이나 +Y와 평행한 방향이 될 수 없다. 잘못된 설정은 씬 검증/Play에서 오류로 표시한다.
+3D 게임 카메라는 기본 위치 `(0,3,-8)`, `target=(0,0,0)`, 세로 FOV 45도다. current가 켜진 Camera2D/Camera3D는 씬에 합쳐 하나만 둔다. 저장 카메라가 없으면 공통 기본 2D 추종을 사용한다. near/far는 월드 단위이며 `0 < nearPlane < farPlane`, FOV는 1~179도다. eye와 target은 같은 점이나 +Y와 평행한 방향이 될 수 없다. 잘못된 설정은 씬 검증/Play에서 오류로 표시한다.
 
 orbitEnabled=false이면 followTarget이 비어 있을 때 카메라의 **월드 위치**에서 월드 target을 본다. 고유 ObjectName을 지정하면 카메라 월드 위치와 target 모두 그 대상에 더할 오프셋으로 취급한다. orbitEnabled=true이면 target을 중심으로 yawDegrees·pitchDegrees·distance를 사용한다. Q/R·오른쪽 드래그로 yaw를 바꾸며 정적 충돌 앞에서 거리가 줄어든다. 추종 보간·휠 줌은 없다. 대상은 월드 변환을 가진 고유 이름 하나여야 한다. LocalTransform.rotation은 게임 카메라 방향에 사용하지 않는다.
 

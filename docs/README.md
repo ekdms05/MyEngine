@@ -8,6 +8,7 @@
 | [개발 우선순위](14-development-priorities.md) | 미완료 항목, 근거와 완료 조건 |
 | [온라인 2D MMORPG 작업 목록](22-2d-mmorpg-roadmap.md) | 최종 목표, 작은 작업 36개와 실제 완료 조건 |
 | [온라인 2D 플레이](23-2d-online-play.md) | main 소스의 두 공식 앱 접속·공통 충돌·입력 재생·저장 재접속과 범위 |
+| [2D 게임 카메라](24-2d-camera.md) | main 소스의 저장·추종·경계·줌/흔들림·Lua 좌표 변환과 실제 프레임 검증 |
 | [에디터](07-editor-ui.md) | 프로젝트 창, 작업대, 문서·PlayWorld 계약 |
 | [오브젝트](17-object-workflow.md) / [컴포넌트](20-components.md) | 조작·충돌·이벤트·맵 연결 |
 | [XYZ 플레이와 온라인](21-3d-play-and-online.md) | 캐릭터 물리·360° 카메라·인증 온라인 설정과 한계 |

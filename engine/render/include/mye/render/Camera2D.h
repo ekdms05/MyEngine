@@ -1,4 +1,4 @@
-// mye/render/Camera2D.h — Screen2D 직교 카메라 (M1-B 구현) (docs/02 §카메라)
+// mye/render/Camera2D.h — Screen2D 직교 카메라 (docs/02 §카메라)
 //
 // 책임: Screen2D 프리셋(직교 정면, XY 평면)의 뷰·프로젝션 행렬 산출과
 // Screen↔World 변환(정본). PixelPerfect 모드에서 픽셀 스냅 카메라(카메라 위치를
@@ -26,7 +26,7 @@ struct Camera2DDesc {
     uint32_t viewportHeight = kInternalHeight;
 };
 
-// Screen2D 직교 카메라. 구현 M1-B.
+// Screen2D 직교 카메라.
 //
 // 픽셀 스냅 모델: 논리 카메라 중심(m_desc.position)을 내부 RT 픽셀 격자(1/PPU·1/zoom 단위)에
 // 스냅한 위치를 뷰 행렬에 사용한다(크리스프 유지). 스냅으로 버린 잔차(px, 화면 방향)는
@@ -51,7 +51,7 @@ public:
     void FollowDeadzone(Vec2 target, Vec2 halfExtents);
 
     // 월드 경계: 카메라 뷰가 이 사각형(월드 unit) 밖을 보지 않도록 중심을 클램프한다.
-    //   뷰가 경계보다 크면 해당 축은 경계 중앙에 고정. SetPosition/Follow* 후 자동 적용.
+    //   뷰가 경계보다 크면 해당 축은 경계 중앙에 고정. 위치·줌·뷰 크기 변경 후 자동 적용.
     void SetWorldBounds(const Rect& worldBounds);
     void ClearWorldBounds();
     bool HasWorldBounds() const { return m_hasBounds; }
@@ -66,6 +66,8 @@ public:
     Vec2  Position() const;           // 논리(스냅 전) 중심
     Vec2  SnappedPosition() const;    // 픽셀 격자 스냅된 렌더 중심
     float Zoom() const;
+    uint32_t ViewportWidth() const { return m_desc.viewportWidth; }
+    uint32_t ViewportHeight() const { return m_desc.viewportHeight; }
 
     Mat4 ViewMatrix() const;          // 픽셀 스냅 반영(월드→뷰)
     Mat4 ProjectionMatrix() const;    // OrthoOffCenter(내부 RT 기준, NDC 0~1 LH)

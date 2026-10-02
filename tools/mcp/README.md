@@ -52,7 +52,7 @@ npm run build     # tsc → dist/
 | `engine_logs` | 최근 빌드/테스트/실행/캡처 원본 로그 tail + 레벨(warn/error)·정규식 필터 |
 | `project_status` | configure 상태·마지막 작업 요약·앱 소스 목록·최근 캡처·서버 버전. 항상 성공 |
 | `project_inspect` | 프로젝트/씬의 계층·컴포넌트·에셋 GUID 조회, 검색·페이지 지원 |
-| `engine_reference` | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더 문서 검색·줄 범위 조회 |
+| `engine_reference` | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더·camera2d·online2d·roadmap 문서 검색·줄 범위 조회 |
 | `asset_import` | 에디터 CLI를 통한 에셋 복사·GUID/.meta 등록. assets 기준 대상 경로, 덮어쓰기 거부 |
 
 공통 규약: 반환 텍스트 ≤8KB(원문은 `.state/logs/`에 저장 후 경로 안내), 빌드·테스트·실행·캡처는

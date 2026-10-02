@@ -7,6 +7,8 @@
 #include "mye/core/Math.h"
 
 #include <cmath>
+#include <limits>
+#include "mye/render/HybridRenderer.h"
 
 using namespace mye;
 using mye::render::Camera2D;
@@ -98,4 +100,24 @@ MYE_TEST(CameraPickingUnaffectedByShake) {
     const Vec2 after = cam.ScreenToWorld(Vec2{480.0f, 270.0f});
     MYE_EXPECT(ApproxEqual(before.x, after.x));
     MYE_EXPECT(ApproxEqual(before.y, after.y));
+}
+
+MYE_TEST(CameraZoomAndResizeReapplyBoundsAndViewDimensions) {
+    Camera2DDesc invalid;
+    invalid.zoom = std::numeric_limits<float>::quiet_NaN();
+    MYE_EXPECT(Camera2D(invalid).Zoom() == 1);
+    auto camera = MakeCam();
+    camera.SetWorldBounds({0, 0, 100, 100});
+    camera.SetPosition({90, 94.375f});
+    camera.SetZoom(.5f);
+    MYE_EXPECT_NEAR(camera.Position().x, 80, .0001f);
+    MYE_EXPECT_NEAR(camera.Position().y, 88.75f, .0001f);
+    camera.SetViewportSize(1920, 1080);
+    MYE_EXPECT_NEAR(camera.Position().x, 60, .0001f);
+    MYE_EXPECT_NEAR(camera.Position().y, 77.5f, .0001f);
+    camera.SetZoom(std::numeric_limits<float>::infinity());
+    MYE_EXPECT(camera.Zoom() == .5f);
+    const auto view = render::HybridRenderer::MakeViewInfo(camera);
+    MYE_EXPECT(view.viewportWidth == 1920 && view.viewportHeight == 1080);
+    MYE_EXPECT_NEAR(view.depth.viewRangeY, 54, .0001f);
 }

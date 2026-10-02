@@ -9,6 +9,7 @@
 #include "mye/scene/Transform.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Camera3D.h"
+#include "mye/scene/Camera2D.h"
 #include "mye/scene/SpriteGeometry.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/anim/AnimationSystem.h"
@@ -16,6 +17,7 @@
 #include "mye/ecs/World.h"
 #include "mye/ecs/ComponentType.h"
 #include "mye/core/Math.h"
+#include <limits>
 
 using namespace mye;
 
@@ -74,6 +76,75 @@ MYE_TEST(ThreeDSceneReferencesCameraAndModesRoundtrip) {
     world.Destroy(duplicate); world.TryGet<scene::Camera3D>(cameraEntity)->current = false;
     auto fallback = scene::BuildGameView(world, render::Camera2D{});
     MYE_EXPECT(fallback && !fallback.Value().geometryDepth);
+}
+
+MYE_TEST(TwoDSceneCameraSavesSettingsAndRefusesAmbiguousOrInvalidViews) {
+    ecs::World world;
+    scene::RegisterCoreComponents(world);
+    const auto actor = world.Create(), cameraEntity = world.Create();
+    world.Add<scene::ObjectName>(actor).value = "Actor";
+    world.Add<scene::LocalTransform>(actor).position = {3, 2, 7};
+    world.Add<scene::WorldTransform>(actor);
+    world.Add<scene::LocalTransform>(cameraEntity).position = {100, 100, -20};
+    world.Add<scene::WorldTransform>(cameraEntity);
+    auto& camera = world.Add<scene::Camera2D>(cameraEntity);
+    camera.followTarget = "Actor"; camera.offset = {.003f, 1}; camera.zoom = 2;
+    camera.boundsEnabled = true; camera.bounds = {-20, -10, 40, 20};
+    scene::UpdateWorldTransforms(world);
+    MYE_EXPECT(runtime::ValidateObjectComponents(world));
+    auto initial = scene::BuildGameView(world, render::Camera2D{}, 480, 270);
+    MYE_EXPECT(initial && initial.Value().viewportWidth == 480 && initial.Value().viewportHeight == 270);
+    MYE_EXPECT(!camera.initialized);
+    MYE_EXPECT(scene::UpdateGameCamera2D(world, 0));
+    MYE_EXPECT_NEAR(camera.view.Position().x, 3.003f, .0001f);
+    MYE_EXPECT_NEAR(camera.view.Position().y, 3, .0001f);
+    camera.view.AddShake(.2f, .5f);
+    MYE_EXPECT(scene::UpdateGameCamera2D(world, .1f));
+    const auto saved = scene::SceneSerializer{}.WriteWorld(world);
+    MYE_EXPECT(saved);
+    if (!saved) return;
+    const auto text = json::Stringify(saved.Value());
+    MYE_EXPECT(text.find("initialized") == std::string::npos && text.find("shakeElapsed") == std::string::npos);
+    ecs::World loaded;
+    scene::RegisterCoreComponents(loaded);
+    MYE_EXPECT(scene::SceneSerializer{}.ReadInto(loaded, saved.Value()));
+    MYE_EXPECT(runtime::ValidateObjectComponents(loaded));
+    loaded.Query<scene::Camera2D>().Each([&](ecs::Entity, const auto& c) {
+        MYE_EXPECT(c.followTarget == "Actor" && c.zoom == 2 && c.boundsEnabled);
+        MYE_EXPECT(c.offset.y == 1 && !c.initialized && !c.view.IsShaking());
+    });
+    camera.zoom = std::numeric_limits<float>::quiet_NaN();
+    MYE_EXPECT(!scene::BuildGameView(world, render::Camera2D{}));
+    camera.zoom = 2; camera.deadzoneHalf.x = -1;
+    MYE_EXPECT(!runtime::ValidateObjectComponents(world));
+    camera.deadzoneHalf.x = 2.5f; camera.bounds.w = 0;
+    MYE_EXPECT(!runtime::ValidateObjectComponents(world));
+    camera.bounds.w = 40; camera.followTarget = "Missing";
+    MYE_EXPECT(!runtime::ValidateObjectComponents(world));
+    camera.followTarget = "Actor";
+    const auto other = world.Create();
+    world.Add<scene::Camera3D>(other);
+    MYE_EXPECT(!runtime::ValidateObjectComponents(world));
+    MYE_EXPECT(!scene::UpdateGameCamera2D(world, .1f));
+    world.Destroy(other);
+    MYE_EXPECT(runtime::ValidateObjectComponents(world));
+    MYE_EXPECT(!scene::BuildGameView(world, render::Camera2D{}, 0, 540));
+    const auto position = camera.view.Position();
+    world.TryGet<scene::LocalTransform>(actor)->position.x = std::numeric_limits<float>::max();
+    world.TryGet<scene::LocalTransform>(actor)->dirty = true;
+    scene::UpdateWorldTransforms(world);
+    camera.boundsEnabled = false;
+    MYE_EXPECT(!scene::UpdateGameCamera2D(world, .1f));
+    MYE_EXPECT(camera.view.Position() == position);
+    world.TryGet<scene::LocalTransform>(actor)->position.x = 3;
+    world.TryGet<scene::LocalTransform>(actor)->dirty = true;
+    scene::UpdateWorldTransforms(world);
+    camera.followTarget.clear(); camera.boundsEnabled = false;
+    auto own = scene::ResolveGameCamera2D(world, cameraEntity);
+    MYE_EXPECT(own);
+    camera.initialized = false;
+    own = scene::ResolveGameCamera2D(world, cameraEntity);
+    MYE_EXPECT(own && ApproxEqual(own.Value().Position().x, 100.003f));
 }
 
 MYE_TEST(BillboardFacingKeepsFootAnchorAndAnimatesOneCursor) {

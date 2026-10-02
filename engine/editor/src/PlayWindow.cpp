@@ -85,7 +85,7 @@ Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const
     m_target.EndScenePass(command);
     if (!rendered) return rendered.GetError();
     const auto size = m_window->GetClientSize();
-    if (size.x > 0 && size.y > 0) m_target.Blit(command, Backbuffer(), size, {});
+    if (size.x > 0 && size.y > 0) m_target.Blit(command, Backbuffer(), size, view.subpixelResidual);
     return {};
 }
 void PlayWindow::Present() { if (m_swapChain) m_swapChain->Present(false); }

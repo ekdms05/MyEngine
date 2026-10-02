@@ -18,7 +18,7 @@
 | 실행 파일 | 현재 조합 |
 |---|---|
 | `MyEditor` | 프로젝트 창 → 문서 World → 에셋 GUID 해석 → 씬/모션/컴포넌트 편집 → PlayWorld 고정 틱 → 게임 창 |
-| `MyGame` | 프로젝트 로컬 플레이·인증된 루프백 XYZ 플레이. 구 타이틀 데모는 제거 |
+| `MyGame` | 프로젝트 로컬 플레이·인증 루프백 2D/XYZ 플레이. 저장 게임 카메라와 공용 물리 사용 |
 | `MyServer` | 계정·세션·권위 이동·영속·운영 루프. 공개 운영 전 신뢰 경계 완료 조건은 [14](14-development-priorities.md) |
 | `paktool` | pak 생성·검사 CLI. 프로젝트별 완성 게임 배포 UI는 후속 작업 |
 
@@ -39,11 +39,13 @@ assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/
 
 ## 공통 계약과 실제 한계
 
-씬의 공통 등록에는 SpriteRenderer·BillboardRenderer·MeshRenderer·Camera3D가 포함된다. 두 공식 앱이 같은 등록·직렬화 계약을 사용한다. GLB/임베디드 glTF는 기존 MeshImporter와 GUID resolver로 연결하며 노드 변환·glTF 재질·리깅·외부 .bin은 지원하지 않는다. billboard의 Full/YAxis/None, 발 피벗·반전과 기존 SpriteAnimator를 렌더에서 소비한다.
+씬의 공통 등록에는 SpriteRenderer·BillboardRenderer·MeshRenderer·Camera2D·Camera3D가 포함된다. 두 공식 앱이 같은 등록·직렬화 계약을 사용한다. GLB/임베디드 glTF는 기존 MeshImporter와 GUID resolver로 연결하며 노드 변환·glTF 재질·리깅·외부 .bin은 지원하지 않는다. billboard의 Full/YAxis/None, 발 피벗·반전과 기존 SpriteAnimator를 렌더에서 소비한다.
 
 표준 GLB 앞면은 Z/인덱스 변환 후 DX11 clockwise 컬링으로 표시한다. 0.2.3은 반대 면을 승인한 기존 렌더 검사를 여섯 축의 앞/뒤 검사로 교체했다. 공통 렌더 경계가 지정된 메시/PNG의 실패를 반환하며 MyGame과 자동 실행 에디터는 exit 1로 종료한다. 대화형 에디터는 Play를 중단하고 하단 오류/콘솔을 통해 편집을 계속할 수 있다.
 
 저장한 Camera3D의 위치·target·FOV·near/far·고유 이름 추종과 orbit 설정을 Play/MyGame이 사용한다. 에디터 작업 카메라는 별개이며 current가 없으면 기존 2D 카메라로 표시한다. 3D 선택/기즈모는 아직 없다. [컴포넌트 사용법](20-components.md)에 설정·검증·제한을 정리했다.
+
+개발 main의 Camera2D는 고유 이름/부모 추종·월드 데드존/경계·픽셀 스냅·줌을 저장한다. Lua 줌/렌더 전용 흔들림·논리 좌표 변환은 로컬 Play/MyGame에 등록되고 인증 2D는 저장 설정·고정 틱/휠 입력을 소비한다. 선택 카메라의 행렬·뷰 크기·스냅 잔차를 공통으로 전달한다. 두 앱의 실제 정적 프레임 일치와 두 온라인 사용자별 2배 추종/원격 표시를 검증했다. 카메라 없는 이전 씬의 추종도 같은 도우미를 쓴다. [2D 카메라](24-2d-camera.md)에 작성 경로와 장치 입력 미검증을 기록했다.
 
 좌표·깊이의 정본은 [02](02-rendering.md): 왼손, +Y up, PPU 48, 내부 960×540, Y/높이 기반 깊이·alpha cutout. 시뮬레이션은 고정 틱, UI·렌더는 표현 단계다.
 

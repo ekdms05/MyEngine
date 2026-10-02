@@ -11,6 +11,7 @@
 #include "mye/scene/Transform.h"      // LocalTransform
 #include "mye/scene/Renderable.h"     // SpriteRenderer
 #include "mye/scene/Camera3D.h"
+#include "mye/scene/Camera2D.h"
 #include "mye/ecs/World.h"
 #include "mye/scene/RenderExtract.h"  // FloorLevel, SortingRef
 
@@ -45,6 +46,7 @@ MYE_REFLECT_NAME(mye::scene::SpriteRenderer, "SpriteRenderer");
 MYE_REFLECT_NAME(mye::scene::BillboardRenderer, "BillboardRenderer");
 MYE_REFLECT_NAME(mye::scene::MeshRenderer, "MeshRenderer");
 MYE_REFLECT_NAME(mye::scene::Camera3D, "Camera3D");
+MYE_REFLECT_NAME(mye::scene::Camera2D, "Camera2D");
 MYE_REFLECT_NAME(mye::scene::SortingRef, "SortingRef");
 template<> void mye::refl::Reflect(TypeBuilder<mye::scene::SortingRef>& b) {
     b.Field("sortLayer", &mye::scene::SortingRef::sortLayer)
@@ -152,9 +154,20 @@ template <> void mye::refl::Reflect(TypeBuilder<mye::scene::MeshRenderer>& b) {
         .Field("depthMode", &C::depthMode).Attr(Attribute::MakeTooltip("2D: 0 앵커 깊이, 1 앵커+기하 바이어스, 2 기하 깊이. 원근 카메라는 기하 깊이를 사용합니다."))
         .Field("visible", &C::visible).Field("sort", &C::sort);
 }
+template <> void mye::refl::Reflect(TypeBuilder<mye::scene::Camera2D>& b) {
+    using C = mye::scene::Camera2D;
+    b.Version(1).Field("current", &C::current).Attr(Attribute::MakeTooltip("2D/3D를 합쳐 하나만 켜세요. Play와 MyGame이 동일한 게임 카메라를 사용합니다."))
+        .Field("followTarget", &C::followTarget).Attr(Attribute::MakeTooltip("추종할 고유 오브젝트 이름. 비우면 자신의 월드 XY를 사용합니다. 부모에 붙여 추종할 수도 있습니다."))
+        .Field("offset", &C::offset).Attr(Attribute::MakeTooltip("추종 위치에서의 월드 XY 오프셋. 회전·스케일·Z는 시야에 영향을 주지 않습니다."))
+        .Field("deadzoneHalf", &C::deadzoneHalf).Attr(Attribute::MakeTooltip("추종 대상이 벗어나면 카메라를 미는 영역의 절반 크기(월드 단위). 0,0은 즉시 추종입니다."))
+        .Field("zoom", &C::zoom).Attr(Attribute::MakeRange(.25, 8)).Attr(Attribute::MakeTooltip("0.25~8 배 확대. 1배는 PPU 48, 960×540입니다. Play/MyGame에서 마우스 휠로 변경합니다."))
+        .Field("pixelSnap", &C::pixelSnap).Attr(Attribute::MakeTooltip("렌더 중심을 내부 픽셀 격자에 맞춥니다. 논리 좌표 변환은 흔들림과 스냅의 영향을 받지 않습니다."))
+        .Field("boundsEnabled", &C::boundsEnabled).Attr(Attribute::MakeTooltip("월드 경계로 시야를 제한합니다. 시야가 경계보다 큰 축은 경계 중앙에 고정합니다."))
+        .Field("bounds", &C::bounds).Attr(Attribute::MakeTooltip("x,y는 월드 최소 좌표(+Y 위), w,h는 양수 크기입니다. 흔들림은 이 경계를 일시적으로 넘을 수 있습니다."));
+}
 template <> void mye::refl::Reflect(TypeBuilder<mye::scene::Camera3D>& b) {
     using C = mye::scene::Camera3D;
-    b.Version(1).Field("current", &C::current).Attr(Attribute::MakeTooltip("씬에 하나만 켜세요. Play와 MyGame이 이 카메라를 사용하며, 없으면 기존 2D 카메라를 사용합니다."))
+    b.Version(1).Field("current", &C::current).Attr(Attribute::MakeTooltip("2D/3D를 합쳐 하나만 켜세요. Play와 MyGame이 이 카메라를 사용하며, 없으면 기본 2D 카메라를 사용합니다."))
         .Field("target", &C::target).Attr(Attribute::MakeTooltip("바라보는 월드 XYZ. followTarget이 있으면 대상 위치에서의 오프셋입니다."))
         .Field("followTarget", &C::followTarget).Attr(Attribute::MakeTooltip("추종할 고유 오브젝트 이름. 지정하면 카메라 위치와 target 모두 대상 월드 위치에서의 오프셋입니다."))
         .Field("fovDegrees", &C::fovDegrees).Attr(Attribute::MakeTooltip("세로 시야각 1~179도. 줌은 시야각 또는 카메라 위치로 조정합니다."))
@@ -234,6 +247,7 @@ void RegisterCoreComponentReflection() {
     (void)refl::GetType<BillboardRenderer>();
     (void)refl::GetType<MeshRenderer>();
     (void)refl::GetType<Camera3D>();
+    (void)refl::GetType<Camera2D>();
     (void)refl::GetType<FloorLevel>();
     (void)refl::GetType<anim::SpriteAnimator>();
 }
@@ -249,6 +263,7 @@ void RegisterCoreComponents(ecs::World& world) {
     world.RegisterComponent<BillboardRenderer>("BillboardRenderer");
     world.RegisterComponent<MeshRenderer>("MeshRenderer");
     world.RegisterComponent<Camera3D>("Camera3D");
+    world.RegisterComponent<Camera2D>("Camera2D");
     world.RegisterComponent<FloorLevel>("FloorLevel");
     world.RegisterComponent<phys::Collider2D>("Collider2D");
     world.RegisterComponent<phys::KinematicBody2D>("KinematicBody2D");

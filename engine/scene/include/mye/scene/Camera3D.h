@@ -25,7 +25,7 @@ struct Camera3D {
     float resolvedDistance = 0; // Runtime only; zero uses the authored distance.
 };
 
-// No current Camera3D keeps the existing 2D camera. Ambiguous or invalid cameras fail.
+// Select one current Camera2D/Camera3D. No saved camera uses the 2D fallback.
 Expected<render::HybridViewInfo, Error> BuildGameView(ecs::World& world,
     const render::Camera2D& fallback, uint32_t width = render::kInternalWidth,
     uint32_t height = render::kInternalHeight);

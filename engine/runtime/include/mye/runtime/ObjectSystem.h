@@ -3,6 +3,7 @@
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/core/Math.h"
 #include "mye/ecs/Entity.h"
+#include "mye/render/Camera2D.h"
 #include <memory>
 
 namespace mye::runtime {
@@ -11,7 +12,12 @@ struct GameInput {
     Vec2 movement{};
     bool interact = false, jump = false;
     float cameraAxis = 0, cameraMouseX = 0;
+    float cameraZoomSteps = 0;
 };
+
+// Compatibility for scenes without a saved camera: initialize at the controller,
+// then follow the same fixed-tick deadzone in Play and MyGame.
+void UpdateDefaultCamera2D(ecs::World& world, render::Camera2D& camera, bool reset = false);
 
 // One instance per Play world. Destroy before its World and EventBus.
 class ObjectSystem {

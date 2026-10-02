@@ -17,6 +17,8 @@
 
 [Camera2D](../engine/render/include/mye/render/Camera2D.h)가 화면/월드 변환·카메라 픽셀 스냅을 담당한다. 표현 상태에 보간을 적용할 경우 보간 후 픽셀 스냅한다. 월드의 +Y 위와 UI의 +Y 아래를 혼용하지 않는다.
 
+개발 main의 저장 `scene::Camera2D`는 이 계산을 재사용한다. [2D 카메라](24-2d-camera.md)의 고유 이름/부모 추종·월드 데드존·경계·줌/흔들림을 고정 틱에서 갱신하고 BuildGameView로 Play/MyGame이 소비한다. 줌/뷰 크기 변경은 경계를 다시 적용한다. HybridViewInfo는 실제 viewport 크기와 선택 카메라의 subpixelResidual을 운반하여 두 앱의 Blit이 같은 잔차를 사용한다. 좌표 변환은 논리 중심 기준이며 흔들림·스냅을 제외한다. 2D/3D를 합쳐 current 하나만 허용한다.
+
 [SpriteCorners](../engine/scene/include/mye/scene/SpriteGeometry.h)는 소스 영역 크기·발밑 피벗·PPU와 전체 WorldTransform으로 쿼드 좌표를 만든다. HybridRenderer와 에디터 선택 경계가 같은 함수를 사용하므로 scale·rotation을 렌더에서 누락하지 않는다. SceneSerializer는 로드한 LocalTransform에 파생 WorldTransform을 복구한다. 좌표·PPU·깊이·cutout 수치는 유지한다.
 
 MyEditor PNG·뷰포트는 UNORM 색을 그대로 사용한다. 편집기 스왑체인도 BGRA8Unorm으로 맞춰 ImGui 출력에서 sRGB 인코딩이 색을 다시 밝히지 않게 한다. 월드 텍스처의 point 샘플링과 ImGui 이미지 미리보기의 필터는 구분한다.

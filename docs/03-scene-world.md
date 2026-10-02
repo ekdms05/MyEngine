@@ -48,6 +48,8 @@
 
 `LoadOnlineScene`은 한 번 검증한 장면의 활성 캐릭터로 2D/3D를 선택하고 잘못된 2D 계약에서 다른 차원으로 재시도하지 않는다. 개발 소스의 `MyServer --project`·`MyGame --connect`가 이 결과를 소비한다. [공식 2D 플레이 가이드](23-2d-online-play.md)와 tools/verify-online2d.ps1의 두 앱 실행·픽셀/퇴장·저장/재접속 검증을 라이브러리 회귀와 구분한다. 기존 0.3.0 바이너리에는 이 연결이 없다.
 
+Camera2D는 공용 등록·리플렉션·씬 저장/재로드·Play 스냅샷에 포함된다. 런타임 view/initialized와 흔들림 시간은 저장하지 않는다. ObjectSystem::Initialize와 장면 진입은 dt=0으로 초기 시야를 설정하고, Tick은 최종 WorldTransform 뒤 UpdateGameCamera2D로 추종·줌/흔들림을 진행한다. 인증 MyGame도 권위/예측 XY 적용 뒤 같은 갱신을 소비하며 Lua를 만들지 않는다. BuildGameView는 Camera2D/Camera3D를 합쳐 하나를 선택하고 상태를 진행시키지 않는다. 카메라 없는 이전 씬의 기본 추종은 UpdateDefaultCamera2D로 Play/MyGame이 공유한다. [설정·오류·검증](24-2d-camera.md)을 따른다.
+
 ## 인증된 2D 이동의 라이브러리 연결
 
 개발 소스의 `StepMotion2D`는 MotionSettings2D의 캐릭터 형상/offset·속도·반복 상한과 MotionState2D의 원점·방향·층을 공통 MoveAndSlide2D에 전달한다. NetGameServer::Configure2D/NetClient::Configure2D가 같은 값과 정적 충돌 span을 보관하며 서버 Tick, 즉시 예측과 ack 이후 재실행에서 이 함수를 사용한다. 이 연결은 실제 UDP 라이브러리 및 MyServer/MyGame 두 실행 파일에서 검증했다. 충돌 span은 비소유 참조이므로 설정부터 연결 종료까지 장면 데이터의 수명/내용을 유지한다.

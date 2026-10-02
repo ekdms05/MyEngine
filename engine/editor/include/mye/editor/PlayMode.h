@@ -17,6 +17,7 @@
 
 namespace mye::ecs { class World; }
 namespace mye::runtime { struct GameInput; }
+namespace mye::render { class Camera2D; }
 
 namespace mye::editor {
 
@@ -61,6 +62,7 @@ public:
     // 패널들이 표시·편집 대상 World를 얻는 유일한 경로(07 §3).
     //   Edit=편집 World, Playing/Paused=Play World.
     ecs::World* ActiveWorld() const;
+    const render::Camera2D& DefaultCamera() const;
 
     // 플레이 중 편집용 별도 Undo 스택(Stop 시 파기). Edit 모드면 nullptr.
     CommandStack* PlayCommandStack() const;

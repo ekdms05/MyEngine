@@ -2610,6 +2610,51 @@
           }
         }
       }
+    },
+    {
+      "id": 58,
+      "parent": 57,
+      "components": {
+        "ObjectName": {
+          "__version": 1,
+          "value": "Game Camera"
+        },
+        "LocalTransform": {
+          "__version": 1,
+          "px": 0,
+          "py": 0,
+          "pz": 0,
+          "rx": 0,
+          "ry": 0,
+          "rz": 0,
+          "rw": 1,
+          "sx": 1,
+          "sy": 1,
+          "sz": 1
+        },
+        "Camera2D": {
+          "__version": 1,
+          "current": true,
+          "followTarget": "",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "deadzoneHalf": {
+            "x": 2.5,
+            "y": 1.5
+          },
+          "zoom": 1,
+          "pixelSnap": true,
+          "boundsEnabled": false,
+          "bounds": {
+            "x": -10,
+            "y": -5.625,
+            "w": 20,
+            "h": 11.25
+          }
+        }
+      }
     }
   ]
 }

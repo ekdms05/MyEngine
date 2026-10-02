@@ -13,6 +13,7 @@ const references = {
   components: "docs/20-components.md",
   online: "docs/21-3d-play-and-online.md",
   online2d: "docs/23-2d-online-play.md",
+  camera2d: "docs/24-2d-camera.md",
   roadmap: "docs/22-2d-mmorpg-roadmap.md",
 } as const;
 
@@ -22,7 +23,7 @@ export function registerReferenceTool(server: McpServer, ctx: ServerContext): vo
       "검색 또는 줄 범위로 필요한 근거만 조회하며 다른 엔진 API를 추측하지 않는다.",
     annotations: { readOnlyHint: true, destructiveHint: false },
     inputSchema: {
-      topic: z.enum(["lua", "editor", "assets", "scene", "rendering", "components", "online", "online2d", "roadmap"]),
+      topic: z.enum(["lua", "editor", "assets", "scene", "rendering", "components", "online", "online2d", "camera2d", "roadmap"]),
       search: z.string().max(128).default(""),
       startLine: z.number().int().min(1).default(1),
       lines: z.number().int().min(1).max(120).default(60),

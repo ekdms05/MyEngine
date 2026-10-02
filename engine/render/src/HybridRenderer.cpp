@@ -429,13 +429,14 @@ HybridViewInfo HybridRenderer::MakeViewInfo(const Camera2D& camera) {
     v.viewProj = camera.ViewProjection();
     // sortKeyY 정규화: 카메라 논리 중심 기준 세로 뷰 범위. 상단(가장 뒤)이 viewTopY.
     const Vec2 center = camera.Position();
-    const float halfH = 0.5f * static_cast<float>(kInternalHeight) / (kPixelsPerUnit * camera.Zoom());
+    const float halfH = 0.5f * static_cast<float>(camera.ViewportHeight()) / (kPixelsPerUnit * camera.Zoom());
     // 여유 20%(경사·점프로 sortKeyY가 뷰 밖으로 나가도 saturate로 안정).
     const float pad = halfH * 0.2f;
     v.depth.viewTopY = center.y + halfH + pad;
     v.depth.viewRangeY = (halfH + pad) * 2.0f;
-    v.viewportWidth = kInternalWidth;
-    v.viewportHeight = kInternalHeight;
+    v.viewportWidth = camera.ViewportWidth();
+    v.viewportHeight = camera.ViewportHeight();
+    v.subpixelResidual = camera.SubpixelResidual();
     return v;
 }
 

@@ -1,4 +1,5 @@
 #include "mye/scene/Camera3D.h"
+#include "mye/scene/Camera2D.h"
 #include "mye/ecs/World.h"
 #include "mye/phys/PhysicsWorld3D.h"
 #include "mye/scene/Renderable.h"
@@ -40,7 +41,7 @@ Expected<void, Error> UpdateGameCamera(ecs::World& world, const phys::PhysicsWor
             if (!c.followTarget.empty() && name.value == c.followTarget)
                 target = target + Vec3{pose.matrix.m[3][0], pose.matrix.m[3][1], pose.matrix.m[3][2]};
         });
-        // Godot SpringArm3D's cast-and-shorten behavior, using the shared collision world.
+        // Shorten the orbit arm using the shared collision world.
         const Vec3 motion = OrbitDirection(c) * c.distance;
         const auto hit =
             physics.Cast({target, {c.collisionMargin, c.collisionMargin, c.collisionMargin}}, motion);
@@ -71,8 +72,22 @@ Expected<render::HybridViewInfo, Error> BuildGameView(ecs::World& world,
     world.Query<Camera3D>().Each([&](ecs::Entity e, const Camera3D& camera) {
         if (camera.current) { active = &camera; entity = e; ++count; }
     });
-    if (count == 0) return render::HybridRenderer::MakeViewInfo(fallback);
-    if (count != 1) return Error{"Camera3D: exactly one current camera is allowed", 1};
+    ecs::Entity camera2D{};
+    world.Query<Camera2D>().Each([&](ecs::Entity e, const Camera2D& camera) {
+        if (camera.current) { camera2D = e; ++count; }
+    });
+    if (count > 1) return Error{"Game view requires at most one current Camera2D or Camera3D", 1};
+    if (!camera2D.IsNull()) {
+        auto resolved = ResolveGameCamera2D(world, camera2D, width, height);
+        if (!resolved) return resolved.GetError();
+        return render::HybridRenderer::MakeViewInfo(resolved.Value());
+    }
+    if (count == 0) {
+        if (width == 0 || height == 0) return Error{"Game view requires a nonzero viewport", 1};
+        auto view = fallback;
+        view.SetViewportSize(width, height);
+        return render::HybridRenderer::MakeViewInfo(view);
+    }
     const auto fail = [&](std::string reason) -> Expected<render::HybridViewInfo, Error> {
         const auto* name = world.TryGet<ObjectName>(entity);
         return Error{"Camera3D '" + (name ? name->value : std::to_string(entity.index)) + "': " + reason, 1};
@@ -111,6 +126,7 @@ Expected<render::HybridViewInfo, Error> BuildGameView(ecs::World& world,
         return fail("eye and target must be finite, distinct and not parallel to +Y");
     auto view = render::HybridRenderer::MakeViewInfo(fallback);
     view.geometryDepth = true;
+    view.subpixelResidual = {};
     view.viewportWidth = width; view.viewportHeight = height;
     view.view = Mat4::LookAtLH(eye, target, {0, 1, 0});
     view.proj = Mat4::PerspectiveLH(active->fovDegrees * (3.14159265358979323846f / 180.0f),

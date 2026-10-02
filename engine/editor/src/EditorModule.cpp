@@ -240,6 +240,7 @@ struct EditorModule::Impl final : public IEditorViewport {
     bool pendingInteract = false;
     bool pendingJump = false;
     float pendingCameraMouseX = 0;
+    float pendingCameraZoomSteps = 0;
 
     // 플레이 게이팅.
 
@@ -387,8 +388,9 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
         if (input && state.app && state.app->PlayMode().InputEnabled() && state.app->PlayMode().State() == PlayState::Playing) {
             state.pendingInteract |= input->WasPressed(KeyCode::E);
             state.pendingJump |= input->WasPressed(KeyCode::Space);
+            state.pendingCameraZoomSteps += input->WheelDelta();
             if (input->IsDown(MouseButton::Right)) state.pendingCameraMouseX += input->MouseDelta().x;
-        } else { state.pendingInteract = false; state.pendingJump = false; state.pendingCameraMouseX = 0; }
+        } else { state.pendingInteract = false; state.pendingJump = false; state.pendingCameraMouseX = 0; state.pendingCameraZoomSteps = 0; }
     }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& t) {
         auto& state = *m_impl;
@@ -427,6 +429,7 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
     }
     runtime::GameInput controls{movement,std::exchange(s.pendingInteract,false),std::exchange(s.pendingJump,false)};
     controls.cameraMouseX=std::exchange(s.pendingCameraMouseX,0.0f);
+    controls.cameraZoomSteps=std::exchange(s.pendingCameraZoomSteps,0.0f);
     if (input && pm.InputEnabled()) controls.cameraAxis=float(input->IsDown(KeyCode::R))-float(input->IsDown(KeyCode::Q));
     auto tick = pm.Tick(dt, controls, s.app->Project().RootDir());
     if (!tick) MYE_LOG_ERROR("Editor", "{}", tick.GetError().message);
@@ -465,7 +468,7 @@ void EditorModule::Frame(const TimeStep&) {
     if (s.rt.IsInitialized()) {
         auto view = BuildViewportView(s.vpCam, s.rt.Width(), s.rt.Height());
         if (s.headless && world && s.app->PlayMode().IsPlaying()) {
-            const auto gameView = scene::BuildGameView(*world, render::Camera2D{});
+            const auto gameView = scene::BuildGameView(*world, s.app->PlayMode().DefaultCamera());
             if (gameView) view = gameView.Value();
             else {
                 s.ReportFrameError(gameView.GetError());
@@ -521,18 +524,11 @@ void EditorModule::Frame(const TimeStep&) {
         }
     } else if (s.playWindow.IsOpen()) s.playWindow.Close();
     if (s.playWindow.IsOpen()) {
-        Vec2 center{};
         if (auto* playWorld = s.app->PlayMode().ActiveWorld()) {
             scene::UpdateWorldTransforms(*playWorld);
             scene::ExtractRenderItems(*playWorld, s.proxies);
-            playWorld->Query<runtime::CharacterController2D, scene::LocalTransform>().Each(
-                [&](ecs::Entity, const auto& controller, const auto& transform) {
-                    if (controller.enabled) center = {transform.position.x, transform.position.y};
-                });
         }
-        render::Camera2D fallback;
-        fallback.SetPosition(center);
-        auto view = scene::BuildGameView(*s.app->PlayMode().ActiveWorld(), fallback);
+        auto view = scene::BuildGameView(*s.app->PlayMode().ActiveWorld(), s.app->PlayMode().DefaultCamera());
         const auto rendered = view
             ? s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd)
             : Expected<void, Error>{view.GetError()};

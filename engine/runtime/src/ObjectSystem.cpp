@@ -6,6 +6,7 @@
 #include "mye/phys/PhysicsComponents3D.h"
 #include "mye/phys/PhysicsWorld2D.h"
 #include "mye/scene/Camera3D.h"
+#include "mye/scene/Camera2D.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
 #include "mye/script/ScriptComponent.h"
@@ -71,6 +72,7 @@ Expected<void, Error> ObjectSystem::Initialize() {
     auto& s = *m_impl;
     auto valid = ValidateObjectComponents(s.world);
     if (!valid) return valid.GetError();
+    if (auto camera = scene::UpdateGameCamera2D(s.world, 0); !camera) return camera.GetError();
     s.lua.Initialize({}, s.world.Events(), nullptr);
     s.bindings = std::make_unique<script::EcsBindingModule>(&s.world);
     s.lua.AddBindingModule(std::make_unique<script::MathBindingModule>());
@@ -282,10 +284,22 @@ Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& input) {
     if (input.interact && s.world.Valid(nearest)) Dispatch(nearest, ObjectEvent::Interact);
     s.bindings->FlushDeferred();
     scene::UpdateWorldTransforms(s.world);
+    if (auto camera = scene::UpdateGameCamera2D(s.world, dt, input.cameraZoomSteps); !camera)
+        return camera.GetError();
     // Recast from the character's final pose, without consuming camera input twice.
     return scene::UpdateGameCamera(s.world, s.physics3D, dt, 0, 0);
 }
 MapRequest ObjectSystem::TakeMapRequest() { return std::exchange(m_impl->request, {}); }
 std::string_view ObjectSystem::Message() const { return m_impl->message; }
 std::string_view ObjectSystem::Prompt() const { return m_impl->prompt; }
+void UpdateDefaultCamera2D(ecs::World& world, render::Camera2D& camera, bool reset) {
+    if (reset) camera = render::Camera2D{};
+    world.Query<CharacterController2D, scene::WorldTransform>().Each(
+        [&](ecs::Entity, const auto& controller, const auto& pose) {
+            if (!controller.enabled) return;
+            const Vec2 target{pose.matrix.m[3][0], pose.matrix.m[3][1]};
+            if (reset) camera.SetPosition(target);
+            else camera.FollowDeadzone(target, {2.5f, 1.5f});
+        });
+}
 } // namespace mye::runtime

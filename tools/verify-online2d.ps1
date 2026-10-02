@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
-    [string]$BuildDir = 'build/dev'
+    [string]$BuildDir = 'build/dev',
+    [switch]$SavedCamera
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +51,16 @@ function Obstacle([int]$Id, [string]$Name, [double]$X, [int]$Floor, [bool]$Trigg
 }
 $authored.entities = @($player, (Obstacle 800 'Thin wall' 1.6 1 $false),
     (Obstacle 801 'Other floor' 0 2 $false), (Obstacle 802 'Trigger at spawn' 0 1 $true))
+if ($SavedCamera) {
+    $player.components | Add-Member -NotePropertyName ObjectName -NotePropertyValue ([pscustomobject]@{ value = 'Local player' }) -Force
+    $pose = $player.components.LocalTransform | ConvertTo-Json | ConvertFrom-Json
+    $pose.px = 0; $pose.py = 0; $pose.sx = 1; $pose.sy = 1
+    $authored.entities += [pscustomobject]@{ id = 803; components = [pscustomobject]@{
+        ObjectName = [pscustomobject]@{ value = 'Camera' }; LocalTransform = $pose
+        Camera2D = [pscustomobject]@{ __version = 1; current = $true; followTarget = 'Local player'
+            zoom = 2; deadzoneHalf = [pscustomobject]@{ x = 0; y = 0 } }
+    } }
+}
 Write-Json $sceneFile $authored
 $sceneHash = (Get-FileHash -LiteralPath $sceneFile).Hash
 $data = Join-Path $runDir 'data'
@@ -93,6 +104,11 @@ function Replay([string]$Name, [object[]]$Steps) {
     return $path
 }
 $aInput = Replay 'a' @(@{ ticks = 60; x = 1; y = 0 }, @{ ticks = 30; x = 0; y = 0 })
+if ($SavedCamera) {
+    # The first wheel delta is consumed once after admission, never once per waiting tick.
+    $aInput = Replay 'a' @(@{ ticks = 1; x = 1; y = 0; cameraZoomSteps = 1 },
+        @{ ticks = 59; x = 1; y = 0 }, @{ ticks = 30; x = 0; y = 0 })
+}
 $bInput = Replay 'b' @(@{ ticks = 45; x = -1; y = 0 }, @{ ticks = 210; x = 0; y = 0 })
 $idleInput = Replay 'idle' @(@{ ticks = 20; x = 0; y = 0 })
 # Check local replay and its early-limit error through the same fixed-tick input path.
@@ -179,10 +195,21 @@ try {
     $confirmedX = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
     $confirmedY = [double]::Parse($Matches[2], [Globalization.CultureInfo]::InvariantCulture)
     if ([Math]::Abs($confirmedX - 1.345) -gt 0.00001 -or $confirmedY -ne 0) { throw 'Incorrect thin-wall contact' }
-    Check-Sprite 'a' 520 575 $true # Local player stopped at the offset circle's thin-wall contact.
-    Check-Sprite 'a' 345 400 $true # Remote SpriteRenderer is actually rendered, not just counted.
-    Check-Sprite 'b' 345 400 $true
-    Check-Sprite 'b' 520 575 $false # Remote visual is removed after the other client disconnects.
+    if ($SavedCamera) {
+        if ($aLog -notmatch 'Camera2D final: zoom=([^,]+),') { throw 'Missing final camera state' }
+        $zoom = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)
+        if ([Math]::Abs($zoom - 2.2) -gt 0.00001) { throw "First replay zoom was repeated before admission: $zoom" }
+        # Each camera follows its own player; A consumes one wheel step from 2x to 2.2x.
+        Check-Sprite 'a' 448 520 $true
+        Check-Sprite 'a' 100 175 $true
+        Check-Sprite 'b' 448 520 $true
+        Check-Sprite 'b' 790 865 $false
+    } else {
+        Check-Sprite 'a' 520 575 $true # Local player stopped at the offset circle's thin-wall contact.
+        Check-Sprite 'a' 345 400 $true # Remote SpriteRenderer is actually rendered, not just counted.
+        Check-Sprite 'b' 345 400 $true
+        Check-Sprite 'b' 520 575 $false # Remote visual is removed after the other client disconnects.
+    }
     $stateFile = Join-Path $data 'state.json'
     $registered = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
     $foreign = $registered.characters.characters | Where-Object { $_.name -eq 'online-a' }

@@ -8,6 +8,7 @@
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
 #include "mye/scene/Camera3D.h"
+#include "mye/scene/Camera2D.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/phys/Collision.h"
 #include "mye/phys/PhysicsComponents3D.h"
@@ -28,6 +29,7 @@ struct ElementDescription { Element kind; const char* name; const char* descript
 constexpr std::array kElements{
     ElementDescription{Element::Object, "오브젝트", "계층과 위치를 가진 빈 오브젝트"},
     ElementDescription{Element::Sprite, "스프라이트", "PNG 이미지를 지정해 표시하는 2D 오브젝트"},
+    ElementDescription{Element::Camera2D, "게임 카메라 2D", "Play/MyGame의 시야 · 추종 · 경계 · 픽셀 스냅 · 줌 설정"},
     ElementDescription{Element::Character, "캐릭터", "WASD / 방향키 이동, 충돌, 속도·모션 설정. 씬 최상위에 배치"},
     ElementDescription{Element::Collider, "충돌 영역", "벽·건물 등 이동을 막는 박스 영역"},
     ElementDescription{Element::Trigger, "트리거", "진입·이탈 이벤트를 감지하는 영역"},
@@ -152,13 +154,19 @@ Expected<ecs::Entity, Error> EditorApp::CreateSceneElement(SceneElement element,
         if (prepared && element==SceneElement::Character3D) prepared=PrepareComponent(*world,runtime::CharacterController3D{},components);
         if (prepared && element==SceneElement::Character3D) prepared=PrepareComponent(*world,scene::BillboardRenderer{},components);
     }
-    if (prepared && element == SceneElement::Camera) {
+    if (prepared && (element == SceneElement::Camera || element == SceneElement::Camera2D)) {
         bool occupied = false;
         world->Query<scene::Camera3D>().Each([&](ecs::Entity, const auto& c) { occupied |= c.current; });
-        scene::Camera3D camera; camera.current = !occupied;
-        prepared = PrepareComponent(*world, camera, components);
-        scene::LocalTransform transform; transform.position = {0, 3, -8};
-        if (prepared) prepared = PrepareComponent(*world, transform, components);
+        world->Query<scene::Camera2D>().Each([&](ecs::Entity, const auto& c) { occupied |= c.current; });
+        if (element == SceneElement::Camera2D) {
+            scene::Camera2D camera; camera.current = !occupied;
+            prepared = PrepareComponent(*world, camera, components);
+        } else {
+            scene::Camera3D camera; camera.current = !occupied;
+            prepared = PrepareComponent(*world, camera, components);
+            scene::LocalTransform transform; transform.position = {0, 3, -8};
+            if (prepared) prepared = PrepareComponent(*world, transform, components);
+        }
     }
     if (prepared && (element == SceneElement::Collider || element == SceneElement::Trigger)) {
         phys::Collider2D collider;

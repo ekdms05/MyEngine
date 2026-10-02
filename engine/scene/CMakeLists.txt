@@ -26,6 +26,7 @@ add_library(mye_scene STATIC
     include/mye/scene/SceneSerializer.h
     include/mye/scene/SceneReflection.h
     include/mye/scene/Camera3D.h
+    include/mye/scene/Camera2D.h
 
     # ---- 렌더러블·정렬 추출 ----
     include/mye/scene/Renderable.h
@@ -58,6 +59,7 @@ add_library(mye_scene STATIC
     src/scene/SceneSerializer.cpp
     src/scene/SceneReflection.cpp
     src/scene/Camera3D.cpp
+    src/scene/Camera2D.cpp
     src/scene/RenderExtract.cpp
     src/scene/Particle.cpp
     src/anim/AnimationSystem.cpp

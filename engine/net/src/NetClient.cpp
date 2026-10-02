@@ -93,7 +93,7 @@ void NetClient::Receive() {
         if (m_sock.SendTo(m_server, m_handshake.data(), m_handshake.size()) !=
             static_cast<int>(m_handshake.size())) {
             m_failure = "3D connection retry send failed";
-            std::fill(m_handshake.begin(), m_handshake.end(), 0);
+            std::fill(m_handshake.begin(), m_handshake.end(), uint8_t{0});
             m_handshake.clear();
         }
         m_lastHandshake = std::chrono::steady_clock::now();
@@ -219,7 +219,7 @@ void NetClient::Receive3D(MsgType type, BitReader& r, size_t size) {
             m_id = id;
             m_token = token;
             m_connected = true;
-            std::fill(m_handshake.begin(), m_handshake.end(), 0);
+            std::fill(m_handshake.begin(), m_handshake.end(), uint8_t{0});
             m_handshake.clear();
         }
         return;
@@ -232,7 +232,7 @@ void NetClient::Receive3D(MsgType type, BitReader& r, size_t size) {
             ((m_connected && token == m_token) || (!m_connected && token == 0))) {
             m_connected = false;
             m_failure = "Server rejected or closed the authenticated 3D session";
-            std::fill(m_handshake.begin(), m_handshake.end(), 0);
+            std::fill(m_handshake.begin(), m_handshake.end(), uint8_t{0});
             m_handshake.clear();
         }
         return;

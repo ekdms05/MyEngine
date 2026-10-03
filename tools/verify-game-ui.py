@@ -155,22 +155,27 @@ mye.log("HUD_BOUND",{hp}) end}}''')
                 log=run_app(exe,arguments,folder,name)
                 assert "HUD_BOUND" in log and capture.is_file()
                 width,height,pixel=bitmap(capture)
-                scale=width//960
-                assert scale>=1 and height==540*scale
+                # MyGame dumps the client backbuffer, including centered letterboxing.
+                scale=min(width//960,height//540)
+                assert scale>=1,(name,"window smaller than the UI fixture",width,height)
+                origin_x=(width-960*scale)//2
+                origin_y=(height-540*scale)//2
+                def logical_pixel(x,y):
+                    return pixel(origin_x+x*scale,origin_y+y*scale)
                 filled=round(296*hp/100)
                 for x in range(296):
                     expected=(204,48,64) if x<filled else (52,24,32)
-                    assert pixel((32+x)*scale,72*scale)==expected,(name,x,pixel((32+x)*scale,72*scale))
-                assert pixel(808*scale,28*scale)==(0,204,102),name
-                assert pixel(35*scale,207*scale)==((76,76,87) if hp>0 else (36,36,41)),name
+                    assert logical_pixel(32+x,72)==expected,(name,x,logical_pixel(32+x,72))
+                assert logical_pixel(808,28)==(0,204,102),name
+                assert logical_pixel(35,207)==((76,76,87) if hp>0 else (36,36,41)),name
                 text_pixels=0
                 for y in range(362,384):
                     for x in range(384,616):
-                        value=pixel(x*scale,y*scale)
-                        assert value==pixel(x*scale,(y+40)*scale),(name,"text layout",x,y)
+                        value=logical_pixel(x,y)
+                        assert value==logical_pixel(x,y+40),(name,"text layout",x,y)
                         text_pixels += max(value)>100
                 assert text_pixels>100,(name,"text not drawn",text_pixels)
-                records.append(dict(name=name,command=[str(exe),*map(str,arguments)],binary=digest(exe),capture=digest(capture),hp=hp,size=[width,height],matchingTextPixels=text_pixels))
+                records.append(dict(name=name,command=[str(exe),*map(str,arguments)],binary=digest(exe),capture=digest(capture),hp=hp,size=[width,height],scale=scale,origin=[origin_x,origin_y],matchingTextPixels=text_pixels))
                 assert digest(scene_path)==scene_hash and digest(metadata)==metadata_hash
     # Error cases use exactly the same app init path as successful saved UI.
     target=manifest.parent / "assets/hud.ui"

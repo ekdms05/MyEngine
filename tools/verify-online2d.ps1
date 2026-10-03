@@ -178,7 +178,8 @@ function Check-Sprite([string]$Name, [int]$Left, [int]$Right, [bool]$Present) {
 }
 $owned = @()
 try {
-    $server = Start-Server 'server' 540
+    # WARP captures and pixel inspection must finish before the denial request.
+    $server = Start-Server 'server' 1800
     $owned += $server.Process
     $b = Start-Player 'b' 'online-b' $bInput $server.Port
     $owned += $b
@@ -213,10 +214,11 @@ try {
     $stateFile = Join-Path $data 'state.json'
     $registered = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
     $foreign = $registered.characters.characters | Where-Object { $_.name -eq 'online-a' }
+    if ($server.Process.HasExited) { throw 'Ownership fixture server ended before the denial request' }
     $deniedLog = Invoke-App $gameExe 1 @('--project', $project, '--headless', '--connect', "127.0.0.1:$($server.Port)",
         '--credentials', (Join-Path $runDir 'online-b.json'), '--character', "$($foreign.id)", '--ticks', '45')
     if ((Get-Content -LiteralPath $deniedLog -Raw -Encoding UTF8) -match 'Online spawn confirmed:') { throw 'Foreign character was admitted' }
-    $serverLog = Wait-App $server.Process 'server'
+    $serverLog = Wait-App $server.Process 'server' 45000
     if ($serverLog -notmatch '2D admission rejected: Character ownership mismatch') { throw 'Server did not enforce ownership at app admission' }
     $state = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
     $ca = $state.characters.characters | Where-Object { $_.name -eq 'online-a' }

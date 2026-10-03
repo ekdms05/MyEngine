@@ -4,11 +4,12 @@ param(
     [switch]$Phase,
     [switch]$Temporal,
     [switch]$States,
-    [switch]$StateMaps
+    [switch]$StateMaps,
+    [switch]$Actions
 )
 $ErrorActionPreference = 'Stop'
 if ($Temporal) { $Phase = $true }
-if ($StateMaps) { $States = $true }
+if ($StateMaps -or $Actions) { $States = $true }
 $repo = Split-Path -Parent $PSScriptRoot
 $build = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $repo $BuildDir }
 $game = Join-Path $build "apps/game/$Configuration/MyGame.exe"
@@ -283,6 +284,109 @@ return {
         $player.components.SpriteAnimator.stateMachine.guid=$stateGuid;$graph.states[2].animation=$attackGuid
         $attack.timeline[0].seconds=1.0/60;$attack.width=48;$attack.texture=$attackTextureGuid
         [IO.File]::WriteAllBytes($statePath,$stateBytes);[IO.File]::WriteAllBytes($attackPath,$attackBytes);Write-Json $scenePath $scene
+    }
+    if ($Actions) {
+        $savedActionScene = [IO.File]::ReadAllBytes($scenePath)
+        $hurtGuid = [Guid]::NewGuid().ToString(); $deadGuid = [Guid]::NewGuid().ToString()
+        $hurtPath = Join-Path $run 'project/assets/animations/state-hurt.anim'
+        $deadPath = Join-Path $run 'project/assets/animations/state-dead.anim'
+        $actionClip = $attack | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+        $actionClip.PSObject.Properties.Remove('nextAnimation')
+        $actionClip.frames = @(0..2 | ForEach-Object { @{x=0;y=0;w=48;h=48;pivotX=24;pivotY=48} })
+        $actionClip.timeline = @(0..2 | ForEach-Object { @{frame=$_;seconds=1.0/60} })
+        $actionClip.events = @(@{frame=0;name='action-attack';text='';value=0}, @{frame=2;name='action-hit';text='';value=0})
+        Write-Json $attackPath $actionClip
+        foreach ($entry in @(@($hurtPath,$hurtGuid,'hurt'), @($deadPath,$deadGuid,'dead'))) {
+            $clip = $actionClip | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+            $clip.name = $entry[2]; $clip.events = @(@{frame=0;name=('action-'+$entry[2]);text='';value=0})
+            Write-Json $entry[0] $clip
+            Write-Json ($entry[0]+'.meta') @{guid=$entry[1];importer='AnimationAsset';importerVersion=1}
+        }
+        $actionGraph = $graph | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+        $actionGraph.parameters += @(@{name='hurt';type='trigger';default=$false}, @{name='dead';type='bool';default=$false})
+        $actionGraph.states += @(@{name='hurt';animation=$hurtGuid}, @{name='dead';animation=$deadGuid})
+        # Terminal death wins; hurt cancels a queued attack before the old frame-2 marker.
+        $actionGraph.transitions = @(
+            @{from='*';to='dead';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='dead';op='is_true'});consumeTriggers=@()},
+            @{from='*';to='hurt';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='hurt';op='is_true'},@{param='dead';op='is_false'});consumeTriggers=@('attack')},
+            @{from='*';to='attack';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='attack';op='is_true'},@{param='dead';op='is_false'});consumeTriggers=@()},
+            @{from='attack';to='idle';onClipFinished=$true;keepPhase=$false;conditions=@();consumeTriggers=@()},
+            @{from='hurt';to='idle';onClipFinished=$true;keepPhase=$false;conditions=@();consumeTriggers=@()},
+            @{from='idle';to='walk';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='moving';op='is_true'});consumeTriggers=@()},
+            @{from='walk';to='idle';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='moving';op='is_false'});consumeTriggers=@()})
+        Write-Json $statePath $actionGraph
+        $actionSource = @'
+local mode='_MODE_'
+local n,entries,hits=0,0,0
+local hp=100
+local locked=nil
+return {
+    on_init=function(self)
+        local e=mye.world.entity_from_packed(self.entity)
+        assert(e:get_animation_state()=='idle' and mye.controller2d.is_enabled(self.entity))
+        mye.log('action-init:'..mode)
+    end,
+    on_update=function(self,dt)
+        n=n+1;local e=mye.world.entity_from_packed(self.entity)
+        local state=e:get_animation_state()
+        if n==2 then
+            locked=e:get_position();e:set_trigger('attack');mye.controller2d.set_enabled(self.entity,false)
+        elseif n==3 and mode~='normal' then
+            e:set_trigger('attack');e:reset_trigger('attack')
+            if mode=='hurt' then hp=75;e:set_trigger('hurt') else hp=0;e:reset_trigger('hurt');e:set_bool('dead',true) end
+            mye.controller2d.set_enabled(self.entity,false)
+        elseif n>2 and hp>0 then
+            mye.controller2d.set_enabled(self.entity,state=='idle' or state=='walk')
+        end
+        if n>2 and not mye.controller2d.is_enabled(self.entity) then
+            local p=e:get_position();local v=e:get_velocity()
+            assert(p.x==locked.x and p.y==locked.y and v.x==0 and v.y==0 and not e:get_bool('moving'))
+        end
+        if n==10 then
+            assert(entries==1 and hits==(mode=='normal' and 1 or 0))
+            assert(not e:get_bool('attack') and not e:get_bool('hurt'))
+            assert((hp==0 and state=='dead' and not mye.controller2d.is_enabled(self.entity)) or
+                (hp>0 and (state=='idle' or state=='walk') and mye.controller2d.is_enabled(self.entity)))
+            mye.log('action-ready:'..mode..':hits='..hits)
+        end
+    end,
+    on_event=function(self,name,payload)
+        if name~='animation' then return end
+        local e=mye.world.entity_from_packed(self.entity)
+        if payload.name=='action-attack' then entries=entries+1;assert(e:get_animation_state()=='attack') end
+        if payload.name=='action-hit' then hits=hits+1;assert(hp>0 and hits==1 and e:get_animation_state()=='attack') end
+        mye.log('action-marker:'..mode..':'..payload.name)
+    end
+}
+'@
+        try {
+            $actionHashes = @((Get-FileHash -LiteralPath $statePath).Hash, (Get-FileHash -LiteralPath $attackPath).Hash)
+            foreach ($mode in @('normal','hurt','death')) {
+                $player.components.ObjectBehavior.luaSource = $actionSource.Replace('_MODE_', $mode); Write-Json $scenePath $scene
+                $actionSceneHash = (Get-FileHash -LiteralPath $scenePath).Hash
+                foreach ($entry in @(@($game,'game'), @($editor,'editor'))) {
+                    $name = "action-$mode-$($entry[1])"
+                    $arguments = @('--project',$project,'--headless') + $(if ($entry[1] -eq 'game') {@('--ticks','40')} else {@('--play','--frames','12000')})
+                    $log = Run-App $entry[0] $name ($arguments + @('--dump',(Join-Path $run "$name.bmp")))
+                    foreach ($marker in @("action-init:$mode", "action-ready:$mode`:hits=$(if($mode -eq 'normal'){1}else{0})", "action-marker:$mode`:action-attack")) {
+                        if (([regex]::Matches($log,[regex]::Escape($marker))).Count -ne 1) {throw "Action marker missing/duplicate: $name $marker"}
+                    }
+                    $hitCount = ([regex]::Matches($log,"action-marker:$mode`:action-hit")).Count
+                    if ($hitCount -ne $(if($mode -eq 'normal'){1}else{0})) {throw "Interrupted hit lifetime failed: $name"}
+                    if ($mode -eq 'hurt' -and ([regex]::Matches($log,'action-marker:hurt:action-hurt')).Count -ne 1) {throw 'Missing hurt entry'}
+                    if ($mode -eq 'death' -and ([regex]::Matches($log,'action-marker:death:action-dead')).Count -ne 1) {throw 'Missing death entry'}
+                    Check-Pixel $name 480 222 $(if($mode -eq 'death'){0xFF8800}else{0x808080})
+                }
+                if ((Get-FileHash -LiteralPath $scenePath).Hash -ne $actionSceneHash) {throw 'Action playback changed the saved scene'}
+            }
+            if ((Get-FileHash -LiteralPath $statePath).Hash -ne $actionHashes[0] -or
+                (Get-FileHash -LiteralPath $attackPath).Hash -ne $actionHashes[1]) {throw 'Action playback changed its definition/clip'}
+        } finally {
+            [IO.File]::WriteAllBytes($statePath,$stateBytes); [IO.File]::WriteAllBytes($attackPath,$attackBytes)
+            [IO.File]::WriteAllBytes($scenePath,$savedActionScene)
+            $scene = Get-Content -LiteralPath $scenePath -Raw -Encoding UTF8 | ConvertFrom-Json; $player = $scene.entities[0]
+        }
+        Write-Output 'PASS: actual Play/MyGame scripted action selection, frame-2 hit once, hurt/death cancel before hit, trigger reset, current-state reads and local control lock (physical action keys remain a separate gate)'
     }
     if ($StateMaps) {
         $savedScene = [IO.File]::ReadAllBytes($scenePath)

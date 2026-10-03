@@ -7,6 +7,7 @@
 #include "mye/runtime/ObjectSystem.h"
 #include "mye/runtime/OnlineScene.h"
 #include "mye/anim/SpriteAnimator.h"
+#include "mye/anim/AnimationSystem.h"
 #include "mye/scene/SceneSerializer.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
@@ -17,6 +18,7 @@
 #include "mye/phys/PhysicsComponents3D.h"
 #include "mye/ecs/World.h"
 #include "mye/core/JsonFile.h"
+#include "mye/core/Events.h"
 #include "mye/ser/JsonArchive.h"
 #include "mye/gameplay/Progression.h"
 #include "mye/ui/UiDocument.h"
@@ -596,6 +598,123 @@ MYE_TEST(ObjectNamedActionsAreVisibleOnlyInsideTheirFixedTick) {
         MYE_EXPECT(objects.Tick(1.0f / 60, runtime::GameInput{}));
     }
     MYE_EXPECT(world.TryGet<scene::LocalTransform>(marker)->position == Vec3(20, 20, 0));
+}
+
+MYE_TEST(ObjectActionInputInterruptsBeforeHitAndLocksDeadControls) {
+    constexpr float dt = 1.0f / 60;
+    anim::AnimationClipData idle; idle.frameIndices = {0}; idle.frameDurations = {1};
+    auto attack = idle; attack.loop = false; attack.frameIndices = {0, 1, 2};
+    attack.frameDurations = {dt, dt, dt}; attack.events = {{0, "attack-entry"}, {2, "attack-hit"}};
+    auto hurt = attack; hurt.events.clear();
+    anim::AnimStateMachine machine;
+    for (const auto& [name, clip] : std::vector<std::pair<std::string, const anim::AnimationClipData*>>{
+             {"idle", &idle}, {"walk", &idle}, {"attack", &attack}, {"hurt", &hurt}, {"dead", &hurt}}) {
+        anim::AnimState state; state.name = name; state.directional = false; state.singleClip = clip;
+        machine.states.push_back(std::move(state));
+    }
+    machine.parameters = {{"moving", anim::ParamType::Bool, 0}, {"dead", anim::ParamType::Bool, 0},
+                          {"attack", anim::ParamType::Trigger, 0}, {"hurt", anim::ParamType::Trigger, 0},
+                          {"hits", anim::ParamType::Float, 0}, {"entries", anim::ParamType::Float, 0}};
+    machine.transitions = {{-1, 4, {{"dead", anim::CmpOp::IsTrue}}, false, {}, false},
+        {-1, 3, {{"hurt", anim::CmpOp::IsTrue}, {"dead", anim::CmpOp::IsFalse}}, false, {"attack"}, false},
+        {-1, 2, {{"attack", anim::CmpOp::IsTrue}, {"dead", anim::CmpOp::IsFalse}}, false, {}, false},
+        {2, 0, {}, true, {}, false}, {3, 0, {}, true, {}, false},
+        {0, 1, {{"moving", anim::CmpOp::IsTrue}}, false, {}, false},
+        {1, 0, {{"moving", anim::CmpOp::IsFalse}}, false, {}, false}};
+    for (bool inPlay : {false, true}) {
+        editor::Document document({1}, editor::Document::Kind::Scene, "");
+        auto& authored = document.World(); const auto player = Player(authored);
+        authored.Add<scene::SpriteRenderer>(player);
+        authored.Add<anim::SpriteAnimator>(player).stateMachine.guid = {1, 1};
+        const auto stale = Object(authored, "Stale"); authored.Destroy(stale);
+        authored.Add<runtime::ObjectBehavior>(player).luaSource = "local stale=" + std::to_string(stale.Packed()) + R"(
+            return {
+                on_init=function(self)
+                    local e=mye.world.entity_from_packed(self.entity)
+                    assert(e:get_animation_state()=='idle' and mye.controller2d.is_enabled(self.entity))
+                    assert(not pcall(mye.controller2d.set_enabled,self.entity,1))
+                    assert(not pcall(mye.controller2d.set_enabled,0,false))
+                    assert(not pcall(mye.controller2d.set_enabled,stale,false))
+                    assert(not pcall(mye.controller2d.is_enabled,-1))
+                end,
+                on_update=function(self,dt)
+                    local e=mye.world.entity_from_packed(self.entity)
+                    local state=e:get_animation_state()
+                    if mye.input.is_action_just_pressed('death') then
+                        e:reset_trigger('attack'); e:reset_trigger('hurt'); e:set_bool('dead',true)
+                        mye.controller2d.set_enabled(self.entity,false)
+                    elseif not e:get_bool('dead') and mye.input.is_action_just_pressed('hurt') then
+                        e:reset_trigger('attack'); e:set_trigger('hurt')
+                        mye.controller2d.set_enabled(self.entity,false)
+                    elseif not e:get_bool('dead') then
+                        local ready=state=='idle' or state=='walk'
+                        if ready and mye.input.is_action_just_pressed('attack') then
+                            e:set_trigger('attack'); ready=false
+                        end
+                        mye.controller2d.set_enabled(self.entity,ready)
+                    end
+                end,
+                on_event=function(self,name,payload)
+                    if name~='animation' then return end
+                    local e=mye.world.entity_from_packed(self.entity)
+                    if payload.name=='attack-entry' then e:set_float('entries',e:get_float('entries')+1) end
+                    if payload.name=='attack-hit' then
+                        assert(e:get_animation_state()=='attack' and not e:get_bool('dead'))
+                        e:set_float('hits',e:get_float('hits')+1)
+                    end
+                end
+            }
+        )";
+        EventBus events; authored.SetEventBus(&events);
+        const auto bind = [&](ecs::World& world) -> Expected<void, Error> {
+            anim::BindAnimationState(*world.TryGet<anim::SpriteAnimator>(player), machine, 1); return {};
+        };
+        editor::PlayModeController play; play.SetEditWorld(&authored); play.SetWorldPreparation(bind);
+        std::unique_ptr<runtime::ObjectSystem> objects;
+        if (inPlay) MYE_EXPECT(play.Play());
+        else { MYE_EXPECT(bind(authored)); objects = std::make_unique<runtime::ObjectSystem>(authored); MYE_EXPECT(objects->Initialize()); }
+        auto& world = inPlay ? *play.ActiveWorld() : authored;
+        runtime::GameInputBuffer buffer; auto map = runtime::DefaultGameInputMap();
+        for (const auto& [name, key] : std::vector<std::pair<std::string, KeyCode>>{{"attack", KeyCode::F}, {"hurt", KeyCode::H}, {"death", KeyCode::K}})
+            map.actions.push_back({name, .2f, {{InputDevice::Key, static_cast<int>(key)}}});
+        MYE_EXPECT(buffer.Configure(std::move(map)));
+        InputState input;
+        const auto tick = [&] {
+            buffer.Capture(input, true); const auto snapshot = buffer.ConsumeTick();
+            MYE_EXPECT(inPlay ? play.Tick(dt, snapshot, "") : objects->Tick(dt, snapshot));
+            anim::RunAnimationSystem(world, dt);
+            MYE_EXPECT(inPlay ? play.Message().empty() : objects->Message().empty());
+            input.NewFrame();
+        };
+        tick(); input.OnKey(KeyCode::D, true); tick();
+        auto& a = *world.TryGet<anim::SpriteAnimator>(player);
+        MYE_EXPECT(a.currentState == 1 && a.GetBool("moving"));
+        input.OnKey(KeyCode::F, true); tick();
+        const auto locked = world.TryGet<scene::LocalTransform>(player)->position;
+        MYE_EXPECT(a.currentState == 2 && !a.GetBool("moving") && a.facing == anim::Dir8::Right);
+        for (int i = 0; i < 4; ++i) tick();
+        MYE_EXPECT(a.GetFloat("hits") == 1 && a.GetFloat("entries") == 1 && a.currentState == 1);
+        MYE_EXPECT(world.TryGet<scene::LocalTransform>(player)->position.x > locked.x); // Held F does not restart.
+        input.OnKey(KeyCode::F, false); tick(); input.OnKey(KeyCode::F, true); tick();
+        input.OnKey(KeyCode::H, true); tick();
+        MYE_EXPECT(a.currentState == 3 && !a.GetBool("attack") && a.GetFloat("hits") == 1);
+        for (int i = 0; i < 5; ++i) tick();
+        MYE_EXPECT(a.currentState == 1 && a.GetFloat("entries") == 2 && a.GetFloat("hits") == 1);
+        input.OnKey(KeyCode::F, false); tick(); input.OnKey(KeyCode::F, true); tick();
+        input.OnKey(KeyCode::K, true); tick();
+        const auto deadPosition = world.TryGet<scene::LocalTransform>(player)->position;
+        const auto deadFacing = a.facing;
+        for (int i = 0; i < 8; ++i) {
+            input.OnKey(KeyCode::F, i % 2 == 0); input.OnKey(KeyCode::H, i % 2 == 0); tick();
+            MYE_EXPECT(a.currentState == 4 && !a.GetBool("moving") && a.facing == deadFacing);
+            MYE_EXPECT(world.TryGet<scene::LocalTransform>(player)->position == deadPosition);
+        }
+        MYE_EXPECT(a.GetFloat("entries") == 3 && a.GetFloat("hits") == 1);
+        MYE_EXPECT(!world.TryGet<runtime::CharacterController2D>(player)->enabled);
+        play.Stop(); objects.reset();
+        if (inPlay) MYE_EXPECT(authored.TryGet<runtime::CharacterController2D>(player)->enabled);
+        authored.SetEventBus(nullptr);
+    }
 }
 
 MYE_TEST(ObjectControlsCollisionTriggerAndLuaInteraction) {

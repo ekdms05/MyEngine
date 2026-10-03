@@ -19,6 +19,26 @@
 #include <utility>
 
 namespace mye::runtime {
+namespace {
+CharacterController2D& LuaController2D(lua_State* state) {
+    auto& world = *script::Context<ecs::World>(state);
+    const auto entity = script::CheckEntity(state, 1);
+    auto* controller = world.Valid(entity) ? world.TryGet<CharacterController2D>(entity) : nullptr;
+    if (!controller) luaL_error(state, "controller2d requires a valid entity with CharacterController2D");
+    return *controller;
+}
+void RegisterController2DBindings(lua_State* state, ecs::World& world) {
+    script::LuaStackGuard stack(state);
+    lua_getglobal(state, "mye"); script::EnsureTable(state, -1, "controller2d");
+    script::PushFunction(state, [](lua_State* state) -> int {
+        lua_pushboolean(state, LuaController2D(state).enabled); return 1;
+    }, &world); lua_setfield(state, -2, "is_enabled");
+    script::PushFunction(state, [](lua_State* state) -> int {
+        luaL_checktype(state, 2, LUA_TBOOLEAN);
+        LuaController2D(state).enabled = lua_toboolean(state, 2) != 0; return 0;
+    }, &world); lua_setfield(state, -2, "set_enabled");
+}
+} // namespace
 struct ObjectSystem::Impl {
     ecs::World& world;
     phys::PhysicsWorld2D physics;
@@ -86,6 +106,8 @@ Expected<void, Error> ObjectSystem::Initialize(asset::AssetDatabase* database,
     s.lua.AddBindingModule(s.bindings.get());
     s.lua.AddBindingModule(&s.inputBindings);
     s.lua.AddBindingModule(&s.uiBindings);
+    // World outlives this VM; keep runtime component bindings out of the script library.
+    RegisterController2DBindings(s.lua.State(), s.world);
     s.scripts = std::make_unique<script::ScriptSystem>(s.lua, s.world, s.world.Events(), nullptr);
     s.scripts->RegisterComponent();
     std::vector<ecs::Entity> scriptedObjects;
@@ -250,10 +272,10 @@ Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& source) {
     auto nearest = ecs::Entity::Null();
     float nearestDistance = 10000.0f;
     s.world.Query<CharacterController2D, phys::KinematicBody2D>().Each([&](ecs::Entity player, CharacterController2D& c, const phys::KinematicBody2D& body) {
-        if (!c.enabled) return;
         if (auto* animator = s.world.TryGet<anim::SpriteAnimator>(player)) {
             UpdateCharacterAnimation2D(*animator, c, body.lastMove, movement);
         }
+        if (!c.enabled) return;
         const auto position = s.Position(player);
         s.world.Query<InteractionTarget>().Each([&](ecs::Entity object, const InteractionTarget& target) {
             if (!target.enabled || object == player || s.Floor(object) != s.Floor(player)) return;

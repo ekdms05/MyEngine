@@ -62,11 +62,12 @@ template<> void mye::refl::Reflect(TypeBuilder<ObjectBehavior>& b) {
 namespace mye::runtime {
 void UpdateCharacterAnimation2D(anim::SpriteAnimator& animator, const CharacterController2D& controller,
                                 Vec2 lastMove, Vec2 facing) {
-    const bool moving = lastMove.x * lastMove.x + lastMove.y * lastMove.y > 1e-12f;
+    const bool moving = controller.enabled && lastMove.x * lastMove.x + lastMove.y * lastMove.y > 1e-12f;
     if (animator.stateMachine.guid.IsValid()) {
         if (auto* parameter = animator.FindParam("moving"); parameter && parameter->type == anim::ParamType::Bool)
             parameter->value = moving ? 1.0f : 0.0f;
-    } else anim::RequestAnimation(animator, moving ? controller.walkAnimation : controller.idleAnimation);
+    } else if (controller.enabled) anim::RequestAnimation(animator, moving ? controller.walkAnimation : controller.idleAnimation);
+    if (!controller.enabled) return; // Lock control without replacing an action pose or its facing.
     animator.facing = anim::Dir8FromVector(facing, animator.facing);
 }
 

@@ -239,6 +239,15 @@ async function main() {
     firstText(stateAuthoring.result).includes("새 행동 모션") && firstText(stateAuthoring.result).includes("미적용 값") &&
     firstText(stateAuthoring.result).includes("--animation-state") && firstText(stateAuthoring.result).includes("씬 Undo"));
   const fixture = path.join(repoRoot, fixtureRel);
+  const actionState = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "get_animation_state", lines: 4 } });
+  const actionControl = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "controller2d", lines: 4 } });
+  const actionInterrupt = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", search: "모션 콜백", lines: 4 } });
+  const actionGate = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", search: "-Actions", lines: 4 } });
+  check("engine_reference — 행동 상태 조회·잠금과 중단/장치 경계",
+    actionState.result?.isError !== true && firstText(actionState.result).includes("nil") &&
+    actionControl.result?.isError !== true && firstText(actionControl.result).includes("set_enabled") &&
+    actionInterrupt.result?.isError !== true && firstText(actionInterrupt.result).includes("다음 모션 틱") &&
+    actionGate.result?.isError !== true && firstText(actionGate.result).includes("실제 키보드"));
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });
   fs.writeFileSync(path.join(fixture, "project.myeproj"), JSON.stringify({ version: 1, name: "Smoke", mainScene: "assets/scenes/main.scene" }));
   const sceneFile = path.join(fixture, "assets", "scenes", "main.scene");

@@ -15,11 +15,11 @@
 | FloorLevel | 높이 층 level | 지면 0; 렌더·충돌 층을 함께 확인 |
 | Collider2D | shape/half/offset·그룹/층 마스크 | 48px 전체 폭은 반폭 0.5. isTrigger면 이동을 막지 않고 이벤트 발생 |
 | KinematicBody2D | 충돌하며 이동하는 본체 | maxSlideIters=1~16. skin/snapToGround는 저장 호환 필드로 현재 2D 계산에 미적용 |
-| CharacterController2D | enabled/speed·idleAnimation/walkAnimation | 최상위 활성 1명, 속도 0~100 unit/s. 3이면 144px/s. 조작을 끄면 정지 |
+| CharacterController2D | enabled/speed·idleAnimation/walkAnimation | 최상위 활성 1명, 속도 0~100 unit/s. 3이면 144px/s. main 로컬 Lua의 mye.controller2d.set_enabled(self.entity, false)로 잠그면 정지·moving=false, 모션/방향 유지. 상호작용/포털도 차단. [잠금 시점/API](19-lua-api.md#로컬-2d-조작-잠금) |
 | Collider3D | enabled/shape/half/offset/isTrigger | 축 정렬 상자/+Z 경사. half·offset은 로컬 단위이며 양수 Transform 스케일 적용 |
 | KinematicBody3D | settings의 speed/gravity/jumpSpeed/floorSnap/stepHeight/skin | 접지·벽·천장 상태. 조작 캐릭터와 함께 사용; 자유 강체·메시 물리 미지원 |
 | CharacterController3D | enabled/cameraRelative/idleAnimation/walkAnimation | 씬의 활성 조작 캐릭터 1명. WASD XZ·Space 점프 |
-| SpriteAnimator | animation에 .anim, stateMachine에 .animstate GUID 지정, speed/playing 설정 | stateMachine이 지정되면 상태의 클립/시트를 우선하며 매개변수/커서는 객체별이다. 전용 행동 작성/Undo는 다음. speed=재생 배율. 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요. main의 표시 샘플은 첫 이벤트/전이를 소비하지 않으며 후속 모션은 고정 틱에서 연결. 기본/8방향 .anim의 작성·Undo·반전/대체·진행률/발 피벗·연속 로컬/온라인 재생 검사와 남은 행동 작성은 [26](26-2d-animation.md)에서 확인 |
+| SpriteAnimator | animation에 .anim, stateMachine에 .animstate GUID 지정, speed/playing 설정 | stateMachine이 지정되면 상태의 클립/시트를 우선하며 매개변수/커서는 객체별이다. 행동 작성/Undo·저장과 로컬 Lua 상태 조회/trigger 취소를 연결. speed=재생 배율, 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요. 표시 샘플은 첫 이벤트/전이를 소비하지 않으며 후속 모션은 고정 틱에서 연결. [방향·행동 전이·중단과 검수 범위](26-2d-animation.md) |
 | InteractionTarget | enabled/radius/prompt | radius 안에서 E. 행동은 ObjectBehavior로 연결. main 소스에서 게임 창 하단에 prompt 표시 |
 | GameUi | enabled/document | 저장한 .ui GUID, 로컬 월드 활성 하나. [작성/표시/API와 한계](27-game-ui.md) |
 | ScenePortal | scenePath/spawnName/onInteract | assets/scenes/*.scene과 목적지 ObjectName. E면 InteractionTarget, 자동 진입이면 trigger Collider2D/3D |

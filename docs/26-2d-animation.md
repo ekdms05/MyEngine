@@ -160,7 +160,7 @@ local entity = mye.world.entity_from_packed(self.entity)
 entity:set_trigger("attack")
 ```
 
-기존 `set_bool`/`set_float`/`set_trigger`와 조회 함수를 재사용한다. 행동 파일이 지정되면 미선언 이름·다른 타입은 Lua 오류이며 `get_bool`로 bool/trigger를 읽을 수 있다. 이름은 1~64 UTF-8 바이트, 제어문자/NUL·비문자열은 거부한다. float는 유한한 float 범위다. 행동이 없는 기존 애니메이터는 매개변수 자동 생성과 없는 값의 중립 조회를 유지한다. 인증 온라인 클라이언트는 계속 Lua를 실행하지 않는다. 공격 입력/중단·피격/사망·서버 전투 판정은 아직 연결하지 않았다.
+기존 `set_bool`/`set_float`/`set_trigger`와 조회 함수를 재사용한다. 행동 파일이 지정되면 미선언 이름·다른 타입은 Lua 오류이며 `get_bool`로 bool/trigger를 읽을 수 있다. 이름은 1~64 UTF-8 바이트, 제어문자/NUL·비문자열은 거부한다. float는 유한한 float 범위다. 행동이 없는 기존 애니메이터는 매개변수 자동 생성과 없는 값의 중립 조회를 유지한다. 인증 온라인 클라이언트는 계속 Lua를 실행하지 않는다. 로컬 행동 입력·중단은 아래 공개 경로를 사용하며 서버 전투 판정은 별도다.
 
 에디터는 열린 `.anim`과 적용한 `.animstate`의 수정·Undo/Redo를 참조하고 변경 시 행동 재생을 초기 상태로 다시 준비하며 동일 이름/타입의 기존 매개변수 값은 유지한다. Lua on_init을 다시 호출하지 않는 에셋 교체가 게임 값을 지우지 않게 한다. Undo 위치가 같아도 변경 이력 revision으로 구분한다. 문서를 닫으면 저장/버린 결과를 디스크에서 읽으며 임포트/새로 고침의 새 자원 세대도 구분한다. 외부 파일 변경은 수동 새로 고침이 필요하다. 문서 재열기·적용/초안·Undo·닫기 후 디스크 복귀·새로 고침·Play 첫 틱의 재바인딩을 검사했다. 실제 OS 드래그/전체 키보드 탐색은 후속 검수로 남긴다.
 
@@ -176,4 +176,74 @@ entity:set_trigger("attack")
 
 `-Phase`를 추가하면 길이가 다른 정방향·역방향·왕복의 로컬 재생 입력 접두사, 무음 보정/실제 마커, 크기·피벗이 다른 프레임의 발 픽셀, 완료된 Play·인증 온라인 전환 결과를 검사한다. 각 온라인 접두사는 새 접속에서 실행하며 완료 상태의 끝 프레임을 확인한다. `-Temporal`은 Phase 검사를 포함하며 로컬·두 온라인 클라이언트의 32개 연속 입력 경계에서 완료 전 모션의 시간 비율·정방향/역방향/왕복·반전/발 픽셀·일시정지/재개를 검사한다. 온라인의 본인과 원격이 같은 표현 계산을 사용하며 일시정지 중 이동/서버 스냅샷도 갱신되는지 확인한다. 잘못된 진단 입력과 BMP/JSON 쓰기 실패도 거부한다. 합성 입력·읽기 지연이 있는 루프백 검사이며 실제 장치·지연/손실·다른 PC 검수는 별도다. 클라이언트 모션은 로컬 표현 시간이며 서버가 복제하는 공통 애니메이션 시계가 아니다.
 
-행동 저장/검증(D08d1)과 앱 재생 바인딩(D08d2a)을 연결했다. 전용 행동 문서 작성/Undo·저장/재로드와 적용/초안·닫기/재열기 수명을 main 소스에 연결했다(D08d2b 진행 중). 로컬 맵 왕복의 모션 수명/실패 거부를 검증했다. 실제 OS 드래그/전체 탐색과 입력·중단/완료 전환(D08d3)을 계속 진행한다. 대기/걷기·공격·피격·사망의 작성부터 작은 단위로 검증한다. 권위 전투·피해는 D16에서 연결한다. 실제 장치·전체 키보드 탐색·모니터 DPI, 게임 규칙·맵·HUD·운영 보호·완성 게임 배포는 별도 조건이다. [작업 목록](22-2d-mmorpg-roadmap.md), [Lua API](19-lua-api.md), [컴포넌트](20-components.md), [근거 기록](16-foundation-worklog.md)을 함께 확인한다.
+행동 저장/검증(D08d1)과 앱 재생 바인딩(D08d2a)을 연결했다. 전용 행동 문서 작성/Undo·저장/재로드와 적용/초안·닫기/재열기 수명을 main 소스에 연결했다(D08d2b 진행 중). 로컬 맵 왕복의 모션 수명/실패 거부를 검증했다. D08d3의 현재 상태 조회·트리거 취소·조작 잠금과 라이브러리의 액션 첫 누름/유지·피격/사망 중단을 연결했다. 두 앱의 스크립트로 선택한 행동과 실제 마커·완료 복귀·잠금도 검증했다. 실제 OS 드래그/전체 탐색과 공격 키·포커스 조작은 미완료다. 권위 전투·피해는 D16에서 연결한다. 실제 장치·전체 키보드 탐색·모니터 DPI, 게임 규칙·맵·HUD·운영 보호·완성 게임 배포는 별도 조건이다. [작업 목록](22-2d-mmorpg-roadmap.md), [Lua API](19-lua-api.md), [컴포넌트](20-components.md), [근거 기록](16-foundation-worklog.md)을 함께 확인한다.
+
+## 행동 입력과 중단
+
+**프로젝트 액션의 첫 누름으로 공격을 요청하고, 피격/사망은 공격보다 높은 우선순위의 전이로 중단한다.** main 소스의 로컬 Play/MyGame 경로다. 설치된 0.3.0의 새 기능으로 계산하지 않는다. HP·쿨다운·피해·소지품은 프로젝트 Lua가 소유한다.
+
+프로젝트 설정의 입력 액션에서 `attack`과 키(예: F)를 추가하고 저장한다. 기본 이동·상호작용 액션도 유지한다. [입력 가이드](25-input-actions.md)의 포커스/모달 차단을 사용하며 `is_action_just_pressed`를 고정 틱 `on_update`에서 읽는다. 단일 `is_action_pressed`로 매 틱 공격을 다시 요청하지 않는다.
+
+행동 문서에 idle/walk/attack/hurt/dead 상태와 기존 `.anim`을 지정한다. bool moving/dead, trigger attack/hurt를 false로 선언한다. attack/hurt/dead 클립은 비반복이며 공격의 frame2에 `attack_hit`, frame0에 `attack_entry` 마커를 둔다. 아래 순서로 전이를 만들고 진행률 유지를 끈다. 파일의 frame 번호는 0부터 시작한다.
+
+| 우선순위 | 출발 → 도착 | 조건 | 완료 대기·추가 소모 |
+|---|---|---|---|
+| 1 | 모든 상태 → dead | dead is_true | 완료 대기 끔. dead의 나가는 전이 없음 |
+| 2 | 모든 상태 → hurt | hurt is_true AND dead is_false | 완료 대기 끔, attack 추가 소모 |
+| 3 | idle → attack, walk → attack | attack is_true AND dead is_false | 완료 대기 끔. 두 전이 작성 |
+| 4 | attack → idle, hurt → idle | 없음 | 완료 대기 켬. 두 전이 작성 |
+| 5 | idle → walk, walk → idle | moving is_true / is_false | 완료 대기 끔. 각각 조건 지정 |
+
+`get_animation_state()`는 마지막으로 준비/완료한 고정 틱의 상태 이름을 읽는다. 바인딩/상태가 없으면 nil이다. 조회만으로 전이를 실행하지 않는다. `reset_trigger(name)`는 아직 소모하지 않은 요청을 지우며 현재 재생을 직접 교체하지 않는다. 중단에는 hurt/dead 전이가 함께 필요하다. 조작이 꺼지면 moving=false와 방향 유지가 함께 적용되어 피격/사망이 걷기로 덮이지 않는다.
+
+아래는 입력·모션 연결 예제다. 실제 피해 계산은 `attack_hit` 위치에 프로젝트 함수를 연결하고, 프로젝트가 피격/HP0을 판단했을 때 `interrupt("hurt")`/`interrupt("dead")`를 호출한다. `interrupt`는 예제의 Lua 메서드이며 엔진의 자동 피격 콜백이 아니다.
+
+```lua
+local Actor = {}
+
+function Actor:on_init()
+    self.state.hitApplied = true
+end
+
+function Actor:interrupt(kind)
+    assert(kind == "hurt" or kind == "dead")
+    local e = mye.world.entity_from_packed(self.entity)
+    if e:get_bool("dead") then return end
+    e:reset_trigger("attack")
+    e:reset_trigger("hurt")
+    self.state.hitApplied = true
+    if kind == "dead" then e:set_bool("dead", true)
+    else e:set_trigger("hurt") end
+    mye.controller2d.set_enabled(self.entity, false)
+end
+
+function Actor:on_update(dt)
+    local e = mye.world.entity_from_packed(self.entity)
+    if e:get_bool("dead") then
+        mye.controller2d.set_enabled(self.entity, false)
+        return
+    end
+    local state = e:get_animation_state()
+    local ready = state == "idle" or state == "walk"
+    local request = ready and mye.input.is_action_just_pressed("attack")
+    if request then e:set_trigger("attack") end
+    mye.controller2d.set_enabled(self.entity, ready and not request)
+end
+
+function Actor:on_event(name, payload)
+    if name ~= "animation" then return end
+    local e = mye.world.entity_from_packed(self.entity)
+    if payload.name == "attack_entry" then self.state.hitApplied = false end
+    if payload.name == "attack_hit" and e:get_animation_state() == "attack"
+        and not e:get_bool("dead") and not self.state.hitApplied then
+        self.state.hitApplied = true
+        mye.log("attack_hit", self.entity) -- 프로젝트의 범위/방향/피해 함수를 연결한다.
+    end
+end
+
+return Actor
+```
+
+고정 틱은 Lua 갱신→이동/충돌→모션 전이/진행→마커 순서다. 타격 프레임에 들어가기 전 Lua에서 중단을 요청하면 같은 틱에 이전 커서를 폐기하고 이전 공격의 미래 마커를 발생시키지 않는다. 모션 콜백 안에서 설정한 전이는 다음 모션 틱에서 평가한다. 이미 발생한 마커/피해를 되돌리지는 않는다. 한 틱에 여러 마커가 있을 때도 게임의 사망/중단·행동당 적용 가드를 검사한다. 이 가드는 다른 액터의 이벤트 처리 순서에 의존하는 중복 피해를 막으며 서버 권위 검증을 대체하지 않는다.
+
+`tools/verify-animation2d.ps1 -Actions -Configuration Debug`/`Release`는 `-States`에 정상 공격·타격 전 피격/사망을 추가한다. 실제 두 앱에서 스크립트 선택→frame2 타격1/중단0→복귀 또는 terminal dead·현재 상태 조회·트리거 취소·조작 잠금과 저장 파일 보존을 검사한다. 기존 C++ 회귀는 실제 InputState→GameInputBuffer→Lua 첫 누름/유지와 이동 잠금·복귀를 Play/독립 ObjectSystem에 연결한다. 자동 입력/스크립트는 실제 키보드 공격·게임 아트·온라인 전투의 증거가 아니다.

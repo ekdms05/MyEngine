@@ -434,6 +434,24 @@ MYE_TEST(ScriptAnimationStateParametersRefuseWrongNamesTypesAndNonfiniteValues) 
         "ent:set_bool('moving'..string.char(0),true)"}) MYE_EXPECT(!runtime.DoString(source,"animation-state-check"));
     MYE_EXPECT(animator.params.size() == 3 && animator.GetFloat("speed") == 2 && animator.GetBool("moving"));
     MYE_EXPECT(runtime.DoString("assert(ent:get_bool('attack')); assert(ent:get_float('speed')==2)","animation-state-check"));
+    MYE_EXPECT(runtime.DoString("ent:reset_trigger('attack'); assert(not ent:get_bool('attack')); assert(ent:get_animation_state()==nil)","animation-state-check"));
+    for (const auto* source : {"ent:reset_trigger('moving')", "ent:reset_trigger('missing')", "ent:reset_trigger('speed')"})
+        MYE_EXPECT(!runtime.DoString(source,"animation-state-check"));
+    anim::AnimStateMachine machine;
+    machine.states.resize(2); machine.states[0].name = "idle"; machine.states[1].name = "attack";
+    animator.machine = &machine; animator.currentState = 1;
+    animator.cursor = {2, .045f, false}; animator.started = true; animator.SetTrigger("attack");
+    MYE_EXPECT(runtime.DoString("for i=1,10 do assert(ent:get_animation_state()=='attack') end", "animation-state-check"));
+    MYE_EXPECT(animator.currentState == 1 && animator.cursor.step == 2 && animator.started && animator.GetBool("attack"));
+    MYE_EXPECT_NEAR(animator.cursor.timeInStep, .045f, 1e-6f);
+    animator.currentState = 2;
+    MYE_EXPECT(runtime.DoString("assert(ent:get_animation_state()==nil)", "animation-state-check"));
+    animator.machine = nullptr;
     animator.stateMachine.guid = {};
     MYE_EXPECT(runtime.DoString("ent:set_bool('legacy',true)","animation-state-check")); MYE_EXPECT(animator.GetBool("legacy"));
+    const auto count = animator.params.size();
+    MYE_EXPECT(runtime.DoString("ent:reset_trigger('unused'); ent:reset_trigger('attack'); assert(not ent:get_bool('attack'))", "animation-state-check"));
+    MYE_EXPECT(animator.params.size() == count && animator.GetBool("legacy"));
+    world.Destroy(entity);
+    MYE_EXPECT(runtime.DoString("assert(ent:get_animation_state()==nil); ent:reset_trigger('attack')", "animation-state-check"));
 }

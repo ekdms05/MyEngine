@@ -185,6 +185,20 @@ int SetFloat(lua_State* L) {
     if (a) a->SetFloat(name, v); return 0;
 }
 int SetTrigger(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Trigger); if (a) a->SetTrigger(name); return 0; }
+int ResetTrigger(lua_State* L) {
+    auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Trigger);
+    if (a) if (auto* parameter = a->FindParam(name); parameter && parameter->type == anim::ParamType::Trigger)
+        parameter->value = 0;
+    return 0;
+}
+int AnimationState(lua_State* L) {
+    const auto* a = Animator(Entity(L));
+    if (!a || !a->machine || a->currentState < 0 || a->currentState >= static_cast<int>(a->machine->states.size())) {
+        lua_pushnil(L); return 1;
+    }
+    const auto& name = a->machine->states[static_cast<size_t>(a->currentState)].name;
+    lua_pushlstring(L, name.data(), name.size()); return 1;
+}
 int GetFloat(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Float); lua_pushnumber(L, a ? a->GetFloat(name) : 0); return 1; }
 int GetBool(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Bool, true); lua_pushboolean(L, a && a->GetBool(name)); return 1; }
 int FaceMove(lua_State* L) { auto* a = Animator(Entity(L)); const Vec2 direction = ReadVec2(L, 2); if (a) a->facing = anim::Dir8FromVector(direction, a->facing); return 0; }
@@ -215,6 +229,9 @@ void EcsBindingModule::Register(lua_State* L) {
                                      {"world_to_screen", WorldToScreen}, {"screen_to_world", ScreenToWorld},
                                      {nullptr, nullptr}};
     luaL_setfuncs(L, cameraMethods, 0);
+    const luaL_Reg actionMethods[] = {{"reset_trigger", ResetTrigger}, {"get_animation_state", AnimationState},
+                                     {nullptr, nullptr}};
+    luaL_setfuncs(L, actionMethods, 0);
     lua_pushvalue(L, -1); lua_setfield(L, -2, "__index"); lua_pop(L, 1);
     lua_getglobal(L, "mye"); EnsureTable(L, -1, "world");
     PushFunction(L, [](lua_State* L) -> int {

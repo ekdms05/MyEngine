@@ -224,6 +224,11 @@ async function main() {
     firstText(animation2D.result).includes("같은 이동 상태") && firstText(animation2D.result).includes("트리거") &&
     firstText(animation2D.result).includes("버전 2") && firstText(animation2D.result).includes("mirrorRight") &&
     firstText(animation2D.result).includes("전체 재생 시간의 진행률") && firstText(animation2D.result).includes("--capture-at") && firstText(animation2D.result).includes("animationPlaying") && animationDiagnostics.result?.isError !== true && firstText(animationDiagnostics.result).includes("-Temporal") && firstText(animation2D.result).includes(".animstate") && firstText(animation2D.result).includes("Play를 중단"));
+  const stateBinding = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", search: "stateMachine", lines: 8 } });
+  const typedParameters = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "on_init", lines: 8 } });
+  check("engine_reference — 행동 바인딩과 작성/권위 경계", stateBinding.result?.isError !== true &&
+    firstText(stateBinding.result).includes("GUID") && firstText(stateBinding.result).includes("전용 행동 작성/Undo") &&
+    typedParameters.result?.isError !== true && firstText(typedParameters.result).includes("타입 불일치"));
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });
   fs.writeFileSync(path.join(fixture, "project.myeproj"), JSON.stringify({ version: 1, name: "Smoke", mainScene: "assets/scenes/main.scene" }));

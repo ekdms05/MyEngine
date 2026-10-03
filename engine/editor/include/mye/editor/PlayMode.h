@@ -13,6 +13,7 @@
 #include "mye/core/Math.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 namespace mye::ecs { class World; }
@@ -40,6 +41,8 @@ public:
     // 활성 문서의 편집 World를 배선. Play/Stop 스냅샷 원본.
     void SetEditWorld(ecs::World* world) { m_editWorld = world; }
     void SetEventBus(EventBus* events) { m_events = events; }
+    // Resolve render/animation resources before Lua on_init, including candidate map worlds.
+    void SetWorldPreparation(std::function<Expected<void, Error>(ecs::World&)> prepare) { m_prepareWorld = std::move(prepare); }
 
     // 편집 World → 메모리 스냅샷 → Play World 생성 후 Playing. 이미 Playing이면 no-op.
     Expected<void, Error> Play();
@@ -75,6 +78,7 @@ private:
     EventBus*   m_events = nullptr;
     PlayState   m_state = PlayState::Edit;
     bool m_inputEnabled = false;
+    std::function<Expected<void, Error>(ecs::World&)> m_prepareWorld;
 };
 
 } // namespace mye::editor

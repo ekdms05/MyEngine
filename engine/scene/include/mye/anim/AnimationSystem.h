@@ -42,13 +42,14 @@ void SampleAnimator(SpriteAnimator& animator, RendererT* renderer) {
     if (!resolved.clip || resolved.clip->frameIndices.empty()) return;
     animator.flipX = resolved.flipX;
     animator.currentFrameIndex = CurrentFrameIndex(*resolved.clip, CursorForFacing(animator, resolved));
-    if (!renderer || !animator.sheet || animator.currentFrameIndex >= animator.sheet->frames.size()) return;
-    const auto& frame = animator.sheet->frames[animator.currentFrameIndex];
+    const auto* sheet = ResolveActiveSheet(animator);
+    if (!renderer || !sheet || animator.currentFrameIndex >= sheet->frames.size()) return;
+    const auto& frame = sheet->frames[animator.currentFrameIndex];
     renderer->srcUV = frame.uv;
     renderer->pivotPx = frame.pivotInPixels ? frame.pivot :
         Vec2{frame.pivot.x * frame.rect.w, frame.pivot.y * frame.rect.h};
     renderer->flipX = animator.flipX;
-    renderer->sprite = animator.sheet->texture;
+    renderer->sprite = sheet->texture;
 }
 
 // 한 애니메이터를 dt 만큼 진행·샘플링. onEvent(entity, marker) 로 경과 이벤트를 보고한다.

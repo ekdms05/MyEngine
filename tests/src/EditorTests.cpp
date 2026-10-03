@@ -128,9 +128,12 @@ MYE_TEST(CommandStackUndoRedo) {
     MYE_EXPECT(value == 8);
 
     // Undo 후 새 push → redo 가지 파기.
+    const auto revision = stack.Revision();
     stack.Undo();                 // value=5
+    MYE_EXPECT(stack.Revision() == revision + 1);
     stack.Push(std::make_unique<CounterCmd>(&value, 100, "add100"));  // value=105
     MYE_EXPECT(value == 105);
+    MYE_EXPECT(stack.Revision() == revision + 2);
     MYE_EXPECT(!stack.CanRedo());
 }
 

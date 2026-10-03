@@ -96,4 +96,4 @@ animation2d는 main 소스의 기본/8방향 `.anim` 버전 1/2, 편집·저장/
 
 MyGame의 `--capture-at 1,8,16 --input movement.json --dump build/check/run.bmp`는 최대 32개의 2D 재생 스텝 BMP/JSON을 저장한다. `engine_run`의 기존 args로 전달하고 렌더 프레임 한도가 재생을 먼저 끊지 않게 충분히 설정한다. 진단 입력의 animationPlaying은 클라이언트 표현만 정지/재개하며 서버 이동/스냅샷은 계속 진행한다. 사용/범위·실패는 animation2d 참조를 따른다.
 
-animation2d는 `.animstate`의 소스 데이터 저장/검증도 설명한다. 이름·조건·클립 GUID·전이 정책만 연결됐고 에디터 작성/Play/MyGame 바인딩은 다음이다. 새 실행 API로 오인하지 않는다.
+animation2d는 `.animstate`의 소스 데이터 저장/검증도 설명한다. 이름·조건·클립 GUID·전이 정책과 SpriteAnimator.stateMachine의 Play/MyGame 바인딩, 초기 Lua 값·첫 이벤트·상태별 시트를 연결했다. -States로 실제 앱과 인증 두 사용자 이동 표현을 검증한다. 전용 행동 문서 작성/Undo와 입력·중단/서버 전투는 다음이며 설치된 0.3.0의 지원으로 오인하지 않는다.

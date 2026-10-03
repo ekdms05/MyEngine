@@ -10,6 +10,7 @@
 #include "mye/runtime/ObjectSystem.h"
 #include "mye/ecs/World.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/SceneReflection.h"
 #include "mye/scene/SpriteGeometry.h"
 #include "mye/gameplay/Progression.h"
 #include "mye/refl/TypeRegistry.h"
@@ -376,4 +377,34 @@ MYE_TEST(AssetScanPreservesGuidsAndRejectsDuplicateMetadata) {
     MYE_EXPECT(WriteJsonFile(root / "assets/animations/novice_idle.anim.meta", meta.Value()));
     MYE_EXPECT(!database.ScanDirectory(Utf8String(root / "assets")));
     MYE_EXPECT(database.GuidFromPath("assets://characters/novice.png") == guid);
+}
+
+MYE_TEST(PlayPreparesSavedStateBeforeLuaInitAndPreservesEditWorld) {
+    ecs::World world; scene::RegisterCoreComponents(world); runtime::RegisterObjectComponents(world);
+    auto entity = world.Create(); world.Add<scene::LocalTransform>(entity);
+    auto& animator = world.Add<anim::SpriteAnimator>(entity); animator.stateMachine.guid = {1, 1};
+    world.Add<runtime::ObjectBehavior>(entity).luaSource = R"(return {
+        on_init=function(self)
+            local e=mye.world.entity_from_packed(self.entity)
+            assert(e:get_float('seed')==0.375)
+            e:set_float('seed',2); e:set_trigger('attack'); e:set_position(mye.Vec2(1,0))
+        end
+    })";
+    anim::AnimStateMachine machine; machine.states.resize(1);
+    machine.parameters = {{"seed",anim::ParamType::Float,.375f},{"attack",anim::ParamType::Trigger,0}};
+    ed::PlayModeController play; play.SetEditWorld(&world); int preparations = 0;
+    play.SetWorldPreparation([&](ecs::World& candidate) -> Expected<void,Error> {
+        ++preparations;
+        candidate.Query<anim::SpriteAnimator>().Each([&](ecs::Entity,auto& value){anim::BindAnimationState(value,machine,1);});
+        return {};
+    });
+    MYE_EXPECT(play.Play()); MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},{}));
+    auto* running = play.ActiveWorld()->TryGet<anim::SpriteAnimator>(entity);
+    MYE_EXPECT(preparations == 1 && running && running->GetFloat("seed") == 2 && running->GetBool("attack"));
+    MYE_EXPECT(world.TryGet<scene::LocalTransform>(entity)->position.x == 0 && animator.params.empty());
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},{})); MYE_EXPECT(preparations == 1);
+    play.Stop();
+    play.SetWorldPreparation([](ecs::World&) -> Expected<void,Error> { return Error{"missing state texture",1}; });
+    MYE_EXPECT(play.Play()); MYE_EXPECT(!play.Tick(1.0f/60,runtime::GameInput{},{}));
+    MYE_EXPECT(play.ActiveWorld()->TryGet<scene::LocalTransform>(entity)->position.x == 0); play.Stop();
 }

@@ -261,7 +261,7 @@ Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& input) {
                     body.lastMove.x * body.lastMove.x + body.lastMove.z * body.lastMove.z > 1e-6f
                         ? c.walkAnimation
                         : c.idleAnimation;
-                if (ref.guid.IsValid() && c.requestedMotion != ref.guid) {
+                if (!animator->stateMachine.guid.IsValid() && ref.guid.IsValid() && c.requestedMotion != ref.guid) {
                     c.requestedMotion = ref.guid;
                     animator->animation = ref;
                     animator->sheet = nullptr;

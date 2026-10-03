@@ -1,4 +1,5 @@
 #include "TestFramework.h"
+#include "mye/anim/SpriteAnimator.h"
 #include "mye/core/Events.h"
 #include "mye/ecs/World.h"
 #include "mye/phys/PhysicsComponents3D.h"
@@ -121,12 +122,25 @@ return C)";
             MYE_EXPECT(camera.orbitEnabled && camera.yawDegrees == 90);
         });
     }
-    runtime::ObjectSystem objects(world);
-    MYE_EXPECT(objects.Initialize());
+    // The legacy 3D controller must not replace a saved state's clip or restart its cursor.
+    auto& animator = world.Add<anim::SpriteAnimator>(player);
+    animator.stateMachine.guid = {7, 7};
+    animator.animation.guid = {8, 8};
+    animator.cursor.timeInStep = .125f;
+    animator.started = true;
+    auto* controller = world.TryGet<runtime::CharacterController3D>(player);
+    controller->idleAnimation.guid = {9, 9};
+    controller->walkAnimation.guid = {10, 10};
+    runtime::ObjectSystem objects(world);    MYE_EXPECT(objects.Initialize());
     for (int i = 0; i < 20; ++i)
         MYE_EXPECT(objects.Tick(1.0f / 60, runtime::GameInput{{0, 1}}));
-    auto pose = world.TryGet<scene::LocalTransform>(player)->position;
-    MYE_EXPECT(pose.x < -.9f);
+    MYE_EXPECT((animator.animation.guid == asset::AssetGuid{8, 8}) && animator.started);
+    MYE_EXPECT_NEAR(animator.cursor.timeInStep, .125f, 0);
+    animator.stateMachine.guid = {};
+    MYE_EXPECT(objects.Tick(1.0f / 60, {}));
+    MYE_EXPECT(animator.animation.guid == controller->idleAnimation.guid && !animator.started);
+    MYE_EXPECT_NEAR(animator.cursor.timeInStep, 0, 0);
+    auto pose = world.TryGet<scene::LocalTransform>(player)->position;    MYE_EXPECT(pose.x < -.9f);
     MYE_EXPECT(std::abs(pose.z) < .01f);
     MYE_EXPECT(objects.TakeMapRequest().scenePath == "assets/next.scene");
     MYE_EXPECT_NEAR(world.TryGet<scene::LocalTransform>(trigger)->position.z, 2, 0);

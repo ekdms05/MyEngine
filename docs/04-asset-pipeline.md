@@ -33,6 +33,8 @@ VFS 읽기 → 임포터 CPU 파싱 → AssetManager finalize → AssetHandle
 
 [AtlasPacker](../engine/asset/include/mye/asset/AtlasPacker.h)는 시트의 사각형 배치를 다룬다. 피벗·방향·프레임·PPU와 투명 영역은 원본 콘텐츠 계약이다. 이미지 임포트 성공을 정식 픽셀 아트 검수 완료로 해석하지 않는다. 스켈레탈 glTF·원격 CDN·서명된 패치·모든 셰이더/머티리얼 에셋 포맷은 현재 지원 목록에 넣지 않는다.
 
+월드 소품/액터의 불투명 가림은 cutout용 바이너리 알파(0/255)로 마감한 PNG에서 검수한다. 임포터는 원본의 부분 알파를 자동으로 불투명 처리하지 않는다. 부분 알파 PNG의 임포트 성공은 앞뒤 가림·배열 역순 결과의 통과가 아니며 일반 반투명 효과는 [알파/깊이 계약](02-rendering.md)에 따라 별도로 확인한다. 원본/GUID를 보존한 새 에셋 버전에서 앞/뒤 겹침 색·투명 영역·배열 순서와 몸체 충돌을 두 앱으로 검사한다.
+
 ## 재임포트
 
 [FileWatcher](../engine/asset/include/mye/asset/FileWatcher.h)·AssetDatabase·AssetManager가 파일 변경과 재임포트 교체를 처리한다. 기존 핸들 소비자는 교체된 데이터를 읽는 경로를 사용한다. watcher 구현·테스트와 제품 앱의 watcher 시작·DB 연결은 별개다. 앱 전체 자동 핫 리로드는 실제 호출 경로가 확인된 범위로만 설명한다.

@@ -57,7 +57,10 @@ namespace mye::runtime {
 void UpdateCharacterAnimation2D(anim::SpriteAnimator& animator, const CharacterController2D& controller,
                                 Vec2 lastMove, Vec2 facing) {
     const bool moving = lastMove.x * lastMove.x + lastMove.y * lastMove.y > 1e-12f;
-    anim::RequestAnimation(animator, moving ? controller.walkAnimation : controller.idleAnimation);
+    if (animator.stateMachine.guid.IsValid()) {
+        if (auto* parameter = animator.FindParam("moving"); parameter && parameter->type == anim::ParamType::Bool)
+            parameter->value = moving ? 1.0f : 0.0f;
+    } else anim::RequestAnimation(animator, moving ? controller.walkAnimation : controller.idleAnimation);
     animator.facing = anim::Dir8FromVector(facing, animator.facing);
 }
 

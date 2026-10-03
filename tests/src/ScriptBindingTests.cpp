@@ -416,3 +416,24 @@ MYE_TEST(ScriptTwoDCameraZoomShakeAndLogicalCoordinates) {
     world.Destroy(entity);
     MYE_EXPECT(!rt.DoString("camera:set_camera_zoom(1)", "destroyed-camera.lua"));
 }
+
+MYE_TEST(ScriptAnimationStateParametersRefuseWrongNamesTypesAndNonfiniteValues) {
+    ecs::World world; auto entity = world.Create(); auto& animator = world.Add<anim::SpriteAnimator>(entity);
+    animator.stateMachine.guid = {1, 1};
+    animator.params = {{"moving", anim::ParamType::Bool, 0}, {"speed", anim::ParamType::Float, .375f},
+                       {"attack", anim::ParamType::Trigger, 0}};
+    ScriptRuntime runtime; runtime.Initialize(DefaultPolicy(), nullptr, nullptr);
+    runtime.AddBindingModule(std::make_unique<EcsBindingModule>(&world));
+    luatest::SetInteger(runtime.State(), "_entity", static_cast<lua_Integer>(entity.Packed()));
+    MYE_EXPECT(runtime.DoString("ent=mye.world.entity_from_packed(_entity); ent:set_bool('moving',true); ent:set_float('speed',2); ent:set_trigger('attack')","animation-state-check"));
+    MYE_EXPECT(animator.GetBool("moving") && animator.GetFloat("speed") == 2 && animator.GetBool("attack"));
+    for (const auto* source : {"ent:set_bool('missing',true)", "ent:set_float('moving',1)",
+        "ent:set_bool('attack',true)", "ent:set_trigger('speed')", "ent:get_float('moving')", "ent:get_bool('speed')",
+        "ent:set_float('speed',0/0)", "ent:set_float('speed',math.huge)", "ent:set_float('speed',1e100)", "ent:set_float('speed',-1e100)",
+        "ent:set_bool('',true)", "ent:set_bool(3,true)", "ent:set_bool(string.rep('x',65),true)",
+        "ent:set_bool('moving'..string.char(0),true)"}) MYE_EXPECT(!runtime.DoString(source,"animation-state-check"));
+    MYE_EXPECT(animator.params.size() == 3 && animator.GetFloat("speed") == 2 && animator.GetBool("moving"));
+    MYE_EXPECT(runtime.DoString("assert(ent:get_bool('attack')); assert(ent:get_float('speed')==2)","animation-state-check"));
+    animator.stateMachine.guid = {};
+    MYE_EXPECT(runtime.DoString("ent:set_bool('legacy',true)","animation-state-check")); MYE_EXPECT(animator.GetBool("legacy"));
+}

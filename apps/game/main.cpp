@@ -159,6 +159,7 @@ public:
         m_scene.reset();
         m_textures.clear();
         m_meshes.clear();
+        m_animationStates.clear();
         m_animations.clear();
         m_assetDb.reset();
         m_assets.reset();
@@ -258,6 +259,8 @@ private:
         }
         scene::UpdateWorldTransforms(candidate->world);
         if (auto camera = scene::UpdateGameCamera2D(candidate->world, 0); !camera) return camera.GetError();
+        auto bound = BindAnimations(candidate->world);
+        if (!bound) return bound.GetError();
         if (m_cli.connect.empty()) {
             candidate->objects = std::make_unique<runtime::ObjectSystem>(candidate->world);
             auto initialized = candidate->objects->Initialize();
@@ -465,7 +468,7 @@ private:
     }
     void ApplyAnimation(ecs::Entity entity, const asset::AssetRef& animation, float facing) {
         if (auto* animator = m_scene->world.TryGet<anim::SpriteAnimator>(entity)) {
-            if (animation.guid.IsValid() && animator->animation.guid != animation.guid) {
+            if (!animator->stateMachine.guid.IsValid() && animation.guid.IsValid() && animator->animation.guid != animation.guid) {
                 animator->animation = animation;
                 animator->sheet = nullptr;
                 animator->directClip = nullptr;
@@ -541,42 +544,79 @@ private:
         }
         return found->second.Get();
     }
-    const asset::AnimationAsset* Animation(asset::AssetGuid guid) {
-        if (!guid.IsValid()) return nullptr;
+    Expected<const asset::AnimationAsset*, Error> Animation(asset::AssetGuid guid) {
+        if (!guid.IsValid()) return Error{"Animation requires a GUID", 1};
         auto found = m_animations.find(guid);
         if (found != m_animations.end()) return &found->second;
         const auto path = m_assetDb->PathFromGuid(guid);
-        if (!path.starts_with("assets://") || !path.ends_with(".anim")) {
-            Fail(Error{"Animation GUID does not identify a .anim file", 1});
-            return nullptr;
-        }
+        if (!path.starts_with("assets://") || !path.ends_with(".anim"))
+            return Error{"Animation GUID does not identify a .anim file", 1};
         auto json = ReadJsonFile(m_root / "assets" / Utf8Path(path.substr(9)));
-        if (!json) { Fail(json.GetError()); return nullptr; }
+        if (!json) return json.GetError();
         auto animation = asset::AnimationAsset::FromJson(json.Value());
-        if (!animation) { Fail(animation.GetError()); return nullptr; }
+        if (!animation) return animation.GetError();
         return &m_animations.emplace(guid, std::move(animation).Value()).first->second;
     }
-    void BindAnimations(bool fixedTick = false) {
-        anim::ForEachAnimatedRenderer(m_scene->world, [&](ecs::Entity, auto& animator, auto& sprite) {
-            if (!m_ready) return;
-            const auto* data = Animation(animator.animation.guid);
-            if (fixedTick && data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
-                if (const auto* next = Animation(data->nextAnimation.guid)) {
-                    animator.animation = data->nextAnimation; animator.cursor = {}; animator.started = false; data = next;
-                }
+    Expected<void, Error> ValidateAnimationTexture(const asset::AnimationAsset& animation) {
+        const auto* texture = Texture(animation.sheet.texture.guid);
+        if (!texture || animation.imageSize.x != static_cast<int32_t>(texture->width) ||
+            animation.imageSize.y != static_cast<int32_t>(texture->height))
+            return Error{"Animation texture is missing, invalid or differs from its saved sheet size", 1};
+        return {};
+    }
+    Expected<const anim::AnimStateMachine*, Error> AnimationState(asset::AssetGuid guid) {
+        auto found = m_animationStates.find(guid);
+        if (found != m_animationStates.end()) return &found->second;
+        auto definition = asset::AnimationStateAsset::Load(guid, *m_assetDb, *m_vfs);
+        if (!definition) return definition.GetError();
+        std::vector<const asset::AnimationAsset*> sources;
+        sources.reserve(definition.Value().states.size());
+        for (const auto& state : definition.Value().states) {
+            auto animation = Animation(state.animation.guid);
+            if (!animation) return Error{state.name + ": " + animation.GetError().message, 1};
+            auto texture = ValidateAnimationTexture(*animation.Value());
+            if (!texture) return Error{state.name + ": " + texture.GetError().message, 1};
+            sources.push_back(animation.Value());
+        }
+        auto machine = anim::BuildAnimationStateMachine(definition.Value(), sources);
+        if (!machine) return machine.GetError();
+        return &m_animationStates.emplace(guid, std::move(machine).Value()).first->second;
+    }
+    Expected<void, Error> BindAnimations(ecs::World& world, bool fixedTick = false) {
+        Expected<void, Error> result;
+        anim::ForEachAnimatedRenderer(world, [&](ecs::Entity, auto& animator, auto& sprite) {
+            if (!result) return;
+            if (animator.stateMachine.guid.IsValid()) {
+                auto machine = AnimationState(animator.stateMachine.guid);
+                if (!machine) { result = machine.GetError(); return; }
+                anim::BindAnimationState(animator, *machine.Value(), 1);
+                anim::SampleAnimator(animator, &sprite);
+                return;
             }
-            if (!m_ready) return;
-            const auto* texture = data ? Texture(data->sheet.texture.guid) : nullptr;
-            if (!data || !texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
+            anim::UnbindAnimationState(animator);
+            if (!animator.animation.guid.IsValid()) {
                 animator.sheet = nullptr; animator.directClip = nullptr; animator.sourceAnimation = nullptr;
-                if (m_ready && animator.animation.guid.IsValid())
-                    Fail(Error{"Animation asset or texture is missing, invalid or differs from its saved sheet size", 1});
+                return;
+            }
+            auto loaded = Animation(animator.animation.guid);
+            if (!loaded) { result = loaded.GetError(); return; }
+            const auto* data = loaded.Value();
+            if (fixedTick && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
+                auto next = Animation(data->nextAnimation.guid);
+                if (!next) { result = next.GetError(); return; }
+                animator.animation = data->nextAnimation; animator.cursor = {}; animator.started = false; data = next.Value();
+            }
+            auto texture = ValidateAnimationTexture(*data);
+            if (!texture) {
+                animator.sheet = nullptr; animator.directClip = nullptr; animator.sourceAnimation = nullptr;
+                result = texture.GetError();
                 return;
             }
             if (animator.directClip != &data->clip) { animator.cursor = {}; animator.started = false; }
             animator.sheet = &data->sheet; animator.directClip = &data->clip; animator.sourceAnimation = data;
             anim::SampleAnimator(animator, &sprite);
         });
+        return result;
     }
     void Tick(float dt) {
         // Catch-up may schedule several fixed ticks before the next render.
@@ -601,8 +641,8 @@ private:
                 if (!loaded) { Fail(loaded.GetError()); return; }
             }
         }
-        BindAnimations(true);
-        if (!m_ready) return;
+        auto bound = BindAnimations(m_scene->world, true);
+        if (!bound) { Fail(bound.GetError()); return; }
         if (previousReplayTick != m_replayTick && m_replay[previousReplayTick].animationPlaying) {
             const bool playing = *m_replay[previousReplayTick].animationPlaying;
             m_scene->world.Query<anim::SpriteAnimator>().Each([&](ecs::Entity, auto& animator) { animator.playing = playing; });
@@ -650,6 +690,9 @@ private:
                 actors.emplace_back(json::Value::Object{
                     {"netId", json::Value(int64_t{netId})}, {"local", json::Value(item.sourceEntity == m_player)},
                     {"facing", json::Value(int64_t{static_cast<uint8_t>(animator->facing)})},
+                    {"animationState", json::Value(animator->machine && animator->currentState >= 0 &&
+                        animator->currentState < static_cast<int>(animator->machine->states.size())
+                        ? animator->machine->states[static_cast<size_t>(animator->currentState)].name : std::string{})},
                     {"frame", json::Value(int64_t{animator->currentFrameIndex})},
                     {"cursorStep", json::Value(int64_t{animator->cursor.step})}, {"cursorSeconds", json::Value(double{animator->cursor.timeInStep})},
                     {"playing", json::Value(animator->playing)}, {"finished", json::Value(animator->cursor.finished)},
@@ -667,8 +710,8 @@ private:
     }
     void Render() {
         if (!m_ready) return;
-        BindAnimations();
-        if (!m_ready) return;
+        auto bound = BindAnimations(m_scene->world);
+        if (!bound) { Fail(bound.GetError()); return; }
         scene::UpdateWorldTransforms(m_scene->world);
         m_proxies.Clear();
         scene::ExtractRenderItems(m_scene->world, m_proxies);
@@ -741,6 +784,7 @@ private:
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Texture>> m_textures;
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Mesh>> m_meshes;
     std::map<asset::AssetGuid, asset::AnimationAsset> m_animations;
+    std::map<asset::AssetGuid, anim::AnimStateMachine> m_animationStates;
     std::vector<InputReplayFrame> m_replay;
     std::size_t m_replayTick = 0, m_captureIndex = 0;
     bool m_capturePending = false;

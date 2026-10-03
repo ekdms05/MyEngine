@@ -41,6 +41,7 @@ public:
 
     // Dirty 판정(07 §4): 마지막 저장 시점 위치와 현재 위치 비교. 탭 제목 '*' 근거.
     std::uint64_t Position() const;   // 현재 스택 커서 순번(단조 증가 아님 — 위치)
+    std::uint64_t Revision() const { return m_revision; } // Also changes on merged edits and Undo/Redo.
     void          MarkSaved();        // 현재 위치를 저장 지점으로 기록
     bool          IsDirty() const;    // 현재 위치 != 저장 지점
 
@@ -50,6 +51,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     EditorContext*        m_ctx = nullptr;
+    std::uint64_t         m_revision = 0;
 };
 
 } // namespace mye::editor

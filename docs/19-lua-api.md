@@ -128,13 +128,15 @@ end
 | `entity:get_velocity()`, `:set_velocity(Vec2)` | KinematicBody2D 속도. 없으면 읽기 0 벡터·쓰기 무동작 |
 | `entity:hit_wall()` | 바디의 최근 충돌 여부. 바디가 없으면 false |
 | `entity:has_animator()`, `:has_body()` | 해당 컴포넌트 존재 여부 |
-| `entity:set_bool(name, bool)`, `:get_bool(name)` | 애니메이터 bool 파라미터. 없으면 false |
-| `entity:set_float(name, number)`, `:get_float(name)` | 애니메이터 float 파라미터. 없으면 0 |
-| `entity:set_trigger(name)` | 애니메이터 트리거 설정 |
+| `entity:set_bool(name, bool)`, `:get_bool(name)` | 애니메이터 bool 읽기/쓰기. 행동 파일에서는 선언 타입 확인, 조회는 trigger도 허용 |
+| `entity:set_float(name, number)`, `:get_float(name)` | 유한한 float 범위의 애니메이터 값. 행동 파일에서는 선언한 float만 허용 |
+| `entity:set_trigger(name)` | 선언한 trigger 설정; 선택 전이에서 소모 |
 | `entity:face_move(Vec2)` | 이동 방향에 맞춰 애니메이터 8방향 변경 |
 | `entity:facing_vector()`, `:facing_index()` | 애니메이터 바라보는 방향 벡터·인덱스 |
 | `mye.world.spawn()` | 빈 엔티티 예약 생성. Sprite·Collider 등은 자동 추가하지 않음 |
 | `mye.world.destroy(entity)`, `entity:destroy()` | 페이즈 경계의 CommandBuffer에서 삭제 |
+
+행동 파일(`SpriteAnimator.stateMachine`)이 지정되면 초기값은 로컬 on_init 전에 준비되고 미선언 이름/타입 불일치는 오류다. 이름은 1~64 UTF-8 바이트이며 제어문자/NUL·비문자열을 거부한다. 행동이 없는 기존 애니메이터는 매개변수 자동 생성과 없는 값의 중립 조회(bool false/float 0)를 유지한다. 선언한 bool moving은 실제 2D 이동량으로 갱신한다. [행동 파일과 앱 바인딩](26-2d-animation.md)을 참고한다.
 
 ### 2D 게임 카메라 Entity
 

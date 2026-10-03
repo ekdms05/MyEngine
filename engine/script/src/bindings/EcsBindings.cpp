@@ -10,6 +10,7 @@
 #include "mye/scene/Transform.h"
 #include "mye/scene/Camera2D.h"
 #include <cmath>
+#include <limits>
 
 #include <new>
 
@@ -155,18 +156,37 @@ int HitWall(lua_State* L) {
     const auto* body = e.Valid() ? e.world->TryGet<phys::KinematicBody2D>(e.entity) : nullptr;
     lua_pushboolean(L, body && body->hitWall); return 1;
 }
+const char* AnimationParameter(lua_State* L, anim::SpriteAnimator* animator, anim::ParamType type, bool readBool = false) {
+    luaL_checktype(L, 2, LUA_TSTRING);
+    size_t length = 0;
+    const char* name = luaL_checklstring(L, 2, &length);
+    if (!length || length > 64) luaL_error(L, "animation parameter name must have 1..64 bytes");
+    for (size_t i = 0; i < length; ++i)
+        if (static_cast<unsigned char>(name[i]) < 32 || name[i] == 127)
+            luaL_error(L, "animation parameter name contains a control character");
+    if (animator && animator->stateMachine.guid.IsValid()) {
+        const auto* parameter = animator->FindParam(name);
+        if (!parameter || (parameter->type != type && !(readBool && parameter->type == anim::ParamType::Trigger)))
+            luaL_error(L, "animation parameter is undeclared or has a different type: %s", name);
+    }
+    return name;
+}
 int SetBool(lua_State* L) {
-    auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2);
+    auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Bool);
     luaL_checktype(L, 3, LUA_TBOOLEAN);
     if (a) a->SetBool(name, lua_toboolean(L, 3) != 0); return 0;
 }
 int SetFloat(lua_State* L) {
-    auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); const float v = static_cast<float>(luaL_checknumber(L, 3));
+    auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Float);
+    const auto value = luaL_checknumber(L, 3);
+    if (!std::isfinite(value) || std::abs(value) > std::numeric_limits<float>::max())
+        return luaL_error(L, "animation float must be finite and fit in a float");
+    const float v = static_cast<float>(value);
     if (a) a->SetFloat(name, v); return 0;
 }
-int SetTrigger(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); if (a) a->SetTrigger(name); return 0; }
-int GetFloat(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); lua_pushnumber(L, a ? a->GetFloat(name) : 0); return 1; }
-int GetBool(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = luaL_checkstring(L, 2); lua_pushboolean(L, a && a->GetBool(name)); return 1; }
+int SetTrigger(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Trigger); if (a) a->SetTrigger(name); return 0; }
+int GetFloat(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Float); lua_pushnumber(L, a ? a->GetFloat(name) : 0); return 1; }
+int GetBool(lua_State* L) { auto* a = Animator(Entity(L)); const char* name = AnimationParameter(L, a, anim::ParamType::Bool, true); lua_pushboolean(L, a && a->GetBool(name)); return 1; }
 int FaceMove(lua_State* L) { auto* a = Animator(Entity(L)); const Vec2 direction = ReadVec2(L, 2); if (a) a->facing = anim::Dir8FromVector(direction, a->facing); return 0; }
 int FacingVector(lua_State* L) { auto* a = Animator(Entity(L)); PushVec2(L, a ? anim::Dir8Vector(a->facing) : Vec2{0, -1}); return 1; }
 int FacingIndex(lua_State* L) { auto* a = Animator(Entity(L)); lua_pushinteger(L, a ? static_cast<int>(a->facing) : 0); return 1; }

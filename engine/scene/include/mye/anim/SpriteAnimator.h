@@ -1,4 +1,4 @@
-// mye/anim/SpriteAnimator.h — 스프라이트 애니메이터 컴포넌트·방향세트·상태머신 (docs/03 §6, M3-B)
+// mye/anim/SpriteAnimator.h — 스프라이트 애니메이터·방향세트·상태머신 (docs/03 §6)
 //
 // 데이터 소유:
 //   - SpriteAnimator: ECS 컴포넌트. 참조하는 SpriteSheet(프레임 테이블) + 현재 상태/클립/커서 +
@@ -7,9 +7,8 @@
 //   - DirectionalAnimSet: 논리 클립("walk"/"idle") → 8방향 실제 클립 매핑(+flipX 공유).
 //   - AnimStateMachine: 상태(=방향세트 또는 단일 클립) + 전이(파라미터 조건). 데이터 표현.
 //
-// 소유·수명: SpriteSheet·AnimationClipData 는 AssetManager(04)가 인스턴스화. 본 컴포넌트는
-//   비소유 포인터로 참조(M3-C 데모/Lua가 배선). 이렇게 두면 시스템·상태머신을 AssetManager
-//   의존 없이 단위 테스트할 수 있다.
+// 소유·수명: 앱의 에셋 캐시/열린 문서가 클립·시트·상태 정의를 소유한다. 컴포넌트는 비소유로
+//   참조하며 소유자의 교체/문서 변경 뒤 소비 전에 재배선한다. 저장에는 GUID만 포함한다.
 #pragma once
 
 #include "mye/anim/AnimationTypes.h"
@@ -19,6 +18,7 @@
 #include "mye/ecs/ComponentType.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -66,6 +66,7 @@ struct AnimState {
     bool               directional = true;
     DirectionalAnimSet dirSet;                 // directional=true
     const AnimationClipData* singleClip = nullptr;   // directional=false
+    const asset::AnimationAsset* animation = nullptr; // Saved base/directions and the state's own sheet.
 };
 
 // 상태 머신 정의(데이터). 상태 목록 + 전이 목록 + 초기 상태.
@@ -73,7 +74,12 @@ struct AnimStateMachine {
     std::vector<AnimState>      states;
     std::vector<AnimTransition> transitions;
     int                         initialState = 0;
+    std::vector<AnimParam>       parameters; // Instance defaults, never mutated by playback.
 };
+
+// Sources must outlive this definition. No pointers into a clip's resizable frame/event vectors.
+Expected<AnimStateMachine, Error> BuildAnimationStateMachine(const asset::AnimationStateAsset& definition,
+    std::span<const asset::AnimationAsset* const> animations);
 
 // ---------------------------------------------------------------------------
 // SpriteAnimator — ECS 컴포넌트. 상태머신 인스턴스 + 파라미터 + 방향 + 재생 커서.
@@ -82,7 +88,10 @@ struct SpriteAnimator {
     MYE_COMPONENT(SpriteAnimator);
 
     asset::AssetRef animation; // Persistent clip asset; runtime pointers are rebound after loading.
+    asset::AssetRef stateMachine; // Persistent .animstate; takes precedence over a single .anim.
     asset::AssetGuid requestedAnimation; // Runtime entry request; a successor must not restart it.
+    asset::AssetGuid boundStateMachine; // Runtime binding identity; revisions survive owner cache replacement.
+    uint64_t boundStateRevision = 0;
 
     // 상태 머신 정의(비소유). nullptr 이면 singleClip 직접 재생 모드로 동작.
     const AnimStateMachine* machine = nullptr;
@@ -133,6 +142,7 @@ struct SpriteAnimator {
 };
 
 inline void RequestAnimation(SpriteAnimator& animator, const asset::AssetRef& animation) {
+    if (animator.stateMachine.guid.IsValid()) return;
     if (!animation.guid.IsValid() || animator.requestedAnimation == animation.guid) return;
     animator.requestedAnimation = animation.guid;
     animator.animation = animation;
@@ -150,6 +160,10 @@ inline ResolvedClip ResolveActiveClip(const SpriteAnimator& a, Dir8 facing) {
     if (a.machine && a.currentState >= 0 &&
         a.currentState < static_cast<int>(a.machine->states.size())) {
         const AnimState& st = a.machine->states[static_cast<size_t>(a.currentState)];
+        if (st.animation) {
+            const auto resolved = st.animation->Resolve(facing);
+            return {resolved.clip, resolved.flipX};
+        }
         if (st.directional) {
             auto r = st.dirSet.Resolve(facing);
             return { r.clip, r.flipX };
@@ -166,6 +180,51 @@ inline ResolvedClip ResolveActiveClip(const SpriteAnimator& a, Dir8 facing) {
 
 inline ResolvedClip ResolveActiveClip(const SpriteAnimator& animator) {
     return ResolveActiveClip(animator, animator.facing);
+}
+
+inline const asset::SpriteSheet* ResolveActiveSheet(const SpriteAnimator& animator) {
+    if (animator.machine && animator.currentState >= 0 &&
+        animator.currentState < static_cast<int>(animator.machine->states.size())) {
+        const auto* animation = animator.machine->states[static_cast<size_t>(animator.currentState)].animation;
+        if (animation) return &animation->sheet;
+    }
+    return animator.sheet;
+}
+
+// Bind/render only prepare the initial pose. First-entry markers belong to the next fixed tick.
+inline void BindAnimationState(SpriteAnimator& animator, const AnimStateMachine& machine, uint64_t revision) {
+    if (animator.boundStateMachine != animator.stateMachine.guid || animator.boundStateRevision != revision) {
+        auto parameters = machine.parameters;
+        if (animator.boundStateMachine == animator.stateMachine.guid) {
+            // Clip edits restart the pose, not Lua's live values; on_init is not rerun on resource rebind.
+            for (auto& parameter : parameters)
+                if (const auto* previous = animator.FindParam(parameter.name); previous && previous->type == parameter.type)
+                    parameter.value = previous->value;
+        }
+        animator.params = std::move(parameters);
+        animator.currentState = machine.initialState;
+        animator.cursor = {};
+        animator.started = false;
+        animator.playbackFacing = animator.facing;
+        animator.boundStateMachine = animator.stateMachine.guid;
+        animator.boundStateRevision = revision;
+    }
+    animator.machine = &machine;
+    animator.sheet = nullptr;
+    animator.directClip = nullptr;
+    animator.sourceAnimation = nullptr;
+}
+
+inline void UnbindAnimationState(SpriteAnimator& animator) {
+    if (!animator.boundStateMachine.IsValid()) return; // Preserve manually wired legacy machines.
+    animator.machine = nullptr;
+    animator.boundStateMachine = {};
+    animator.boundStateRevision = 0;
+    animator.params.clear();
+    animator.currentState = -1;
+    animator.cursor = {};
+    animator.started = false;
+    animator.requestedAnimation = {};
 }
 
 // A render may show a new facing before a tick commits it; no events or playback state change here.

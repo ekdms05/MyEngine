@@ -36,6 +36,7 @@
 #include "mye/scene/Camera3D.h"
 #include "mye/core/JsonFile.h"
 #include <map>
+#include <set>
 #include <filesystem>
 
 #include "mye/core/App.h"
@@ -99,13 +100,24 @@ struct EditorModule::Impl final : public IEditorViewport {
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Texture>> textures;
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Mesh>> meshes;
     std::map<asset::AssetGuid, asset::AnimationAsset> animations;
+    std::set<asset::AssetGuid> openAnimationSources;
+    struct StateBinding {
+        asset::AnimationStateAsset definition;
+        anim::AnimStateMachine machine;
+        std::vector<std::pair<DocumentId, uint64_t>> sourceRevisions;
+        uint64_t revision = 0;
+    };
+    std::map<asset::AssetGuid, StateBinding> animationStates;
+    uint64_t nextStateRevision = 1; // Never reset on refresh; allocator addresses may be reused.
     std::string assetRoot;
 
     void ClearAssets() {
         if (engine) engine->UnregisterServiceRaw(asset::AssetDatabase::kServiceId);
         textures.clear();
         meshes.clear();
+        animationStates.clear();
         animations.clear();
+        openAnimationSources.clear();
         assetDb.reset();
         assets.reset();
         vfs.reset();
@@ -173,26 +185,90 @@ struct EditorModule::Impl final : public IEditorViewport {
             return Error{Utf8String(osPath) + ": " + error.message, error.code};
         };
         for (auto* doc : app->Project().Documents()) {
-            if (doc->GetKind() != Document::Kind::Asset || Utf8Path(doc->Path()) != osPath) continue;
+            if (doc->GetKind() != Document::Kind::Asset || doc->Path().empty()) continue;
+            const auto relative = Utf8Path(doc->Path()).lexically_relative(Utf8Path(assetRoot));
+            if (assetDb->GuidFromPath("assets://" + Utf8String(relative)) != guid) continue;
             auto valid = doc->Animation().Validate();
             if (!valid) return diagnostic(valid.GetError());
+            openAnimationSources.insert(guid);
             return &doc->Animation();
         }
         auto found = animations.find(guid);
-        if (found == animations.end()) {
+        if (found == animations.end() || openAnimationSources.contains(guid)) {
             auto value = ReadJsonFile(osPath);
             if (!value) return diagnostic(value.GetError());
             auto loaded = asset::AnimationAsset::FromJson(value.Value());
             if (!loaded) return diagnostic(loaded.GetError());
-            found = animations.emplace(guid, std::move(loaded).Value()).first;
+            // A closed document may have been saved or discarded. Read the disk, not its previous cached value.
+            found = animations.insert_or_assign(guid, std::move(loaded).Value()).first;
+            openAnimationSources.erase(guid);
         }
         return &found->second;
+    }
+    Expected<void, Error> ValidateAnimationTexture(const asset::AnimationAsset& animation) {
+        const auto* texture = ResolveTexture(animation.sheet.texture.guid);
+        if (!texture || animation.imageSize.x != static_cast<int32_t>(texture->width) ||
+            animation.imageSize.y != static_cast<int32_t>(texture->height))
+            return Error{"Animation texture is missing, invalid or differs from its saved sheet size", 1};
+        return {};
+    }
+    Expected<const StateBinding*, Error> ResolveAnimationState(asset::AssetGuid guid) {
+        if (!assetDb || !vfs) return Error{"Animation states require the project asset database", 1};
+        auto found = animationStates.find(guid);
+        if (found == animationStates.end()) {
+            auto loaded = asset::AnimationStateAsset::Load(guid, *assetDb, *vfs);
+            if (!loaded) return loaded.GetError();
+            StateBinding binding;
+            binding.definition = std::move(loaded).Value();
+            binding.sourceRevisions.resize(binding.definition.states.size());
+            found = animationStates.emplace(guid, std::move(binding)).first;
+        }
+        auto& binding = found->second;
+        bool changed = binding.machine.states.empty();
+        std::array<const asset::AnimationAsset*, 64> sources{};
+        std::array<std::pair<DocumentId, uint64_t>, 64> stamps{};
+        // ponytail: at most 64 sources are checked before consumption. Batch once per frame only if profiling warrants it.
+        for (size_t i = 0; i < binding.definition.states.size(); ++i) {
+            const auto& state = binding.definition.states[i];
+            auto source = ResolveAnimation(state.animation.guid);
+            if (!source) return Error{state.name + ": " + source.GetError().message, 1};
+            auto texture = ValidateAnimationTexture(*source.Value());
+            if (!texture) return Error{state.name + ": " + texture.GetError().message, 1};
+            sources[i] = source.Value();
+            std::pair<DocumentId, uint64_t> stamp{};
+            for (auto* doc : app->Project().Documents()) {
+                if (doc->GetKind() == Document::Kind::Asset && &doc->Animation() == sources[i]) {
+                    stamp = {doc->Id(), doc->Commands().Revision()};
+                    break;
+                }
+            }
+            changed |= binding.sourceRevisions[i] != stamp || binding.machine.states.empty() ||
+                binding.machine.states[i].animation != sources[i];
+            stamps[i] = stamp;
+        }
+        if (changed) {
+            auto machine = anim::BuildAnimationStateMachine(binding.definition,
+                std::span<const asset::AnimationAsset* const>(sources.data(), binding.definition.states.size()));
+            if (!machine) return machine.GetError();
+            binding.machine = std::move(machine).Value();
+            std::copy_n(stamps.begin(), binding.sourceRevisions.size(), binding.sourceRevisions.begin());
+            binding.revision = nextStateRevision++;
+        }
+        return &binding;
     }
     Expected<void, Error> BindAnimations(ecs::World& world, bool fixedTick = false) {
         Expected<void, Error> result;
         anim::ForEachAnimatedRenderer(world,
             [&](ecs::Entity, anim::SpriteAnimator& animator, auto& sprite) {
                 if (!result) return;
+                if (animator.stateMachine.guid.IsValid()) {
+                    auto binding = ResolveAnimationState(animator.stateMachine.guid);
+                    if (!binding) { result = binding.GetError(); return; }
+                    anim::BindAnimationState(animator, binding.Value()->machine, binding.Value()->revision);
+                    anim::SampleAnimator(animator, &sprite);
+                    return;
+                }
+                anim::UnbindAnimationState(animator);
                 if (!animator.animation.guid.IsValid()) { animator.sheet = nullptr; animator.directClip = nullptr; animator.sourceAnimation = nullptr; return; }
                 auto loaded = ResolveAnimation(animator.animation.guid);
                 if (!loaded) { result = loaded.GetError(); return; }
@@ -203,10 +279,10 @@ struct EditorModule::Impl final : public IEditorViewport {
                     animator.animation = data->nextAnimation;
                     animator.cursor = {}; animator.started = false; data = next.Value();
                 }
-                const auto* texture = ResolveTexture(data->sheet.texture.guid);
-                if (!texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
+                auto texture = ValidateAnimationTexture(*data);
+                if (!texture) {
                     animator.sheet = nullptr; animator.directClip = nullptr; animator.sourceAnimation = nullptr;
-                    result = Error{"Animation texture is missing, invalid or differs from its saved sheet size", 1};
+                    result = texture.GetError();
                     return;
                 }
                 if (animator.directClip != &data->clip) { animator.cursor = {}; animator.started = false; }
@@ -381,6 +457,7 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
 
         // 뷰포트 렌더러 배선(ViewportPanel 이 ctx.app->Viewport() 로 접근).
         s.app->SetViewport(&s);
+        s.app->PlayMode().SetWorldPreparation([this](ecs::World& world) { return m_impl->BindAnimations(world); });
     }
 
     // 시뮬레이션은 고정 틱, 렌더·ImGui는 표현 단계에서 처리한다.

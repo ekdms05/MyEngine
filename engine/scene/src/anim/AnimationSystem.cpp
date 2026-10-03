@@ -9,6 +9,28 @@
 
 namespace mye::anim {
 
+Expected<AnimStateMachine, Error> BuildAnimationStateMachine(const asset::AnimationStateAsset& definition,
+    std::span<const asset::AnimationAsset* const> animations) {
+    auto valid = definition.Validate();
+    if (!valid) return valid.GetError();
+    if (animations.size() != definition.states.size()) return Error{"Animation state source count differs", 1};
+    AnimStateMachine machine;
+    machine.states.reserve(animations.size());
+    for (size_t i = 0; i < animations.size(); ++i) {
+        if (!animations[i]) return Error{definition.states[i].name + ": missing animation source", 1};
+        auto clipValid = animations[i]->Validate();
+        if (!clipValid) return Error{definition.states[i].name + ": " + clipValid.GetError().message, 1};
+        AnimState state;
+        state.name = definition.states[i].name;
+        state.animation = animations[i];
+        machine.states.push_back(std::move(state));
+    }
+    machine.transitions = definition.transitions;
+    machine.initialState = definition.initialState;
+    machine.parameters = definition.parameters;
+    return machine;
+}
+
 bool EvaluateCondition(const SpriteAnimator& a, const AnimCondition& c) {
     const AnimParam* p = a.FindParam(c.param);
     const float v = p ? p->value : 0.0f;

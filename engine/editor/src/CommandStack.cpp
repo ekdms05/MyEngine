@@ -73,6 +73,7 @@ CommandStack::~CommandStack() = default;
 
 void CommandStack::Push(CommandPtr cmd) {
     if (!cmd) return;
+    ++m_revision;
 
     if (m_ctx) cmd->Execute(*m_ctx);   // 07 §4: push 시 execute.
 
@@ -128,6 +129,7 @@ void CommandStack::EndTransaction() {
 void CommandStack::Undo() {
     if (m_impl->txnDepth > 0) return;   // 트랜잭션 진행 중 Undo 금지.
     if (m_impl->undoStack.empty()) return;
+    ++m_revision;
     CommandPtr cmd = std::move(m_impl->undoStack.back());
     m_impl->undoStack.pop_back();
     if (m_ctx) cmd->Undo(*m_ctx);
@@ -138,6 +140,7 @@ void CommandStack::Undo() {
 void CommandStack::Redo() {
     if (m_impl->txnDepth > 0) return;
     if (m_impl->redoStack.empty()) return;
+    ++m_revision;
     CommandPtr cmd = std::move(m_impl->redoStack.back());
     m_impl->redoStack.pop_back();
     if (m_ctx) cmd->Execute(*m_ctx);
@@ -167,6 +170,7 @@ bool CommandStack::IsDirty() const {
 }
 
 void CommandStack::Clear() {
+    ++m_revision;
     m_impl->undoStack.clear();
     m_impl->redoStack.clear();
     m_impl->txnCmds.clear();

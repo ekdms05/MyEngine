@@ -168,6 +168,10 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
     auto& s = *m_impl;
     if (!IsPlaying() || !s.playWorld) return {};
     if (!s.objects) {
+        if (m_prepareWorld) {
+            auto prepared = m_prepareWorld(*s.playWorld);
+            if (!prepared) return prepared.GetError();
+        }
         s.objects = std::make_unique<runtime::ObjectSystem>(*s.playWorld);
         auto initialized = s.objects->Initialize();
         if (!initialized) { s.objects.reset(); return initialized.GetError(); }
@@ -216,6 +220,10 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
             if (!playerFound) { state.loadError = "Destination map needs a character controller"; return runtime::SceneLoadTicket{1}; }
             valid=runtime::ValidateObjectComponents(*world);
             if (!valid) { state.loadError=valid.GetError().message; return runtime::SceneLoadTicket{1}; }
+            if (m_prepareWorld) {
+                auto prepared = m_prepareWorld(*world);
+                if (!prepared) { state.loadError = prepared.GetError().message; return runtime::SceneLoadTicket{1}; }
+            }
             state.candidate = std::move(world);
             return runtime::SceneLoadTicket{1};
         };

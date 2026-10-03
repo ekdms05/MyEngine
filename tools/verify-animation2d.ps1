@@ -2,7 +2,8 @@ param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
     [string]$BuildDir = 'build/dev',
     [switch]$Phase,
-    [switch]$Temporal
+    [switch]$Temporal,
+    [switch]$States
 )
 $ErrorActionPreference = 'Stop'
 if ($Temporal) { $Phase = $true }
@@ -162,10 +163,11 @@ foreach ($user in @('directions-a', 'directions-b')) {
     $null = Run-App $server "character-$user" @('--data', $data, '--make-char', $user, $user)
     Write-Json (Join-Path $run "$user.json") @{ username = $user; password = 'local-test-only' }
 }
-$initialState = if ($Phase) { [IO.File]::ReadAllBytes((Join-Path $data 'state.json')) }
+$initialState = if ($Phase -or $States) { [IO.File]::ReadAllBytes((Join-Path $data 'state.json')) }
 $owned = @()
 try {
-    $hostProcess = Start-App $server 'server' @('--data', $data, '--project', $project, '--port', '0', '--ticks', '300')
+    # Admission/RHI startup also consumes server time; 600 ticks covers both bounded client replays.
+    $hostProcess = Start-App $server 'server' @('--data', $data, '--project', $project, '--port', '0', '--ticks', '600')
     $owned += $hostProcess
     $timer = [Diagnostics.Stopwatch]::StartNew(); $port = 0
     while ($timer.Elapsed.TotalSeconds -lt 5 -and -not $hostProcess.HasExited) {
@@ -196,6 +198,128 @@ try {
     }
 }
 $player.components.PSObject.Properties.Remove('ObjectBehavior'); Write-Json $scenePath $scene
+if ($States) {
+    # Existing GUID/input/capture helpers; all diagnostic data stays in this new build fixture.
+    $stateGuid=[Guid]::NewGuid().ToString();$idleGuid=[Guid]::NewGuid().ToString();$walkGuid=[Guid]::NewGuid().ToString()
+    $attackGuid=[Guid]::NewGuid().ToString();$attackTextureGuid=[Guid]::NewGuid().ToString()
+    $idlePath=Join-Path $run 'project/assets/animations/state-idle.anim';$walkPath=Join-Path $run 'project/assets/animations/state-walk.anim'
+    $attackPath=Join-Path $run 'project/assets/animations/state-attack.anim';$statePath=Join-Path $run 'project/assets/animations/actor.animstate'
+    $attackTexturePath=Join-Path $run 'project/assets/characters/state-attack.png'
+    $image=[Drawing.Bitmap]::new(48,48)
+    try { for($y=0;$y -lt 48;$y++){for($x=0;$x -lt 48;$x++){$image.SetPixel($x,$y,[Drawing.Color]::FromArgb(255,255,136,0))}};$image.Save($attackTexturePath,[Drawing.Imaging.ImageFormat]::Png) }
+    finally {$image.Dispose()}
+    Write-Json ($attackTexturePath+'.meta') @{guid=$attackTextureGuid;importer='TextureImporter';importerVersion=1}
+    $idle=$animation | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+    $idle.PSObject.Properties.Remove('directions');$idle.PSObject.Properties.Remove('mirrorRight');$idle.version=1;$idle.name='idle'
+    $idle.timeline[0].seconds=60;$idle.events=@(@{frame=0;name='state-idle';text='';value=0})
+    $walk=$animation | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+    $walk.name='walk';$walk.timeline[0].seconds=60
+    foreach($clip in $walk.directions.PSObject.Properties.Value){$clip.timeline[0].seconds=60;$clip.events=@(@{frame=0;name='state-walk';text='';value=0})}
+    # Graph completion owns transitions; the missing single-clip successor must be ignored.
+    $attack=@{version=1;texture=$attackTextureGuid;width=48;height=48;name='attack';loop=$false;direction=0;nextAnimation=[Guid]::NewGuid().ToString()
+        frames=@(@{x=0;y=0;w=48;h=48;pivotX=24;pivotY=48});timeline=@(@{frame=0;seconds=1.0/60},@{frame=0;seconds=1.0/60});events=@(@{frame=0;name='state-attack';text='';value=0})}
+    foreach($entry in @(@($idlePath,$idleGuid,$idle),@($walkPath,$walkGuid,$walk),@($attackPath,$attackGuid,$attack))){Write-Json $entry[0] $entry[2];Write-Json ($entry[0]+'.meta') @{guid=$entry[1];importer='AnimationAsset';importerVersion=1}}
+    $graph=@{version=1;name='actor';initialState='idle'
+        parameters=@(@{name='moving';type='bool';default=$false},@{name='ready';type='bool';default=$false},@{name='seed';type='float';default=.375},@{name='attack';type='trigger';default=$false})
+        states=@(@{name='idle';animation=$idleGuid},@{name='walk';animation=$walkGuid},@{name='attack';animation=$attackGuid})
+        transitions=@(
+            @{from='*';to='attack';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='attack';op='is_true'});consumeTriggers=@()},
+            @{from='attack';to='idle';onClipFinished=$true;keepPhase=$false;conditions=@();consumeTriggers=@()},
+            @{from='idle';to='walk';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='moving';op='is_true'});consumeTriggers=@()},
+            @{from='walk';to='idle';onClipFinished=$false;keepPhase=$false;conditions=@(@{param='moving';op='is_false'});consumeTriggers=@()})}
+    Write-Json $statePath $graph;Write-Json ($statePath+'.meta') @{guid=$stateGuid;importer='AnimationStateAsset';importerVersion=1}
+    $player.components.SpriteAnimator | Add-Member -NotePropertyName stateMachine -NotePropertyValue @{guid=$stateGuid;type='0'} -Force
+    $player.components.SpriteAnimator.__version=2
+    $player.components | Add-Member -NotePropertyName ObjectBehavior -NotePropertyValue ([pscustomobject]@{connections=@();luaSource=@'
+local n=0
+return {
+    on_init=function(self)
+        local e=mye.world.entity_from_packed(self.entity)
+        assert(e:get_float('seed')==0.375 and not e:get_bool('ready'))
+        e:set_bool('ready',true); mye.log('state-init-defaults')
+    end,
+    on_update=function(self,dt)
+        n=n+1;local e=mye.world.entity_from_packed(self.entity)
+        assert(e:get_bool('ready'));if n==3 then e:set_trigger('attack') end
+        if n==6 then mye.log('state-six-ticks') end
+    end,
+    on_event=function(self,name,payload)
+        if name=='animation' then mye.log('state-marker:'..payload.name) end
+    end
+}
+'@}) -Force
+    Write-Json $scenePath $scene
+    $stateBytes=[IO.File]::ReadAllBytes($statePath);$attackBytes=[IO.File]::ReadAllBytes($attackPath)
+    $savedGraphHash=(Get-FileHash -LiteralPath $statePath).Hash;$savedStateMetaHash=(Get-FileHash -LiteralPath ($statePath+'.meta')).Hash
+    $stateInput=Replay 'state-local' @(@{ticks=1;x=0;y=0},@{ticks=1;x=1;y=0},@{ticks=3;x=0;y=0},@{ticks=1;x=1;y=0},@{ticks=1;x=0;y=0})
+    $log=Run-App $game 'state-local' @('--project',$project,'--headless','--input',$stateInput,'--capture-at','1,2,3,4,5,6,7','--dump',(Join-Path $run 'state-local.bmp'))
+    if($log -notmatch 'state-init-defaults' -or $log -notmatch 'state-six-ticks' -or ([regex]::Matches($log,'state-marker:state-attack')).Count -ne 1 -or ([regex]::Matches($log,'state-marker:state-idle')).Count -ne 3){throw 'Local state defaults/entry/completion failed'}
+    $expected=@('idle','walk','attack','attack','idle','walk','idle');$stateColours=@(0x808080,0x000000,0xFF8800,0xFF8800,0x808080,0x000000,0x808080)
+    for($i=1;$i -le 7;$i++){
+        $capture=Get-Content -LiteralPath (Join-Path $run "state-local.step-$i.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+        if($capture.replayStep -ne $i -or $capture.actors.Count -ne 1 -or $capture.actors[0].animationState -ne $expected[$i-1]){throw "Local state step $i failed"}
+        Check-Pixel "state-local.step-$i" 480 222 $stateColours[$i-1]
+    }
+    $playLog=Run-App $editor 'state-play' @('--project',$project,'--animation','assets/animations/state-idle.anim','--headless','--play','--frames','12000','--dump',(Join-Path $run 'state-play.bmp'))
+    if($playLog -notmatch 'state-init-defaults' -or $playLog -notmatch 'state-six-ticks' -or ([regex]::Matches($playLog,'state-marker:state-attack')).Count -ne 1 -or ([regex]::Matches($playLog,'state-marker:state-idle')).Count -ne 2){throw 'Play state binding/entry failed'}
+    Check-Pixel 'state-play' 480 222 0x808080
+    # All states, including inactive ones, are validated before Lua initialization.
+    foreach($case in @('wrong-graph-guid','wrong-clip-guid','bad-clip','wrong-image-size','missing-texture')){
+        switch($case){
+            'wrong-graph-guid' {$player.components.SpriteAnimator.stateMachine.guid=$textureGuid}
+            'wrong-clip-guid' {$graph.states[2].animation=$textureGuid;Write-Json $statePath $graph}
+            'bad-clip' {$attack.timeline[0].seconds=0;Write-Json $attackPath $attack}
+            'wrong-image-size' {$attack.width=49;Write-Json $attackPath $attack}
+            'missing-texture' {$attack.texture=[Guid]::NewGuid().ToString();Write-Json $attackPath $attack}
+        }
+        Write-Json $scenePath $scene
+        foreach($entry in @(@($game,'game'),@($editor,'editor'))){
+            $arguments=@('--project',$project,'--headless')+$(if($entry[1] -eq 'game'){@('--ticks','1')}else{@('--play','--frames','3000')})
+            $badLog=Run-App $entry[0] "state-$case-$($entry[1])" $arguments 1
+            if($badLog -match 'state-init-defaults'){throw "Invalid $case executed Lua init"}
+        }
+        $player.components.SpriteAnimator.stateMachine.guid=$stateGuid;$graph.states[2].animation=$attackGuid
+        $attack.timeline[0].seconds=1.0/60;$attack.width=48;$attack.texture=$attackTextureGuid
+        [IO.File]::WriteAllBytes($statePath,$stateBytes);[IO.File]::WriteAllBytes($attackPath,$attackBytes);Write-Json $scenePath $scene
+    }
+    $player.components.ObjectBehavior.luaSource='return {on_init=function(self) mye.log("client-lua-must-not-run");error("client authority violation") end}'
+    Write-Json $scenePath $scene
+    $stateData=Join-Path $run 'state-online-data';New-Item -ItemType Directory -Path $stateData | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $stateData 'state.json'),$initialState)
+    $owned=@()
+    try {
+        $hostProcess=Start-App $server 'state-server' @('--data',$stateData,'--project',$project,'--port','0','--ticks','600');$owned+=$hostProcess
+        $timer=[Diagnostics.Stopwatch]::StartNew();$port=0
+        while($timer.Elapsed.TotalSeconds -lt 5 -and -not $hostProcess.HasExited){
+            $log=Get-Content -LiteralPath (Join-Path $run 'state-server.log') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+            if($log -match 'MyServer .*?port (\d+), tickrate 60Hz'){$port=[int]$Matches[1];break};Start-Sleep -Milliseconds 25
+        }
+        if(-not $port){throw 'State server readiness failed'}
+        # Both applications must be admitted before their movement captures; retain distinct fixed/replay step numbers.
+        $bInput=Replay 'state-b' @(@{ticks=120;x=0;y=0},@{ticks=40;x=-1;y=0},@{ticks=180;x=0;y=0});$aInput=Replay 'state-a' @(@{ticks=120;x=0;y=0},@{ticks=40;x=1;y=0},@{ticks=30;x=0;y=0})
+        foreach($entry in @(@('state-b','directions-b',$bInput),@('state-a','directions-a',$aInput))){
+            $process=Start-App $game $entry[0] @('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run ($entry[1]+'.json')),'--input',$entry[2],'--capture-at','159,160,161,162','--dump',(Join-Path $run ($entry[0]+'.bmp')));$owned+=$process
+            if($entry[0] -eq 'state-b'){Start-Sleep -Milliseconds 300}
+        }
+        $aLog=Wait-App $owned[2] 'state-a';$bLog=Wait-App $owned[1] 'state-b'
+        if($aLog -notmatch 'Input replay confirmed: steps=190, pending=0' -or $bLog -notmatch 'Input replay confirmed: steps=340, pending=0'){throw 'State movement acknowledgment failed'}
+        foreach($name in @('state-a','state-b')){foreach($step in @(159,160,161,162)){
+            $capture=Get-Content -LiteralPath (Join-Path $run "$name.step-$step.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+            $local=@($capture.actors | Where-Object local);$remote=@($capture.actors | Where-Object {-not $_.local})
+            if($local.Count -ne 1 -or $remote.Count -ne 1 -or $local[0].animationState -ne $(if($step -le 160){'walk'}else{'idle'})){throw "Online $name step $step state failed"}
+            foreach($actor in $capture.actors){
+                if($actor.animationState -notin @('idle','walk')){throw 'Online action state outside movement presentation'}
+                $colour=if($actor.animationState -eq 'idle'){0x808080}else{[Convert]::ToInt32($colours[$actor.facing],16)}
+                Check-Pixel "$name.step-$step" ([int][Math]::Round($actor.screenX)) ([int][Math]::Round($actor.screenY)-48) $colour
+            }
+        }}
+        $null=Wait-App $hostProcess 'state-server'
+    } finally {foreach($process in $owned){if(-not $process.HasExited){$process.Kill();$process.WaitForExit()};$process.Dispose()}}
+    if((Get-FileHash -LiteralPath $statePath).Hash -ne $savedGraphHash -or (Get-FileHash -LiteralPath ($statePath+'.meta')).Hash -ne $savedStateMetaHash){throw 'State data/GUID changed'}
+    $player.components.PSObject.Properties.Remove('ObjectBehavior');$player.components.SpriteAnimator.PSObject.Properties.Remove('stateMachine');$player.components.SpriteAnimator.__version=1;Write-Json $scenePath $scene
+    Write-Output 'PASS: saved states, typed defaults before Lua init, different sheets, entry/trigger/completion, Play/open clip, inactive asset refusal and two admitted clients with Lua isolation'
+}
+
 if ($Phase) {
     # Unequal logical periods and asymmetric feet expose frame-index remapping and UV-only mirroring.
     $phaseColours = @('FF0000','00FF00','0000FF','FFFF00','FF00FF','00FFFF','FF8000','808080')

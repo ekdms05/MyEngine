@@ -179,7 +179,8 @@ template <> void mye::refl::Reflect(TypeBuilder<mye::scene::Camera3D>& b) {
 }
 
 template <> void mye::refl::Reflect<mye::anim::SpriteAnimator>(TypeBuilder<mye::anim::SpriteAnimator>& b) {
-    b.Version(1).Field("animation", &mye::anim::SpriteAnimator::animation).Attr(Attribute::MakeTooltip(".anim 에셋을 드래그하세요. 원본 이미지는 애니메이션 에셋에서 지정합니다."))
+    b.Version(2).Field("animation", &mye::anim::SpriteAnimator::animation).Attr(Attribute::MakeTooltip(".anim 에셋을 드래그하세요. 행동 상태가 지정되면 그 상태의 클립을 우선합니다."))
+        .Field("stateMachine", &mye::anim::SpriteAnimator::stateMachine).Attr(Attribute::MakeTooltip(".animstate 행동 상태 파일. 상태·조건·초기값을 공유하고 각 캐릭터는 독립적으로 재생합니다."))
         .Field("speed", &mye::anim::SpriteAnimator::speed).Attr(Attribute::MakeTooltip("모션 재생 배율. 1은 원래 속도입니다. 이동 speed와는 별개입니다."))
         .Field("playing", &mye::anim::SpriteAnimator::playing).Attr(Attribute::MakeTooltip("실행 중 모션을 자동 재생합니다."));
 }

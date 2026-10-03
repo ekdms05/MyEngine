@@ -260,3 +260,21 @@ MYE_TEST(SceneRejectsMalformedAssetReferenceBeforeChangingWorld) {
         if (after) MYE_EXPECT(json::Stringify(before.Value()) == json::Stringify(after.Value()));
     }
 }
+
+MYE_TEST(SceneAnimationStateReferencePersistsWithoutRuntimeBindingAndKeepsVersionOne) {
+    ecs::World world; scene::RegisterCoreComponents(world); auto entity = world.Create();
+    auto& animator = world.Add<anim::SpriteAnimator>(entity); animator.animation.guid = {1,1};
+    animator.stateMachine.guid = {2,2}; animator.boundStateMachine = animator.stateMachine.guid;
+    animator.boundStateRevision = 7; animator.params = {{"temporary",anim::ParamType::Bool,1}};
+    animator.currentState = 3; animator.started = true;
+    scene::SceneSerializer serializer; auto saved = serializer.WriteWorld(world); MYE_EXPECT(saved); if (!saved) return;
+    ecs::World copy; scene::RegisterCoreComponents(copy); auto loaded = serializer.ReadInto(copy,saved.Value());
+    MYE_EXPECT(loaded); if (!loaded) return;
+    auto* value = copy.TryGet<anim::SpriteAnimator>(loaded.Value()[0]);
+    MYE_EXPECT(value && value->stateMachine.guid == animator.stateMachine.guid && value->animation.guid == animator.animation.guid);
+    MYE_EXPECT(value && !value->machine && !value->boundStateMachine.IsValid() && value->boundStateRevision == 0 && value->params.empty() && !value->started && value->currentState == -1);
+    auto old = json::Parse(R"({"__version":1,"entities":[{"id":1,"components":{"SpriteAnimator":{"__version":1,"animation":{"guid":"00112233-4455-6677-8899-aabbccddeeff","type":"0"},"speed":1,"playing":true}}}]})");
+    MYE_EXPECT(old); if (!old) return;
+    ecs::World legacy; scene::RegisterCoreComponents(legacy); auto restored = serializer.ReadInto(legacy,old.Value());
+    MYE_EXPECT(restored); if (restored) MYE_EXPECT(!legacy.TryGet<anim::SpriteAnimator>(restored.Value()[0])->stateMachine.guid.IsValid());
+}

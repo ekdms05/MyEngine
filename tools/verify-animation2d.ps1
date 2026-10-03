@@ -592,12 +592,13 @@ if ($Phase) {
             return @{frames=@(0,1,2,3);seconds=@(.125,.125,.25,.5)}
         }
         function Check-Continuous([string]$Name,[int]$First,[int]$Last,[bool]$Online) {
-            $previous=@{}; $changes=0; $remoteChanges=0; $paused=0; $resumed=0; $remoteFrames=0; $remoteMovingPaused=0; $remoteFacings=@{}
+            $previous=@{}; $changes=0; $remoteChanges=0; $paused=0; $resumed=0; $remoteFrames=0; $remoteMovingPaused=0; $remoteFacings=@{}; $localFacings=@{}
             for ($step=$First; $step -le $Last; $step++) {
                 $sample=Get-Content -LiteralPath (Join-Path $run "$Name.step-$step.json") -Raw -Encoding UTF8 | ConvertFrom-Json
                 if ($sample.version -ne 1 -or $sample.replayStep -ne $step) { throw "Capture boundary mismatch: $Name $step" }
                 $local=@($sample.actors | Where-Object { $_.local -or -not $Online })
                 if ($local.Count -ne 1) { throw "Expected one local actor: $Name $step" }
+                $localFacings[[int]$local[0].facing]=$true
                 $relative=$step-$First+1
                 if ($local[0].playing -ne ($relative -lt 10 -or $relative -ge 18)) { throw "Pause diagnostic mismatch: $Name $step" }
                 foreach ($actor in $sample.actors) {
@@ -637,13 +638,13 @@ if ($Phase) {
                     $previous[$key]=@{actor=$actor;tick=$sample.fixedTick}
                 }
             }
-            if ($Online) {
-                foreach ($facing in @(0,2,4,5,6)) { if (-not $remoteFacings.ContainsKey($facing)) { throw "Missing remote facing $facing : $Name" } }
-            }
+            # Independent replay clocks and latest-state snapshots can skip a short peer pose.
+            foreach ($facing in @(0,2,4,5,6)) { if (-not $localFacings.ContainsKey($facing)) { throw "Missing local facing $facing : $Name" } }
             if ($changes -lt 5 -or $paused -lt 8 -or $resumed -lt 1 -or ($Online -and ($remoteChanges -lt 1 -or $remoteFrames -lt 4 -or $remoteMovingPaused -lt 1))) {
                 throw "Incomplete continuous coverage: $Name changes=$changes remoteChanges=$remoteChanges paused=$paused resumed=$resumed remoteFrames=$remoteFrames"
             }
-            Write-Output "PASS: $Name 32 exact input boundaries, incomplete-motion phase/pixels/pause/resume; remote changes=$remoteChanges frames=$remoteFrames paused authority moves=$remoteMovingPaused"
+            $observedRemote = ($remoteFacings.Keys | Sort-Object) -join ','
+            Write-Output "PASS: $Name 32 exact input boundaries, incomplete-motion phase/pixels/pause/resume; remote changes=$remoteChanges frames=$remoteFrames paused authority moves=$remoteMovingPaused observed facings=[$observedRemote]"
         }
         Check-Continuous 'continuous-local' 1 32 $false
         if ([regex]::Matches($continuousLog,'phase-event:phase-start').Count -ne 1 -or

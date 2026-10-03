@@ -76,3 +76,6 @@ UI 문서 작성은 기존 개발·게임 UI·ImGui 지침과 문서 CommandStac
 
 
 설치된 한국어 IME 검수는 Windows 기본 입력기·기존 자체 앱 검사 도구를 사용한다. 숨은 IME/콘솔 창은 입력 대상으로 삼지 않고 자기 PID의 보이는 엔진 창/foreground를 확인한다. 외부 리깅 안내는 현재 AnimationAsset/SpriteAnimator의 PNG 프레임 계약을 기준으로 베이크·발 피벗·실제 조작/접지를 구분한다. 개발/UI 로컬 지침과 animation2d MCP를 갱신하며 추가 패키지/에이전트·엔진 내 에셋 제작기는 사용하지 않는다.
+
+
+행동 모션 작성은 기존 myengine-development·imgui-ui-ux-engineering과 Document/CommandStack·GUID/AssetDatabase를 사용한다. 전체 값 초안은 적용 전 문서에 보존하고 재생은 적용 값/문서 revision만 소비한다. 패널 수명·상태 제거/끝점·저장 실패/메타·정의/클립 재바인딩을 검사한다. 새 UI/그래프 프레임워크·패키지/에이전트·픽셀 제작기는 추가하지 않았다.

@@ -81,7 +81,8 @@ Expected<void, Error> AssignCharacterMotion(EditorContext& ctx, ecs::Entity enti
     return {};
 }
 
-Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation) {
+namespace {
+Expected<void, Error> AssignAnimatorAsset(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation, bool stateMachine) {
     auto* world = ctx.activeWorld();
     const auto* type = refl::TypeRegistry::Get().Find("SpriteAnimator");
     if ((ctx.playMode && ctx.playMode->IsPlaying()) || !world || !world->Valid(entity) ||
@@ -89,17 +90,24 @@ Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity en
         !ctx.commands || !type || !world->IsRegistered(anim::SpriteAnimator::kComponentTypeId) || !animation.guid.IsValid())
         return Error{"Select a sprite in an editable scene and save its animation first", 1};
     const auto* current = world->TryGet<anim::SpriteAnimator>(entity);
-    asset::AssetRef before = current ? current->animation : asset::AssetRef{};
+    asset::AssetRef before = current ? (stateMachine ? current->stateMachine : current->animation) : asset::AssetRef{};
     auto oldArchive = ser::JsonArchive::ForWrite(); oldArchive.Value(before);
     auto newArchive = ser::JsonArchive::ForWrite(); newArchive.Value(animation);
-    auto path = refl::PropertyPath::Parse("animation");
+    auto path = refl::PropertyPath::Parse(stateMachine ? "stateMachine" : "animation");
     if (!path) return path.GetError();
-    ctx.commands->BeginTransaction("스프라이트 애니메이션 지정");
+    ctx.commands->BeginTransaction(stateMachine ? "행동 모션 지정" : "스프라이트 애니메이션 지정");
     if (!current) ctx.commands->Push(std::make_unique<AddComponentCommand>(entity, *type));
     ctx.commands->Push(std::make_unique<PropertyEditCommand>(ObjectRef::Component(entity, *type), path.Value(),
         ValueBlob{json::Stringify(oldArchive.Root())}, ValueBlob{json::Stringify(newArchive.Root())}));
     ctx.commands->EndTransaction();
     return {};
+}
+}
+Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation) {
+    return AssignAnimatorAsset(ctx, entity, animation, false);
+}
+Expected<void, Error> AssignAnimationStateToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef states) {
+    return AssignAnimatorAsset(ctx, entity, states, true);
 }
 
 AnimClipEditCommand::AnimClipEditCommand(asset::AnimationClipData* target,

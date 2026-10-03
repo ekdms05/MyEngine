@@ -89,6 +89,7 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->RegisterFactory(MakeTilePalettePanelFactory());
     m_panels->RegisterFactory(MakeAnimationEditorPanelFactory());
     m_panels->RegisterFactory(MakeUiEditorPanelFactory());
+    m_panels->RegisterFactory(MakeAnimationStateEditorPanelFactory());
     m_panels->RegisterFactory(MakeLuaPanelFactory());
 
     // 확장 경로(플러그인·MCP·Lua)로 등록된 패널 팩토리를 PanelManager로 위임(07 §확장:
@@ -263,7 +264,7 @@ CommandStack& EditorApp::Commands() {
 CommandStack* EditorApp::ActiveStack() {
     if (m_playMode && m_playMode->IsPlaying())
         return m_playMode->PlayCommandStack();
-    if (auto* doc = FocusedAssetDocument()) return doc->UiDraft() ? nullptr : &doc->Commands();
+    if (auto* doc = FocusedAssetDocument()) return doc->HasPendingEdits() ? nullptr : &doc->Commands();
     Document* active = m_project ? m_project->Active() : nullptr;
     return active ? &active->Commands() : nullptr;
 }
@@ -533,6 +534,7 @@ void EditorApp::SaveActive() {
     }
     if (auto* doc = FocusedAssetDocument()) {
         auto saved = doc->GetKind() == Document::Kind::Ui ? m_project->SaveUi(doc->Id(), doc->Path())
+            : doc->GetKind() == Document::Kind::AnimationState ? m_project->SaveAnimationState(doc->Id(), doc->Path())
             : m_project->SaveAnimation(doc->Id(), doc->Path());
         ReportFileResult(saved, mye::i18n::T("file.saved"));
         return;

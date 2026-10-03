@@ -337,6 +337,13 @@ private:
         ImGui::BeginDisabled(!editing);
         if (ImGui::MenuItem("에셋 추가...")) { m_currentFolder = folder; Import(ctx); }
         if (ImGui::MenuItem("새 폴더...")) { m_currentFolder = folder; m_folderRequested = true; m_folderName[0] = '\0'; m_dialogError.clear(); }
+        if (ImGui::MenuItem("새 행동 모션")) {
+            auto created = ctx.project->NewAnimationState();
+            if (created) {
+                ctx.app->SelectAnimationStateDocument(created.Value()->Id());
+                ctx.app->Panels().Open("mye.animstate"); ctx.app->Panels().Focus("mye.animstate");
+            } else SetResult(created.GetError(), "");
+        }
         ImGui::EndDisabled();
         if (ImGui::MenuItem("탐색기에서 열기")) SetResult(RevealProjectAssetFolder(ctx.project->RootDir(), folder), "탐색기에서 폴더를 열었습니다.");
     }
@@ -365,11 +372,13 @@ private:
             ImGui::Selectable((std::string(IconFor(extension)) + "  " + name).c_str());
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 if (extension == "anim") SetResult(ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath)), "애니메이션을 열었습니다.");
+                else if (extension == "animstate") SetResult(ctx.app->OpenAnimationState(VpathToOsPath(ctx, vpath)), "행동 모션을 열었습니다.");
                 else if (extension == "ui") SetResult(ctx.app->OpenUi(VpathToOsPath(ctx, vpath)), "게임 UI를 열었습니다.");
                 else if (extension == "scene") SetResult(ctx.app->OpenScene(VpathToOsPath(ctx, vpath)), "씬을 열었습니다.");
             }
             if (ImGui::BeginPopupContextItem("file_context")) {
                 if (extension == "anim" && ImGui::MenuItem("애니메이션 열기")) SetResult(ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath)), "애니메이션을 열었습니다.");
+                if (extension == "animstate" && ImGui::MenuItem("행동 모션 열기")) SetResult(ctx.app->OpenAnimationState(VpathToOsPath(ctx, vpath)), "행동 모션을 열었습니다.");
                 if (extension == "ui" && ImGui::MenuItem("게임 UI 열기")) SetResult(ctx.app->OpenUi(VpathToOsPath(ctx, vpath)), "게임 UI를 열었습니다.");
                 if (extension == "scene" && ImGui::MenuItem("씬 열기")) SetResult(ctx.app->OpenScene(VpathToOsPath(ctx, vpath)), "씬을 열었습니다.");
                 FolderActions(ctx, m_currentFolder, editing);

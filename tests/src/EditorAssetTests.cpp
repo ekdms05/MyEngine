@@ -4,6 +4,7 @@
 #include "mye/editor/SceneSerializer.h"
 #include "mye/asset/AssetDatabase.h"
 #include "mye/asset/AnimationStateAsset.h"
+#include "mye/editor/EditorContext.h"
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/AssetMeta.h"
 #include "mye/asset/FileSystem.h"
@@ -220,4 +221,18 @@ MYE_TEST(AnimationStateGuidFilesAndDeletionBoundary) {
     std::error_code ec; fs::remove(assets / "idle.anim", ec); MYE_EXPECT(!ec);
     MYE_EXPECT(!asset::AnimationStateAsset::Load(guid, database, files));
     MYE_EXPECT(fs::exists(assets / "player.animstate") && fs::exists(assets / "player.animstate.meta"));
+    MYE_EXPECT(WriteJsonFile(assets / "unused.anim", clip.ToJson()));
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)));
+    const auto unusedGuid = database.GuidFromPath("assets://unused.anim"); MYE_EXPECT(unusedGuid.IsValid());
+    auto pending = project.NewAnimationState(); MYE_EXPECT(pending); if (!pending) return;
+    MYE_EXPECT(CheckProjectAssetDeletion(project, "unused.anim")); // An incomplete unrelated document is harmless.
+    auto draft = pending.Value()->AnimationState(); draft.states[0].animation = {unusedGuid};
+    draft.states.push_back({"idle", {}}); // Invalid draft still protects its assigned GUID.
+    pending.Value()->StageAnimationState(draft);
+    MYE_EXPECT(!CheckProjectAssetDeletion(project, "unused.anim"));
+    pending.Value()->DiscardAnimationStateDraft(); MYE_EXPECT(CheckProjectAssetDeletion(project, "unused.anim"));
+    draft.states.pop_back(); EditorContext context{};
+    MYE_EXPECT(pending.Value()->EditAnimationState(context, draft, "unsaved reference"));
+    MYE_EXPECT(!CheckProjectAssetDeletion(project, "unused.anim"));
+    project.CloseDocument(pending.Value()->Id()); MYE_EXPECT(CheckProjectAssetDeletion(project, "unused.anim"));
 }

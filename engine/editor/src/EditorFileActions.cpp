@@ -115,6 +115,7 @@ Expected<void, Error> EditorApp::CreateProject(std::string_view name, std::strin
     m_showInputSettings = false;
     m_animationId = {};
     m_uiId = {};
+    m_animationStateId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
@@ -132,6 +133,7 @@ Expected<void, Error> EditorApp::OpenProject(std::string_view path, bool discard
     m_showInputSettings = false;
     m_animationId = {};
     m_uiId = {};
+    m_animationStateId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
@@ -190,6 +192,21 @@ Expected<void, Error> EditorApp::OpenUi(std::string_view path) {
 
 Expected<std::string, Error> EditorApp::BrowseImageFile() {
     return Browse(m_window, FileDialog::Image, Utf8String(Utf8Path(m_project->RootDir()) / "assets"));
+}
+Document* EditorApp::AnimationStateDocument() {
+    if (m_project) for (auto* doc : m_project->Documents())
+        if (doc->Id() == m_animationStateId && doc->GetKind() == Document::Kind::AnimationState) return doc;
+    return nullptr;
+}
+Expected<void, Error> EditorApp::OpenAnimationState(std::string_view path) {
+    if (m_playMode->IsPlaying()) return Error{T("file.stopfirst"), 1};
+    auto opened = m_project->OpenAnimationState(path);
+    if (!opened) return opened.GetError();
+    m_animationStateId = opened.Value()->Id();
+    opened.Value()->Commands().SetContext(&m_ctx);
+    m_panels->Open("mye.animstate");
+    m_panels->Focus("mye.animstate");
+    return {};
 }
 Expected<std::string, Error> EditorApp::BrowseAssetFile() {
     return Browse(m_window, FileDialog::Asset, Utf8String(Utf8Path(m_project->RootDir()) / "assets"));
@@ -278,6 +295,7 @@ void EditorApp::RequestSaveAs() {
     if (m_playMode->IsPlaying()) return;
     if (auto* doc = FocusedAssetDocument()) {
         if (doc->GetKind() == Document::Kind::Ui) { m_panels->Open("mye.ui"); m_panels->Focus("mye.ui"); ReportFileResult(Error{"UI 패널의 저장 경로를 지정한 뒤 저장하세요.", 1}, ""); return; }
+        if (doc->GetKind() == Document::Kind::AnimationState) { m_panels->Open("mye.animstate"); m_panels->Focus("mye.animstate"); ReportFileResult(Error{"행동 모션 패널에서 저장 경로를 지정하세요.", 1}, ""); return; }
         m_panels->Open("mye.anim");
         ReportFileResult(Error{"애니메이션 패널에서 저장 경로를 지정하세요", 1}, "");
         return;
@@ -302,6 +320,7 @@ void EditorApp::RequestSaveProject() {
         if (!doc->Path().empty()) continue;
         if (doc->GetKind() != Document::Kind::Scene) {
             if (doc->GetKind() == Document::Kind::Ui) { m_uiId = doc->Id(); m_panels->Open("mye.ui"); m_panels->Focus("mye.ui"); ReportFileResult(Error{"Save the new UI in its panel first", 1}, ""); }
+            else if (doc->GetKind() == Document::Kind::AnimationState) { m_animationStateId = doc->Id(); m_panels->Open("mye.animstate"); m_panels->Focus("mye.animstate"); ReportFileResult(Error{"행동 모션 패널에서 새 문서를 먼저 저장하세요.", 1}, ""); }
             else { m_animationId = doc->Id(); m_panels->Open("mye.anim"); ReportFileResult(Error{"Save the new animation in the animation panel first", 1}, ""); }
             if (!doc->Path().empty() && !m_fileError) continue;
             return;

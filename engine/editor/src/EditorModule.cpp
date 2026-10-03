@@ -112,6 +112,7 @@ struct EditorModule::Impl final : public IEditorViewport {
         asset::AnimationStateAsset definition;
         anim::AnimStateMachine machine;
         std::vector<std::pair<DocumentId, uint64_t>> sourceRevisions;
+        std::pair<DocumentId, uint64_t> definitionSource{};
         uint64_t revision = 0;
     };
     std::map<asset::AssetGuid, StateBinding> animationStates;
@@ -251,14 +252,27 @@ struct EditorModule::Impl final : public IEditorViewport {
     }
     Expected<const StateBinding*, Error> ResolveAnimationState(asset::AssetGuid guid) {
         if (!assetDb || !vfs) return Error{"Animation states require the project asset database", 1};
+        const Document* open = nullptr;
+        for (auto* doc : app->Project().Documents()) {
+            if (doc->GetKind() != Document::Kind::AnimationState || doc->Path().empty()) continue;
+            const auto relative = Utf8Path(doc->Path()).lexically_relative(Utf8Path(assetRoot));
+            if (assetDb->GuidFromPath("assets://" + Utf8String(relative)) == guid) { open = doc; break; }
+        }
+        const std::pair<DocumentId, uint64_t> definitionStamp = open ? std::pair{open->Id(), open->Commands().Revision()}
+            : std::pair<DocumentId, uint64_t>{};
         auto found = animationStates.find(guid);
-        if (found == animationStates.end()) {
-            auto loaded = asset::AnimationStateAsset::Load(guid, *assetDb, *vfs);
+        const bool definitionChanged = found == animationStates.end() || found->second.definitionSource != definitionStamp;
+        if (definitionChanged) {
+            auto loaded = open ? Expected<asset::AnimationStateAsset, Error>(open->AnimationState())
+                : asset::AnimationStateAsset::Load(guid, *assetDb, *vfs);
             if (!loaded) return loaded.GetError();
+            auto valid = loaded.Value().Validate();
+            if (!valid) return valid.GetError();
             StateBinding binding;
             binding.definition = std::move(loaded).Value();
             binding.sourceRevisions.resize(binding.definition.states.size());
-            found = animationStates.emplace(guid, std::move(binding)).first;
+            binding.definitionSource = definitionStamp;
+            found = animationStates.insert_or_assign(guid, std::move(binding)).first;
         }
         auto& binding = found->second;
         bool changed = binding.machine.states.empty();

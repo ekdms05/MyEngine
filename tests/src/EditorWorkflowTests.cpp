@@ -1650,3 +1650,221 @@ MYE_TEST(EditorAnimationDirectionPreviewKeepsPhaseAndPause) {
     checkImage(5); // Pause does not reset to the first left frame or silently resume.
     app.Shutdown();
 }
+
+MYE_TEST(EditorAnimationStateDocumentsPreserveDraftGuidUndoAndScene) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("animation-state-documents");
+    EditorTestContext engine(root); EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(!app.Project().NewAnimationState());
+    // The test loads the existing starter explicitly; no user project is modified.
+    MYE_EXPECT(app.Project().Create("States", Utf8String(root / "fixture"), false, MYE_STARTER_SOURCE_DIR));
+    app.RefreshDocumentContext();
+    auto* scene = app.Project().Active();
+    const auto assets = Utf8Path(app.Project().RootDir()) / "assets";
+    asset::VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<asset::LooseFileSystem>(Utf8String(assets)), 0);
+    asset::AssetManager manager(vfs, nullptr); asset::AssetDatabase database(manager, nullptr);
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)));
+    const auto idle = database.GuidFromPath("assets://animations/novice_idle.anim");
+    const auto walk = database.GuidFromPath("assets://animations/novice_walk.anim");
+    MYE_EXPECT(idle.IsValid() && walk.IsValid());
+    auto created = app.Project().NewAnimationState(); MYE_EXPECT(created); if (!created) return;
+    auto* doc = created.Value(); app.SelectAnimationStateDocument(doc->Id());
+    auto data = doc->AnimationState();
+    data.states[0].animation = {idle}; data.states.push_back({"walk", {walk}});
+    data.parameters = {{"moving", asset::ParamType::Bool, 0}};
+    asset::AnimTransition transition; transition.to = 1; transition.keepPhase = false;
+    transition.conditions = {{"moving", asset::CmpOp::IsTrue, 0}}; data.transitions = {transition};
+    MYE_EXPECT(doc->EditAnimationState(app.Context(), data, "movement"));
+    const auto file = assets / "animations/character.animstate";
+    MYE_EXPECT(app.Project().SaveAnimationState(doc->Id(), Utf8String(file)));
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)));
+    const auto guid = database.GuidFromPath("assets://animations/character.animstate");
+    const auto metadata = ReadJsonFile(Utf8Path(asset::MetaPathFor(Utf8String(file)))); MYE_EXPECT(metadata);
+    MYE_EXPECT(guid.IsValid() && app.Project().Active() == scene && !doc->IsDirty());
+    doc->Commands().Undo(); MYE_EXPECT(doc->AnimationState().states.size() == 1 && doc->IsDirty());
+    doc->Commands().Redo(); MYE_EXPECT(doc->AnimationState().states.size() == 2 && !doc->IsDirty());
+    auto invalid = data; invalid.states[1].name = "idle";
+    doc->StageAnimationState(invalid); const auto revision = doc->Commands().Revision();
+    MYE_EXPECT(doc->IsDirty() && app.Project().HasUnsavedChanges());
+    MYE_EXPECT(!doc->EditAnimationState(app.Context(), invalid, "duplicate"));
+    MYE_EXPECT(doc->AnimationStateDraft() && doc->Commands().Revision() == revision);
+    MYE_EXPECT(!app.Project().SaveAnimationState(doc->Id(), Utf8String(file)));
+    MYE_EXPECT(!app.OpenProject(app.Project().ProjectFilePath()));
+    doc->DiscardAnimationStateDraft(); data.name = "updated";
+    MYE_EXPECT(doc->EditAnimationState(app.Context(), data, "rename"));
+    const auto before = ReadJsonFile(file); MYE_EXPECT(before);
+    std::ofstream(assets / "blocked").put('x');
+    MYE_EXPECT(!app.Project().SaveAnimationState(doc->Id(), "assets/blocked/graph.animstate"));
+    MYE_EXPECT(!app.Project().SaveAnimationState(doc->Id(), "graph.animstate"));
+    MYE_EXPECT(!app.Project().SaveAnimationState(doc->Id(), "../outside.animstate"));
+    MYE_EXPECT(!app.Project().SaveAnimationState(doc->Id(), "assets/\xFF.animstate"));
+    MYE_EXPECT(doc->IsDirty() && doc->Path() == Utf8String(file));
+    MYE_EXPECT(json::Stringify(ReadJsonFile(file).Value()) == json::Stringify(before.Value()));
+    app.SetAnimationStateFocused(); MYE_EXPECT(&app.Commands() == &doc->Commands());
+    app.SaveActive(); MYE_EXPECT(!doc->IsDirty());
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)) && database.GuidFromPath("assets://animations/character.animstate") == guid);
+    MYE_EXPECT(json::Stringify(ReadJsonFile(Utf8Path(asset::MetaPathFor(Utf8String(file)))).Value()) == json::Stringify(metadata.Value()));
+    auto other = app.Project().NewAnimationState(); MYE_EXPECT(other);
+    if (other) { MYE_EXPECT(!app.Project().SaveAnimationState(other.Value()->Id(), Utf8String(file))); app.Project().CloseDocument(other.Value()->Id()); }
+    ecs::Entity player{};
+    scene->World().Query<runtime::CharacterController2D>().Each([&](ecs::Entity e, const auto&) { player = e; });
+    const auto scenePosition = scene->Commands().Position();
+    MYE_EXPECT(AssignAnimationStateToEntity(app.Context(), player, {guid}));
+    const auto* animator = scene->World().TryGet<anim::SpriteAnimator>(player); MYE_EXPECT(animator);
+    if (animator) MYE_EXPECT(animator->stateMachine.guid == guid);
+    MYE_EXPECT(scene->Commands().Position() == scenePosition + 1 && !doc->IsDirty());
+    scene->Commands().Undo(); animator = scene->World().TryGet<anim::SpriteAnimator>(player);
+    MYE_EXPECT(animator && !animator->stateMachine.guid.IsValid());
+    const auto bad = assets / "bad.animstate"; std::ofstream(bad) << "{}";
+    const auto count = app.Project().Documents().size();
+    MYE_EXPECT(!app.OpenAnimationState(Utf8String(bad)) && app.Project().Documents().size() == count);
+    MYE_EXPECT(app.Project().OpenAnimationState(Utf8String(file)).Value() == doc);
+    auto last = doc->Id(); app.Project().CloseDocument(last); MYE_EXPECT(!app.AnimationStateDocument());
+    for (int i=0; i<3; ++i) {
+        MYE_EXPECT(app.OpenAnimationState(Utf8String(file))); doc = app.AnimationStateDocument();
+        MYE_EXPECT(doc && doc->Id().value > last.value && !doc->IsDirty()); if (!doc) break;
+        MYE_EXPECT(doc->AnimationState().name == "updated" && doc->AnimationState().transitions[0].conditions[0].param == "moving");
+        last = doc->Id(); app.Project().CloseDocument(last);
+    }
+    app.Shutdown();
+}
+
+MYE_TEST(EditorAnimationStatePanelAppliesUndoPreservesHiddenDraftAndResizes) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("animation-state-panel");
+    EditorTestContext engine(root); EditorApp app; TestEditorViewport viewport;
+    MYE_EXPECT(app.Initialize(engine, "")); app.SetViewport(&viewport);
+    MYE_EXPECT(app.CreateProject("State UI", Utf8String(root / "project")));
+    auto created = app.Project().NewAnimationState(); MYE_EXPECT(created); if (!created) return;
+    auto* doc = created.Value(); app.SelectAnimationStateDocument(doc->Id());
+    auto data = doc->AnimationState(); data.states[0].animation.guid = asset::AssetGuid::Generate();
+    data.states.push_back({"unused", data.states[0].animation});
+    data.states.push_back({"walk", data.states[0].animation}); data.initialState = 2;
+    data.parameters = {{"moving", asset::ParamType::Bool, 0}, {"ready", asset::ParamType::Bool, 0}};
+    asset::AnimTransition first; first.from = 0; first.to = 2;
+    first.conditions = {{"moving", asset::CmpOp::IsTrue, 0}, {"ready", asset::CmpOp::IsTrue, 0}};
+    asset::AnimTransition second; second.from = 1; second.to = 2; data.transitions = {first,second};
+    MYE_EXPECT(doc->EditAnimationState(app.Context(), data, "seed"));
+    auto factory = MakeAnimationStateEditorPanelFactory(); auto panel = factory->Create();
+    auto frame = [&]() { ImGui::NewFrame(); panel->OnGui(app.Context()); ImGui::Render(); };
+    frame(); frame();
+    auto* window = ImGui::FindWindowByName("행동 모션###mye.animstate"); MYE_EXPECT(window); if (!window) return;
+    ImGui::ActivateItemByID(window->GetID("저장")); frame(); MYE_EXPECT(!doc->Path().empty() && !doc->IsDirty());
+    ImGuiWindow* work = nullptr;
+    // Resolve the child by its parent instead of depending on ImGui's generated suffix.
+    for (auto* child : window->DC.ChildWindows) if (child->ParentWindow == window) work = child;
+    MYE_EXPECT(work); if (!work) return;
+    ImGui::ActivateItemByID(work->GetID("##행동 이름")); frame();
+    ImGui::GetIO().AddInputCharactersUTF8("_edited"); frame();
+    MYE_EXPECT(doc->AnimationStateDraft() && doc->IsDirty());
+    const auto edited = doc->AnimationStateDraft() ? doc->AnimationStateDraft()->name : "";
+    MYE_EXPECT(edited.ends_with("_edited"));
+    panel.reset(); panel = factory->Create(); frame(); frame();
+    MYE_EXPECT(doc->AnimationStateDraft() && doc->AnimationStateDraft()->name == edited);
+    ImGui::ActivateItemByID(window->GetID("적용")); frame();
+    MYE_EXPECT(!doc->AnimationStateDraft() && doc->AnimationState().name == edited);
+    ImGui::ActivateItemByID(window->GetID("되돌리기")); frame(); MYE_EXPECT(doc->AnimationState().name == "character");
+    ImGui::ActivateItemByID(window->GetID("다시 실행")); frame(); MYE_EXPECT(doc->AnimationState().name == edited);
+    ImGui::ActivateItemByID(window->GetID("저장")); frame(); MYE_EXPECT(!doc->IsDirty());
+    const auto stateScope = ImHashStr("상태", 0, ImHashStr("##state_tasks", 0, work->ID));
+    const int removedState = 1;
+    ImGui::ActivateItemByID(ImHashStr("상태 제거",0,ImHashData(&removedState,sizeof(removedState),stateScope))); frame();
+    MYE_EXPECT(doc->AnimationStateDraft() && doc->AnimationStateDraft()->states.size() == 2);
+    if (doc->AnimationStateDraft()) {
+        const auto& draft = *doc->AnimationStateDraft();
+        MYE_EXPECT(draft.initialState == 1 && draft.transitions.size() == 1 && draft.transitions[0].from == 0 && draft.transitions[0].to == 1);
+    }
+    ImGui::ActivateItemByID(window->GetID("적용")); frame();
+    MYE_EXPECT(doc->AnimationState().states.size() == 2);
+    ImGui::ActivateItemByID(window->GetID("되돌리기")); frame(); MYE_EXPECT(doc->AnimationState().states.size() == 3);
+    ImGui::ActivateItemByID(window->GetID("저장")); frame();
+    const auto parameterTab = ImHashStr("매개변수", 0, ImHashStr("##state_tasks", 0, work->ID));
+    ImGui::ActivateItemByID(parameterTab); frame(); frame();
+    const int firstParameter = 0;
+    const auto parameterScope = ImHashData(&firstParameter, sizeof(firstParameter), parameterTab);
+    ImGui::ActivateItemByID(ImHashStr("##매개변수 이름", 0, parameterScope)); frame();
+    auto& io = ImGui::GetIO();
+    io.AddKeyEvent(ImGuiMod_Ctrl, true); io.AddKeyEvent(ImGuiKey_A, true); frame();
+    io.AddKeyEvent(ImGuiKey_A, false); io.AddKeyEvent(ImGuiMod_Ctrl, false);
+    io.AddInputCharactersUTF8("ready"); frame(); frame();
+    MYE_EXPECT(!doc->AnimationStateDraft());
+    MYE_EXPECT(doc->AnimationState().parameters[0].name == "moving");
+    MYE_EXPECT(doc->AnimationState().transitions[0].conditions[0].param == "moving");
+    io.AddInputCharactersUTF8("_new"); frame(); frame();
+    MYE_EXPECT(doc->AnimationStateDraft());
+    if (doc->AnimationStateDraft()) {
+        const auto& draft = *doc->AnimationStateDraft();
+        MYE_EXPECT(draft.parameters[0].name == "ready_new" && draft.parameters[1].name == "ready");
+        MYE_EXPECT(draft.transitions[0].conditions[0].param == "ready_new" && draft.transitions[0].conditions[1].param == "ready");
+    }
+    ImGui::ActivateItemByID(window->GetID("적용")); frame();
+    ImGui::ActivateItemByID(window->GetID("되돌리기")); frame();
+    MYE_EXPECT(doc->AnimationState().parameters[0].name == "moving" && doc->AnimationState().transitions[0].conditions[1].param == "ready");
+    ImGui::ActivateItemByID(window->GetID("저장")); frame();
+    for (float scale : {1.0f,1.5f}) {
+        ImGui::GetStyle().FontScaleMain = scale; ImGui::GetIO().DisplaySize = {360,600}; frame(); frame();
+        MYE_EXPECT(window->Size.x <= 360 && window->ContentSize.x <= window->WorkRect.GetWidth()+1);
+        MYE_EXPECT(work->ScrollMax.y >= 0);
+    }
+    ImGui::ActivateItemByID(window->GetID("문서 닫기")); frame();
+    MYE_EXPECT(!app.AnimationStateDocument());
+    app.Shutdown();
+}
+
+MYE_TEST(EditorAnimationStateRebindsAppliedUndoClosedAndRefreshedDefinitions) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("animation-state-rebinding");
+    EditorTestContext engine(root); ModuleRegistry modules;
+    engine.RegisterServiceRaw(ModuleRegistry::kServiceId, &modules);
+    modules.Register(std::make_unique<scene::SceneModule>());
+    auto editor = std::make_unique<EditorModule>(); auto* module = editor.get(); modules.Register(std::move(editor));
+    MYE_EXPECT(modules.InitializeAll(engine));
+    auto* app = module->App(); MYE_EXPECT(app); if (!app) return;
+    MYE_EXPECT(app->Project().Create("Binding", Utf8String(root / "project"), false, MYE_STARTER_SOURCE_DIR));
+    app->RefreshDocumentContext();
+    auto frame = [&]() { modules.Tick(UpdatePhase::PreRender, TimeStep{}); };
+    frame();
+    auto* db = engine.GetService<asset::AssetDatabase>(); MYE_EXPECT(db); if (!db) return;
+    auto created = app->Project().NewAnimationState(); MYE_EXPECT(created); if (!created) return;
+    auto* doc = created.Value(); auto data = doc->AnimationState();
+    data.states[0].animation = {db->GuidFromPath("assets://animations/novice_idle.anim")};
+    data.states.push_back({"walk", {db->GuidFromPath("assets://animations/novice_walk.anim")}});
+    data.parameters = {{"ready", asset::ParamType::Bool, 0}, {"seed", asset::ParamType::Float, .375f}};
+    MYE_EXPECT(doc->EditAnimationState(app->Context(), data, "seed"));
+    MYE_EXPECT(app->Project().SaveAnimationState(doc->Id(), "assets/animations/player.animstate"));
+    MYE_EXPECT(app->Viewport()->RefreshAssetIndex()); db = engine.GetService<asset::AssetDatabase>();
+    ecs::Entity player{};
+    auto* world = app->Context().activeWorld();
+    world->Query<runtime::CharacterController2D>().Each([&](ecs::Entity e, const auto&) { player = e; });
+    MYE_EXPECT(AssignAnimationStateToEntity(app->Context(), player, {db->GuidFromPath("assets://animations/player.animstate")}));
+    frame(); auto* animator = world->TryGet<anim::SpriteAnimator>(player); MYE_EXPECT(animator && animator->machine);
+    if (!animator || !animator->machine) { modules.ShutdownAll(engine); return; }
+    MYE_EXPECT(animator->currentState == 0 && animator->GetFloat("seed") == .375f);
+    animator->SetBool("ready", true); const auto firstRevision = animator->boundStateRevision;
+    data.initialState = 1; data.parameters.push_back({"new", asset::ParamType::Bool, 1});
+    doc->StageAnimationState(data); frame();
+    MYE_EXPECT(animator->boundStateRevision == firstRevision && animator->currentState == 0);
+    MYE_EXPECT(doc->EditAnimationState(app->Context(), data, "start walking")); frame();
+    MYE_EXPECT(animator->currentState == 1 && animator->GetBool("ready") && animator->GetBool("new"));
+    const auto appliedRevision = animator->boundStateRevision;
+    doc->Commands().Undo(); frame();
+    MYE_EXPECT(animator->currentState == 0 && animator->GetBool("ready") && !animator->FindParam("new"));
+    MYE_EXPECT(animator->boundStateRevision != appliedRevision);
+    doc->Commands().Redo(); frame(); MYE_EXPECT(animator->currentState == 1);
+    app->Project().CloseDocument(doc->Id()); frame(); // Discard returns to the saved definition, not cached values.
+    MYE_EXPECT(animator->currentState == 0 && animator->GetBool("ready") && !animator->FindParam("new"));
+    MYE_EXPECT(app->OpenAnimationState("assets/animations/player.animstate")); doc = app->AnimationStateDocument();
+    auto saved = doc->AnimationState(); saved.initialState = 1;
+    MYE_EXPECT(doc->EditAnimationState(app->Context(), saved, "saved walking"));
+    MYE_EXPECT(app->Project().SaveAnimationState(doc->Id(), doc->Path())); frame();
+    const auto beforeRefresh = animator->boundStateRevision;
+    app->Project().CloseDocument(doc->Id()); MYE_EXPECT(app->Viewport()->RefreshAssetIndex()); frame();
+    MYE_EXPECT(animator->currentState == 1 && animator->GetBool("ready") && animator->boundStateRevision != beforeRefresh);
+    MYE_EXPECT(app->PlayMode().Play());
+    modules.Tick(UpdatePhase::FixedUpdate, TimeStep{}); // Resource preparation precedes local Lua on the first tick.
+    auto* live = app->PlayMode().ActiveWorld()->TryGet<anim::SpriteAnimator>(player);
+    MYE_EXPECT(live && live->machine && live->currentState == 1 && !live->GetBool("ready"));
+    app->PlayMode().Stop(); modules.ShutdownAll(engine);
+}

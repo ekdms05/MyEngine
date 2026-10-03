@@ -43,7 +43,7 @@ main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서
 
 main 소스의 2D 조작은 UpdateCharacterAnimation2D로 로컬/예측/원격의 대기·걷기 요청과 방향을 조합한다. 입력/권위 facing은 방향, 실제 이동량은 모션을 결정하며 마지막 방향과 후속 클립을 유지한다. 런타임 요청 GUID는 애니메이터에 보관하고 저장하지 않는다. BindAnimations의 후속 연결은 고정 틱에서만 허용하며 표시에는 SampleAnimator를 사용해 트리거·커서·첫 이벤트를 소비하지 않는다. AnimationAsset의 같은 시트/기본·선택적 8방향 값 데이터를 GUID로 바인딩한다. 기본 전용 파일은 버전 1, 방향별 파일은 버전 2이며 직접 클립→선택적 좌측 반전→기본 순서다. 애니메이션 로드/검증 실패는 Expected로 전달해 에디터 Play를 중단하고 자동 실행을 실패시킨다. [26](26-2d-animation.md)의 저장·Undo·앱 연결과 시간 비율 보정·반전 발 피벗·연속 로컬/온라인 표현 검사와 남은 행동 전환을 구분한다.
 
-행동 상태의 `.animstate`는 기존 bool/float/trigger·조건/전이 값을 asset 계층에서 소유하고 runtime은 호환 alias로 소비한다. 이름 기반 상태/초기 상태·GUID 참조와 전이별 진행률 정책을 검증/저장한다. AssetDatabase/VFS 로드는 각 `.anim` 파일 형식을 확인하고 삭제 검사는 행동 파일의 참조를 보호한다. SpriteAnimator.stateMachine은 상태별 시트/방향·독립 재생을 Play/MyGame에 바인딩하고 로컬 Lua 초기화 전에 기본값을 준비한다. bool moving은 공통 2D 이동량을 소비한다. 전용 행동 문서 편집/Undo는 다음이며 [26](26-2d-animation.md)에 데이터와 앱 완료 범위를 구분한다.
+행동 상태의 `.animstate`는 기존 bool/float/trigger·조건/전이 값을 asset 계층에서 소유하고 runtime은 호환 alias로 소비한다. 이름 기반 상태/초기 상태·GUID 참조와 전이별 진행률 정책을 검증/저장한다. AssetDatabase/VFS 로드는 각 `.anim` 파일 형식을 확인하고 삭제 검사는 행동 파일의 참조를 보호한다. SpriteAnimator.stateMachine은 상태별 시트/방향·독립 재생을 Play/MyGame에 바인딩하고 로컬 Lua 초기화 전에 기본값을 준비한다. bool moving은 공통 2D 이동량을 소비한다. 전용 행동 모션 패널은 상태/매개변수/조건/전이를 문서 초안→검증 적용→Undo/Redo→저장으로 작성한다. 열린 행동 문서의 ID/revision과 클립별 ID/revision을 구분해 재바인딩하고 닫기 후 저장/버린 디스크 값을 읽는다. 새 파일/메타 덮어쓰기를 거부하고 적용 전 참조도 삭제에서 보호한다. 실제 OS 드래그/전체 탐색·맵 왕복 검수는 별도이며 [26](26-2d-animation.md)에 데이터와 앱 완료 범위를 구분한다.
 
 ## 공통 계약과 실제 한계
 

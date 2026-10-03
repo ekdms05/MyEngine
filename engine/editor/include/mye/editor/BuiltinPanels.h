@@ -30,6 +30,7 @@ std::unique_ptr<IEditorPanelFactory> MakeTilemapEditorPanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeTilePalettePanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeAnimationEditorPanelFactory();
 std::unique_ptr<IEditorPanelFactory> MakeUiEditorPanelFactory();
+std::unique_ptr<IEditorPanelFactory> MakeAnimationStateEditorPanelFactory();
 
 // ---- 도트(픽셀아트) 에디터 패널 ----
 std::unique_ptr<IEditorPanelFactory> MakeLuaPanelFactory();

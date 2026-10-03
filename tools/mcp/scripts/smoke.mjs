@@ -230,8 +230,14 @@ async function main() {
     firstText(animation2D.result).includes("발 피벗") && firstText(animation2D.result).includes("자동 조절"));
   const typedParameters = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "on_init", lines: 8 } });
   check("engine_reference — 행동 바인딩과 작성/권위 경계", stateBinding.result?.isError !== true &&
-    firstText(stateBinding.result).includes("GUID") && firstText(stateBinding.result).includes("전용 행동 작성/Undo") &&
+    firstText(stateBinding.result).includes("GUID") && firstText(stateBinding.result).includes("stateMachine") &&
     typedParameters.result?.isError !== true && firstText(typedParameters.result).includes("타입 불일치"));
+  const stateAuthoringLine = fs.readFileSync(path.join(repoRoot, "docs/26-2d-animation.md"), "utf8")
+    .split(/\r?\n/).findIndex(line => line === "## 행동 문서 작성") + 1;
+  const stateAuthoring = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", startLine: stateAuthoringLine, lines: 24 } });
+  check("engine_reference — 행동 문서 작성과 적용/실행 경계", stateAuthoring.result?.isError !== true &&
+    firstText(stateAuthoring.result).includes("새 행동 모션") && firstText(stateAuthoring.result).includes("미적용 값") &&
+    firstText(stateAuthoring.result).includes("--animation-state") && firstText(stateAuthoring.result).includes("씬 Undo"));
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });
   fs.writeFileSync(path.join(fixture, "project.myeproj"), JSON.stringify({ version: 1, name: "Smoke", mainScene: "assets/scenes/main.scene" }));

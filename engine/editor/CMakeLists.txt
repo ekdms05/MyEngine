@@ -75,6 +75,7 @@ add_library(mye_editor STATIC
     src/AnimClipEditCommand.cpp
     src/AnimationEditorPanel.cpp
     src/UiEditorPanel.cpp
+    src/AnimationStateEditorPanel.cpp
 
 )
 

@@ -65,6 +65,8 @@ public:
                 m_animationPath = a[++i];
             } else if (a[i] == "--ui" && i + 1 < a.size()) {
                 m_uiPath = a[++i];
+            } else if (a[i] == "--animation-state" && i + 1 < a.size()) {
+                m_animationStatePath = a[++i];
             } else if (a[i] == "--import-asset" && i + 1 < a.size()) {
                 m_importSource = a[++i];
             } else if (a[i] == "--asset-destination" && i + 1 < a.size()) {
@@ -108,7 +110,7 @@ public:
         if (auto* em = ctx.GetService<editor::EditorModule>()) {
             const bool automatedStartup = !ctx.GetServiceRaw(kMainWindowServiceId) ||
                 m_frameLimit || m_dumpEnabled || m_startPlaying || m_view3d || m_addElementDialog || m_inputSettingsDialog ||
-                !m_importSource.empty() || !m_importDestination.empty() || !m_animationPath.empty() || !m_uiPath.empty() ||
+                !m_importSource.empty() || !m_importDestination.empty() || !m_animationPath.empty() || !m_uiPath.empty() || !m_animationStatePath.empty() ||
                 !m_workspace.empty() || !m_selectName.empty();
             // File associations and interactive --project opens recover in the launcher.
             // Scripted operations must not report success after opening the wrong project.
@@ -143,6 +145,10 @@ public:
                 const auto opened = em->App()->OpenUi(m_uiPath);
                 if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); return; }
             }
+            if (em->App() && !m_animationStatePath.empty()) {
+                const auto opened = em->App()->OpenAnimationState(m_animationStatePath);
+                if (!opened) { MYE_LOG_ERROR("MyEditor", "{}", opened.GetError().message); RequestExit(1); return; }
+            }
             if (em->App() && m_startPlaying) {
                 const auto started = em->App()->PlayMode().Play();
                 if (!started) { MYE_LOG_ERROR("MyEditor", "{}", started.GetError().message); RequestExit(1); }
@@ -169,7 +175,7 @@ public:
     void OnStop(EngineContext& /*ctx*/) override {}
 
 private:
-    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_uiPath, m_selectName, m_workspace;
+    std::string   m_projectPath, m_executableDirectory, m_animationPath, m_uiPath, m_animationStatePath, m_selectName, m_workspace;
     std::string   m_importSource, m_importDestination;
     bool          m_addElementDialog = false;
     bool          m_inputSettingsDialog = false;

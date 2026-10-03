@@ -34,7 +34,7 @@ Expected<fs::path, Error> ScenePath(const fs::path& root, std::string_view text,
         const auto relative = path.lexically_relative(root);
         if (relative.empty() || relative.is_absolute() || *relative.begin() == "..")
             return Error{"Scene files must be inside the current project", 1};
-        if (extension == ".anim" || extension == ".ui") {
+        if (extension == ".anim" || extension == ".ui" || extension == ".animstate") {
             const auto assetRoot = fs::weakly_canonical(root / "assets", ec);
             if (ec) return Error{"Asset folder is unavailable: " + ec.message(), ec.value()};
             const auto assetRelative = path.lexically_relative(assetRoot);
@@ -75,6 +75,19 @@ private:
     ui::UiDocument m_before, m_after;
     std::string m_label;
 };
+class AnimationStateEditCommand final : public IEditorCommand {
+public:
+    // ponytail: bounded value snapshots; use deltas only if history memory is measured to matter.
+    AnimationStateEditCommand(asset::AnimationStateAsset& target, asset::AnimationStateAsset after, std::string label)
+        : m_target(target), m_before(target), m_after(std::move(after)), m_label(std::move(label)) {}
+    void Execute(EditorContext&) override { m_target = m_after; }
+    void Undo(EditorContext&) override { m_target = m_before; }
+    std::string_view Label() const override { return m_label; }
+private:
+    asset::AnimationStateAsset& m_target; // Owned by the same document as this command stack.
+    asset::AnimationStateAsset m_before, m_after;
+    std::string m_label;
+};
 }
 
 // ---- Document ----
@@ -96,6 +109,16 @@ Expected<void, Error> Document::EditUi(EditorContext& ctx, ui::UiDocument after,
     m_commands.SetContext(&ctx);
     m_commands.Push(std::make_unique<UiEditCommand>(m_ui, std::move(after), std::move(label)));
     m_uiDraft.reset();
+    return {};
+}
+
+Expected<void, Error> Document::EditAnimationState(EditorContext& ctx, asset::AnimationStateAsset after, std::string label) {
+    if (m_kind != Kind::AnimationState) return Error{"Select an animation state document", 1};
+    auto valid = after.Validate();
+    if (!valid) return valid.GetError();
+    m_commands.SetContext(&ctx);
+    m_commands.Push(std::make_unique<AnimationStateEditCommand>(m_animationState, std::move(after), std::move(label)));
+    m_stateDraft.reset();
     return {};
 }
 
@@ -274,7 +297,8 @@ Expected<void, Error> ProjectContext::Save() {
         if (doc->Path().empty()) return Error{"Choose a file name for each unsaved scene first", 1};
     for (const auto& doc : m_impl->documents) {
         auto saved = doc->GetKind() == Document::Kind::Scene ? SaveScene(doc->Id(), doc->Path())
-            : doc->GetKind() == Document::Kind::Ui ? SaveUi(doc->Id(), doc->Path()) : SaveAnimation(doc->Id(), doc->Path());
+            : doc->GetKind() == Document::Kind::Ui ? SaveUi(doc->Id(), doc->Path())
+            : doc->GetKind() == Document::Kind::AnimationState ? SaveAnimationState(doc->Id(), doc->Path()) : SaveAnimation(doc->Id(), doc->Path());
         if (!saved) return saved.GetError();
     }
     auto metadata = m_impl->metadata.AsObject();
@@ -487,6 +511,61 @@ Expected<void, Error> ProjectContext::SaveUi(DocumentId id, std::string_view pat
     fs::create_directories(resolved.Value().parent_path(), ec);
     if (ec) return Error{"Cannot create UI folder: " + ec.message(), ec.value()};
     auto saved = WriteJsonFile(resolved.Value(), value.Value());
+    if (!saved) return saved.GetError();
+    doc->SetPath(Utf8String(resolved.Value()));
+    doc->Commands().MarkSaved();
+    return {};
+}
+
+Expected<Document*, Error> ProjectContext::NewAnimationState() {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::AnimationState, std::string{});
+    doc->AnimationState().name = "character";
+    doc->AnimationState().states.push_back({"idle", {}});
+    auto* raw = doc.get();
+    m_impl->documents.push_back(std::move(doc));
+    m_impl->RefreshPtrs();
+    return raw;
+}
+
+Expected<Document*, Error> ProjectContext::OpenAnimationState(std::string_view path) {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".animstate");
+    if (!resolved) return resolved.GetError();
+    for (auto& doc : m_impl->documents)
+        if (SameFile(doc->Path(), resolved.Value())) return doc.get();
+    auto value = ReadJsonFile(resolved.Value());
+    if (!value) return value.GetError();
+    auto loaded = asset::AnimationStateAsset::FromJson(value.Value());
+    if (!loaded) return loaded.GetError();
+    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::AnimationState, Utf8String(resolved.Value()));
+    doc->AnimationState() = std::move(loaded).Value();
+    auto* raw = doc.get();
+    m_impl->documents.push_back(std::move(doc));
+    m_impl->RefreshPtrs();
+    return raw;
+}
+
+Expected<void, Error> ProjectContext::SaveAnimationState(DocumentId id, std::string_view path) {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto* doc = m_impl->Find(id);
+    if (!doc || doc->GetKind() != Document::Kind::AnimationState) return Error{"No animation state document", 1};
+    if (doc->AnimationStateDraft()) return Error{"Apply or cancel pending animation state changes before saving", 1};
+    auto encoded = doc->AnimationState().ToJson();
+    if (!encoded) return encoded.GetError();
+    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".animstate");
+    if (!resolved) return resolved.GetError();
+    std::error_code ec;
+    if (!SameFile(doc->Path(), resolved.Value())) {
+        const bool exists = fs::exists(resolved.Value(), ec);
+        if (ec) return Error{"Cannot inspect animation state destination: " + ec.message(), ec.value()};
+        const bool metaExists = fs::exists(Utf8Path(asset::MetaPathFor(Utf8String(resolved.Value()))), ec);
+        if (ec) return Error{"Cannot inspect animation state metadata: " + ec.message(), ec.value()};
+        if (exists || metaExists) return Error{"Open the existing animation state file or choose an unused path; its GUID is preserved", 1};
+    }
+    fs::create_directories(resolved.Value().parent_path(), ec);
+    if (ec) return Error{"Cannot create animation state folder: " + ec.message(), ec.value()};
+    auto saved = WriteJsonFile(resolved.Value(), encoded.Value());
     if (!saved) return saved.GetError();
     doc->SetPath(Utf8String(resolved.Value()));
     doc->Commands().MarkSaved();

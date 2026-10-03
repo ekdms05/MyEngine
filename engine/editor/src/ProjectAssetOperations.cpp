@@ -269,6 +269,16 @@ Expected<void, Error> CheckProjectAssetDeletion(const ProjectContext& project, s
         if (!document->Path().empty() && fs::equivalent(Utf8Path(document->Path()), target.Value(), ec))
             return Error{"Close the asset document before deleting it", 1};
         ec.clear();
+        if (document->GetKind() == Document::Kind::AnimationState) {
+            const auto uses = [&](const asset::AnimationStateAsset& data) {
+                return std::any_of(data.states.begin(), data.states.end(), [&](const auto& state) {
+                    return state.animation.guid.IsValid() && state.animation.guid.ToString() == guid;
+                });
+            };
+            if (uses(document->AnimationState()) || (document->AnimationStateDraft() && uses(*document->AnimationStateDraft())))
+                return Error{"An open animation state document or pending edit uses this asset; remove its reference first", 1};
+            continue; // Incomplete drafts may have unassigned states; inspect their GUIDs without serialization.
+        }
         auto value = document->GetKind() == Document::Kind::Scene ? SceneSerializer{}.WriteWorld(document->World()) : Expected<json::Value, Error>(document->Animation().ToJson());
         if (document->GetKind() == Document::Kind::Ui) {
             auto encoded = ui::SaveDocumentJson(document->Ui());

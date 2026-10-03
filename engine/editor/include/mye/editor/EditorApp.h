@@ -79,6 +79,10 @@ public:
     Document* UiDocument();
     void SelectUiDocument(DocumentId id) { m_uiId = id; }
     void SetUiFocused() { m_focusedAsset = m_uiId; }
+    Expected<void, Error> OpenAnimationState(std::string_view path);
+    Document* AnimationStateDocument();
+    void SelectAnimationStateDocument(DocumentId id) { m_animationStateId = id; }
+    void SetAnimationStateFocused() { m_focusedAsset = m_animationStateId; }
     Expected<std::string, Error> BrowseImageFile();
     Expected<std::string, Error> BrowseAssetFile();
     void ActivateDocument(DocumentId id);
@@ -156,6 +160,7 @@ private:
     std::string    m_templateDirectory;
     DocumentId     m_animationId{};
     DocumentId     m_uiId{}, m_focusedAsset{};
+    DocumentId     m_animationStateId{};
     std::array<char, 128> m_newProjectName{};
     std::array<char, 4096> m_newProjectDirectory{};
     std::string    m_fileStatus;

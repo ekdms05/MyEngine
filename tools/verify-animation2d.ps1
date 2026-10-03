@@ -260,7 +260,7 @@ return {
         if($capture.replayStep -ne $i -or $capture.actors.Count -ne 1 -or $capture.actors[0].animationState -ne $expected[$i-1]){throw "Local state step $i failed"}
         Check-Pixel "state-local.step-$i" 480 222 $stateColours[$i-1]
     }
-    $playLog=Run-App $editor 'state-play' @('--project',$project,'--animation','assets/animations/state-idle.anim','--headless','--play','--frames','12000','--dump',(Join-Path $run 'state-play.bmp'))
+    $playLog=Run-App $editor 'state-play' @('--project',$project,'--animation','assets/animations/state-idle.anim','--animation-state','assets/animations/actor.animstate','--headless','--play','--frames','12000','--dump',(Join-Path $run 'state-play.bmp'))
     if($playLog -notmatch 'state-init-defaults' -or $playLog -notmatch 'state-six-ticks' -or ([regex]::Matches($playLog,'state-marker:state-attack')).Count -ne 1 -or ([regex]::Matches($playLog,'state-marker:state-idle')).Count -ne 2){throw 'Play state binding/entry failed'}
     Check-Pixel 'state-play' 480 222 0x808080
     # All states, including inactive ones, are validated before Lua initialization.

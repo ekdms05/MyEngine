@@ -16,6 +16,7 @@
 namespace mye::editor {
 
 Expected<void, Error> AssignAnimationToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef animation);
+Expected<void, Error> AssignAnimationStateToEntity(EditorContext& ctx, ecs::Entity entity, asset::AssetRef states);
 Expected<void, Error> SetupCharacterMovement(EditorContext& ctx, ecs::Entity entity);
 Expected<void, Error> AssignCharacterMotion(EditorContext& ctx, ecs::Entity entity,
                                            asset::AssetRef animation, bool walking);

@@ -219,10 +219,11 @@ async function main() {
   check("engine_reference — 입력 작성 키보드와 검수 경계", inputKeyboard.result?.isError !== true && firstText(inputKeyboard.result).includes("포커스별 Escape") && firstText(inputKeyboard.result).includes("실제 모니터 DPI"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const animation2D = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", lines: 120 } });
+  const animationDiagnostics = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", search: "-Temporal", lines: 4 } });
   check("engine_reference — 2D 모션의 공통 요청과 표시/틱 경계", animation2D.result?.isError !== true &&
     firstText(animation2D.result).includes("같은 이동 상태") && firstText(animation2D.result).includes("트리거") &&
     firstText(animation2D.result).includes("버전 2") && firstText(animation2D.result).includes("mirrorRight") &&
-    firstText(animation2D.result).includes("전체 재생 시간의 진행률") && firstText(animation2D.result).includes("--capture-at") && firstText(animation2D.result).includes("animationPlaying") && firstText(animation2D.result).includes("-Temporal") && firstText(animation2D.result).includes("Play를 중단"));
+    firstText(animation2D.result).includes("전체 재생 시간의 진행률") && firstText(animation2D.result).includes("--capture-at") && firstText(animation2D.result).includes("animationPlaying") && animationDiagnostics.result?.isError !== true && firstText(animationDiagnostics.result).includes("-Temporal") && firstText(animation2D.result).includes(".animstate") && firstText(animation2D.result).includes("Play를 중단"));
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });
   fs.writeFileSync(path.join(fixture, "project.myeproj"), JSON.stringify({ version: 1, name: "Smoke", mainScene: "assets/scenes/main.scene" }));

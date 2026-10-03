@@ -82,10 +82,44 @@ JSON은 replayStep·fixedTick과 actors의 netId/local(온라인 본인 여부),
 
 입력 재생의 각 steps 항목에 선택적 불리언 `animationPlaying`을 넣어 그 틱의 모든 SpriteAnimator 표현을 일시정지/재개한다. 누락은 현재 상태를 유지하며 문자열·null은 거부한다. 커서를 초기화하지 않고 조작·물리·서버 입력은 계속 진행한다. 이 필드는 진단 CLI용이며 Lua 함수나 서버 상태 변경 명령이 아니다. 기존 버전 1 입력 파일은 그대로 실행된다. 읽기 지연으로 고정 틱 따라잡기가 같은 스텝을 덮어쓰지 않도록 캡처를 다음 렌더에서 먼저 처리한다. 동기식 GPU 읽기/디스크 쓰기는 성능 측정용이 아니다.
 
+## 행동 상태 파일
+
+**main 소스는 `.animstate`의 이름·조건·클립 GUID를 저장하고 검증한다. 에디터 작성과 Play/MyGame 바인딩은 다음 작업이다.** 일반 `.anim` 버전 1/2와 이미지 제작 흐름은 유지한다. 상태는 기존 `.anim`을 참조하므로 8방향 그림을 다시 저장하지 않는다.
+
+```json
+{
+  "version": 1, "name": "player", "initialState": "idle",
+  "parameters": [{"name": "attack", "type": "trigger", "default": false}],
+  "states": [
+    {"name": "idle", "animation": "기존 idle.anim.meta의 GUID"},
+    {"name": "attack", "animation": "기존 attack.anim.meta의 GUID"}
+  ],
+  "transitions": [
+    {"from": "idle", "to": "attack", "onClipFinished": false, "keepPhase": false,
+     "conditions": [{"param": "attack", "op": "is_true"}], "consumeTriggers": []},
+    {"from": "attack", "to": "idle", "onClipFinished": true, "keepPhase": false,
+     "conditions": [], "consumeTriggers": []}
+  ]
+}
+```
+
+GUID 설명 문자열은 실제 `.meta`의 UUID로 바꾼다. `initialState`와 `from`/`to`는 상태 이름을 사용하므로 상태 순서를 바꿔도 같은 대상을 가리킨다. `from`의 `*`는 모든 상태이며 같은 상태로의 전이는 실행하지 않는다. 전이는 저장 순서대로 평가하고 한 고정 틱에 하나만 수행한다. 조건은 모두 참이어야 하며 조건이 빈 전이는 항상 준비된다. `onClipFinished`는 비반복 모션의 완료를 추가로 요구하며 반복 모션의 한 주기 종료를 뜻하지 않는다.
+
+| 설정 | 계약 |
+|---|---|
+| bool / trigger | default는 불리언. trigger는 false로 시작. is_true / is_false 조건 사용 |
+| float | default와 비교 value는 유한한 float. greater / less / greater_equal / less_equal / equal / not_equal 사용 |
+| keepPhase | true는 전체 시간 비율을 유지, false는 대상 처음부터 시작. 완료 뒤 진입은 항상 처음부터 |
+| trigger 소모 | 선택된 전이의 trigger 조건과 consumeTriggers 목록을 지움. 명시 목록은 선언된 trigger만 허용 |
+| 이름·개수 | 이름은 1~64 UTF-8 바이트, 제어문자/예약 이름 * 제외. 상태/파라미터 각 최대 64, 전이 256, 전이의 조건·명시 소모 각 16 |
+| 오류 | 중복 상태/파라미터, 미선언 조건, 잘못된 타입/연산자/초기 상태/끝점/필드/버전·비어 있는 GUID를 거부 |
+
+`AnimationStateAsset::FromJson`/`ToJson`은 포인터 없는 값 데이터만 다루며 저장 전에도 검증한다. `Load`는 기존 AssetDatabase/VFS에서 행동 파일과 각 `.anim` GUID·파일 형식을 확인한다. 이미지 디코드·실제 텍스처 크기·후속 에셋 바인딩·런타임 수명은 다음 앱 연결 단위에서 검증한다. 스캔은 `.meta`를 만들고 기존 GUID를 보존하며, 삭제 검사는 열지 않은 행동 파일의 클립 참조도 보호한다. 공통 JSON 파서의 마지막 중복 키 우선 정책은 유지하므로 원문 중복 키를 거부한다고 주장하지 않는다. 이 파일만으로 공격/피격/사망 입력이나 서버 전투가 실행되지는 않는다.
+
 ## 현재 검증과 다음 작업
 
 기존 테스트에 버전 1/2 왕복·잘못된 방향/타입/시간/프레임/이벤트, 값 복사와 대체/반전, 기존 GUID·저장 실패 보존·Undo·Redo, 실제 ImGui 방향 선택/추가/제거/저장을 남겼다. `tools/verify-animation2d.ps1 -Configuration Debug` 또는 `Release`는 `build/` 아래 새 프로젝트와 진단 시트를 만든다. 실제 MyGame의 8방향·정지·직접/반전/기본 대체 픽셀, 에디터 패널·Play, 손상 파일 거부, 두 인증 클라이언트의 로컬/원격 방향 픽셀과 Lua 격리를 검사한다. 단색 시트는 해석을 확인하기 위한 자료이며 고화질 게임 아트 승인이나 장치 입력의 증거가 아니다.
 
 `-Phase`를 추가하면 길이가 다른 정방향·역방향·왕복의 로컬 재생 입력 접두사, 무음 보정/실제 마커, 크기·피벗이 다른 프레임의 발 픽셀, 완료된 Play·인증 온라인 전환 결과를 검사한다. 각 온라인 접두사는 새 접속에서 실행하며 완료 상태의 끝 프레임을 확인한다. `-Temporal`은 Phase 검사를 포함하며 로컬·두 온라인 클라이언트의 32개 연속 입력 경계에서 완료 전 모션의 시간 비율·정방향/역방향/왕복·반전/발 픽셀·일시정지/재개를 검사한다. 온라인의 본인과 원격이 같은 표현 계산을 사용하며 일시정지 중 이동/서버 스냅샷도 갱신되는지 확인한다. 잘못된 진단 입력과 BMP/JSON 쓰기 실패도 거부한다. 합성 입력·읽기 지연이 있는 루프백 검사이며 실제 장치·지연/손실·다른 PC 검수는 별도다. 클라이언트 모션은 로컬 표현 시간이며 서버가 복제하는 공통 애니메이션 시계가 아니다.
 
-다음은 행동 모션의 이름/에셋·조건 데이터 저장, 에디터 작성/Undo, 입력·중단/완료 전환을 연결하는 D08d다. 대기/걷기·공격·피격·사망의 작성부터 작은 단위로 검증한다. 권위 전투·피해는 D16에서 연결한다. 실제 장치·전체 키보드 탐색·모니터 DPI, 게임 규칙·맵·HUD·운영 보호·완성 게임 배포는 별도 조건이다. [작업 목록](22-2d-mmorpg-roadmap.md), [Lua API](19-lua-api.md), [컴포넌트](20-components.md), [근거 기록](16-foundation-worklog.md)을 함께 확인한다.
+행동 이름/클립 GUID·조건과 전이별 진행률 정책의 저장/검증(D08d1)을 연결했다. 다음은 에디터 작성/Undo·앱 바인딩(D08d2), 이후 입력·중단/완료 전환(D08d3)이다. 대기/걷기·공격·피격·사망의 작성부터 작은 단위로 검증한다. 권위 전투·피해는 D16에서 연결한다. 실제 장치·전체 키보드 탐색·모니터 DPI, 게임 규칙·맵·HUD·운영 보호·완성 게임 배포는 별도 조건이다. [작업 목록](22-2d-mmorpg-roadmap.md), [Lua API](19-lua-api.md), [컴포넌트](20-components.md), [근거 기록](16-foundation-worklog.md)을 함께 확인한다.

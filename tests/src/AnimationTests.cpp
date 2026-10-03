@@ -18,6 +18,7 @@
 #include "mye/ecs/World.h"
 #include "mye/scene/Renderable.h"
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -474,4 +475,95 @@ MYE_TEST(AnimDirectionalCompletionAndStateTimePhase) {
     MYE_EXPECT(StepTransitions(actor) && actor.cursor.step == 0 && !actor.cursor.finished);
     actor.currentState = 0; actor.cursor = cursor;
     MYE_EXPECT(StepTransitions(actor, false) && actor.cursor.step == 0 && actor.cursor.timeInStep == 0);
+}
+
+
+MYE_TEST(AnimationStateAssetStrictNamedRoundTrip) {
+    asset::AnimationStateAsset graph;
+    graph.name = "player"; graph.initialState = 1;
+    graph.states = {{"idle", {asset::AssetGuid::Generate()}}, {"attack", {asset::AssetGuid::Generate()}}};
+    graph.parameters = {{"moving", ParamType::Bool, 0}, {"speed", ParamType::Float, 1.75f}, {"attack", ParamType::Trigger, 0}};
+    AnimTransition attack; attack.to = 1; attack.keepPhase = false;
+    attack.conditions = {{"attack", CmpOp::IsTrue, 0}}; attack.consumeTriggers = {"attack"};
+    AnimTransition finished; finished.from = 1; finished.to = 0; finished.onClipFinished = true;
+    AnimTransition moving; moving.from = 0; moving.to = 1;
+    moving.conditions = {{"moving", CmpOp::IsTrue, 0}, {"speed", CmpOp::Greater, .5f}};
+    graph.transitions = {attack, finished, moving};
+    auto encoded = graph.ToJson(); MYE_EXPECT(encoded); if (!encoded) return;
+    MYE_EXPECT(encoded.Value().Find("initialState")->AsString() == "attack");
+    auto copied = asset::AnimationStateAsset::FromJson(encoded.Value()); MYE_EXPECT(copied); if (!copied) return;
+    auto again = copied.Value().ToJson(); MYE_EXPECT(again);
+    if (again) MYE_EXPECT(json::Stringify(again.Value()) == json::Stringify(encoded.Value()));
+    MYE_EXPECT(copied.Value().transitions[0].from == -1 && !copied.Value().transitions[0].keepPhase);
+    MYE_EXPECT(copied.Value().initialState == 1 && copied.Value().parameters[2].value == 0);
+    // Reordering named states changes only resolved indices, never the named endpoints.
+    auto fields = encoded.Value().AsObject(); auto reordered = fields["states"].AsArray();
+    std::swap(reordered[0], reordered[1]); fields["states"] = json::Value(std::move(reordered));
+    auto reorderedGraph = asset::AnimationStateAsset::FromJson(json::Value(std::move(fields)));
+    MYE_EXPECT(reorderedGraph);
+    if (reorderedGraph) MYE_EXPECT(reorderedGraph.Value().initialState == 0 && reorderedGraph.Value().transitions[0].to == 0);
+
+    auto invalid = graph; invalid.initialState = 2; MYE_EXPECT(!invalid.ToJson());
+    invalid = graph; invalid.states[1].name = "idle"; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.states[0].animation.guid = {}; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.parameters[1].name = "moving"; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.parameters[0].value = .5f; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.parameters[1].value = std::numeric_limits<float>::infinity(); MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.parameters[2].value = 1; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[0].to = -1; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[0].from = -2; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[1].to = 1; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[0].conditions[0].param = "missing"; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[0].conditions[0].op = CmpOp::Greater; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[2].conditions[1].threshold = std::numeric_limits<float>::quiet_NaN(); MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[0].consumeTriggers = {"moving"}; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[0].consumeTriggers = {"attack", "attack"}; MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions[0].conditions.resize(17, attack.conditions[0]); MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.transitions.resize(257, attack); MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.states.clear();
+    for (int i = 0; i < 65; ++i) invalid.states.push_back({"state" + std::to_string(i), graph.states[0].animation});
+    MYE_EXPECT(!invalid.Validate());
+    invalid = graph; invalid.parameters.clear();
+    for (int i = 0; i < 65; ++i) invalid.parameters.push_back({"param" + std::to_string(i), ParamType::Float, 0});
+    MYE_EXPECT(!invalid.Validate());
+    for (const auto* key : {"version", "initialState", "states", "parameters", "transitions"}) {
+        auto bad = encoded.Value().AsObject(); bad.erase(key);
+        MYE_EXPECT(!asset::AnimationStateAsset::FromJson(json::Value(std::move(bad))));
+    }
+    auto bad = encoded.Value().AsObject(); bad["version"] = json::Value(int64_t{2});
+    MYE_EXPECT(!asset::AnimationStateAsset::FromJson(json::Value(std::move(bad))));
+    bad = encoded.Value().AsObject(); bad["blendSeconds"] = json::Value(0.1);
+    MYE_EXPECT(!asset::AnimationStateAsset::FromJson(json::Value(std::move(bad))));
+    const auto replace = [&](const std::string& old, const std::string& replacement) {
+        auto text = json::Stringify(encoded.Value()); const auto at = text.find(old); MYE_EXPECT(at != std::string::npos);
+        if (at == std::string::npos) return;
+        text.replace(at, old.size(), replacement); auto json = json::Parse(text); MYE_EXPECT(json);
+        if (json) MYE_EXPECT(!asset::AnimationStateAsset::FromJson(json.Value()));
+    };
+    replace("\"initialState\": \"attack\"", "\"initialState\": \"missing\"");
+    replace("\"is_true\"", "\"unknown\"");
+    replace("\"default\": false", "\"default\": \"false\"");
+    replace("\"keepPhase\": false", "\"keepPhase\": 0");
+    replace("\"value\": 0.5", "\"value\": \"0.5\"");
+}
+
+MYE_TEST(AnimStatePerTransitionRestartPolicy) {
+    auto idle = MakeClip(); auto attack = MakeClip(false);
+    AnimStateMachine machine;
+    AnimState state; state.directional = false; state.singleClip = &idle; machine.states.push_back(state);
+    state.singleClip = &attack; machine.states.push_back(state);
+    AnimTransition transition; transition.from = 0; transition.to = 1; transition.keepPhase = false;
+    transition.conditions = {{"attack", CmpOp::IsTrue, 0}}; machine.transitions.push_back(transition);
+    SpriteAnimator animator; animator.machine = &machine; animator.currentState = 0;
+    animator.cursor.step = 2; animator.cursor.timeInStep = .03f; animator.started = true;
+    animator.SetTrigger("attack");
+    MYE_EXPECT(StepTransitions(animator));
+    MYE_EXPECT(animator.currentState == 1 && animator.cursor.step == 0 && animator.cursor.timeInStep == 0 && !animator.started);
+    MYE_EXPECT(!animator.GetBool("attack"));
+    machine.transitions[0].keepPhase = true;
+    animator.currentState = 0; animator.cursor.step = 2; animator.cursor.timeInStep = .03f; animator.SetTrigger("attack");
+    MYE_EXPECT(StepTransitions(animator));
+    MYE_EXPECT(animator.cursor.step == 2); MYE_EXPECT_NEAR(animator.cursor.timeInStep, .03f, 1e-6f);
+    animator.currentState = 0; animator.SetTrigger("attack");
+    MYE_EXPECT(StepTransitions(animator, false)); MYE_EXPECT(animator.cursor.step == 0);
 }

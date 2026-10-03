@@ -64,7 +64,7 @@ bool StepTransitions(SpriteAnimator& a, bool keepPhase) {
         a.currentState = t.to;
         const auto target = ResolveActiveClip(a);
         // A new state starts a fresh cycle after completion; turning alone retains completion.
-        if (!keepPhase || a.cursor.finished || !previous.clip || !target.clip) a.cursor = {};
+        if (!keepPhase || !t.keepPhase || a.cursor.finished || !previous.clip || !target.clip) a.cursor = {};
         else if (previous.clip != target.clip) a.cursor = RemapClipCursor(*previous.clip, *target.clip, a.cursor);
         a.started = false;   // 새 상태 첫 프레임 이벤트 재발행
         return true;         // 1스텝당 1전이(체이닝은 다음 프레임)

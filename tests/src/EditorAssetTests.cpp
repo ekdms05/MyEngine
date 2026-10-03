@@ -3,6 +3,7 @@
 #include "mye/editor/Project.h"
 #include "mye/editor/SceneSerializer.h"
 #include "mye/asset/AssetDatabase.h"
+#include "mye/asset/AnimationStateAsset.h"
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/AssetMeta.h"
 #include "mye/asset/FileSystem.h"
@@ -128,4 +129,46 @@ MYE_TEST(EditorAssetImportAndDeletionBoundaries) {
     MYE_EXPECT(!CheckProjectAssetDeletion(project, "../image.png"));
     MYE_EXPECT(!CheckProjectAssetDeletion(project, "images/image.png.meta"));
     MYE_EXPECT(!CheckProjectAssetDeletion(project, "scenes/main.scene"));
+}
+
+
+MYE_TEST(AnimationStateGuidFilesAndDeletionBoundary) {
+    const auto root = Utf8Path(MYE_STARTER_SOURCE_DIR).parent_path().parent_path().parent_path() / "build" / "animation-state-tests"
+        / std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    ProjectContext project; auto created = project.Create("State test", Utf8String(root)); MYE_EXPECT(created); if (!created) return;
+    const auto assets = root / "assets";
+    asset::AnimationAsset clip; clip.imageSize = {16, 24}; clip.sheet.texture.guid = asset::AssetGuid::Generate();
+    asset::SpriteFrame frame; frame.rect = {0, 0, 16, 24}; frame.pivot = {8, 24}; frame.pivotInPixels = true;
+    clip.sheet.frames = {frame}; clip.clip.name = "idle"; clip.clip.frameIndices = {0}; clip.clip.frameDurations = {.1f};
+    MYE_EXPECT(WriteJsonFile(assets / "idle.anim", clip.ToJson()));
+    asset::VirtualFileSystem files; files.Mount("assets", std::make_unique<asset::LooseFileSystem>(Utf8String(assets)), 0);
+    asset::AssetManager manager(files, nullptr); asset::AssetDatabase database(manager, nullptr);
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)));
+    const auto clipGuid = database.GuidFromPath("assets://idle.anim"); MYE_EXPECT(clipGuid.IsValid());
+    asset::AnimationStateAsset graph; graph.name = "player"; graph.states = {{"idle", {clipGuid}}};
+    auto encoded = graph.ToJson(); MYE_EXPECT(encoded); if (!encoded) return;
+    MYE_EXPECT(WriteJsonFile(assets / "player.animstate", encoded.Value()));
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)));
+    const auto guid = database.GuidFromPath("assets://player.animstate"); MYE_EXPECT(guid.IsValid());
+    auto metadata = ReadJsonFile(assets / "player.animstate.meta"); MYE_EXPECT(metadata); if (!metadata) return;
+    auto loaded = asset::AnimationStateAsset::Load(guid, database, files); MYE_EXPECT(loaded);
+    if (loaded) MYE_EXPECT(loaded.Value().states[0].animation.guid == clipGuid);
+    MYE_EXPECT(database.ScanDirectory(Utf8String(assets)));
+    MYE_EXPECT(database.GuidFromPath("assets://player.animstate") == guid);
+    auto sameMetadata = ReadJsonFile(assets / "player.animstate.meta"); MYE_EXPECT(sameMetadata);
+    if (sameMetadata) MYE_EXPECT(json::Stringify(metadata.Value()) == json::Stringify(sameMetadata.Value()));
+    auto deletion = CheckProjectAssetDeletion(project, "idle.anim"); MYE_EXPECT(!deletion);
+    if (!deletion) MYE_EXPECT(deletion.GetError().message.find("player.animstate") != std::string::npos);
+    MYE_EXPECT(!asset::AnimationStateAsset::Load(clipGuid, database, files));
+    graph.states[0].animation.guid = asset::AssetGuid::Generate(); auto missing = graph.ToJson(); MYE_EXPECT(missing); if (!missing) return;
+    MYE_EXPECT(WriteJsonFile(assets / "player.animstate", missing.Value()));
+    MYE_EXPECT(!asset::AnimationStateAsset::Load(guid, database, files));
+    graph.states[0].animation.guid = guid; auto wrongType = graph.ToJson(); MYE_EXPECT(wrongType); if (!wrongType) return;
+    MYE_EXPECT(WriteJsonFile(assets / "player.animstate", wrongType.Value()));
+    MYE_EXPECT(!asset::AnimationStateAsset::Load(guid, database, files));
+    MYE_EXPECT(WriteJsonFile(assets / "player.animstate", encoded.Value()));
+    Text(assets / "idle.anim", "{broken"); MYE_EXPECT(!asset::AnimationStateAsset::Load(guid, database, files));
+    std::error_code ec; fs::remove(assets / "idle.anim", ec); MYE_EXPECT(!ec);
+    MYE_EXPECT(!asset::AnimationStateAsset::Load(guid, database, files));
+    MYE_EXPECT(fs::exists(assets / "player.animstate") && fs::exists(assets / "player.animstate.meta"));
 }

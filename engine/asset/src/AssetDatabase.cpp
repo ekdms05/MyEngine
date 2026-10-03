@@ -152,8 +152,10 @@ Expected<void, Error> AssetDatabase::ScanDirectory(std::string_view rootDir) {
             meta = std::move(parsed).Value();
         } else {
             const auto* importer = m_impl->manager->FindImporterForPath(vpath);
-            if (!importer && it->path().extension() != ".anim") continue;
-            meta = AssetMeta::CreateFor(importer ? importer->Name() : "AnimationAsset", importer ? importer->Version() : 1);
+            const auto extension = it->path().extension();
+            if (!importer && extension != ".anim" && extension != ".animstate") continue;
+            meta = AssetMeta::CreateFor(importer ? importer->Name() :
+                (extension == ".animstate" ? "AnimationStateAsset" : "AnimationAsset"), importer ? importer->Version() : 1);
             if (const auto cached = m_impl->manager->CachedGuid(vpath); cached.IsValid()) meta.guid = cached;
             auto value = json::Parse(meta.Stringify());
             if (!value) return value.GetError();

@@ -15,6 +15,7 @@
 #include "mye/anim/AnimationTypes.h"
 #include "mye/anim/ClipPlayback.h"
 #include "mye/asset/AnimationAsset.h"
+#include "mye/asset/AnimationStateAsset.h"
 #include "mye/ecs/ComponentType.h"
 
 #include <cstdint>
@@ -53,33 +54,13 @@ struct DirectionalAnimSet {
 // 상태 머신 — 상태=방향세트(또는 단일 클립), 전이=파라미터 조건. 데이터로 표현.
 // ---------------------------------------------------------------------------
 // 파라미터 블랙보드: 이름→값. bool/float 통합(bool은 0/1). trigger 는 소모형 bool.
-enum class ParamType : uint8_t { Bool, Float, Trigger };
+using asset::ParamType;
+using asset::AnimParam;
+using asset::CmpOp;
+using asset::AnimCondition;
+using asset::AnimTransition;
 
-struct AnimParam {
-    std::string name;
-    ParamType   type = ParamType::Float;
-    float       value = 0.0f;   // bool/trigger: 0/1
-};
-
-// 전이 조건 연산자.
-enum class CmpOp : uint8_t { Greater, Less, GreaterEqual, LessEqual, Equal, NotEqual, IsTrue, IsFalse };
-
-struct AnimCondition {
-    std::string param;          // 참조 파라미터 이름
-    CmpOp       op = CmpOp::IsTrue;
-    float       threshold = 0.0f;
-};
-
-// 전이: from 상태에서 조건들이 모두 참이면 to 상태로. clipFinished=true 면 "현재 클립 종료 시".
-struct AnimTransition {
-    int  from = -1;             // -1 = any-state
-    int  to = 0;
-    std::vector<AnimCondition> conditions;
-    bool onClipFinished = false;   // 비루프 클립이 끝났을 때만 유효
-    std::vector<std::string> consumeTriggers;   // 전이 시 소모할 trigger 파라미터
-};
-
-// 상태: 방향세트(8방향) 또는 단일 클립. directional=false 면 singleClip 사용.
+// Runtime states borrow directional or single clips from their owner.
 struct AnimState {
     std::string        name;
     bool               directional = true;

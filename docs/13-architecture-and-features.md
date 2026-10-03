@@ -41,6 +41,8 @@ main 소스는 .myeproj의 inputMap을 ProjectContext와 MyGame이 같은 파서
 
 main 소스의 2D 조작은 UpdateCharacterAnimation2D로 로컬/예측/원격의 대기·걷기 요청과 방향을 조합한다. 입력/권위 facing은 방향, 실제 이동량은 모션을 결정하며 마지막 방향과 후속 클립을 유지한다. 런타임 요청 GUID는 애니메이터에 보관하고 저장하지 않는다. BindAnimations의 후속 연결은 고정 틱에서만 허용하며 표시에는 SampleAnimator를 사용해 트리거·커서·첫 이벤트를 소비하지 않는다. AnimationAsset의 같은 시트/기본·선택적 8방향 값 데이터를 GUID로 바인딩한다. 기본 전용 파일은 버전 1, 방향별 파일은 버전 2이며 직접 클립→선택적 좌측 반전→기본 순서다. 애니메이션 로드/검증 실패는 Expected로 전달해 에디터 Play를 중단하고 자동 실행을 실패시킨다. [26](26-2d-animation.md)의 저장·Undo·앱 연결과 시간 비율 보정·반전 발 피벗·연속 로컬/온라인 표현 검사와 남은 행동 전환을 구분한다.
 
+행동 상태의 `.animstate`는 기존 bool/float/trigger·조건/전이 값을 asset 계층에서 소유하고 runtime은 호환 alias로 소비한다. 이름 기반 상태/초기 상태·GUID 참조와 전이별 진행률 정책을 검증/저장한다. AssetDatabase/VFS 로드는 각 `.anim` 파일 형식을 확인하고 삭제 검사는 행동 파일의 참조를 보호한다. 행동 파일의 에디터 작성·Play/MyGame 바인딩은 아직 연결하지 않았으며 [26](26-2d-animation.md)에 데이터와 앱 완료 범위를 구분한다.
+
 ## 공통 계약과 실제 한계
 
 씬의 공통 등록에는 SpriteRenderer·BillboardRenderer·MeshRenderer·Camera2D·Camera3D가 포함된다. 두 공식 앱이 같은 등록·직렬화 계약을 사용한다. GLB/임베디드 glTF는 기존 MeshImporter와 GUID resolver로 연결하며 노드 변환·glTF 재질·리깅·외부 .bin은 지원하지 않는다. billboard의 Full/YAxis/None, 발 피벗·반전과 기존 SpriteAnimator를 렌더에서 소비한다.

@@ -10,7 +10,6 @@
   <script src="guide.js" defer></script>
 </head>
 <body>
-  <p class="release-note">배포 기준: <strong>MyEngine 0.4.0</strong>. 2D 카메라·입력·모션/행동·로컬 게임 UI를 포함합니다. 아래 0.3.0 관련 문구는 이전 버전과의 차이이며, 온라인 게임 규칙과 실제 장치/IME 검수는 미완료입니다.</p>
   <a class="skip" href="#main">본문으로 이동</a>
   <header><a class="brand" href="#start"><span aria-hidden="true">▧</span> <span translate="no">MyEngine</span></a><span>게임 제작 가이드</span><a href="../07-editor-ui.md">에디터 계약</a></header>
   <div class="layout">
@@ -33,15 +32,16 @@
         <a href="online.html" data-keywords="XYZ 물리 점프 360 카메라 온라인 인증 서버">11 XYZ와 온라인</a>
         <a href="#recovery" data-keywords="오류 콘솔 Undo 저장 복구 빌드">10 저장과 오류 해결</a>
       </nav>
-      <p class="muted">인터넷 연결 없이 열 수 있습니다.<br>기준: 2026-10-02 구현</p>
+      <p class="muted">인터넷 연결 없이 열 수 있습니다.<br>기준: MyEngine 0.4.0</p>
     </aside>
     <main id="main" tabindex="-1">
       <section id="start">
         <p class="eyebrow">만들고 · 저장하고 · 플레이하기</p>
         <h1>초원 마을에서 첫 게임을 시작하세요.</h1>
+        <p>배포 기준: <strong>MyEngine 0.4.0</strong>. 2D 카메라·입력·모션/행동·로컬 게임 UI를 포함합니다. 아래 0.3.0 관련 문구는 이전 버전과의 차이이며, 온라인 게임 규칙과 실제 장치/IME 검수는 미완료입니다.</p>
         <p class="lead">기본 프로젝트를 만들면 개별 건물·지형 오브젝트와 레벨 1 캐릭터가 준비됩니다. 장면을 수정하고 저장한 뒤 Play로 바로 확인할 수 있습니다.</p>
         <figure><img src="media/editor.png" width="960" height="540" alt="회색 에디터의 중앙 마을 뷰포트, 왼쪽 오브젝트 계층, 오른쪽 인스펙터와 하단 콘솔" fetchpriority="high"><figcaption>실제 MyEditor 화면. 상단 중앙의 작업대를 선택하면 중앙 내용이 바뀝니다. 주변 다섯 영역은 탭으로 사용합니다.</figcaption></figure>
-        <ol><li><code>build/dev/apps/editor/Release/MyEditor.exe</code>를 실행합니다.</li><li><strong>시작 창 → 프로젝트 만들기</strong>에서 이름·폴더를 지정하고 기본 콘텐츠 사용을 선택합니다.</li><li>프로젝트를 저장하고 Play를 누릅니다. WASD 또는 방향키로 걷고 E로 상호작용합니다.</li></ol>
+        <ol><li>Windows ZIP 전체를 새 폴더에 풀고 그 폴더의 <code>MyEditor.exe</code>를 실행합니다. 소스 빌드의 실행 파일은 <code>build/dev/apps/editor/Release/MyEditor.exe</code>입니다.</li><li><strong>시작 창 → 프로젝트 만들기</strong>에서 이름·폴더를 지정하고 기본 콘텐츠 사용을 선택합니다.</li><li>프로젝트를 저장하고 Play를 누릅니다. WASD 또는 방향키로 걷고 E로 상호작용합니다.</li></ol>
         <figure><img src="media/launcher.png" width="640" height="420" loading="lazy" alt="프로젝트 만들기와 불러오기 버튼을 가진 작은 시작 창"><figcaption>프로젝트를 열기 전에는 시작 창만 표시됩니다.</figcaption></figure>
         <details><summary>왜 기본 프로젝트로 시작하나요?</summary><p>씬·에셋 GUID·충돌·캐릭터 구성의 연결을 실제로 확인할 수 있습니다. 새 프로젝트는 원본 템플릿을 복사하므로 제작 중 변경이 다른 프로젝트에 전파되지 않습니다.</p><p>근거: <code>ProjectContext::Create</code>, <code>game/starter/meadow_village</code>.</p></details>
       </section>

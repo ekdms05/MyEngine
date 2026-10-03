@@ -253,3 +253,4 @@ try {
         $process.Dispose()
     }
 }
+exit 0

@@ -90,6 +90,7 @@ def prepare(folder):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", choices=("Debug","Release"), default="Release")
+    parser.add_argument("--build-dir", type=Path, default=Path("build/dev"))
     args = parser.parse_args()
     folder = ROOT / "build/game-ui" / uuid.uuid4().hex
     folder.mkdir(parents=True)
@@ -108,8 +109,9 @@ def main():
     reference["children"]=[label]
     document["root"]["children"] += [field,reference]
     write_json(source,document)
-    editor = ROOT / f"build/dev/apps/editor/{args.config}/MyEditor.exe"
-    game = ROOT / f"build/dev/apps/game/{args.config}/MyGame.exe"
+    build = ROOT / args.build_dir
+    editor = build / f"apps/editor/{args.config}/MyEditor.exe"
+    game = build / f"apps/game/{args.config}/MyGame.exe"
     run_app(editor,["--project",manifest,"--import-asset",source,"--asset-destination","hud.ui","--headless","--frames","1"],folder,"import")
     metadata = manifest.parent / "assets/hud.ui.meta"
     guid = json.loads(metadata.read_text(encoding="utf-8"))["guid"]

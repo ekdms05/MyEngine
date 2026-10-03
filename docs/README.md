@@ -10,6 +10,7 @@
 | [온라인 2D 플레이](23-2d-online-play.md) | main 소스의 두 공식 앱 접속·공통 충돌·입력 재생·저장 재접속과 범위 |
 | [2D 게임 카메라](24-2d-camera.md) | main 소스의 저장·추종·경계·줌/흔들림·Lua 좌표 변환과 실제 프레임 검증 |
 | [프로젝트 입력 설정](25-input-actions.md) | 기본/사용자 조작 작성·재매핑·저장·공통 틱/Lua 조회와 직접 장치 검수의 남은 범위 |
+| [2D 모션·행동](26-2d-animation.md) / [게임 UI](27-game-ui.md) | 방향별 클립·행동 전이·로컬 Lua HUD·문서 작성과 한계 |
 | [에디터](07-editor-ui.md) | 프로젝트 창, 작업대, 문서·PlayWorld 계약 |
 | [오브젝트](17-object-workflow.md) / [컴포넌트](20-components.md) | 조작·충돌·이벤트·맵 연결 |
 | [XYZ 플레이와 온라인](21-3d-play-and-online.md) | 캐릭터 물리·360° 카메라·인증 온라인 설정과 한계 |

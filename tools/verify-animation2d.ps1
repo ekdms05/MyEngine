@@ -744,3 +744,4 @@ if ($Phase) {
 if ((Get-FileHash -LiteralPath $scenePath).Hash -ne $sceneHash -or
     (Get-FileHash -LiteralPath ($animationPath + '.meta')).Hash -ne $metaHash) { throw 'Authored scene/GUID changed' }
 Write-Output "PASS: $Configuration saved 8-facing clips, direct/mirror/default pixels, editor preview/Play, strict rejection, two authoritative clients/Lua isolation ($run)"
+exit 0

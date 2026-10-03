@@ -36,6 +36,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./tools/verify-foundation.ps1 -Configuration Release -BuildDir build/release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check 2D applications
+        shell: pwsh
+        env:
+          MYE_DX11_WARP: '1'
+        run: |
+          ./tools/verify-online2d.ps1 -Configuration Release -BuildDir build/release -SavedCamera
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tools/verify-input-actions.ps1 -Configuration Release -BuildDir build/release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tools/verify-animation2d.ps1 -Configuration Release -BuildDir build/release -Temporal -StateMaps -Actions
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python ./tools/verify-game-ui.py --config Release --build-dir build/release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'

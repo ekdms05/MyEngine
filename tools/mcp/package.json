@@ -1,6 +1,6 @@
 {
   "name": "myengine-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "MyEngine MCP server — build, test, capture, project inspection, asset import and API reference",
   "type": "module",

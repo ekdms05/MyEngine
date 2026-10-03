@@ -46,7 +46,7 @@ if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip) -or (Test-
 $publicDocs = @('README.md','01-core-platform.md','02-rendering.md','03-scene-world.md','04-asset-pipeline.md',
     '06-runtime-systems.md','07-editor-ui.md','08-mcp.md','13-architecture-and-features.md',
     '14-development-priorities.md','15-skills-and-agents.md','16-foundation-worklog.md',
-    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','23-2d-online-play.md','24-2d-camera.md','25-input-actions.md','release-notes.md')
+    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','23-2d-online-play.md','24-2d-camera.md','25-input-actions.md','26-2d-animation.md','27-game-ui.md','release-notes.md')
 foreach ($name in $publicDocs) { $null = Repo-File "docs/$name" }
 $null = Repo-File 'docs/guide/index.html'
 $null = Repo-File 'game/starter/meadow_village/project.myeproj'
@@ -64,6 +64,7 @@ Write-Utf8 $templateReadme ([IO.File]::ReadAllText($templateReadme).Replace('../
 New-Item -ItemType Directory -Path (Join-Path $stage 'docs') | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo 'docs/guide') -Destination (Join-Path $stage 'docs/guide') -Recurse
 Copy-Item -LiteralPath (Join-Path $repo 'docs/images') -Destination (Join-Path $stage 'docs/images') -Recurse
+Copy-Item -LiteralPath (Join-Path $repo 'docs/examples') -Destination (Join-Path $stage 'docs/examples') -Recurse
 foreach ($name in $publicDocs) { Copy-Item -LiteralPath (Repo-File "docs/$name") -Destination (Join-Path $stage "docs/$name") }
 Copy-Item -LiteralPath (Repo-File 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
 Copy-Item -LiteralPath (Repo-File 'README.md') -Destination (Join-Path $stage 'README.md')
@@ -136,7 +137,9 @@ Run MyEditor.exe, then create or open a project in the project launcher.
 The meadow village template and the offline guide (docs/guide/index.html) are included.
 Play opens the project in a separate game window; pause/stop remain in the editor toolbar.
 To play an existing project directly: MyGame.exe --project "path/to/project.myeproj".
-XYZ characters and orbit cameras work in local Play. MyServer.exe supports authenticated loopback 2D/XYZ play.
+Saved 2D cameras, project input bindings, eight-direction animation and action-state documents are included.
+Game UI documents and local Lua HUD/input work in Play/MyGame. See docs/26-2d-animation.md and docs/27-game-ui.md.
+MyServer.exe supports authenticated loopback 2D/XYZ movement. Online gameplay rules and HUD are not connected.
 See docs/23-2d-online-play.md and docs/21-3d-play-and-online.md for scene contracts, private credentials and online limits.
 
 Requirements: Windows 10/11 x64, DirectX 11 device/driver, latest Microsoft Visual C++ v14 x64 Redistributable.

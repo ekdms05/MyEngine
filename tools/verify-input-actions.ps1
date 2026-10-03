@@ -93,3 +93,4 @@ Run-App $game 'legacy-game' @('--project', $project, '--headless', '--ticks', '4
 if ((Get-FileHash -LiteralPath $scene).Hash -ne $sceneHash) { throw 'Input checks modified the scene' }
 Write-Output "Input actions app checks passed ($Configuration): $run"
 Write-Output 'CLI rendering/validation and synthetic library tests do not certify physical keyboard/gamepad operation.'
+exit 0

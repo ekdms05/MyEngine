@@ -2,7 +2,7 @@
 
 A lightweight Windows C++20 engine being built for online 2D pixel MMORPGs. Build scenes from separate objects, connect collision and interaction components, write Lua behavior, and test in a separate game window.
 
-Local 2D movement, collision, sprites, animation and portals share the editor/player path. Source main also connects authored 2D online scenes, [saved 2D cameras](docs/24-2d-camera.md) and [project input bindings](docs/25-input-actions.md); these additions are not in the 0.3.0 release. Authoritative game rules and runtime UI still need integration. The [2D MMORPG work list](docs/22-2d-mmorpg-roadmap.md) defines the product goal, small tasks and acceptance checks. Existing static 3D meshes, billboards, orbit cameras and bounded XYZ online play remain supported; new 3D work has lower priority. See the [component guide](docs/20-components.md) for actual formats and limits.
+Local 2D movement, collision, sprites, animation and portals share the editor/player path. Version 0.4.0 includes authenticated 2D online movement, [saved 2D cameras](docs/24-2d-camera.md), [project input bindings](docs/25-input-actions.md), [eight-direction animation and action states](docs/26-2d-animation.md), and [authored game UI with local Lua](docs/27-game-ui.md). Authoritative gameplay rules, online portals and online HUD still need integration. The [2D MMORPG work list](docs/22-2d-mmorpg-roadmap.md) defines the product goal, small tasks and acceptance checks. Existing static 3D meshes, billboards, orbit cameras and bounded XYZ online play remain supported; new 3D work has lower priority. See the [component guide](docs/20-components.md) for actual formats and limits.
 
 ## Get started
 
@@ -15,6 +15,7 @@ Download the Windows x64 ZIP from [Releases](https://github.com/ekdms05/MyEngine
 - Right-click the Asset Browser to import PNG, animation, Lua or WAV assets, create folders, or recycle an unused file. `.meta` GUIDs identify assets across scenes.
 - Press Play to open the game window. WASD / arrow keys move the configured character; E interacts. Pause and Stop remain in the editor header. Playing never saves changes into the edit scene.
 - Create pixel art and skeletal animation in external tools. Import PNG sheets and edit frame regions, timing, events and successor clips in the animation panel.
+- Use the animation-state document to connect idle, walk and project-authored actions. Use **Window → Game UI** to edit widget trees, anchors and properties, preview, save and bind a `.ui` document to `GameUi`.
 
 The [offline game creation guide](docs/guide/index.html), [Lua API](docs/19-lua-api.md) and [component guide](docs/20-components.md) describe the actual editor APIs and their limits. The engine's [architecture](docs/13-architecture-and-features.md) and [development priorities](docs/14-development-priorities.md) distinguish integrated features from library support.
 
@@ -40,9 +41,9 @@ build/dev/apps/editor/Release/MyEditor.exe --project game/starter/meadow_village
 build/dev/apps/game/Release/MyGame.exe --project game/starter/meadow_village/project.myeproj
 ```
 
-The 0.3.0 download's `MyGame` plays authored projects locally and connects to the authenticated loopback XYZ server. [3D play and online setup](docs/21-3d-play-and-online.md) describes controls, shared collision, prediction, replication and saved positions. Public Internet transport, online portals/game rules and game export remain incomplete. Play inside the editor uses a separate native window in the same process, so it does not isolate process crashes.
+The 0.4.0 download's `MyGame` plays authored projects locally and connects to the authenticated loopback 2D or XYZ server. [3D play and online setup](docs/21-3d-play-and-online.md) describes controls, shared collision, prediction, replication and saved positions. Public Internet transport, online portals/game rules and game export remain incomplete. Play inside the editor uses a separate native window in the same process, so it does not isolate process crashes.
 
-Current source adds continuous box/circle collision and `MyGame --ticks N` for fixed simulation checks, with an optional `--dump final.bmp` after the last tick. Main now connects authored 2D scenes to authenticated MyServer/MyGame using shared motion and collision, peer sprites and persisted XY/floor state. See [2D online play](docs/23-2d-online-play.md). These source changes are not in the existing 0.3.0 binaries.
+Version 0.4.0 includes continuous box/circle collision and `MyGame --ticks N` for fixed simulation checks, with an optional `--dump final.bmp` after the last tick. Authored 2D scenes connect to authenticated MyServer/MyGame using shared motion and collision, peer sprites and persisted XY/floor state. See [2D online play](docs/23-2d-online-play.md). Online clients execute no project Lua. Keep gameplay scripts and HUD in local Play/MyGame until authoritative gameplay integration is complete. Existing 0.3.0 downloads remain unchanged; extract each version into its own folder.
 
 ## Development tools
 
@@ -61,6 +62,6 @@ Current source adds continuous box/circle collision and `MyGame --ticks N` for f
 | `tools/` | MCP, packaging and verification |
 | `docs/` | Current user guides and API contracts |
 
-The renderer uses a left-handed coordinate system, +Y up, 48 pixels per world unit and a 960×540 pixel target. Sprites and inserted 3D geometry share depth and alpha cutout contracts. DX11 is the implemented graphics backend. Visual game UI editing, full 3D scene tooling, script autocomplete/debugging, process-isolated play and production online integration remain development work.
+The renderer uses a left-handed coordinate system, +Y up, 48 pixels per world unit and a 960×540 pixel target. Sprites and inserted 3D geometry share depth and alpha cutout contracts. DX11 is the implemented graphics backend. UI canvas dragging, actual IME candidate-window and device validation, full 3D scene tooling, script autocomplete/debugging, process-isolated play and production online integration remain development work.
 
 Sol2 and the integrated pixel drawing/rigging tool have been removed. Lua 5.4.7, Dear ImGui, the currently used image/model/audio decoders and FreeType remain because they serve live loading, rendering and scripting paths. Third-party license notices are preserved. The editor bundles NanumSquareRound Regular with its SIL OFL 1.1 notice; Windows language fonts supplement Japanese/Chinese coverage and are not redistributed.

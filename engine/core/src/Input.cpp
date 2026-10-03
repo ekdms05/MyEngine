@@ -7,6 +7,32 @@
 
 namespace mye {
 
+Expected<void, Error> ValidateTextInput(std::string_view text) {
+    if (text.size() > 4096) return Error{"Text input exceeds 4096 UTF-8 bytes", 1};
+    for (const unsigned char c : text)
+        if (c < 32 || c == 127) return Error{"Text input requires one line without control characters", 1};
+    if (!text.empty() && !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(),
+        static_cast<int>(text.size()), nullptr, 0)) return Error{"Text input contains invalid UTF-8", 1};
+    return {};
+}
+void InputState::SetTextInputFocus(uint64_t id) {
+    if (id == m_textFocusId && id != 0) return;
+    m_textFocusId = id; m_textComposing = false;
+    m_textEdits.clear(); m_textBytes = 0; m_textError.reset();
+}
+Expected<void, Error> InputState::OnTextEdit(TextEdit edit) {
+    if (!m_textFocusId || m_keyboardSuppressed) return {};
+    auto valid = ValidateTextInput(edit.text); if (!valid) return valid.GetError();
+    if (edit.cursorBytes > edit.text.size() || (edit.cursorBytes < edit.text.size() &&
+        (static_cast<unsigned char>(edit.text[edit.cursorBytes]) & 0xc0) == 0x80))
+        return Error{"Text composition cursor must be a UTF-8 boundary", 1};
+    if (m_textEdits.size() >= 256 || m_textBytes + edit.text.size() > 16384)
+        return Error{"Text input frame exceeds 256 edits or 16384 bytes", 1};
+    if (edit.kind == TextEdit::Kind::Composition) m_textComposing = edit.composing;
+    m_textBytes += edit.text.size(); m_textEdits.push_back(std::move(edit));
+    return {};
+}
+
 static size_t Idx(KeyCode k) { return static_cast<size_t>(k); }
 static size_t Idx(MouseButton b) { return static_cast<size_t>(b); }
 static size_t Idx(GamepadButton b) { return static_cast<size_t>(b); }
@@ -35,6 +61,7 @@ void InputState::NewFrame() {
     m_pressed = {}; m_released = {};
     m_mouseDelta = {};
     m_wheelDelta = 0.0f;
+    m_textEdits.clear(); m_textBytes = 0;
 }
 
 // ---- 게임패드(XInput) ----
@@ -140,6 +167,13 @@ float InputState::RawGamepadAxis(int axis, int pad) const {
 
 void InputState::OnKey(KeyCode key, bool pressed) {
     if (m_keyboardSuppressed || Idx(key) >= Idx(KeyCode::Count)) return;
+    if (pressed && m_textFocusId && !m_textComposing &&
+        (key == KeyCode::Backspace || key == KeyCode::Delete || key == KeyCode::Left || key == KeyCode::Right ||
+         key == KeyCode::Home || key == KeyCode::End || (key == KeyCode::Enter && !m_current.keys[Idx(key)]))) {
+        TextEdit edit; edit.kind = TextEdit::Kind::Key; edit.key = key;
+        auto accepted = OnTextEdit(std::move(edit));
+        if (!accepted) ReportTextInputError(accepted.GetError());
+    }
     if (pressed != m_current.keys[Idx(key)]) {
         if (pressed) m_pressed.keys[Idx(key)] = true;
         else m_released.keys[Idx(key)] = true;
@@ -165,6 +199,7 @@ void InputState::OnWheel(float deltaY) {
 }
 
 void InputState::SetKeyboardSuppressed(bool suppressed) {
+    if (suppressed) SetTextInputFocus(0);
     // 억제 진입 시 눌린 키를 released로 강제해 stuck 방지(엣지도 이번 프레임에 관측 가능).
     if (suppressed && !m_keyboardSuppressed) {
         for (size_t i = 0; i < Idx(KeyCode::Count); ++i) {

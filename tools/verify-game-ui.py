@@ -94,6 +94,20 @@ def main():
     folder = ROOT / "build/game-ui" / uuid.uuid4().hex
     folder.mkdir(parents=True)
     manifest, scene_path, scene, entity, document, source = prepare(folder)
+    field = copy.deepcopy(document["root"]["children"][-1])
+    field.update(typeName="TextInput",name="text_entry",children=[],properties=[
+        dict(__version=1,key="text",value="한글 입력"),dict(__version=1,key="tint",value="#0c1014")])
+    field["anchors"].update(offMinX=380,offMinY=360,sizeX=240,sizeY=28)
+    reference = copy.deepcopy(field)
+    reference.update(typeName="Panel",name="text_reference",properties=[
+        dict(__version=1,key="background",value="true"),dict(__version=1,key="tint",value="#0c1014")])
+    reference["anchors"]["offMinY"]=400
+    label = copy.deepcopy(field)
+    label.update(typeName="Label",name="text_reference_label",properties=[])
+    label["anchors"].update(offMinX=4,offMinY=2,sizeX=232,sizeY=24)
+    reference["children"]=[label]
+    document["root"]["children"] += [field,reference]
+    write_json(source,document)
     editor = ROOT / f"build/dev/apps/editor/{args.config}/MyEditor.exe"
     game = ROOT / f"build/dev/apps/game/{args.config}/MyGame.exe"
     run_app(editor,["--project",manifest,"--import-asset",source,"--asset-destination","hud.ui","--headless","--frames","1"],folder,"import")
@@ -117,11 +131,15 @@ def main():
     editor_preview = dict(command=[str(editor),*map(str,preview_args)],binary=digest(editor),capture=digest(preview_capture),colours={str(k):v for k,v in preview_colours.items()})
     records = []
     for hp in (100,75,0):
+        sample=json.dumps(f"한글 입력 {hp} {{red}}",ensure_ascii=False)
         entity["components"]["ObjectBehavior"] = dict(__version=1,connections=[],luaSource=f'''return {{on_init=function(self)
 assert(mye.ui.set_progress("hp",{hp},100))
 assert(mye.ui.set_text("stats","한글 HP {hp} / 100"))
 assert(mye.ui.set_enabled("attack",{str(hp > 0).lower()}))
 assert(mye.ui.set_enabled("potion",{str(0 < hp < 100).lower()}))
+assert(mye.ui.set_text("text_entry",{sample}))
+assert(mye.ui.get_text("text_entry")=={sample})
+assert(mye.ui.set_text("text_reference_label",{sample}))
 mye.log("HUD_BOUND",{hp}) end}}''')
         write_json(scene_path,scene)
         scene_hash = digest(scene_path)
@@ -143,25 +161,34 @@ mye.log("HUD_BOUND",{hp}) end}}''')
                     assert pixel((32+x)*scale,72*scale)==expected,(name,x,pixel((32+x)*scale,72*scale))
                 assert pixel(808*scale,28*scale)==(0,204,102),name
                 assert pixel(35*scale,207*scale)==((76,76,87) if hp>0 else (36,36,41)),name
-                records.append(dict(name=name,command=[str(exe),*map(str,arguments)],binary=digest(exe),capture=digest(capture),hp=hp,size=[width,height]))
+                text_pixels=0
+                for y in range(362,384):
+                    for x in range(384,616):
+                        value=pixel(x*scale,y*scale)
+                        assert value==pixel(x*scale,(y+40)*scale),(name,"text layout",x,y)
+                        text_pixels += max(value)>100
+                assert text_pixels>100,(name,"text not drawn",text_pixels)
+                records.append(dict(name=name,command=[str(exe),*map(str,arguments)],binary=digest(exe),capture=digest(capture),hp=hp,size=[width,height],matchingTextPixels=text_pixels))
                 assert digest(scene_path)==scene_hash and digest(metadata)==metadata_hash
     # Error cases use exactly the same app init path as successful saved UI.
     target=manifest.parent / "assets/hud.ui"
     valid=target.read_bytes()
-    for case in ("corrupt","missing-png","bad-region","missing-ui"):
+    for case in ("corrupt","missing-png","bad-region","missing-ui","bad-text"):
         if case=="corrupt": target.write_text("{}",encoding="utf-8")
         if case=="missing-png": (manifest.parent / "assets/ui-fixture.png").rename(manifest.parent / "assets/ui-fixture.png.saved")
         if case=="bad-region":
-            bad=copy.deepcopy(document);bad["root"]["children"][-1]["properties"][1]["value"]="3,0,2,2";write_json(target,bad)
+            bad=copy.deepcopy(document);next(n for n in bad["root"]["children"] if n["name"]=="atlas_icon")["properties"][1]["value"]="3,0,2,2";write_json(target,bad)
+        if case=="bad-text":
+            bad=copy.deepcopy(document);next(n for n in bad["root"]["children"] if n["name"]=="text_entry")["properties"][0]["value"]="bad\nline";write_json(target,bad)
         if case=="missing-ui": target.rename(target.with_suffix(".ui.saved"))
         for app,exe in (("MyGame",game),("MyEditor",editor)):
             arguments=["--project",manifest,"--headless"]+(["--play","--frames","180"] if app=="MyEditor" else ["--ticks","4"])
             log=run_app(exe,arguments,folder,app+"-"+case,1)
-            assert "UI" in log or "GameUi" in log,case
+            assert "UI" in log or "GameUi" in log or (case=="bad-text" and "Text input" in log),case
         if case=="missing-png": (manifest.parent / "assets/ui-fixture.png.saved").rename(manifest.parent / "assets/ui-fixture.png")
         if case=="missing-ui": target.with_suffix(".ui.saved").rename(target)
         target.write_bytes(valid)
-    write_json(folder / "report.json",dict(records=records,editorPreview=editor_preview,negativeApps=8,metadataPreserved=digest(metadata)==metadata_hash,
+    write_json(folder / "report.json",dict(records=records,editorPreview=editor_preview,negativeApps=10,metadataPreserved=digest(metadata)==metadata_hash,
         limits="Synthetic local state; native MyEditor dump is Play render target. No physical clicks/focus/IME/online/monitor-DPI claim."))
     print(f"PASS saved UI: {folder}")
 

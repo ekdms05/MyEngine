@@ -20,15 +20,17 @@ public:
     void Register(lua_State* state) override;
     ui::Widget* Root() const { return m_canvas ? m_canvas->root() : nullptr; }
     Expected<bool, Error> FilterInput(InputState& input, Vec2 pointer, bool enabled);
-    Expected<void, Error> ProcessClicks();
+    Expected<void, Error> ProcessCallbacks();
+    std::optional<TextInputFocus> TextFocus() const { return m_ui.TextFocus(); }
     bool BlocksGameplay() const { return m_ui.HasModal(); }
     void Reset();
 private:
     std::vector<asset::AssetHandle<asset::Texture>> m_textures;
     ui::UiSystem m_ui;
     ui::UiCanvas* m_canvas = nullptr; // owned by m_ui
-    struct Click { std::string name; script::LuaReference callback; };
-    std::vector<Click> m_clicks;
-    bool m_clickOverflow = false;
+    void Queue(std::string name, script::LuaReference callback, std::optional<std::string> submittedText);
+    struct Callback { std::string name; script::LuaReference callback; std::optional<std::string> submittedText; };
+    std::vector<Callback> m_callbacks;
+    bool m_callbackOverflow = false;
 };
 } // namespace mye::runtime

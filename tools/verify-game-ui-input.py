@@ -28,6 +28,8 @@ user.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
 user.AttachThreadInput.argtypes = (wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
 user.BringWindowToTop.argtypes = (wintypes.HWND,)
 user.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+user.SendMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+user.SendMessageW.restype = ctypes.c_ssize_t
 user.mouse_event.argtypes = (wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, ctypes.c_size_t)
 user.keybd_event.argtypes = (wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_size_t)
 ENUM = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -102,7 +104,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", choices=("Debug", "Release"), default="Release")
     parser.add_argument("--app", choices=("MyGame", "MyEditor", "all"), default="all")
-    parser.add_argument("--case", choices=("clicks", "error", "all"), default="all")
+    parser.add_argument("--case", choices=("clicks", "error", "text", "all"), default="all")
     args = parser.parse_args()
     folder = ui.ROOT / "build/game-ui-input" / uuid.uuid4().hex
     folder.mkdir(parents=True)
@@ -119,6 +121,10 @@ def main():
         dict(__version=1,key=k,value=v) for k,v in [("modal","true"),("visible","false"),("background","true"),("tint","#203040")]])
     dialog["anchors"].update(offMinX=400,offMinY=120,sizeX=240,sizeY=120)
     document["root"]["children"] += [button,dialog]
+    entry=copy.deepcopy(button)
+    entry.update(typeName="TextInput",name="test_entry")
+    entry["anchors"].update(offMinX=400,offMinY=300,sizeX=240,sizeY=30)
+    document["root"]["children"].append(entry)
     ui.write_json(source, document)
     editor = ui.ROOT / f"build/dev/apps/editor/{args.config}/MyEditor.exe"
     game = ui.ROOT / f"build/dev/apps/game/{args.config}/MyGame.exe"
@@ -134,9 +140,10 @@ def main():
     try:
         for is_editor, exe in [(False,game),(True,editor)]:
             if args.app != "all" and args.app != exe.stem: continue
-            for failure in [False,True]:
-                if args.case != "all" and failure != (args.case=="error"): continue
-                name = ("MyEditor" if is_editor else "MyGame") + ("-error" if failure else "-clicks")
+            for mode in ["clicks","error","text"]:
+                if args.case != "all" and mode != args.case: continue
+                failure=mode=="error"
+                name = exe.stem+"-"+mode
                 current_case = name
                 entity["components"]["ObjectBehavior"] = dict(__version=1,connections=[],luaSource='''
 return {on_init=function(self)
@@ -154,11 +161,20 @@ return {on_init=function(self)
         assert(mye.ui.set_progress("hp",0,100))
         mye.log("UI_INPUT_CLOSE")
     end))
+    assert(mye.ui.on_submit("test_entry",function(value)
+        assert(value=="한글😀" and mye.ui.get_text("test_entry")==value)
+        assert(mye.ui.set_text("stats","입력: "..value))
+        mye.log("UI_TEXT_SUBMIT")
+    end))
     mye.log("UI_INPUT_READY")
 end,on_update=function(self,dt)
     if self.modal then assert(not mye.input.is_action_pressed("move_right"),"MODAL_INPUT_LEAK") end
+    if IS_TEXT and not self.received and mye.ui.get_text("test_entry")=="한글😀" then
+        self.received=true
+        mye.log("UI_TEXT_RECEIVED")
+    end
 end}
-'''.replace('FAILURE','error("UI_INPUT_FAILURE")' if failure else ''))
+'''.replace('FAILURE','error("UI_INPUT_FAILURE")' if failure else '').replace('IS_TEXT','true' if mode=="text" else 'false'))
                 ui.write_json(scene_path,scene)
                 scene_hash = ui.digest(scene_path)
                 capture = folder/(name+".bmp")
@@ -177,10 +193,29 @@ end}
                         time.sleep(.2) # Let the editor's initial window/layout activation finish.
                         activate(handle)
                         wait_for(lambda:user.GetForegroundWindow()==handle,process,name+": no foreground",2)
-                        click(handle,(450,40))
+                        if mode=="text":
+                            click(handle,(450,310)); time.sleep(.08)
+                            require_focus(handle)
+                            user.SendMessageW(handle,0x010D,0,0) # Start preedit; Enter must not submit it.
+                            key(handle,0x0D,True)
+                            try: time.sleep(.04)
+                            finally: key(handle,0x0D,False)
+                            require_focus(handle)
+                            user.SendMessageW(handle,0x010E,0,0)
+                            assert "UI_TEXT_SUBMIT" not in log(), "IME Enter submitted preedit"
+                            encoded="한글😀".encode("utf-16-le")
+                            for index in range(0,len(encoded),2):
+                                require_focus(handle)
+                                user.SendMessageW(handle,0x0102,int.from_bytes(encoded[index:index+2],"little"),0)
+                            wait_for(lambda:"UI_TEXT_RECEIVED" in log(),process,name+": text did not reach UI")
+                            key(handle,0x0D,True)
+                            try: time.sleep(.04)
+                            finally: key(handle,0x0D,False)
+                            wait_for(lambda:"UI_TEXT_SUBMIT" in log(),process,name+": submit did not reach fixed Lua")
+                        else: click(handle,(450,40))
                         if failure:
                             wait_for(lambda:"UI_INPUT_FAILURE" in log(),process,name+": callback did not fail")
-                        else:
+                        elif mode=="clicks":
                             wait_for(lambda:"UI_INPUT_OPEN" in log(),process,name+": click did not reach Lua")
                             key(handle,0x44,True)
                             try: time.sleep(.15)
@@ -194,7 +229,8 @@ end}
                         exit_code = process.wait(timeout=30)
                         assert exit_code == (1 if failure else 0), (name,exit_code)
                         if not failure:
-                            assert log().count("UI_INPUT_OPEN")==1 and log().count("UI_INPUT_CLOSE")==1
+                            if mode=="text": assert log().count("UI_TEXT_RECEIVED")==1 and log().count("UI_TEXT_SUBMIT")==1
+                            else: assert log().count("UI_INPUT_OPEN")==1 and log().count("UI_INPUT_CLOSE")==1
                             assert "[ERROR]" not in log() and "MODAL_INPUT_LEAK" not in log()
                             assert capture.is_file()
                         assert ui.digest(meta)==metadata_hash and ui.digest(scene_path)==scene_hash
@@ -211,7 +247,7 @@ end}
         if original_foreground: user.SetForegroundWindow(original_foreground)
         ui.write_json(folder/"report.json",dict(passed=failure_detail is None, records=records, failure=failure_detail,
             metadataPreserved=ui.digest(meta)==metadata_hash,
-            limits="Requires foreground acquisition for this process. Synthetic OS mouse/key input; a focus loss can interrupt D, so no raw D delivery guarantee. No physical device, IME, online or monitor DPI certification."))
+            limits="Requires own foreground. Synthetic mouse/key and WM_CHAR/start/end composition messages; no real IME result/candidate-window or physical-device/DPI certification. Focus loss may interrupt D; no raw D delivery guarantee. No online approval."))
     print(f"PASS native UI input: {folder}")
 
 if __name__ == "__main__":

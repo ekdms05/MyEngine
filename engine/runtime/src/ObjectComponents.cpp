@@ -34,7 +34,7 @@ template<> void mye::refl::Reflect(TypeBuilder<ScenePortal>& b) {
 template<> void mye::refl::Reflect(TypeBuilder<GameUi>& b) {
     b.Version(1).Field("enabled", &GameUi::enabled)
         .Field("document", &GameUi::document)
-        .Attr(Attribute::MakeTooltip("저장한 .ui 에셋을 지정합니다. 로컬 Play/MyGame에서 mye.ui로 표시값을 갱신합니다. 클릭·IME·온라인 UI는 아직 연결되지 않았습니다."));
+        .Attr(Attribute::MakeTooltip("저장한 .ui 에셋을 지정합니다. 로컬 Play/MyGame에서 mye.ui로 표시값을 갱신합니다. 버튼 클릭·TextInput/키보드 포커스·모달 차단을 지원합니다. 실제 IME 장치 검수·온라인 UI는 별도입니다."));
 }
 template<> void mye::refl::Reflect(EnumBuilder<ObjectEvent>& b) {
     b.Value("Start", ObjectEvent::Start).Value("Interact", ObjectEvent::Interact)

@@ -165,6 +165,7 @@ WidgetFactory::WidgetFactory() {
     Register("StackLayout", &MakeWidget<StackLayout>);
     Register("GridLayout",  &MakeWidget<GridLayout>);
     Register("Window",      &MakeWidget<Window>);
+    Register("TextInput",   &MakeWidget<TextInput>);
 }
 
 void WidgetFactory::Register(std::string_view typeName, CreateFn fn) {
@@ -216,6 +217,7 @@ Expected<void, Error> WidgetFactory::ApplyProperties(Widget& w, const std::vecto
     auto* image = w.As<Image>();
     auto* progress = w.As<ProgressBar>();
     auto* button = w.As<Button>();
+    auto* input = w.As<TextInput>();
     std::unordered_set<std::string_view> keys;
     for (const auto& [key, value] : props) {
         if (!keys.insert(key).second) return Error{"Duplicate UI property: " + key, 1};
@@ -230,14 +232,19 @@ Expected<void, Error> WidgetFactory::ApplyProperties(Widget& w, const std::vecto
             else if (key == "enabled" && button) button->state = enabled ? Button::State::Normal : Button::State::Disabled;
             else return Error{"UI property is unsupported by " + w.name + ": " + key, 1};
         } else if (key == "text" && label) label->setText(value);
+        else if (key == "text" && input) { auto updated=input->SetText(value); if (!updated) return updated.GetError(); }
         else if (key == "title" && window) window->title = value;
-        else if (key == "fontSize" && label) {
+        else if (key == "fontSize" && (label || input)) {
             auto number = Number(value); if (!number) return number.GetError();
             if (number.Value() < 8 || number.Value() > 96 || std::floor(number.Value()) != number.Value())
                 return Error{"UI fontSize requires an integer in [8,96]", 1};
-            label->style.size = static_cast<uint16_t>(number.Value());
-        } else if (key == "colour" && label) {
-            auto colour = Colour(value); if (!colour) return colour.GetError(); label->style.color = colour.Value();
+            (label ? label->style : input->style).size = static_cast<uint16_t>(number.Value());
+        } else if (key == "colour" && (label || input)) {
+            auto colour = Colour(value); if (!colour) return colour.GetError();
+            (label ? label->style : input->style).color = colour.Value();
+            if (input) input->textColor = colour.Value();
+        } else if (key == "tint" && input) {
+            auto colour=Colour(value); if (!colour) return colour.GetError(); input->background=colour.Value();
         } else if (key == "tint" && (panel || image)) {
             auto colour = Colour(value); if (!colour) return colour.GetError();
             if (panel) panel->tint = colour.Value(); else image->tint = colour.Value();
@@ -278,7 +285,7 @@ static Expected<WidgetPtr, Error> InstantiateNode(const UiNodeDesc& node,
     w->anchors = node.anchors;
     w->styleClass = MakeStyleClass(node.styleClass);
     // Decorative nodes pass input through; explicit interactive properties still override this.
-    w->interactive = w->As<Button>() || w->As<Window>();
+    w->interactive = w->As<Button>() || w->As<Window>() || w->As<TextInput>();
     auto applied = factory.ApplyProperties(*w, node.properties);
     if (!applied) return Error{node.name + ": " + applied.GetError().message, 1};
     for (const UiNodeDesc& childDesc : node.children) {

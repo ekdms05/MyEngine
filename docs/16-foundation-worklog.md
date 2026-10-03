@@ -614,3 +614,16 @@ UI/검증: 필드 위 이름·폭에 따른 버튼 줄바꿈·넓은 2열/좁은
 미통과와 교정: 최종 Release 네이티브 전체 입력 gate는 MyGame-clicks foreground 획득 실패로 입력 전에 중단됐다. 자기 PID/foreground/포인터 검사를 유지하고 실패 보고서를 남겼다. 중간 Debug 세 케이스의 클릭/Enter/오류 관찰은 최종 코드 이전·네 번째 미완료이므로 최종 전체 PASS로 계산하지 않는다. stdout 버퍼링은 기존 실시간 file sink로, 과도한 검사 프레임은900으로 교정했다. 키 해제/자기 subprocess 종료와 thread detach는 finally에서 수행한다. 컴파일 전방 선언/부모 순회 타입 오류와 Lua 가이드 재생성의 xyz 앵커 유실을 수정 후 재검증했고 초기 실패 로그를 보존했다.
 
 상태: D22b1은 main 소스 연결·공통 회귀/표시 검사 통과이며 네이티브 전체 입력/직접 장치/DPI·IME/패드 UI·온라인/소비자 배포는 미완료다. 로컬 개발/UI 지침·MCP lua/ui·공개 가이드를 동기화했다. 상세 답변/근거/해시는 제작 프로젝트 docs와 build의 d21d-audit/benchmark/log에 둔다. 원문 SHA85964a8c…·VERSION/tag·설치0.3.0의84파일 해시/크기를 유지한다. 전체 MMORPG 목표는 계속 진행하며 ME-003 장치/입력 검수→행동 작성/입력·중단→프리팹/질의→맵/저장 상태→권위 통합 순서를 유지한다.
+
+
+## 2026-10-03 · 저장 텍스트 입력과 제출
+
+근거: ME-003/016의 한글 입력·포커스·제작한 UI의 실제 동작을 우선했다. 기존 TextInput·TextLayout·UiSystem·UiDocument와 InputState, LuaReference의 고정 틱 큐를 재사용한다. 문자 입력 라이브러리를 새로 들이지 않고 Windows SDK IMM/imm32의 조합/확정·커서/후보창 위치를 공통 Win32 경계에 연결했다. Godot LineEdit의 단일 입력/제출/조합 흐름과 Microsoft IMM의 문자열 크기/반환 규칙을 참고했으며 외부 코드를 복사하지 않았다.
+
+계약: 한 줄4096 UTF-8 bytes·ASCII 제어문자/DEL 거부, 확정값/조합 분리·코드포인트 이동/삭제·Home/End·조합 중 Enter 미제출·첫 누름 제출이다. 필드/맵 수명별 포커스 ID와 창별 UTF-16 잔여 상태로 오래된 문자를 격리하며 포인터/Tab 변경 전에 순서대로 적용한다. 프로그램 set_text는 커서/조합 초기화와 새 네이티브 소유 세대, 실제 후보창은 동일 destRect/배율의 커서 좌표를 사용한다. WM_IME_CHAR의 중복 삽입을 차단한다. 변환/IME 읽기/취소/위치 오류와256편집/16KiB 프레임·총64개 대기 동작 초과는 Expected로 전파한다. 제출 당시 문자열/함수 복사본으로 고정 틱에 실행한다. 이미 적용한 편집/실행 효과의 자동 롤백은 없다.
+
+연결/수명: 에디터의 저장 TextInput→GameUi 준비→MyGame/별도 Play 공유 네이티브 문자→UiSystem→on_submit/get_text/set_text/focus→ObjectSystem 고정 틱이다. 키보드 UI 포커스는 게임 키 액션을 차단하고 모달은 전체 장치를 차단한다. 숨김/interactive=false·Pause/포커스 이탈·Stop/맵/VM 종료의 기존 큐/수명을 유지한다. 엔진은 게임 채팅/권한/HP 규칙을 계산하지 않고 온라인 클라이언트는 여전히 ObjectSystem/Lua를 실행하지 않는다.
+
+최종 검증: 기존 build/dev의 Debug/Release build·CTest 각606/606(집계1/1), 총42.73/31.66초. 공통 Win32 UTF-16/프레임·포커스 경계 회귀1개와 기존 Play 통합 회귀의 저장/조합/제출·값 보존을 보강했다. 각 구성 실제 앱 native/headless12출력·잘못된 여러 줄 포함10건 exit1·씬/메타 보존·문서 미리보기 통과. 입력칸과 비교 Label의 한글/중괄호 글리프 픽셀467/489/534 일치, 실제 Release HP75를 직접 확인했다. Release 자기 foreground의 두 앱×클릭/오류/텍스트6건 통과; 이전 foreground 실패는 역사 기록으로 보존한다. MCP build/smoke40, 가이드184링크/앵커 통과. 새 이미지는 전체 실제 프레임의 무손실 형식 변환이다.
+
+남은 조건: 실제 한국어 IME GCS_RESULTSTR/조합 업데이트·후보 선택/취소/창 전환과 물리 장치·DPI/패드 UI·선택/클립보드/결합문자·온라인/소비자 배포는 미검증/미완료다. 합성 WM_CHAR/조합 시작·끝을 실제 IME 결과/후보창 검수로 계산하지 않는다. 직접 D 전달이 포커스 이탈로 중단될 수 있어 네이티브 D 차단 전체 인증도 주장하지 않는다. 사용자 원문 SHA85964a8c…·기존 아트/GUID·VERSION/tag와 설치0.3.0의84파일 해시/크기를 보존했다. 현재 개발/UI 지침과 MCP lua/ui·가이드를 동기화했고 새 패키지·에이전트·픽셀 제작기·측정 없는 성능 최적화는 추가하지 않았다. 상세 답변은 Project E docs의 engine-feedback-response-2026-10-03-text-input.md, 명령/해시는 build의 d23a-audit/benchmark/log에 둔다. 전체 목표는 계속 진행한다.

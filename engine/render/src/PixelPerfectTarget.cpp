@@ -10,6 +10,15 @@
 #include <cstring>
 
 namespace mye::render {
+Rect PixelPerfectTarget::LogicalRectToWindow(Vec2i internalSize, Vec2i windowSize, Rect rect) {
+    if (internalSize.x<=0 || internalSize.y<=0 || windowSize.x<=0 || windowSize.y<=0) return {};
+    const auto layout=ComputeLayout(internalSize,windowSize);
+    const float left=std::clamp(layout.destRect.x+rect.x*layout.scale,0.0f,float(windowSize.x-1));
+    const float top=std::clamp(layout.destRect.y+rect.y*layout.scale,0.0f,float(windowSize.y-1));
+    const float right=std::clamp(layout.destRect.x+(rect.x+rect.w)*layout.scale,left,float(windowSize.x));
+    const float bottom=std::clamp(layout.destRect.y+(rect.y+rect.h)*layout.scale,top,float(windowSize.y));
+    return {left,top,right-left,bottom-top};
+}
 std::optional<Vec2> PixelPerfectTarget::WindowToLogical(Vec2i internalSize, Vec2i windowSize, Vec2i pointer) {
     if (internalSize.x <= 0 || internalSize.y <= 0 || windowSize.x <= 0 || windowSize.y <= 0 ||
         pointer.x < 0 || pointer.y < 0 || pointer.x >= windowSize.x || pointer.y >= windowSize.y) return {};

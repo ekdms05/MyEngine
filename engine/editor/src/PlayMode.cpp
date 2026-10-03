@@ -280,6 +280,7 @@ std::string_view PlayModeController::Prompt() const {
     return m_impl->objects ? m_impl->objects->Prompt() : std::string_view{};
 }
 ui::Widget* PlayModeController::UiRoot() const { return m_impl->objects ? m_impl->objects->UiRoot() : nullptr; }
+std::optional<TextInputFocus> PlayModeController::TextFocus() const { return m_impl->objects ? m_impl->objects->TextFocus() : std::nullopt; }
 Expected<bool, Error> PlayModeController::FilterUiInput(InputState& input, Vec2 pointer, bool enabled) {
     return m_impl->objects ? m_impl->objects->FilterUiInput(input, pointer, enabled) : Expected<bool, Error>{enabled};
 }

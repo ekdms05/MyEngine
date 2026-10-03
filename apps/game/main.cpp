@@ -9,6 +9,7 @@
 #include "mye/ui/GameOverlay.h"
 #include "mye/core/Events.h"
 #include "mye/core/Input.h"
+#include "mye/core/platform/Win32Input.h"
 #include "mye/core/JsonFile.h"
 #include "mye/core/Log.h"
 #include "mye/ecs/CommandBuffer.h"
@@ -758,6 +759,12 @@ private:
             m_scene->objects ? m_scene->objects->Message() : std::string_view{},
             m_scene->objects ? m_scene->objects->UiRoot() : nullptr);
         if (!feedback) { m_device->EndFrame(); Fail(feedback.GetError()); return; }
+        if (m_window && m_input) {
+            auto focus=m_scene->objects && m_inputFocused ? m_scene->objects->TextFocus() : std::nullopt;
+            if (focus) focus->caret=render::PixelPerfectTarget::LogicalRectToWindow(logicalSize,m_window->GetClientSize(),focus->caret);
+            auto configured=win32::ConfigureTextInput(*m_input,m_window->GetNativeHandle(),focus);
+            if (!configured) { m_device->EndFrame(); Fail(configured.GetError()); return; }
+        }
         ++m_frame;
         const bool finished = m_replayFinished || (m_cli.frames && m_frame >= m_cli.frames) ||
                                (m_cli.ticks && m_tick >= m_cli.ticks);

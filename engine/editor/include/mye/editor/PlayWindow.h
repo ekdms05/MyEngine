@@ -3,6 +3,7 @@
 #include "mye/core/Events.h"
 #include "mye/core/Input.h"
 #include "mye/core/platform/Win32Window.h"
+#include "mye/core/platform/Win32Input.h"
 #include "mye/render/PixelPerfectTarget.h"
 #include "mye/rhi/Rhi.h"
 #include "mye/ui/GameOverlay.h"
@@ -24,7 +25,8 @@ public:
     Vec2i ClientSize() const { return m_window ? m_window->GetClientSize() : Vec2i{}; }
     Expected<void, Error> Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
                 const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command,
-                std::string_view prompt = {}, std::string_view message = {}, ui::Widget* root = nullptr);
+                std::string_view prompt = {}, std::string_view message = {}, ui::Widget* root = nullptr,
+                std::optional<TextInputFocus> textFocus = {});
     void Present();
     rhi::TextureHandle Backbuffer() const;
 
@@ -37,6 +39,7 @@ private:
     ui::GameOverlay m_overlay;
     ScopedSubscription m_resized;
     InputState m_input;
+    win32::TextMessageState m_textMessages;
     bool m_paused = false;
 };
 } // namespace mye::editor

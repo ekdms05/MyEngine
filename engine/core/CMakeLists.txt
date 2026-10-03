@@ -44,4 +44,4 @@ target_include_directories(mye_core PUBLIC
 )
 
 # user32: 창·메시지 펌프 / shell32: CommandLineToArgvW / Xinput9_1_0: 게임패드 폴링
-target_link_libraries(mye_core PRIVATE user32 shell32 Xinput9_1_0)
+target_link_libraries(mye_core PRIVATE user32 shell32 Xinput9_1_0 imm32)

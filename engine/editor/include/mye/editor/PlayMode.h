@@ -11,6 +11,7 @@
 #include "mye/editor/EditorTypes.h"
 #include "mye/core/Base.h"
 #include "mye/core/Math.h"
+#include "mye/core/Input.h"
 
 #include <cstdint>
 #include <functional>
@@ -60,6 +61,7 @@ public:
     std::string_view Message() const;
     std::string_view Prompt() const;
     ui::Widget* UiRoot() const;
+    std::optional<TextInputFocus> TextFocus() const;
     Expected<bool, Error> FilterUiInput(InputState& input, Vec2 pointer, bool enabled);
     float FadeAlpha() const;
     void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }

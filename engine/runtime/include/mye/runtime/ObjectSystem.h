@@ -30,6 +30,7 @@ public:
     std::string_view Message() const;
     std::string_view Prompt() const;
     ui::Widget* UiRoot() const; // Borrow only until this ObjectSystem/Play world is destroyed.
+    std::optional<TextInputFocus> TextFocus() const;
     Expected<bool, Error> FilterUiInput(InputState& input, Vec2 pointer, bool enabled);
     void Dispatch(ecs::Entity object, ObjectEvent event);
 private:

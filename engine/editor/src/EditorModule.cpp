@@ -674,7 +674,7 @@ void EditorModule::Frame(const TimeStep&) {
         auto view = scene::BuildGameView(*s.app->PlayMode().ActiveWorld(), s.app->PlayMode().DefaultCamera());
         const auto rendered = view
             ? s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd,
-                s.app->PlayMode().Prompt(), s.app->PlayMode().Message(), s.app->PlayMode().UiRoot())
+                s.app->PlayMode().Prompt(), s.app->PlayMode().Message(), s.app->PlayMode().UiRoot(), s.app->PlayMode().TextFocus())
             : Expected<void, Error>{view.GetError()};
         if (!rendered) {
             s.ReportFrameError(rendered.GetError());

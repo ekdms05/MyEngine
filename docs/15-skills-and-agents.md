@@ -69,4 +69,7 @@
 
 UI 문서 작성은 기존 개발·게임 UI·ImGui 지침과 문서 CommandStack을 재사용한다. 문서/위젯 경로별 ID·임시 편집·파일/GUID 보존과 공유 게임 렌더 미리보기를 검수한다. 타입별 속성 UX·실제 장치/DPI·게임 포커스/IME·온라인은 별도이며 추가 패키지/상시 에이전트는 필요하지 않았다.
 
-게임 UI 입력은 기존 myengine-development·game-ui-ux와 UiSystem/InputState/LuaReference를 재사용한다. 고정 틱 콜백·모달의 같은 틱 입력 차단·문서 교체/VM 종료 수명을 검사하고 로컬 두 지침과 기존 MCP lua/ui 참조를 동기화한다. 네이티브 전체 입력 검사는 foreground 획득 실패로 미통과이며 공통 회귀/표시 검사와 구분한다. 새 패키지·에이전트·픽셀 제작 기능은 추가하지 않았다.
+게임 UI 입력은 기존 myengine-development·game-ui-ux와 UiSystem/InputState/LuaReference를 재사용한다. 고정 틱 콜백·모달의 같은 틱 입력 차단·문서 교체/VM 종료 수명을 검사하고 로컬 두 지침과 기존 MCP lua/ui 참조를 동기화한다. Release 합성 네이티브 입력6건을 통과했고 이전 foreground 실패는 보존한다. 공통 회귀/표시 검사·실제 IME/물리 장치 검수와 구분한다. 새 패키지·에이전트·픽셀 제작 기능은 추가하지 않았다.
+
+
+텍스트 입력은 기존 myengine-development·game-ui-ux, TextInput/TextLayout·UiSystem과 네이티브 Windows IMM을 사용했다. 필드별 UTF-16 상태·한 줄 UTF-8 검증·조합/확정 분리·실제 커서 위치·고정 틱 제출을 공통 경계에서 검사한다. 로컬 두 지침과 MCP lua/ui를 갱신하며 새 패키지·병렬 에이전트·픽셀 제작기는 추가하지 않았다. 실제 GCS_RESULTSTR/후보창·물리 장치/DPI·온라인/배포는 소스와 합성 입력 통과에서 분리한다.

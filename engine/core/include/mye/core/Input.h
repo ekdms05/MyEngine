@@ -9,6 +9,9 @@
 #include "mye/core/Math.h"
 
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace mye {
 
@@ -25,6 +28,7 @@ enum class KeyCode : uint16_t {
     Semicolon = 51, Apostrophe, Grave, Comma, Period, Slash,
     CapsLock = 57,
     F1 = 58, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    Home = 74, Delete = 76, End = 77,
     Right = 79, Left, Down, Up,                     // 화살표(HID 순서)
     LeftControl = 224, LeftShift, LeftAlt, LeftGui,
     RightControl, RightShift, RightAlt, RightGui,   // 228..231
@@ -65,6 +69,18 @@ struct TextInputEvent    { MYE_EVENT(TextInputEvent);    char utf8[8]; };  // �
 // IME는 해석하지 않고 06으로 그대로 전달(통로만).
 struct ImeRawMessageEvent { MYE_EVENT(ImeRawMessageEvent);
                             void* hwnd; uint32_t msg; uint64_t wparam; int64_t lparam; };
+
+// A focused editor owns these ordered frame edits; composition is separate from committed text.
+struct TextEdit {
+    enum class Kind { Insert, Composition, Key };
+    Kind kind = Kind::Insert;
+    std::string text;
+    KeyCode key = KeyCode::Unknown;
+    uint32_t cursorBytes = 0;
+    bool composing = false;
+};
+struct TextInputFocus { uint64_t id = 0; Rect caret; };
+Expected<void, Error> ValidateTextInput(std::string_view text);
 
 // 즉시 상태 조회(폴링) — 프레임 경계에서 스냅샷 갱신. WasPressed/WasReleased는
 // "이번 프레임에 상태가 바뀌었나"(엣지) 질의. 메인 루프는 NewFrame 후 메시지를 받고
@@ -117,6 +133,13 @@ public:
     void OnMouseButton(MouseButton btn, bool pressed);
     void OnMouseMove(Vec2i position, Vec2 rawDelta);
     void OnWheel(float deltaY);
+    void SetTextInputFocus(uint64_t id);
+    uint64_t TextFocusId() const { return m_textFocusId; }
+    bool IsTextComposing() const { return m_textComposing; }
+    Expected<void, Error> OnTextEdit(TextEdit edit);
+    const std::vector<TextEdit>& TextEdits() const { return m_textEdits; }
+    const std::optional<Error>& TextInputError() const { return m_textError; }
+    void ReportTextInputError(Error error) { if (!m_textError) m_textError = std::move(error); }
 
     // ---- 입력 선점(UI 캡처) ----
     // ImGui 등 오버레이 UI가 키보드/마우스를 캡처 중일 때 게임 입력 상태 갱신을 억제한다.
@@ -143,6 +166,11 @@ private:
     float    m_wheelDelta = 0.0f;
     bool     m_keyboardSuppressed = false;   // UI 캡처 중 게임 키보드 입력 억제
     bool     m_mouseSuppressed = false;      // UI 캡처 중 게임 마우스 입력 억제
+    uint64_t m_textFocusId = 0;
+    bool m_textComposing = false;
+    std::vector<TextEdit> m_textEdits;
+    size_t m_textBytes = 0;
+    std::optional<Error> m_textError;
 };
 
 } // namespace mye

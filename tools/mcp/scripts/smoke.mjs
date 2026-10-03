@@ -259,6 +259,9 @@ async function main() {
   check("engine_reference — UI 클릭과 모달 입력 계약", gameUi.result?.isError !== true &&
     firstText(gameUi.result).includes("on_click") && firstText(gameUi.result).includes("focus") &&
     firstText(gameUi.result).includes("모달") && firstText(gameUi.result).includes("고정 틱"));
+  check("engine_reference — 텍스트 입력과 제출 경계", gameUi.result?.isError !== true &&
+    firstText(gameUi.result).includes("on_submit") && firstText(gameUi.result).includes("get_text") &&
+    firstText(gameUi.result).includes("TextInput") && firstText(gameUi.result).includes("후보창"));
   const authoringUi = await request("tools/call", { name: "engine_reference", arguments: { topic: "editor", search: "--ui", lines: 20 } });
   check("engine_reference — UI 문서 작성과 저장 경계", authoringUi.result?.isError !== true &&
     firstText(authoringUi.result).includes(".ui") && firstText(authoringUi.result).includes("Undo") &&

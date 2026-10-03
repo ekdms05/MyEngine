@@ -22,6 +22,8 @@ class EventBus;
 
 namespace mye::win32 {
 
+struct TextMessageState { wchar_t pendingHighSurrogate = 0; uint64_t focusId = 0; };
+
 // win32 Raw Input → RawKeyEvent/RawMouseMoveEvent/... + InputState 갱신.
 //
 // 수명: window·bus·state 보다 짧아야 한다(참조 보관). 생성 시 Raw Input 장치를 등록하고
@@ -50,7 +52,14 @@ private:
     EventBus&   m_bus;
     InputState* m_state = nullptr;
     int         m_priority = 100;
+    TextMessageState m_textMessages;
 };
+
+// Shared by Raw Input's window and the editor Play window without registering another device.
+bool HandleTextInputMessage(InputState* state, TextMessageState& messages,
+    void* hwnd, uint32_t msg, uint64_t wparam, int64_t lparam, EventBus* events = nullptr);
+Expected<void, Error> ConfigureTextInput(InputState& state, void* hwnd,
+    std::optional<TextInputFocus> focus);
 
 // ---- win32 스캔코드/가상키 → 물리 KeyCode 변환 (docs/01: USB HID 순서 준용) ----
 // Raw Input의 MakeCode(세트1 스캔코드)와 E0/E1 플래그로 물리 위치를 판정한다.

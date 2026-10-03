@@ -8,6 +8,37 @@
 
 using namespace mye;
 
+MYE_TEST(InputTextMessagesRespectUtf16FocusCompositionAndFrameBounds) {
+    InputState input; input.SetTextInputFocus(1);
+    win32::TextMessageState decoder;
+    auto character=[&](uint16_t unit) { win32::HandleTextInputMessage(&input,decoder,nullptr,0x0102,unit,0); };
+    character(L'가'); character(0xd83d); character(0xde00);
+    MYE_EXPECT(input.TextEdits().size()==2 && input.TextEdits()[0].text=="가" && input.TextEdits()[1].text=="😀");
+    input.OnKey(KeyCode::Enter,true); input.OnKey(KeyCode::Enter,true); input.OnKey(KeyCode::Enter,false);
+    MYE_EXPECT(input.TextEdits().size()==3 && input.TextEdits().back().key==KeyCode::Enter);
+    input.NewFrame(); MYE_EXPECT(input.TextEdits().empty() && input.TextFocusId()==1);
+    TextEdit composing; composing.kind=TextEdit::Kind::Composition; composing.text="ㄱ"; composing.cursorBytes=3; composing.composing=true;
+    MYE_EXPECT(input.OnTextEdit(composing)); input.OnKey(KeyCode::Enter,true); input.OnKey(KeyCode::Enter,false);
+    MYE_EXPECT(input.IsTextComposing() && input.TextEdits().size()==1);
+    const auto size=input.TextEdits().size(); composing.cursorBytes=1;
+    MYE_EXPECT(!input.OnTextEdit(composing) && input.TextEdits().size()==size);
+    MYE_EXPECT(!input.OnTextEdit(TextEdit{TextEdit::Kind::Insert,"\xc0\x80"}));
+    MYE_EXPECT(!ValidateTextInput("a\nb") && !ValidateTextInput(std::string(4097,'a')));
+    input.SetTextInputFocus(2); character(0xd83d); input.SetTextInputFocus(3); character(0xde00);
+    MYE_EXPECT(input.TextInputError() && input.TextEdits().empty());
+    input.SetTextInputFocus(4); character(L'나'); MYE_EXPECT(!input.TextInputError() && input.TextEdits().size()==1);
+    input.NewFrame();
+    for (int i=0; i<256; ++i) MYE_EXPECT(input.OnTextEdit(TextEdit{TextEdit::Kind::Insert,"x"}));
+    MYE_EXPECT(!input.OnTextEdit(TextEdit{TextEdit::Kind::Insert,"x"}));
+    input.NewFrame();
+    for (int i=0; i<4; ++i) MYE_EXPECT(input.OnTextEdit(TextEdit{TextEdit::Kind::Insert,std::string(4096,'x')}));
+    MYE_EXPECT(!input.OnTextEdit(TextEdit{TextEdit::Kind::Insert,"x"}));
+    input.SetKeyboardSuppressed(true); character(L'a'); MYE_EXPECT(input.TextFocusId()==0 && input.TextEdits().empty());
+    MYE_EXPECT(win32::ScanCodeToKeyCode(0x47,true,false,0)==KeyCode::Home);
+    MYE_EXPECT(win32::ScanCodeToKeyCode(0x4f,true,false,0)==KeyCode::End);
+    MYE_EXPECT(win32::ScanCodeToKeyCode(0x53,true,false,0)==KeyCode::Delete);
+}
+
 // ---- InputState 폴링 상태 전이 (프레임 경계 시뮬) ----
 
 MYE_TEST(InputKeyPressReleaseEdges) {

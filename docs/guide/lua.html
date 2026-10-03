@@ -131,5 +131,5 @@ local grounded = entity:is_on_floor3d()
 local wall = entity:hit_wall3d()
 entity:set_position3d(mye.Vec3(0, 2, 0))</code></pre>
 <p>위치는 로컬 XYZ 복사본이고 속도·접지·벽은 이전 물리 틱 상태다. 위치 쓰기는 유한값의 순간 이동이며 다음 틱에서 충돌을 검증한다. 깊은 시작 충돌은 오류다. 일반 조작은 CharacterController3D, 속도/중력은 KinematicBody3D.settings를 사용한다. <a href="online.html">XYZ 구성과 한계</a>를 확인한다.</p>
-<p><a href="game-ui.html">저장한 GameUi와 Lua 상태 표시</a>: .ui 임포트·GUID·HP 게이지·일반 한글 텍스트·활성 상태의 main 소스 연결을 확인하세요. UI 작성/Undo·로컬 on_click/focus·모달 입력 차단을 연결했습니다. IME/패드 UI·온라인·설치 0.3.0 지원은 미완료입니다.</p>
+<p><a href="game-ui.html">저장한 GameUi와 Lua 상태 표시</a>: .ui 임포트·GUID·HP 게이지·일반 한글 텍스트·활성 상태의 main 소스 연결을 확인하세요. UI 작성/Undo·로컬 on_click/focus·모달 입력 차단을 연결했습니다. TextInput의 get_text/set_text/on_submit/focus와 문자/조합 경로도 연결했습니다. on_submit은 제출 문자열 한 인수로 고정 틱에 실행합니다. 실제 IME 확정/후보창·패드 UI·온라인·설치 0.3.0 지원은 미완료입니다.</p>
 <footer>정본: <a href="../19-lua-api.md">19-lua-api.md</a> · 구현 범위와 실패 조건을 확인하세요.</footer></main></div></body></html>

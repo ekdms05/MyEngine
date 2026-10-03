@@ -15,11 +15,11 @@
 
 게임 UI는 자체 위젯/스프라이트 경로이고 에디터는 ImGui다. 화면은 좌상단 원점·+Y 아래, 글리프 R8은 coverage이며 [렌더 계약](02-rendering.md)의 `yDown`·`alphaMask`로 출력한다. 클릭 좌표도 픽셀 타깃의 destRect·배율을 따른다.
 
-TextInput·ScrollView·ListView 로직 구현과 실제 채팅·인벤토리 화면 통합은 별개다. 현재 MyGame에 UI 문서 편집기·타이틀·채팅·인벤토리는 연결되지 않았다. 한글 출력·글꼴 배포·IME 입력·후보창 UX도 각각 검증한다.
+TextInput은 저장 GameUi와 로컬 Play/MyGame 입력·제출에 연결했다. UI 문서 작성은 MyEditor에 연결했다. ScrollView/ListView와 실제 타이틀·채팅·인벤토리 콘텐츠 통합은 별개이며 현재 MyGame에는 연결되지 않았다. 한글 출력·글꼴 배포·IME 입력·후보창 UX도 각각 검증한다.
 
 ### 저장한 HUD와 게임 상태 · main 소스
 
-**`.ui` 임포트 → 씬 GameUi GUID → ObjectSystem의 문서/PNG 준비 → 프로젝트 Lua의 mye.ui setter → GameOverlay 출력**을 연결했다. 기존 UiDocument/앵커/위젯·AssetDatabase/VFS/AssetManager를 사용한다. [작성 파일·속성·API·실제 앱 검사](27-game-ui.md)를 확인한다. UI 문서 작성/Undo·저장/재열기·게임 렌더 미리보기를 연결했다. 로컬 버튼 클릭/키보드 포커스·모달 차단을 연결했다. IME·패드 UI 탐색·온라인은 아직 연결하지 않았다. 읽기 전용 화면 표시는 게임 HP·보상 규칙을 만들지 않는다.
+**`.ui` 임포트 → 씬 GameUi GUID → ObjectSystem의 문서/PNG 준비 → 프로젝트 Lua의 mye.ui setter → GameOverlay 출력**을 연결했다. 기존 UiDocument/앵커/위젯·AssetDatabase/VFS/AssetManager를 사용한다. [작성 파일·속성·API·실제 앱 검사](27-game-ui.md)를 확인한다. UI 문서 작성/Undo·저장/재열기·게임 렌더 미리보기를 연결했다. 로컬 버튼 클릭/키보드 포커스·모달 차단을 연결했다. TextInput의 문자/IME 조합 처리·제출을 연결했다. 실제 IME 확정/후보창·패드 UI 탐색·온라인은 별도이며 온라인은 아직 연결하지 않았다. 읽기 전용 화면 표시는 게임 HP·보상 규칙을 만들지 않는다.
 
 ### 게임 창의 안내와 Message · main 소스
 
@@ -32,7 +32,7 @@ World 고정 틱이 문자열을 생성하고 앱은 `ObjectSystem::Prompt()/Mes
 - 마지막 Message는 다음 Message로 교체될 때까지 유지한다. Pause는 표시를 유지하며 Stop/맵의 ObjectSystem 교체는 이전 메시지의 수명을 끝낸다. prompt는 근처 대상/층/반경 조건에 따라 갱신된다.
 - 앱 옆 `fonts/NanumSquareRoundR.ttf`와 OFL 라이선스를 배포한다. 누락/손상 글꼴·잘못된 출력 크기·텍스트 상한 실패는 Expected로 전달한다. 자동 실행에서는 성공 캡처로 계산하지 않는다.
 
-실제 DX11 검사로 한글·변경 없는 반복 출력·빈 메시지·문자 그대로 표시·긴 문장 클리핑·2배 확대/여백·카메라 잔여 이동·Pause/창 재실행을 확인한다. 앱의 네이티브/헤드리스 캡처와 글꼴 실패도 별도로 검증한다. 합성 Win32 입력은 물리 키보드 검수와 구분한다. 안내 패널은 **읽기 전용**이며 저장한 GameUi의 로컬 표시와 구분한다. UI 문서 작성/Undo는 별도 작업대에 연결했다. 로컬 버튼/포커스·모달 차단도 연결했다. IME·서버 상태 메시지는 아직 연결하지 않았다. 기존 설치 0.3.0의 기능으로 설명하지 않는다.
+실제 DX11 검사로 한글·변경 없는 반복 출력·빈 메시지·문자 그대로 표시·긴 문장 클리핑·2배 확대/여백·카메라 잔여 이동·Pause/창 재실행을 확인한다. 앱의 네이티브/헤드리스 캡처와 글꼴 실패도 별도로 검증한다. 합성 Win32 입력은 물리 키보드 검수와 구분한다. 안내 패널은 **읽기 전용**이며 저장한 GameUi의 로컬 표시와 구분한다. UI 문서 작성/Undo는 별도 작업대에 연결했다. 로컬 버튼/포커스·모달 차단도 연결했다. 저장 TextInput의 로컬 문자/조합·제출도 연결했다. 실제 IME 후보창 검수와 서버 상태 메시지는 별도이며 서버 상태 메시지는 아직 연결하지 않았다. 기존 설치 0.3.0의 기능으로 설명하지 않는다.
 
 사용 흐름과 실제 캡처는 [컴포넌트 가이드](guide/components.html#game-feedback), 상태값 연결의 다음 완료 조건은 [개발 우선순위](14-development-priorities.md)를 따른다.
 

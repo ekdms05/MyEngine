@@ -11,6 +11,7 @@
 #include "mye/ui/UiSkin.h"
 #include "mye/ui/UiRenderer.h"
 #include "mye/core/Base.h"
+#include "mye/core/Input.h"
 
 #include <cstdint>
 #include <memory>
@@ -83,6 +84,9 @@ public:
     void ResetInput();
     bool HasModal() const;
     bool CapturesKeyboard() const { return m_focused && m_focused->keyboardFocused; }
+    Expected<void, Error> HandleTextInput(const InputState& input);
+    std::optional<TextInputFocus> TextFocus() const;
+    void RefreshTextFocus(const Widget* widget);
     bool Focus(Widget* widget);
     // 레이아웃(dirty 시 measure/arrange)·툴팁 타이머·애니(후속 UiTween).
     void Update(float dt);
@@ -121,6 +125,7 @@ private:
     bool     m_dragging = false;
     Widget*  m_keyPressed = nullptr;
     Widget*  m_modal = nullptr;
+    uint64_t m_textFocusId = 0;
     KeyCode  m_activationKey = KeyCode::Unknown;
     static constexpr float kDragThreshold = 3.0f;   // 드래그 시작 픽셀 임계
     Vec2i    m_screen{960, 540};

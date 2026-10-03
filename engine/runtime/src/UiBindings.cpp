@@ -53,35 +53,42 @@ Expected<void, Error> UiBindingModule::Load(ecs::World& world, asset::AssetDatab
 }
 
 void UiBindingModule::Reset() {
-    m_clicks.clear(); m_clickOverflow = false;
+    m_callbacks.clear(); m_callbackOverflow = false;
     m_ui.RemoveCanvas("game"); m_canvas = nullptr; m_textures.clear();
 }
 Expected<bool, Error> UiBindingModule::FilterInput(InputState& input, Vec2 pointer, bool enabled) {
-    if (!enabled) { m_ui.ResetInput(); m_clicks.clear(); m_clickOverflow = false; return false; }
+    if (!enabled) { m_ui.ResetInput(); m_callbacks.clear(); m_callbackOverflow = false; return false; }
     if (!Root()) return true;
     m_ui.Update(0);
+    auto text=m_ui.HandleTextInput(input); if (!text) return text.GetError();
     const bool keyboardCaptured = m_ui.CapturesKeyboard();
     const bool pointerCaptured = m_ui.HandleInput(input, pointer);
-    if (m_clickOverflow) return Error{"Game UI exceeded 64 pending clicks before a fixed tick", 1};
+    if (m_callbackOverflow) return Error{"Game UI exceeded 64 pending UI actions before a fixed tick", 1};
     input.SetMouseSuppressed(input.IsMouseSuppressed() || pointerCaptured);
     input.SetKeyboardSuppressed(input.IsKeyboardSuppressed() || keyboardCaptured || m_ui.CapturesKeyboard());
     return !m_ui.HasModal();
 }
-Expected<void, Error> UiBindingModule::ProcessClicks() {
-    auto clicks = std::move(m_clicks); m_clicks.clear();
+void UiBindingModule::Queue(std::string name, script::LuaReference callback, std::optional<std::string> submittedText) {
+    if (m_callbacks.size() >= 64) { m_callbackOverflow=true; return; }
+    m_callbacks.push_back({std::move(name),std::move(callback),std::move(submittedText)});
+}
+Expected<void, Error> UiBindingModule::ProcessCallbacks() {
+    auto clicks = std::move(m_callbacks); m_callbacks.clear();
     for (auto& click : clicks) {
         auto* node = Root() ? Root()->findByName(click.name) : nullptr;
         auto* button = node ? node->As<ui::Button>() : nullptr;
-        if (!button || !button->interactive || button->state == ui::Button::State::Disabled || !click.callback.Valid()) continue;
+        if (!node || !node->interactive || !click.callback.Valid()) continue;
+        if (click.submittedText ? !node->As<ui::TextInput>() : (!button || button->state == ui::Button::State::Disabled)) continue;
         bool visible = true;
         for (auto* parent = node; parent; parent = parent->parent()) visible &= parent->visibility == ui::Visibility::Visible;
         if (!visible) continue;
         auto* state = click.callback.State();
         script::LuaStackGuard stack(state);
         click.callback.Push();
-        if (script::ProtectedCall(state, 0, 0) != LUA_OK) {
+        if (click.submittedText) lua_pushlstring(state,click.submittedText->data(),click.submittedText->size());
+        if (script::ProtectedCall(state, click.submittedText ? 1 : 0, 0) != LUA_OK) {
             const char* message = lua_tostring(state, -1);
-            return Error{"UI button " + click.name + ": " + (message ? message : "callback failed"), 1};
+            return Error{"UI " + click.name + ": " + (message ? message : "callback failed"), 1};
         }
     }
     return {};
@@ -99,8 +106,7 @@ void UiBindingModule::Register(lua_State* state) {
         auto* module = script::Context<UiBindingModule>(state);
         if (lua_type(state,2) == LUA_TNIL) button->onClick = {};
         else button->onClick = [module, name=button->name, callback=script::LuaReference(state,2)] {
-            if (module->m_clicks.size() >= 64) { module->m_clickOverflow = true; return; }
-            module->m_clicks.push_back({name,callback});
+            module->Queue(name,callback,{});
         };
         return Success(state);
     }, this); lua_setfield(state, -2, "on_click");
@@ -108,20 +114,41 @@ void UiBindingModule::Register(lua_State* state) {
         auto* module = script::Context<UiBindingModule>(state);
         if (lua_gettop(state) != 1) return Failure(state, "focus requires a Button name or nil");
         auto* node = lua_type(state,1) == LUA_TNIL ? nullptr : Find(state,1);
-        if (lua_type(state,1) != LUA_TNIL && !node) return Failure(state, "focus requires an existing Button name");
-        if (!module->m_ui.Focus(node)) return Failure(state, "Button cannot receive focus");
+        if (lua_type(state,1) != LUA_TNIL && !node) return Failure(state, "focus requires an existing Button or TextInput name");
+        if (!module->m_ui.Focus(node)) return Failure(state, "Widget cannot receive focus");
         if (node) node->keyboardFocused = true;
         return Success(state);
     }, this); lua_setfield(state, -2, "focus");
     script::PushFunction(state, [](lua_State* state) -> int {
+        auto* node=Find(state,2); auto* input=node ? node->As<ui::TextInput>() : nullptr;
+        if (!input || (lua_type(state,2)!=LUA_TFUNCTION && lua_type(state,2)!=LUA_TNIL))
+            return Failure(state,"on_submit requires a TextInput name and function or nil");
+        auto* module=script::Context<UiBindingModule>(state);
+        if (lua_type(state,2)==LUA_TNIL) input->onSubmit={};
+        else input->onSubmit=[module,name=input->name,callback=script::LuaReference(state,2)](const std::string& value) {
+            module->Queue(name,callback,value);
+        };
+        return Success(state);
+    },this); lua_setfield(state,-2,"on_submit");
+    script::PushFunction(state, [](lua_State* state) -> int {
+        auto* node=Find(state,1); auto* input=node ? node->As<ui::TextInput>() : nullptr;
+        if (!input) return Failure(state,"get_text requires a TextInput name");
+        lua_pushlstring(state,input->text.data(),input->text.size()); return 1;
+    },this); lua_setfield(state,-2,"get_text");
+    script::PushFunction(state, [](lua_State* state) -> int {
         auto* node = Find(state, 2);
         auto* label = node ? node->As<ui::Label>() : nullptr;
-        if (!label || lua_type(state, 2) != LUA_TSTRING) return Failure(state, "set_text requires an existing Label name and string");
+        auto* input = node ? node->As<ui::TextInput>() : nullptr;
+        if ((!label && !input) || lua_type(state, 2) != LUA_TSTRING) return Failure(state, "set_text requires a Label or TextInput name and string");
         size_t length = 0;
         const auto* text = lua_tolstring(state, 2, &length);
         if (length > 4096 || std::string_view(text, length).find('\0') != std::string_view::npos)
             return Failure(state, "UI text must be at most 4096 UTF-8 bytes without NUL");
-        label->setText(text::EscapeRichText({text, length}));
+        if (input) {
+            auto updated=input->SetText({text,length}); if (!updated) return Failure(state,updated.GetError().message);
+            script::Context<UiBindingModule>(state)->m_ui.RefreshTextFocus(input);
+        }
+        else label->setText(text::EscapeRichText({text, length}));
         return Success(state);
     }, this); lua_setfield(state, -2, "set_text");
     script::PushFunction(state, [](lua_State* state) -> int {

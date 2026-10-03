@@ -4,6 +4,7 @@
 #include "mye/text/TextRenderer.h"
 #include "mye/text/GlyphAtlas.h"
 #include "mye/text/TextLayout.h"
+#include "mye/text/RichText.h"
 
 #include <algorithm>
 #include <cmath>
@@ -302,7 +303,7 @@ void Window::draw(UiDrawContext& ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2 위젯: TextInput / ScrollView / ListView
+// 텍스트 입력과 스크롤·목록 위젯.
 // ---------------------------------------------------------------------------
 namespace {
 // UTF-8 코드포인트 경계 유틸(커서 이동/삭제가 멀티바이트 문자를 쪼개지 않게).
@@ -324,46 +325,76 @@ uint32_t NextCp(const std::string& s, uint32_t i) {
 // ---- TextInput ----
 Vec2 TextInput::measure(Vec2 avail) { return Vec2{avail.x, height}; }
 
+Expected<void, Error> TextInput::SetText(std::string_view value) {
+    auto valid = ValidateTextInput(value); if (!valid) return valid.GetError();
+    text = value; cursor = static_cast<uint32_t>(text.size());
+    composition.clear(); compositionCursor = 0; composing = false;
+    return {};
+}
+Expected<void, Error> TextInput::ApplyEdit(const TextEdit& edit) {
+    auto valid = ValidateTextInput(edit.text); if (!valid) return valid.GetError();
+    cursor = std::min(cursor, static_cast<uint32_t>(text.size()));
+    while (cursor && cursor < text.size() && IsCont(static_cast<unsigned char>(text[cursor]))) --cursor;
+    if (edit.kind == TextEdit::Kind::Composition) {
+        if (edit.cursorBytes > edit.text.size() || (edit.cursorBytes < edit.text.size() &&
+            IsCont(static_cast<unsigned char>(edit.text[edit.cursorBytes])))) return Error{"IME cursor is not a UTF-8 boundary", 1};
+        if (text.size() + edit.text.size() > 4096) return Error{"Text input and composition exceed 4096 bytes", 1};
+        composition = edit.text; compositionCursor = edit.cursorBytes; composing = edit.composing;
+    } else if (edit.kind == TextEdit::Kind::Insert) {
+        if (text.size() + edit.text.size() > 4096) return Error{"Text input exceeds 4096 UTF-8 bytes", 1};
+        text.insert(cursor, edit.text); cursor += static_cast<uint32_t>(edit.text.size());
+        composition.clear(); compositionCursor = 0;
+    } else if (!composing) {
+        if (edit.key == KeyCode::Backspace && cursor) { const auto previous = PrevCp(text,cursor); text.erase(previous,cursor-previous); cursor=previous; }
+        else if (edit.key == KeyCode::Delete) text.erase(cursor,NextCp(text,cursor)-cursor);
+        else if (edit.key == KeyCode::Left) cursor = PrevCp(text,cursor);
+        else if (edit.key == KeyCode::Right) cursor = NextCp(text,cursor);
+        else if (edit.key == KeyCode::Home) cursor = 0;
+        else if (edit.key == KeyCode::End) cursor = static_cast<uint32_t>(text.size());
+        else if (edit.key == KeyCode::Enter && onSubmit) onSubmit(text);
+    }
+    return {};
+}
+
 bool TextInput::onEvent(UiEvent& e) {
+    if (e.phase != UiRoutePhase::Target) return false;
     switch (e.type) {
         case UiEventType::FocusGained: focused = true;  return true;
-        case UiEventType::FocusLost:   focused = false; return false;
+        case UiEventType::FocusLost:   focused = false; composition.clear(); compositionCursor = 0; composing = false; return false;
         case UiEventType::PointerDown: focused = true;  return true;
         case UiEventType::TextInput: {
             uint32_t n = 0;
             while (n < sizeof(e.utf8) && e.utf8[n] != '\0') ++n;
-            if (n > 0) {
-                if (cursor > text.size()) cursor = static_cast<uint32_t>(text.size());
-                text.insert(text.begin() + cursor, e.utf8, e.utf8 + n);
-                cursor += n;
-            }
-            return true;
+            return bool(ApplyEdit(TextEdit{TextEdit::Kind::Insert, std::string(e.utf8,n)}));
         }
         case UiEventType::KeyDown:
-            if (e.key == KeyCode::Backspace) {
-                if (cursor > 0) { uint32_t p = PrevCp(text, cursor); text.erase(p, cursor - p); cursor = p; }
-                return true;
-            }
-            if (e.key == KeyCode::Left)  { cursor = PrevCp(text, cursor); return true; }
-            if (e.key == KeyCode::Right) { cursor = NextCp(text, cursor); return true; }
-            if (e.key == KeyCode::Enter) { if (onSubmit) onSubmit(text); return true; }
-            return false;
+            { TextEdit edit; edit.kind=TextEdit::Kind::Key; edit.key=e.key; return bool(ApplyEdit(edit)); }
         default: return false;
     }
 }
 
 void TextInput::draw(UiDrawContext& ctx) {
     ctx.DrawRect(computedRect, background);
-    if (!text.empty()) {
-        text::LayoutParams lp; lp.maxWidth = computedRect.w; lp.wrap = text::WrapMode::None;
-        ctx.DrawText(computedRect, text, style, lp);
+    const auto index = std::min(static_cast<size_t>(cursor), text.size());
+    std::string display = text; display.insert(index,composition);
+    const auto prefix = display.substr(0,index+std::min(static_cast<size_t>(compositionCursor),composition.size()));
+    text::LayoutParams params; params.wrap=text::WrapMode::None;
+    const auto before = m_measure.Measure(ctx.Fonts(),text::EscapeRichText(prefix),style,params).x;
+    const float available = std::max(0.0f,computedRect.w-8);
+    m_scrollX = std::clamp(m_scrollX, std::max(0.0f,before-available), static_cast<float>(before));
+    m_caretX = std::round(before-m_scrollX);
+    ctx.PushScissor(computedRect);
+    m_layout.Set(ctx.Ctx(),ctx.Atlas(),ctx.Fonts(),text::EscapeRichText(display),style,params);
+    ctx.DrawTextLayout(m_layout,{computedRect.x+4-m_scrollX,computedRect.y+2});
+    if (!composition.empty()) {
+        const auto start = m_measure.Measure(ctx.Fonts(),text::EscapeRichText(text.substr(0,index)),style,params).x;
+        const auto finish = m_measure.Measure(ctx.Fonts(),text::EscapeRichText(display.substr(0,index+composition.size())),style,params).x;
+        ctx.DrawRect({computedRect.x+4+start-m_scrollX,computedRect.y+computedRect.h-3,float(finish-start),1},textColor);
     }
-    if (focused) {
-        // 캐럿(좌측 근사 위치의 얇은 세로선 — 정밀 x는 텍스트 measure 후속).
-        UiRect caret{computedRect.x + 2.0f, computedRect.y + 2.0f, 1.5f, computedRect.h - 4.0f};
-        ctx.DrawRect(caret, textColor);
-    }
+    if (focused) { const auto caret=CaretRect(); ctx.DrawRect({caret.x,caret.y,caret.w,caret.h},textColor); }
+    ctx.PopScissor();
 }
+Rect TextInput::CaretRect() const { return {computedRect.x+4+m_caretX,computedRect.y+2,1,std::max(0.0f,computedRect.h-4)}; }
 
 // ---- ScrollView ----
 Vec2 ScrollView::measure(Vec2 avail) {

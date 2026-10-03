@@ -139,6 +139,7 @@ Widget* UiSystem::HitTest(Vec2 uiPos) const {
 }
 
 namespace {
+uint64_t NextTextFocusId() { static uint64_t id=0; return ++id; }
 Widget* VisibleModal(Widget* root) {
     if (!root || root->visibility != Visibility::Visible) return nullptr;
     auto children = root->children();
@@ -147,15 +148,16 @@ Widget* VisibleModal(Widget* root) {
     return root->modal ? root : nullptr;
 }
 bool CanFocus(Widget* widget) {
-    if (!widget || !widget->As<Button>() || !widget->interactive || widget->As<Button>()->state == Button::State::Disabled) return false;
+    if (!widget || !widget->interactive || (!widget->As<Button>() && !widget->As<TextInput>())) return false;
+    if (const auto* button=widget->As<Button>(); button && button->state==Button::State::Disabled) return false;
     for (auto* parent = widget; parent; parent = parent->parent())
         if (parent->visibility != Visibility::Visible) return false;
     return true;
 }
-void FocusableButtons(Widget* root, std::vector<Widget*>& buttons) {
+void FocusableWidgets(Widget* root, std::vector<Widget*>& buttons) {
     if (!root || root->visibility != Visibility::Visible) return;
     if (CanFocus(root)) buttons.push_back(root);
-    for (const auto& child : root->children()) FocusableButtons(child.get(), buttons);
+    for (const auto& child : root->children()) FocusableWidgets(child.get(), buttons);
 }
 }
 Widget* UiSystem::ActiveModal() const {
@@ -179,8 +181,29 @@ bool UiSystem::Focus(Widget* widget) {
     }
     m_keyPressed = nullptr; m_activationKey = KeyCode::Unknown;
     m_focused = widget;
+    // Monotonic across UiSystem lifetimes: a new map cannot inherit the old field's frame edits.
+    m_textFocusId = widget && widget->As<TextInput>() ? NextTextFocusId() : 0;
+    if (widget && widget->As<TextInput>()) widget->keyboardFocused = true;
     if (widget) { UiEvent gained{}; gained.type = UiEventType::FocusGained; RouteEvent(widget, gained); }
     return true;
+}
+std::optional<TextInputFocus> UiSystem::TextFocus() const {
+    const auto* field=m_focused ? m_focused->As<TextInput>() : nullptr;
+    auto* modal=ActiveModal();
+    if (!field || !CanFocus(m_focused) || (modal && !IsInSubtree(m_focused,modal))) return {};
+    return TextInputFocus{m_textFocusId,field->CaretRect()};
+}
+void UiSystem::RefreshTextFocus(const Widget* widget) {
+    if (widget==m_focused && widget && widget->As<TextInput>()) m_textFocusId=NextTextFocusId();
+}
+Expected<void, Error> UiSystem::HandleTextInput(const InputState& input) {
+    if (m_focused && !Focus(m_focused)) Focus(nullptr);
+    const auto focus=TextFocus();
+    if (!focus || focus->id != input.TextFocusId()) return {};
+    if (input.TextInputError()) return *input.TextInputError();
+    auto* field=m_focused->As<TextInput>();
+    for (const auto& edit : input.TextEdits()) { auto applied=field->ApplyEdit(edit); if (!applied) return applied.GetError(); }
+    return {};
 }
 void UiSystem::ResetInput() {
     if (m_pressed) { UiEvent up{}; up.type = UiEventType::PointerUp; RouteEvent(m_pressed, up); }
@@ -197,8 +220,8 @@ bool UiSystem::HandleInput(const InputState& input, Vec2 uiPointer) {
     if (m_pressed && (!m_pressed->interactive || m_pressed->visibility != Visibility::Visible)) { ResetInput(); m_modal = modal; }
     std::vector<Widget*> buttons;
     if ((m_modal && !m_focused) || input.WasPressed(KeyCode::Tab)) {
-        if (m_modal) FocusableButtons(m_modal, buttons);
-        else for (const auto& canvas : m_canvases) if (canvas->visible) FocusableButtons(canvas->root(), buttons);
+        if (m_modal) FocusableWidgets(m_modal, buttons);
+        else for (const auto& canvas : m_canvases) if (canvas->visible) FocusableWidgets(canvas->root(), buttons);
         if (!buttons.empty()) {
             const auto found = std::find(buttons.begin(), buttons.end(), m_focused);
             const bool reverse = input.IsDown(KeyCode::LeftShift) || input.IsDown(KeyCode::RightShift);
@@ -231,7 +254,7 @@ bool UiSystem::HandleInput(const InputState& input, Vec2 uiPointer) {
         m_dragging = false;
         if (hit) {
             Focus(CanFocus(hit) ? hit : nullptr);
-            if (m_focused) m_focused->keyboardFocused = false;
+            if (m_focused) m_focused->keyboardFocused = m_focused->As<TextInput>() != nullptr;
             UiEvent down{}; down.type = UiEventType::PointerDown; down.pointerPos = uiPointer;
             consumed |= RouteEvent(hit, down);
         } else Focus(nullptr);
@@ -279,7 +302,7 @@ bool UiSystem::HandleInput(const InputState& input, Vec2 uiPointer) {
         consumed |= RouteEvent(hit, sc);
     }
 
-    if (m_focused) {
+    if (m_focused && m_focused->As<Button>()) {
         for (const auto key : {KeyCode::Enter, KeyCode::Space}) {
             if (input.WasPressed(key) && !m_keyPressed) {
                 m_keyPressed = m_focused; m_activationKey = key; m_focused->keyboardFocused = true;

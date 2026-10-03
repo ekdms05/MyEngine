@@ -57,6 +57,7 @@ std::string_view InputCodeName(InputDevice device, int code) {
         switch (static_cast<KeyCode>(code)) {
         case KeyCode::Enter: return "Enter"; case KeyCode::Escape: return "Escape";
         case KeyCode::Backspace: return "Backspace"; case KeyCode::Tab: return "Tab"; case KeyCode::Space: return "Space";
+        case KeyCode::Home: return "Home"; case KeyCode::End: return "End"; case KeyCode::Delete: return "Delete";
         case KeyCode::Minus: return "-"; case KeyCode::Equals: return "=";
         case KeyCode::LeftBracket: return "["; case KeyCode::RightBracket: return "]"; case KeyCode::Backslash: return "\\";
         case KeyCode::Semicolon: return ";"; case KeyCode::Apostrophe: return "'"; case KeyCode::Grave: return "`";

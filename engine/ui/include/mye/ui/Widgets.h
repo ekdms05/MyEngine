@@ -7,6 +7,7 @@
 #pragma once
 
 #include "mye/ui/Widget.h"
+#include "mye/core/Input.h"
 #include "mye/ui/UiDrawContext.h"
 #include "mye/text/TextTypes.h"
 #include "mye/text/TextLayout.h"
@@ -155,16 +156,25 @@ public:
     MYE_WIDGET(mye::ui::TextInput);
     std::string     text;                 // UTF-8 확정 버퍼
     uint32_t        cursor = 0;           // 바이트 오프셋(코드포인트 경계)
+    std::string     composition;
+    uint32_t        compositionCursor = 0;
+    bool            composing = false;
     bool            focused = false;
     text::TextStyle style{};
     Color           background = {0.12f, 0.12f, 0.14f, 1.0f};
     Color           textColor  = Color::White();
     float           height = 24.0f;
     std::function<void(const std::string&)> onSubmit;   // Enter 시 호출
+    Expected<void, Error> SetText(std::string_view value);
+    Expected<void, Error> ApplyEdit(const TextEdit& edit);
+    Rect CaretRect() const;
 
     bool onEvent(UiEvent& e) override;
     void draw(UiDrawContext& ctx) override;
     Vec2 measure(Vec2 avail) override;
+private:
+    text::TextLayout m_layout, m_measure;
+    float m_scrollX = 0, m_caretX = 0;
 };
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@
 namespace mye::editor {
 namespace {
 const PanelDesc kDesc{"mye.ui", "게임 UI", false, DockSlot::Floating};
-constexpr const char* kTypes[] = {"Panel", "Label", "ProgressBar", "Button", "Image", "Window", "StackLayout", "GridLayout"};
+constexpr const char* kTypes[] = {"Panel", "Label", "ProgressBar", "Button", "Image", "Window", "StackLayout", "GridLayout", "TextInput"};
 
 template<class Node> Node* NodeAt(Node& root, const std::vector<size_t>& path) {
     auto* node = &root;
@@ -233,7 +233,7 @@ private:
         changed |= EditVector("끝 여백", m_draft.anchors.offsetMax);
         changed |= EditVector("크기", m_draft.anchors.sizeDelta);
         ImGui::Separator();
-        ImGui::TextWrapped("속성: text(한글), fontSize(8~96), colour/tint/fill/track(#RRGGBB), value/maximum(게이지), enabled/visible/clip(true/false), texture(PNG GUID), source(x,y,w,h). 위젯별 허용 속성을 검사합니다.");
+        ImGui::TextWrapped("속성: text(한글·TextInput은 한 줄 최대4096 UTF-8 bytes), fontSize(8~96), colour/tint/fill/track(#RRGGBB), value/maximum(게이지), enabled/visible/clip(true/false), texture(PNG GUID), source(x,y,w,h). 위젯별 허용 속성을 검사합니다.");
         size_t remove = m_draft.properties.size();
         for (size_t i=0; i<m_draft.properties.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));

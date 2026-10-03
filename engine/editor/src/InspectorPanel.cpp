@@ -64,7 +64,7 @@ const char* ComponentHelp(std::string_view name) {
         {"KinematicBody2D", "고정 틱에서 충돌하며 이동하는 본체입니다. 기본값으로 시작하고 충돌 가장자리에서만 조정하세요."},
         {"CharacterController2D", "WASD·방향키로 조작합니다. speed는 단위/초입니다. 활성 캐릭터는 씬 최상위에 1명만 둡니다."},
         {"InteractionTarget", "캐릭터가 radius 안에서 E를 누르면 상호작용합니다. ObjectBehavior에 실행할 행동을 연결하세요."},
-        {"GameUi", "저장한 .ui 에셋을 document에 드래그하세요. 로컬 Play/MyGame의 화면 좌표로 표시되며 ObjectBehavior Lua의 mye.ui로 갱신합니다. 클릭·포커스·IME·온라인 UI는 아직 연결되지 않았습니다."},
+        {"GameUi", "저장한 .ui 에셋을 document에 드래그하세요. 로컬 Play/MyGame의 화면 좌표로 표시되며 ObjectBehavior Lua의 mye.ui로 갱신합니다. 버튼 클릭·텍스트 필드/키보드 포커스·모달 입력 차단을 지원합니다. 실제 IME 장치/후보창 검수·온라인 UI는 별도입니다."},
         {"ScenePortal", "프로젝트의 씬 경로와 목적지의 고유 오브젝트 이름을 지정합니다. E 또는 트리거로 이동합니다."},
         {"ObjectBehavior", "이벤트에서 행동을 순서대로 실행합니다. 연결 설정 또는 Lua 콜백 중 필요한 방식으로 작성하세요."},
         {"Progression", "캐릭터 레벨과 현재 레벨의 경험치입니다. 성장 규칙은 게임 콘텐츠에서 정합니다."},

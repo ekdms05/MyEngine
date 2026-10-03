@@ -10,10 +10,12 @@
 
 #include <Windows.h>
 #include <windowsx.h>   // GET_X_LPARAM / GET_Y_LPARAM
+#include <imm.h>
 
 #include <array>
 #include <format>
 #include <vector>
+#include <cmath>
 
 namespace mye::win32 {
 
@@ -74,6 +76,9 @@ KeyCode MapExtended(uint16_t make) {
     case 0x50: return KeyCode::Down;           // E0 50
     case 0x4B: return KeyCode::Left;           // E0 4B
     case 0x4D: return KeyCode::Right;          // E0 4D
+    case 0x47: return KeyCode::Home;
+    case 0x4F: return KeyCode::End;
+    case 0x53: return KeyCode::Delete;
     case 0x1C: return KeyCode::Enter;          // E0 1C (Numpad Enter → Enter로 통합)
     default: return KeyCode::Unknown;
     }
@@ -88,6 +93,7 @@ KeyCode MapVirtualKeyFallback(uint16_t vkey) {
     case VK_UP:    return KeyCode::Up;     case VK_DOWN:  return KeyCode::Down;
     case VK_SPACE: return KeyCode::Space;  case VK_RETURN: return KeyCode::Enter;
     case VK_ESCAPE: return KeyCode::Escape;
+    case VK_HOME: return KeyCode::Home; case VK_END: return KeyCode::End; case VK_DELETE: return KeyCode::Delete;
     case VK_LSHIFT: return KeyCode::LeftShift; case VK_RSHIFT: return KeyCode::RightShift;
     case VK_LCONTROL: return KeyCode::LeftControl; case VK_RCONTROL: return KeyCode::RightControl;
     default: return KeyCode::Unknown;
@@ -116,7 +122,7 @@ bool EncodeWmChar(wchar_t codeUnit, wchar_t& pendingHighSurrogate, TextInputEven
     }
 
     char utf8[8] = {};
-    const int bytes = ::WideCharToMultiByte(CP_UTF8, 0, buffer, count, utf8, sizeof(utf8) - 1,
+    const int bytes = ::WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, buffer, count, utf8, sizeof(utf8) - 1,
                                             nullptr, nullptr);
     if (bytes <= 0) return false;
     out = TextInputEvent{};
@@ -125,6 +131,117 @@ bool EncodeWmChar(wchar_t codeUnit, wchar_t& pendingHighSurrogate, TextInputEven
 }
 
 } // namespace
+
+namespace {
+struct ImeContext {
+    HWND window;
+    HIMC value;
+    explicit ImeContext(void* handle) : window(ToHwnd(handle)), value(ImmGetContext(window)) {}
+    ~ImeContext() { if (value) ImmReleaseContext(window, value); }
+};
+Expected<std::string, Error> CompositionUtf8(std::wstring_view text) {
+    if (text.empty()) return std::string{};
+    const int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text.data(),
+        static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    if (length <= 0 || length > 4096) return Error{"IME text is invalid UTF-16 or exceeds 4096 UTF-8 bytes", 1};
+    std::string result(static_cast<size_t>(length), '\0');
+    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()),
+        result.data(), length, nullptr, nullptr) != length) return Error{"IME UTF-8 conversion failed", 1};
+    return result;
+}
+Expected<std::wstring, Error> ReadComposition(HIMC context, DWORD kind) {
+    const auto bytes = ImmGetCompositionStringW(context, kind, nullptr, 0);
+    if (bytes < 0 || bytes > 8192 || bytes % sizeof(wchar_t) != 0) return Error{"IME composition size is invalid or unavailable", 1};
+    std::wstring result(static_cast<size_t>(bytes) / sizeof(wchar_t), L'\0');
+    if (bytes && ImmGetCompositionStringW(context, kind, result.data(), bytes) != bytes)
+        return Error{"IME composition read failed", 1};
+    return result;
+}
+}
+
+bool HandleTextInputMessage(InputState* state, TextMessageState& messages, void* handle,
+    uint32_t msg, uint64_t wparam, int64_t lparam, EventBus* events) {
+    const auto id=state ? state->TextFocusId() : 0;
+    if (messages.focusId != id) { messages.pendingHighSurrogate=0; messages.focusId=id; }
+    auto& pending=messages.pendingHighSurrogate;
+    if (msg == WM_KILLFOCUS) { pending = 0; if (state) state->SetTextInputFocus(0); }
+    const bool editing = state && state->TextFocusId() && !state->IsKeyboardSuppressed();
+    auto accept = [&](TextEdit edit) {
+        auto result = state->OnTextEdit(std::move(edit));
+        if (!result) state->ReportTextInputError(result.GetError());
+    };
+    if (msg == WM_CHAR) {
+        if (wparam > 0xffff) { if (editing) state->ReportTextInputError(Error{"WM_CHAR requires a UTF-16 code unit",1}); return false; }
+        if (editing && pending && (wparam < 0xdc00 || wparam > 0xdfff))
+            state->ReportTextInputError(Error{"Text input contains unpaired UTF-16",1});
+        TextInputEvent event{};
+        if (EncodeWmChar(static_cast<wchar_t>(wparam), pending, event)) {
+            if (events) events->Publish(event);
+            if (editing && !state->IsTextComposing() && static_cast<unsigned char>(event.utf8[0]) >= 32 && event.utf8[0] != 127)
+                accept(TextEdit{TextEdit::Kind::Insert, event.utf8});
+        } else if (editing && !pending) state->ReportTextInputError(Error{"Text input contains unpaired UTF-16", 1});
+        return false;
+    }
+    if (!editing) return false;
+    if (msg == WM_IME_SETCONTEXT) {
+        DefWindowProcW(ToHwnd(handle), msg, wparam, lparam & ~ISC_SHOWUICOMPOSITIONWINDOW);
+        return true;
+    }
+    if (msg == WM_IME_STARTCOMPOSITION || msg == WM_IME_ENDCOMPOSITION) {
+        TextEdit edit; edit.kind = TextEdit::Kind::Composition; edit.composing = msg == WM_IME_STARTCOMPOSITION;
+        accept(std::move(edit)); return true;
+    }
+    if (msg == WM_IME_CHAR) return true; // GCS_RESULTSTR owns committed text; never insert it twice.
+    if (msg != WM_IME_COMPOSITION) return false;
+    ImeContext context(handle);
+    if (!context.value) { state->ReportTextInputError(Error{"IME context is unavailable", 1}); return true; }
+    if (lparam & GCS_RESULTSTR) {
+        auto wide = ReadComposition(context.value, GCS_RESULTSTR);
+        auto value = wide ? CompositionUtf8(wide.Value()) : Expected<std::string, Error>{wide.GetError()};
+        if (!value) state->ReportTextInputError(value.GetError());
+        else accept(TextEdit{TextEdit::Kind::Insert, std::move(value).Value()});
+    }
+    TextEdit edit; edit.kind = TextEdit::Kind::Composition;
+    if (lparam & (GCS_COMPSTR | GCS_CURSORPOS)) {
+        auto wide = ReadComposition(context.value, GCS_COMPSTR);
+        if (!wide) { state->ReportTextInputError(wide.GetError()); return true; }
+        auto value = CompositionUtf8(wide.Value());
+        if (!value) { state->ReportTextInputError(value.GetError()); return true; }
+        LONG position = static_cast<LONG>(wide.Value().size());
+        if (lparam & GCS_CURSORPOS) position = ImmGetCompositionStringW(context.value, GCS_CURSORPOS, nullptr, 0);
+        if (position < 0 || static_cast<size_t>(position) > wide.Value().size()) {
+            state->ReportTextInputError(Error{"IME cursor is outside composition text", 1}); return true;
+        }
+        auto prefix = CompositionUtf8(std::wstring_view{wide.Value()}.substr(0, static_cast<size_t>(position)));
+        if (!prefix) { state->ReportTextInputError(prefix.GetError()); return true; }
+        edit.text = std::move(value).Value(); edit.cursorBytes = static_cast<uint32_t>(prefix.Value().size()); edit.composing = true;
+    } else if (!(lparam & GCS_RESULTSTR) && lparam != 0) return true;
+    accept(std::move(edit));
+    return true;
+}
+
+Expected<void, Error> ConfigureTextInput(InputState& state, void* handle, std::optional<TextInputFocus> focus) {
+    if (focus && (!focus->id || !std::isfinite(focus->caret.x) || !std::isfinite(focus->caret.y) || !std::isfinite(focus->caret.w) ||
+        !std::isfinite(focus->caret.h) || std::abs(focus->caret.x) > 1048576 || std::abs(focus->caret.y) > 1048576 ||
+        focus->caret.w < 0 || focus->caret.h < 0 || focus->caret.w > 1048576 || focus->caret.h > 1048576))
+        return Error{"IME caret rectangle is invalid", 1};
+    ImeContext context(handle);
+    const auto id = focus ? focus->id : 0;
+    if (id != state.TextFocusId() && state.IsTextComposing() &&
+        (!context.value || !ImmNotifyIME(context.value, NI_COMPOSITIONSTR, CPS_CANCEL, 0)))
+        return Error{"IME composition cancellation failed", 1};
+    state.SetTextInputFocus(id);
+    if (!focus || !context.value) return {};
+    const auto& r = focus->caret;
+    const POINT position{static_cast<LONG>(std::round(r.x)), static_cast<LONG>(std::round(r.y))};
+    COMPOSITIONFORM composition{}; composition.dwStyle = CFS_POINT; composition.ptCurrentPos = position;
+    CANDIDATEFORM candidate{}; candidate.dwStyle = CFS_EXCLUDE;
+    candidate.ptCurrentPos = {position.x, static_cast<LONG>(std::round(r.y+r.h))};
+    candidate.rcArea = {position.x,position.y,static_cast<LONG>(std::round(r.x+r.w)),candidate.ptCurrentPos.y};
+    if (!ImmSetCompositionWindow(context.value, &composition) || !ImmSetCandidateWindow(context.value, &candidate))
+        return Error{"IME candidate/composition positioning failed", 1};
+    return {};
+}
 
 KeyCode ScanCodeToKeyCode(uint16_t makeCode, bool e0, bool e1, uint16_t vkey) {
     (void)e1;   // E1(Pause 등)은 현재 매핑 대상 아님 — 폴백 처리
@@ -179,7 +296,7 @@ Win32InputBackend::~Win32InputBackend() {
 }
 
 bool Win32InputBackend::OnMessage(void* hwnd, uint32_t msg, uint64_t wparam, int64_t lparam) {
-    static thread_local wchar_t s_pendingHighSurrogate = 0;
+    const bool textHandled = HandleTextInputMessage(m_state, m_textMessages, hwnd, msg, wparam, lparam, &m_bus);
 
     // 입력 선점 주의: ImGui WndProc 훅은 WM_KEYDOWN/CHAR/마우스 레거시 메시지만 소비하며
     // WM_INPUT(Raw Input)은 소비하지 않는다. 따라서 UI 캡처 중 게임 입력 선점은 여기서 훅으로
@@ -289,11 +406,7 @@ bool Win32InputBackend::OnMessage(void* hwnd, uint32_t msg, uint64_t wparam, int
 
     // 문자 스트림(물리 키와 분리) — 확정 문자를 UTF-8로.
     case WM_CHAR: {
-        TextInputEvent ev{};
-        if (EncodeWmChar(static_cast<wchar_t>(wparam), s_pendingHighSurrogate, ev)) {
-            m_bus.Publish(ev);
-        }
-        return false;
+        return textHandled;
     }
 
     // IME는 해석하지 않고 06으로 그대로 전달(통로만).
@@ -305,10 +418,10 @@ bool Win32InputBackend::OnMessage(void* hwnd, uint32_t msg, uint64_t wparam, int
     case WM_IME_NOTIFY:
         m_bus.Publish(ImeRawMessageEvent{.hwnd = hwnd, .msg = msg,
                                          .wparam = wparam, .lparam = lparam});
-        return false;
+        return textHandled;
 
     default:
-        return false;
+        return textHandled;
     }
     return false;
 }

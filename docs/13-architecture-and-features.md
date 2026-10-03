@@ -26,7 +26,7 @@
 
 ## 데이터 흐름
 
-main의 화면 공간 GameOverlay는 ObjectSystem의 prompt/Message를 읽어 Play/MyGame 하단에 합성한다. 기존 mye_ui의 앵커·TextLayout·GlyphAtlas·UiDrawContext·SpriteBatch와 배포 나눔스퀘어라운드를 사용한다. 게임 창은 월드 Blit 뒤 같은 정수 destRect에 표시하고 카메라 subpixelResidual을 UI에 적용하지 않는다. 표면별 렌더 자원을 앱이 소유/해제하며 고정 틱·입력·게임 값을 표시 단계에서 변경하지 않는다. [06](06-runtime-systems.md)의 실제 연결/오류/수명과 미완료 작성 HUD·IME/포커스·온라인 상태를 구분한다. 기존 설치 0.3.0 지원으로 계산하지 않는다.
+main의 화면 공간 GameOverlay는 ObjectSystem의 prompt/Message를 읽어 Play/MyGame 하단에 합성한다. 기존 mye_ui의 앵커·TextLayout·GlyphAtlas·UiDrawContext·SpriteBatch와 배포 나눔스퀘어라운드를 사용한다. 게임 창은 월드 Blit 뒤 같은 정수 destRect에 표시하고 카메라 subpixelResidual을 UI에 적용하지 않는다. 표면별 렌더 자원을 앱이 소유/해제하며 고정 틱·입력·게임 값을 표시 단계에서 변경하지 않는다. [06](06-runtime-systems.md)의 실제 연결/오류/수명과 저장 HUD/로컬 입력 연결과 미완료 실제 IME 후보창·패드 UI/온라인 상태를 구분한다. 기존 설치 0.3.0 지원으로 계산하지 않는다.
 
 ```text
 프로젝트 .myeproj → assets/scenes/*.scene → 편집 World·문서 Undo
@@ -59,7 +59,7 @@ main 소스의 2D 조작은 UpdateCharacterAnimation2D로 로컬/예측/원격�
 
 에디터 오브젝트 Lua는 Math·ECS·log·co와 이름 기반 입력 액션이 기본 연결된다. 원시 입력 장치/audio/events/reflect/DDC/대화·저장·NPC 서비스는 별도 앱 등록이 필요하다. 라이브러리 함수가 있다는 사실을 에디터 제공 API로 설명하지 않는다. [19](19-lua-api.md)에 각 API의 범위가 있다.
 
-네트워크·영속·게임 UI 등의 라이브러리는 유지하지만 완성 MMORPG 제작·출시 통합을 뜻하지 않는다. 저장한 .ui의 GameUi/Lua 표시는 [27](27-game-ui.md)에 연결 범위를 기록한다. UI 문서 작성/Undo·저장과 공유 렌더 미리보기를 연결했다. 로컬 게임 UI 버튼/포커스는 연결했고 IME/패드 UI 탐색, 스크립트 자동 완성·중단점, 온라인 맵 전환·게임 규칙, 파일 감시 자동 반영, 범용 게임 내보내기는 남아 있다. DX11 외 백엔드와 범용 GPU timestamp/readback에는 미구현 경계가 있다.
+네트워크·영속·게임 UI 등의 라이브러리는 유지하지만 완성 MMORPG 제작·출시 통합을 뜻하지 않는다. 저장한 .ui의 GameUi/Lua 표시는 [27](27-game-ui.md)에 연결 범위를 기록한다. UI 문서 작성/Undo·저장과 공유 렌더 미리보기를 연결했다. 로컬 게임 UI 버튼/포커스·TextInput 문자/조합·제출은 연결했고 실제 IME 후보창 검수/패드 UI 탐색, 스크립트 자동 완성·중단점, 온라인 맵 전환·게임 규칙, 파일 감시 자동 반영, 범용 게임 내보내기는 남아 있다. DX11 외 백엔드와 범용 GPU timestamp/readback에는 미구현 경계가 있다.
 
 `render`는 `scene` 공개 타입을 PRIVATE include로 소비하는 실제 결합이 남아 있다. CMake의 링크 그래프만으로 이를 해결했다고 주장하지 않는다. 성능 개선은 동일 Release 장면과 하드웨어에서 측정한 병목을 기준으로 한다.
 

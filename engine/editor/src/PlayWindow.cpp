@@ -32,6 +32,7 @@ Expected<void, Error> PlayWindow::Open(rhi::IDevice& device, std::string_view fo
         return false;
     })};
     m_input = {};
+    m_textMessages = {};
     m_input.SetKeyboardSuppressed(!HasFocus());
     m_input.SetMouseSuppressed(!HasFocus());
     m_paused = false;
@@ -53,6 +54,7 @@ bool PlayWindow::HasFocus() const {
     return m_window && GetForegroundWindow() == m_window->GetNativeHandle();
 }
 bool PlayWindow::OnMessage(void* handle, uint32_t message, uint64_t wparam, int64_t lparam) {
+    const bool textHandled=win32::HandleTextInputMessage(&m_input,m_textMessages,handle,message,wparam,lparam);
     if (message == WM_SETFOCUS) { m_input.SetKeyboardSuppressed(false); m_input.SetMouseSuppressed(false); }
     if (message == WM_KILLFOCUS) { m_input.SetKeyboardSuppressed(true); m_input.SetMouseSuppressed(true); ReleaseCapture(); }
     MouseButton button = MouseButton::Count;
@@ -89,11 +91,11 @@ bool PlayWindow::OnMessage(void* handle, uint32_t message, uint64_t wparam, int6
         m_input.OnKey(key, message == WM_KEYDOWN || message == WM_SYSKEYDOWN);
     }
     // Raw Input stays registered to the editor. Registering a second backend would steal it.
-    return false;
+    return textHandled;
 }
 Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
                         const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command,
-                        std::string_view prompt, std::string_view message, ui::Widget* root) {
+                        std::string_view prompt, std::string_view message, ui::Widget* root, std::optional<TextInputFocus> textFocus) {
     if (!m_window || !m_swapChain || !m_target.IsInitialized()) return Error{"Play render surface is unavailable", 1};
     if (paused != m_paused) {
         m_window->SetTitle(paused ? "MyEngine — Play · 일시정지" : "MyEngine — Play");
@@ -107,8 +109,12 @@ Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const
     if (size.x > 0 && size.y > 0) {
         m_target.Blit(command, Backbuffer(), size, view.subpixelResidual);
         const Vec2i logicalSize{static_cast<int32_t>(m_target.Width()), static_cast<int32_t>(m_target.Height())};
-        return m_overlay.Render(command, Backbuffer(), logicalSize,
+        auto overlay=m_overlay.Render(command, Backbuffer(), logicalSize,
             render::PixelPerfectTarget::ComputeLayout(logicalSize, size).destRect, prompt, message, root);
+        if (!overlay) return overlay.GetError();
+        if (paused || !HasFocus()) textFocus.reset();
+        if (textFocus) textFocus->caret=render::PixelPerfectTarget::LogicalRectToWindow(logicalSize,size,textFocus->caret);
+        return win32::ConfigureTextInput(m_input,m_window->GetNativeHandle(),textFocus);
     }
     return {};
 }

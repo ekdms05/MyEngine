@@ -158,7 +158,7 @@ Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& source) {
         return Error{"Movement input must be finite", 1};
     const float length = std::sqrt(movement.x * movement.x + movement.y * movement.y);
     if (length > 1) movement = movement / length;
-    auto clicks = s.uiBindings.ProcessClicks();
+    auto clicks = s.uiBindings.ProcessCallbacks();
     if (!clicks) return clicks.GetError();
     const GameInput input = s.uiBindings.BlocksGameplay() ? GameInput{} : source;
     if (s.uiBindings.BlocksGameplay()) movement = {};
@@ -318,6 +318,7 @@ void UpdateDefaultCamera2D(ecs::World& world, render::Camera2D& camera, bool res
 }
 
 ui::Widget* ObjectSystem::UiRoot() const { return m_impl->uiBindings.Root(); }
+std::optional<TextInputFocus> ObjectSystem::TextFocus() const { return m_impl->uiBindings.TextFocus(); }
 Expected<bool, Error> ObjectSystem::FilterUiInput(InputState& input, Vec2 pointer, bool enabled) {
     return m_impl->uiBindings.FilterInput(input, pointer, enabled);
 }

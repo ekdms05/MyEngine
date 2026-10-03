@@ -65,6 +65,7 @@ public:
     static UpscaleLayout ComputeLayout(Vec2i internalSize, Vec2i windowSize);
     // UI uses the same integer layout; letterbox and right/bottom edges are outside.
     static std::optional<Vec2> WindowToLogical(Vec2i internalSize, Vec2i windowSize, Vec2i pointer);
+    static Rect LogicalRectToWindow(Vec2i internalSize, Vec2i windowSize, Rect rect);
 
     // 내부 RT를 백버퍼로 정수배 업스케일 블릿(포인트 샘플 + 서브픽셀 UV 오프셋 환원).
     // subpixelOffset = 카메라 SubpixelResidual()(내부 RT 픽셀, +Y 아래). 백버퍼를 자체 RenderPass로

@@ -73,7 +73,8 @@ MYE_TEST(GameUiClicksRunAtFixedTickAndModalCancelsGameplayAndPendingInput) {
     ui::UiNodeDesc dialog; dialog.typeName="Panel"; dialog.name="dialog"; dialog.anchors=ui::AnchorRect::TopLeft({200,100},{200,100});
     dialog.properties={{"modal","true"},{"visible","false"}};
     auto close=open; close.name="close"; close.anchors.offsetMin={10,10}; dialog.children={close};
-    hud.root.children={bar,open,fail,dialog};
+    ui::UiNodeDesc entry; entry.typeName="TextInput"; entry.name="entry"; entry.anchors=ui::AnchorRect::TopLeft({500,120},{200,30});
+    hud.root.children={bar,open,fail,dialog,entry};
     const auto encoded=ui::SaveDocumentJson(hud); MYE_EXPECT(encoded); if(!encoded) return;
     { std::ofstream file(root/"assets/hud.ui",std::ios::binary); file<<encoded.Value(); }
     asset::VirtualFileSystem files; files.Mount("assets",std::make_unique<asset::LooseFileSystem>(Utf8String(root/"assets")),0);
@@ -96,6 +97,15 @@ return {on_init=function(self)
         assert(mye.ui.set_visible("dialog",false))
     end))
     assert(mye.ui.on_click("fail",function() error("CLICK_FAILURE_WITNESS") end))
+    assert(not mye.ui.on_submit("count",function() end))
+    assert(not mye.ui.on_submit("entry",false))
+    assert(not mye.ui.get_text("count"))
+    assert(mye.ui.on_submit("entry",function(value)
+        assert(value=="가😀{red}" and mye.ui.get_text("entry")==value)
+        assert(not mye.ui.set_text("entry","a\nb") and mye.ui.get_text("entry")==value)
+        assert(mye.ui.set_text("entry",""))
+        assert(mye.ui.set_progress("count",3,100))
+    end))
 end}
 )";
     editor::PlayModeController play; play.SetEditWorld(&world); MYE_EXPECT(play.Play());
@@ -130,7 +140,7 @@ end}
     for (int index=0; index<65; ++index) {
         physical.NewFrame(); physical.OnMouseButton(MouseButton::Left,true); physical.OnMouseButton(MouseButton::Left,false);
         filtered=physical; const auto queued=play.FilterUiInput(filtered,{30,80},true);
-        MYE_EXPECT(index<64 ? bool(queued) : (!queued && queued.GetError().message.find("64 pending clicks")!=std::string::npos));
+        MYE_EXPECT(index<64 ? bool(queued) : (!queued && queued.GetError().message.find("64 pending UI actions")!=std::string::npos));
     }
     filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{},false));
     MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets));
@@ -139,6 +149,25 @@ end}
     const auto failure=play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets);
     MYE_EXPECT(!failure && failure.GetError().message.find("CLICK_FAILURE_WITNESS")!=std::string::npos);
     MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets));
+    physical.NewFrame(); physical.OnMouseButton(MouseButton::Left,true); physical.OnMouseButton(MouseButton::Left,false);
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{510,130},true));
+    const auto textFocus=play.TextFocus(); MYE_EXPECT(textFocus && filtered.IsKeyboardSuppressed()); if(!textFocus) return;
+    physical.SetTextInputFocus(textFocus->id); physical.NewFrame();
+    TextEdit composition; composition.kind=TextEdit::Kind::Composition; composition.text="ㄱ"; composition.cursorBytes=3; composition.composing=true;
+    MYE_EXPECT(physical.OnTextEdit(composition)); physical.OnKey(KeyCode::Enter,true); physical.OnKey(KeyCode::Enter,false);
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{-1,-1},true));
+    auto* field=play.UiRoot()->findByName("entry")->As<ui::TextInput>();
+    MYE_EXPECT(field->composition=="ㄱ" && field->text.empty());
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets)); MYE_EXPECT(count->value==2);
+    physical.NewFrame(); MYE_EXPECT(physical.OnTextEdit(TextEdit{TextEdit::Kind::Insert,"가😀{red}"}));
+    composition.text=""; composition.cursorBytes=0; composition.composing=false; MYE_EXPECT(physical.OnTextEdit(composition));
+    physical.OnKey(KeyCode::Enter,true); physical.OnKey(KeyCode::Enter,false);
+    filtered=physical; allowed=play.FilterUiInput(filtered,{-1,-1},true); MYE_EXPECT(allowed && allowed.Value());
+    MYE_EXPECT(field->text=="가😀{red}" && field->composition.empty() && count->value==2);
+    controls.Capture(filtered,allowed.Value());
+    MYE_EXPECT(play.Tick(1.0f/60,controls.ConsumeTick(),Utf8String(root),&database,&files,&assets));
+    MYE_EXPECT(count->value==3 && field->text.empty() && transform->position==origin);
+    MYE_EXPECT(play.TextFocus() && play.TextFocus()->id!=textFocus->id); // Lua replacement invalidates native preedit.
     play.Stop(); MYE_EXPECT(!play.UiRoot());
 }
 

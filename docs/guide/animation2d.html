@@ -4,6 +4,7 @@
 <body><a class="skip" href="#main">본문으로 이동</a><header><a class="brand" href="index.html">MyEngine</a><span>2D 캐릭터 모션</span><a href="index.html#animation">제작 가이드</a></header>
 <div class="layout"><aside aria-label="2D 모션 목차"><nav><a href="#section-0">2D 캐릭터 모션</a>
 <a href="#section-1">연결 방법</a>
+<a href="#baked-rig">외부 리깅 베이크</a>
 <a href="#section-2">방향 선택과 대체 규칙</a>
 <a href="#section-3">파일과 오류</a>
 <a href="#section-4">진행률과 발 피벗</a>
@@ -16,6 +17,12 @@
 <h2 id="section-1">연결 방법</h2>
 <ol><li>외부 도구에서 만든 PNG를 가져오고 애니메이션 패널의 <strong>시트</strong> 탭에서 프레임 영역·발 피벗을 지정한다. 그림 제작·리깅은 외부에서 수행한다.</li><li><strong>편집 방향</strong>에서 기본 또는 방향을 선택한다. <strong>클립 추가</strong>는 기본 타임라인을 복사하고, <strong>클립 제거</strong>는 해당 방향을 비운다. 방향을 선택하는 것만으로 에셋은 변경되지 않는다.</li><li>선택한 클립의 <strong>미리보기</strong>에서 프레임 순서·표시 시간, <strong>클립</strong>에서 이름·반복·재생 방향, <strong>이벤트</strong>에서 마커를 편집한다. 미지정 방향은 대체 결과를 미리 보여주며 직접 편집은 클립 추가 후 가능하다.</li><li><code>.anim</code>을 저장하고 <code>SpriteAnimator.animation</code>과 <code>CharacterController2D.idleAnimation</code>·<code>walkAnimation</code>에 연결한다. 기존 <code>.meta</code> GUID와 문서 Undo·Redo를 사용한다.</li><li>씬을 저장하고 Play한다. 정지하면 대기, 실제 이동량이 한 틱에 0.000001 월드 단위보다 크면 걷기를 요청한다. 속도가 낮아도 같은 기준을 사용한다.</li><li>비반복 클립의 후속 모션은 완료 뒤 다음 고정 틱에서 재생한다. 같은 이동 상태는 매 틱 시작 클립을 다시 요청하지 않는다. 대기·걷기에 서로 다른 에셋을 연결하면 걷기→정지→걷기는 새로운 요청이므로 처음부터 시작한다.</li></ol>
 <p><strong>시트와 프레임 영역은 모든 방향이 공유한다.</strong> 시트 교체·그리드 재생성은 프레임 인덱스가 바뀌므로 타임라인·이벤트·방향 클립과 반전 설정을 초기화한다. 패널에서 이유를 안내하며 Undo로 되돌릴 수 있다. 피벗 수정은 같은 시트 프레임을 사용하는 모든 클립에 적용된다. 그림을 자동 생성하거나 사용자 원본을 변경하지 않는다.</p>
+<h2 id="baked-rig">외부 리깅 모션을 가져오는 방법</h2>
+<p><strong>현재 공식 2D 제작 경로는 본 모션을 PNG 프레임으로 베이크한 뒤 <code>.anim</code>으로 재생한다.</strong> SpriteAnimator는 프레임 영역·발 피벗·시간·방향·이벤트를 소비한다. 본 계층·가중치·IK·신체 레이어를 그대로 임포트해 런타임에서 변형하는 경로는 제공하지 않는다. 외부 리그 파일이 있다는 이유만으로 엔진 리깅 완료로 표시하지 않는다.</p>
+<ol><li>외부 제작 도구에서 본/레이어 원본과 모션을 보관한다. 대기·걷기·공격 등 필요한 모션과 방향을 PNG 시트로 베이크한다. 엔진은 원본 리그를 수정하지 않는다.</li><li>프레임마다 같은 캐릭터 배율과 지면 기준점을 사용한다. 프레임을 잘라 여백이 달라지면 <strong>프레임 내부 픽셀 기준 발 피벗</strong>도 다시 지정한다. 투명 영역은 충돌 형상이 아니므로 Collider2D의 크기/offset을 별도로 확인한다.</li><li>PNG를 공식 임포트하고 시트 탭에서 실제 이미지 크기·프레임 영역·피벗을 지정한다. 클립 시간·반복·이벤트를 작성하고 <code>.anim</code>/씬을 저장·재열기한다. main의 방향별 클립은 위 연결 방법을 따른다. 배포된 0.3.0은 단일 클립 경계를 먼저 확인한다.</li><li>실제 게임 창에서 이동/정지·대각선·벽 접촉·방향 전환을 검사한다. 미리보기는 그림/시간 검사이며 캐릭터 이동·발 접지의 통과가 아니다. 자동 시작/속도 API 검사를 실제 WASD 조작 성공으로 계산하지 않는다.</li></ol>
+<p>기본 PPU 48·오브젝트 배율 1에서 평지 직선 이동의 한 주기 이동량은 <code>속도(unit/s) × 48 × 주기(s)</code> 픽셀이다. 예를 들어 속도 2·0.5초 주기는 48px다. 발이 지면에 붙어 있는 구간의 그림 변화가 이 이동과 맞는지 비교한다. 현재 엔진은 보폭에 맞춰 재생 속도를 자동 조절하거나 IK로 접지를 보정하지 않는다. 다른 배율·충돌 후 실제 이동·방향별 원근 표현은 해당 장면에서 다시 검수한다.</p>
+<p><img src="media/animation-playback.gif" loading="lazy" alt="기존 PNG 프레임 클립의 실제 재생 예시"></p>
+<p>이 GIF는 기존 프레임 재생 예시다. 본 리그 임포트·새 캐릭터 아트 승인·자연스러운 실제 키 조작의 증거는 아니다. 원본 PNG/리그/GUID를 보존하며 마감 수정은 새 에셋 버전에서 수행한다. 월드 소품/캐릭터의 cutout 가림은 <a href="../04-asset-pipeline.md">바이너리 알파 계약</a>을 함께 확인한다.</p>
 <h2 id="section-2">방향 선택과 대체 규칙</h2>
 <p><strong>직접 지정한 방향 클립 → 선택적으로 좌측 클립 반전 → 기본 클립</strong> 순서다. <strong>우측 반전</strong>을 켜도 명시적인 우측 클립이 우선한다. 반전 대상인 좌측 클립도 비어 있으면 기본 클립을 반전 없이 사용한다. 기본 클립은 항상 필요하다.</p>
 <div class="table-scroll"><table><tr><th>인덱스</th><th>저장 키</th><th>우측 반전 시 대체</th></tr><tr><td>0</td><td>down</td><td>기본 대체만</td></tr><tr><td>1</td><td>down_left</td><td>기본 대체만</td></tr><tr><td>2</td><td>left</td><td>기본 대체만</td></tr><tr><td>3</td><td>up_left</td><td>기본 대체만</td></tr><tr><td>4</td><td>up</td><td>기본 대체만</td></tr><tr><td>5</td><td>up_right</td><td>up_left</td></tr><tr><td>6</td><td>right</td><td>left</td></tr><tr><td>7</td><td>down_right</td><td>down_left</td></tr></table></div>

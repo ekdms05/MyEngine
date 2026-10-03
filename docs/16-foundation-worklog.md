@@ -627,3 +627,16 @@ UI/검증: 필드 위 이름·폭에 따른 버튼 줄바꿈·넓은 2열/좁은
 최종 검증: 기존 build/dev의 Debug/Release build·CTest 각606/606(집계1/1), 총42.73/31.66초. 공통 Win32 UTF-16/프레임·포커스 경계 회귀1개와 기존 Play 통합 회귀의 저장/조합/제출·값 보존을 보강했다. 각 구성 실제 앱 native/headless12출력·잘못된 여러 줄 포함10건 exit1·씬/메타 보존·문서 미리보기 통과. 입력칸과 비교 Label의 한글/중괄호 글리프 픽셀467/489/534 일치, 실제 Release HP75를 직접 확인했다. Release 자기 foreground의 두 앱×클릭/오류/텍스트6건 통과; 이전 foreground 실패는 역사 기록으로 보존한다. MCP build/smoke40, 가이드184링크/앵커 통과. 새 이미지는 전체 실제 프레임의 무손실 형식 변환이다.
 
 남은 조건: 실제 한국어 IME GCS_RESULTSTR/조합 업데이트·후보 선택/취소/창 전환과 물리 장치·DPI/패드 UI·선택/클립보드/결합문자·온라인/소비자 배포는 미검증/미완료다. 합성 WM_CHAR/조합 시작·끝을 실제 IME 결과/후보창 검수로 계산하지 않는다. 직접 D 전달이 포커스 이탈로 중단될 수 있어 네이티브 D 차단 전체 인증도 주장하지 않는다. 사용자 원문 SHA85964a8c…·기존 아트/GUID·VERSION/tag와 설치0.3.0의84파일 해시/크기를 보존했다. 현재 개발/UI 지침과 MCP lua/ui·가이드를 동기화했고 새 패키지·에이전트·픽셀 제작기·측정 없는 성능 최적화는 추가하지 않았다. 상세 답변은 Project E docs의 engine-feedback-response-2026-10-03-text-input.md, 명령/해시는 build의 d23a-audit/benchmark/log에 둔다. 전체 목표는 계속 진행한다.
+
+
+## 2026-10-03 · 한국어 IME 검수와 외부 리깅 베이크 안내
+
+근거: ME-003/016의 실제 한글 조합/확정과 ME-008/011의 본 리깅 공식 경로/베이크 안내 요청을 우선했다. 한국어/일본어 입력 레이아웃을 읽기 전용으로 확인했으며 새 입력기·패키지를 설치하지 않았다. 기존 MyGame 복사본/입력 도우미와 native 키를 사용해 설치된 한국어 IME의 gksrmf→한글·첫 Enter 확정/두 번째 제출을 부분 관찰했다. 외부 프로세스의 HIMC 상태 조회 실패는 검수 도구 경계이고 엔진 결함으로 판정하지 않는다.
+
+검사 도구: 기존 verify-game-ui-input.py에 명시적인 --case ime를 추가했다. 기본 all6건은 언어 패키지와 독립적이다. 보이는 MyEngineWindowClass/자기 PID/foreground만 선택하며 숨은 IME/콘솔을 제외한다. 숨은 동일 PID·Play 제목 보조 창을 실제 Win32로 만들고 배제하는 최소 회귀를 도구 시작에 남겼다. 순서 있는 committed 값·Latin 시험 문자 제거/모드 전환·첫 Enter 미제출·두 번째 제출1회와 정상 종료 전 Latin 확인/레이아웃 복원을 검사한다. 입력 소유권이 없으면 키를 보내지 않는다. 정리 오류를 primary failure와 분리하고 실패해도 자기 프로세스 종료를 보장한다.
+
+현재 검증: MyGame 단독 탐색에서 한국어 IME 조합 중 get_text='한', 첫 Enter 후='한글'/제출0, 두 번째 제출1을 관찰했다. 탐색은 정상 종료/최종 캡처를 인증한 gate가 아니다. 두 앱 gate는 다른 앱 foreground 획득/선점으로 미통과이며 두 번째 앱 완료·후보 선택/취소·DPI/물리 장치 검증을 주장하지 않는다. 최종 도구의 숨은 창 회귀/빈 로그·Unicode 경계와 Python 파싱을 통과했다. MCP build/smoke41, 가이드188링크/앵커 통과. C++/앱/테스트 소스는 변경하지 않아 build/CTest를 반복하지 않았으며 이전606개 결과와 현재 바이너리 SHA 일치만 재확인했다.
+
+리깅 안내: 실제 AnimationAsset/SpriteSheet/SpriteAnimator·애니메이션 패널의 저장/소비 계약을 확인했다. 현재 공식 2D 경로는 외부 본/레이어 원본→PNG 프레임 베이크→.anim→SpriteAnimator이며 런타임 본 계층/가중치/IK 임포트는 제공하지 않는다. 26/07과 offline 가이드에 원본/GUID 보존·발 피벗·충돌 형상 분리·속도×PPU×주기·실제 조작/접지 검사와 현재 단일/방향별 버전 경계를 기록했다. 기존 GIF는 프레임 예시로 재사용하며 리그/새 아트 승인 증거로 계산하지 않는다. Godot의 sprite-frame/skeleton 흐름과 Windows Korean IME 문서를 참고했고 외부 코드를 복사하거나 고지를 제거하지 않았다.
+
+남은 조건/보존: 두 앱의 안정된 foreground에서 IME gate·후보 선택/취소/창 전환을 재검수한다. 실제 장치/패드·행동 작성/입력·프리팹/질의·프로젝트 맵/저장·온라인/운영/게임 배포는 계속 진행한다. 원문 SHA85964a8c…·기존 설치84파일 SHA/크기·VERSION/tag·사용자 아트/씬/GUID를 보존했다. 로컬 개발/UI 지침과 MCP animation2d를 동기화하며 새 패키지/에이전트·엔진 내 에셋 제작기·측정 없는 성능 최적화는 추가하지 않았다. 상세 답변은 Project E docs의 engine-feedback-response-2026-10-03-ime-and-bake.md, 환경/실패/해시는 build의 d23b-audit/benchmark/log에 둔다.

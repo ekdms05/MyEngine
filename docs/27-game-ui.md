@@ -155,3 +155,12 @@ Win32의 WM_CHAR UTF-16 변환과 WM_IME_COMPOSITION의 GCS_COMPSTR/GCS_RESULTST
 선택·클립보드·Undo·단어 이동·결합문자 전체 단위 편집·여러 줄은 아직 지원하지 않는다. 현재 코드포인트 삭제는 결합 문자/이모지 묶음을 한 글자로 처리하지 않는다. 코드에 후보창 배치가 있다고 실제 IME 후보 선택을 통과했다고 판정하지 않는다.
 
 `verify-game-ui.py`는 TextInput/Label의 한글·일반 중괄호 픽셀 일치와 잘못된 여러 줄 문서의 앱 거부를 검사한다. `verify-game-ui-input.py --case text`는 자기 전면 창에 합성 WM_CHAR·조합 시작/끝을 보내고 조합 중 Enter의 미제출→확정 텍스트→고정 틱 제출을 검사한다. Release 전체6건도 통과했다. 실제 GCS_RESULTSTR/조합 업데이트·한국어 IME 후보 선택/취소·물리 키보드·모니터 DPI·패드 UI·온라인 채팅은 별도 완료 조건이다.
+
+
+## 설치된 한국어 IME 검사
+
+**`python -B tools/verify-game-ui-input.py --config Release --case ime`로 실제 설치된 한국어 입력기를 거친 조합/확정을 검사한다.** Debug와 --app MyGame/MyEditor도 선택할 수 있다. 기본 all6건은 언어 패키지 설치 여부와 독립적인 합성 입력 검사이며 ime는 명시적으로 선택한다. 검사 도구가 언어 패키지를 설치하지 않는다.
+
+검사 앱의 보이는 MyEngineWindowClass·PID·전면 창을 확인한다. 필요할 때 해당 앱 스레드만 설치된 한국어 레이아웃으로 전환한다. gksrmf 키 입력으로 '한글'을 조합하고 get_text가 조합 중 '한'만 반환하는지, 첫 Enter 확정→두 번째 Enter 제출1회인지 검사한다. Latin 모드이면 시험 문자를 지우고 Hangul을 한 번 전환하며 정상 종료 전에 모드/레이아웃을 되돌린다. 다른 앱이 전면에 있으면 입력하지 않고 실패한다. 실패 원인과 복원 오류는 각각 report.json의 failure/cleanupErrors에 남기며 자기 subprocess만 종료한다.
+
+현재 MyGame의 별도 검사에서 설치된 한국어 IME의 조합·확정/제출을 관찰했다. 두 앱 전체 gate는 다른 앱 창의 foreground 선점으로 미통과다. 이 부분 관찰을 두 앱 전체 통과로 올리지 않는다. 후보창 선택/취소·필드/창 전환·실제 모니터 DPI·물리 키보드/패드·온라인은 별도 미완료다. 전면 창을 안정적으로 확보한 환경에서 두 앱의 ime gate를 다시 수행한다.

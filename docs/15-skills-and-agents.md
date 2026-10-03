@@ -73,3 +73,6 @@ UI 문서 작성은 기존 개발·게임 UI·ImGui 지침과 문서 CommandStac
 
 
 텍스트 입력은 기존 myengine-development·game-ui-ux, TextInput/TextLayout·UiSystem과 네이티브 Windows IMM을 사용했다. 필드별 UTF-16 상태·한 줄 UTF-8 검증·조합/확정 분리·실제 커서 위치·고정 틱 제출을 공통 경계에서 검사한다. 로컬 두 지침과 MCP lua/ui를 갱신하며 새 패키지·병렬 에이전트·픽셀 제작기는 추가하지 않았다. 실제 GCS_RESULTSTR/후보창·물리 장치/DPI·온라인/배포는 소스와 합성 입력 통과에서 분리한다.
+
+
+설치된 한국어 IME 검수는 Windows 기본 입력기·기존 자체 앱 검사 도구를 사용한다. 숨은 IME/콘솔 창은 입력 대상으로 삼지 않고 자기 PID의 보이는 엔진 창/foreground를 확인한다. 외부 리깅 안내는 현재 AnimationAsset/SpriteAnimator의 PNG 프레임 계약을 기준으로 베이크·발 피벗·실제 조작/접지를 구분한다. 개발/UI 로컬 지침과 animation2d MCP를 갱신하며 추가 패키지/에이전트·엔진 내 에셋 제작기는 사용하지 않는다.

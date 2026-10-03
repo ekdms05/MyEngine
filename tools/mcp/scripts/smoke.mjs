@@ -225,6 +225,9 @@ async function main() {
     firstText(animation2D.result).includes("버전 2") && firstText(animation2D.result).includes("mirrorRight") &&
     firstText(animation2D.result).includes("전체 재생 시간의 진행률") && firstText(animation2D.result).includes("--capture-at") && firstText(animation2D.result).includes("animationPlaying") && animationDiagnostics.result?.isError !== true && firstText(animationDiagnostics.result).includes("-Temporal") && firstText(animation2D.result).includes(".animstate") && firstText(animation2D.result).includes("Play를 중단"));
   const stateBinding = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", search: "stateMachine", lines: 8 } });
+  check("engine_reference — 외부 리깅 베이크와 접지 검수 경계", animation2D.result?.isError !== true &&
+    firstText(animation2D.result).includes("베이크") && firstText(animation2D.result).includes("본 계층") &&
+    firstText(animation2D.result).includes("발 피벗") && firstText(animation2D.result).includes("자동 조절"));
   const typedParameters = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "on_init", lines: 8 } });
   check("engine_reference — 행동 바인딩과 작성/권위 경계", stateBinding.result?.isError !== true &&
     firstText(stateBinding.result).includes("GUID") && firstText(stateBinding.result).includes("전용 행동 작성/Undo") &&

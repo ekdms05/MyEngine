@@ -66,3 +66,5 @@
 게임 창 안내는 myengine-development와 game-ui-ux의 앵커/픽셀 배율·표시/게임 상태 경계를 적용했다. 기존 ImGui 안내 중복 제거에는 imgui-ui-ux-engineering의 scope checker를 적용했다. 기존 UiRenderer/TextLayout/GlyphAtlas/SpriteBatch와 배포 폰트를 사용하여 새 UI 프레임워크/패키지/에이전트 없이 실제 Play/MyGame에 연결한다. 로컬 세 스킬과 MCP ui 참조를 갱신한다. 합성 입력/픽셀 검사, 물리 장치/DPI, 작성 HUD·IME/포커스, 새 릴리즈를 각각 구분한다.
 
 저장한 게임 UI의 현재 앱 경로와 다음 검수는 [27](27-game-ui.md)을 따른다. 기존 UI/개발 스킬을 재사용하며 이번 연결을 위한 패키지·상시 에이전트를 추가하지 않는다.
+
+UI 문서 작성은 기존 개발·게임 UI·ImGui 지침과 문서 CommandStack을 재사용한다. 문서/위젯 경로별 ID·임시 편집·파일/GUID 보존과 공유 게임 렌더 미리보기를 검수한다. 타입별 속성 UX·실제 장치/DPI·게임 포커스/IME·온라인은 별도이며 추가 패키지/상시 에이전트는 필요하지 않았다.

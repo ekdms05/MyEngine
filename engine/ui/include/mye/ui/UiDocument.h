@@ -12,13 +12,22 @@
 #include "mye/ui/Widget.h"
 #include "mye/core/Base.h"
 #include "mye/asset/AssetGuid.h"
+#include "mye/asset/AssetHandle.h"
+#include "mye/asset/Texture.h"
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
+namespace mye::asset { class AssetDatabase; class AssetManager; }
 namespace mye::ui {
+
+// Consumers release the instance before the asset manager and render device.
+struct UiInstance {
+    std::vector<asset::AssetHandle<asset::Texture>> textures;
+    WidgetPtr root;
+};
 
 class WidgetFactory;
 
@@ -56,6 +65,8 @@ struct UiDocument {
 //   SaveDocumentJson: doc → UTF-8 JSON 문자열. LoadDocumentJson: JSON → doc.
 Expected<std::string, Error> SaveDocumentJson(const UiDocument& doc);
 Expected<UiDocument, Error>  LoadDocumentJson(std::string_view json);
+Expected<UiInstance, Error> InstantiateGameUi(const UiDocument& document,
+    asset::AssetDatabase& database, asset::AssetManager& assets);
 
 // typeName → Widget 생성 팩토리. 내장 위젯 등록 + 커스텀 위젯 플러그인 등록점(docs/06 확장 §1).
 class WidgetFactory {

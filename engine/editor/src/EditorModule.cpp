@@ -93,6 +93,11 @@ struct EditorModule::Impl final : public IEditorViewport {
     PlayWindow                       playWindow;
     ui::GameOverlay                   gameOverlay;
     std::string                      uiFontPath;
+    render::PixelPerfectTarget        uiPreviewTarget;
+    ui::GameOverlay                   uiPreviewOverlay;
+    ui::UiInstance                    uiPreviewInstance;
+    DocumentId                        uiPreviewDocument{};
+    uint64_t                          uiPreviewRevision = 0;
 
     // 뷰포트 상태(패널이 통지, 렌더가 소비).
     // Handles are released before the manager and device.
@@ -114,6 +119,8 @@ struct EditorModule::Impl final : public IEditorViewport {
     std::string assetRoot;
 
     void ClearAssets() {
+        uiPreviewInstance = {};
+        uiPreviewDocument = {};
         if (engine) engine->UnregisterServiceRaw(asset::AssetDatabase::kServiceId);
         textures.clear();
         meshes.clear();
@@ -165,6 +172,34 @@ struct EditorModule::Impl final : public IEditorViewport {
         const auto* texture = ResolveTexture(guid);
         if (!texture) return Error{"Texture could not be loaded; check its PNG and .meta", 1};
         return TexturePreview{device->GetImGuiTextureID(texture->gpuTexture), texture->width, texture->height};
+    }
+    Expected<TexturePreview, Error> UiDocumentPreview(const ui::UiDocument& document, DocumentId id, uint64_t revision) override {
+        auto synced = SyncAssets();
+        if (!synced) return synced.GetError();
+        if (!device || !assetDb || !assets) return Error{"Open a project to preview its UI", 1};
+        if (uiPreviewDocument != id || uiPreviewRevision != revision || !uiPreviewInstance.root) {
+            auto instance = ui::InstantiateGameUi(document, *assetDb, *assets);
+            if (!instance) { uiPreviewInstance = {}; uiPreviewDocument = {}; return instance.GetError(); }
+            uiPreviewInstance = std::move(instance).Value();
+            uiPreviewDocument = id; uiPreviewRevision = revision;
+        }
+        if (!uiPreviewTarget.IsInitialized()) {
+            render::PixelPerfectDesc desc;
+            desc.useDepth = false;
+            uiPreviewTarget.Init(*device, desc);
+            if (!uiPreviewTarget.IsInitialized()) return Error{"Cannot create UI preview target", 1};
+        }
+        if (!uiPreviewOverlay.IsInitialized()) {
+            auto initialized = uiPreviewOverlay.Init(*device, uiPreviewTarget.ColorFormat(), uiFontPath);
+            if (!initialized) return initialized.GetError();
+        }
+        // Called while building ImGui, before its render pass. This is a separate batch owner.
+        auto& command = device->GetImmediateContext();
+        uiPreviewTarget.BeginScenePass(command, {.05f, .05f, .06f, 1});
+        uiPreviewTarget.EndScenePass(command);
+        auto rendered = uiPreviewOverlay.Render(command, uiPreviewTarget.ColorTarget(), {960,540}, {0,0,960,540}, {}, {}, uiPreviewInstance.root.get());
+        if (!rendered) return rendered.GetError();
+        return TexturePreview{device->GetImGuiTextureID(uiPreviewTarget.ColorTarget()), 960, 540};
     }
     const asset::Mesh* ResolveMesh(asset::AssetGuid guid) {
         if (!assetDb || !guid.IsValid()) return nullptr;
@@ -690,6 +725,8 @@ void EditorModule::OnShutdown(EngineContext& ctx) {
 
     s.onResized.Reset();
     s.debugUi.Shutdown();
+    s.uiPreviewOverlay.Shutdown();
+    s.uiPreviewTarget.Shutdown();
     s.gameOverlay.Shutdown();
     s.hybrid.Shutdown();
     s.rt.Shutdown();

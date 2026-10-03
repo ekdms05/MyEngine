@@ -365,10 +365,12 @@ private:
             ImGui::Selectable((std::string(IconFor(extension)) + "  " + name).c_str());
             if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 if (extension == "anim") SetResult(ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath)), "애니메이션을 열었습니다.");
+                else if (extension == "ui") SetResult(ctx.app->OpenUi(VpathToOsPath(ctx, vpath)), "게임 UI를 열었습니다.");
                 else if (extension == "scene") SetResult(ctx.app->OpenScene(VpathToOsPath(ctx, vpath)), "씬을 열었습니다.");
             }
             if (ImGui::BeginPopupContextItem("file_context")) {
                 if (extension == "anim" && ImGui::MenuItem("애니메이션 열기")) SetResult(ctx.app->OpenAnimation(VpathToOsPath(ctx, vpath)), "애니메이션을 열었습니다.");
+                if (extension == "ui" && ImGui::MenuItem("게임 UI 열기")) SetResult(ctx.app->OpenUi(VpathToOsPath(ctx, vpath)), "게임 UI를 열었습니다.");
                 if (extension == "scene" && ImGui::MenuItem("씬 열기")) SetResult(ctx.app->OpenScene(VpathToOsPath(ctx, vpath)), "씬을 열었습니다.");
                 FolderActions(ctx, m_currentFolder, editing);
                 ImGui::Separator();

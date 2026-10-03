@@ -73,8 +73,12 @@ public:
     Expected<void, Error> SaveScene(std::string_view path);
     Expected<void, Error> OpenAnimation(std::string_view path);
     Document* AnimationDocument();
-    void SetAnimationFocused() { m_animationFocused = true; }
+    void SetAnimationFocused() { m_focusedAsset = m_animationId; }
     void SelectAnimationDocument(DocumentId id) { m_animationId = id; }
+    Expected<void, Error> OpenUi(std::string_view path);
+    Document* UiDocument();
+    void SelectUiDocument(DocumentId id) { m_uiId = id; }
+    void SetUiFocused() { m_focusedAsset = m_uiId; }
     Expected<std::string, Error> BrowseImageFile();
     Expected<std::string, Error> BrowseAssetFile();
     void ActivateDocument(DocumentId id);
@@ -107,6 +111,7 @@ private:
 
     // 편집 대상 커맨드 스택(플레이 중=플레이 스택, 아니면 포커스 문서 스택). null 가능.
     CommandStack* ActiveStack();
+    Document* FocusedAssetDocument();
 
     // 메뉴/툴바/단축키 액션.
     void TogglePlay();
@@ -150,7 +155,7 @@ private:
     bool           m_useStarter = true;
     std::string    m_templateDirectory;
     DocumentId     m_animationId{};
-    bool           m_animationFocused = false;
+    DocumentId     m_uiId{}, m_focusedAsset{};
     std::array<char, 128> m_newProjectName{};
     std::array<char, 4096> m_newProjectDirectory{};
     std::string    m_fileStatus;

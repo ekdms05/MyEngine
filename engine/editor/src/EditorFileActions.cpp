@@ -42,7 +42,7 @@ Expected<std::string, Error> Browse(IWindow* window, FileDialog kind, std::strin
         const COMDLG_FILTERSPEC filter = kind == FileDialog::Project
             ? COMDLG_FILTERSPEC{L"MyEngine project", L"*.myeproj"}
             : kind == FileDialog::Image ? COMDLG_FILTERSPEC{L"PNG image", L"*.png"}
-            : kind == FileDialog::Asset ? COMDLG_FILTERSPEC{L"Game assets (PNG, animation, Lua, WAV, GLB, glTF)", L"*.png;*.anim;*.lua;*.wav;*.glb;*.gltf"}
+            : kind == FileDialog::Asset ? COMDLG_FILTERSPEC{L"Game assets (PNG, animation, UI, Lua, WAV, GLB, glTF)", L"*.png;*.anim;*.animstate;*.ui;*.lua;*.wav;*.glb;*.gltf"}
             : COMDLG_FILTERSPEC{L"MyEngine scene", L"*.scene"};
         result = dialog->SetFileTypes(1, &filter);
         if (FAILED(result)) return Error{"Cannot set the file filter", static_cast<int32_t>(result)};
@@ -99,7 +99,7 @@ void EditorApp::RefreshDocumentContext() {
 
 void EditorApp::ActivateDocument(DocumentId id) {
     if (!m_project || m_playMode->IsPlaying()) return;
-    m_animationFocused = false;
+    m_focusedAsset = {};
     m_project->SetActive(id);
     RefreshDocumentContext();
     m_selectDocumentTab = true;
@@ -114,6 +114,7 @@ Expected<void, Error> EditorApp::CreateProject(std::string_view name, std::strin
     if (!created) return created.GetError();
     m_showInputSettings = false;
     m_animationId = {};
+    m_uiId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
@@ -130,6 +131,7 @@ Expected<void, Error> EditorApp::OpenProject(std::string_view path, bool discard
     if (!opened) return opened.GetError();
     m_showInputSettings = false;
     m_animationId = {};
+    m_uiId = {};
     SelectWorkspace(Workspace::Scene2D);
     RestoreLayout();
     RefreshDocumentContext();
@@ -160,6 +162,29 @@ Expected<void, Error> EditorApp::OpenAnimation(std::string_view path) {
     opened.Value()->Commands().SetContext(&m_ctx);
     m_panels->Open("mye.anim");
     m_panels->Focus("mye.anim");
+    return {};
+}
+
+Document* EditorApp::FocusedAssetDocument() {
+    if (m_project) for (auto* doc : m_project->Documents())
+        if (doc->Id() == m_focusedAsset && doc->GetKind() != Document::Kind::Scene) return doc;
+    return nullptr;
+}
+
+Document* EditorApp::UiDocument() {
+    if (m_project) for (auto* doc : m_project->Documents())
+        if (doc->Id() == m_uiId && doc->GetKind() == Document::Kind::Ui) return doc;
+    return nullptr;
+}
+
+Expected<void, Error> EditorApp::OpenUi(std::string_view path) {
+    if (m_playMode->IsPlaying()) return Error{T("file.stopfirst"), 1};
+    auto opened = m_project->OpenUi(path);
+    if (!opened) return opened.GetError();
+    m_uiId = opened.Value()->Id();
+    opened.Value()->Commands().SetContext(&m_ctx);
+    m_panels->Open("mye.ui");
+    m_panels->Focus("mye.ui");
     return {};
 }
 
@@ -251,7 +276,8 @@ void EditorApp::OpenUserGuide() {
 
 void EditorApp::RequestSaveAs() {
     if (m_playMode->IsPlaying()) return;
-    if (m_animationFocused && AnimationDocument()) {
+    if (auto* doc = FocusedAssetDocument()) {
+        if (doc->GetKind() == Document::Kind::Ui) { m_panels->Open("mye.ui"); m_panels->Focus("mye.ui"); ReportFileResult(Error{"UI 패널의 저장 경로를 지정한 뒤 저장하세요.", 1}, ""); return; }
         m_panels->Open("mye.anim");
         ReportFileResult(Error{"애니메이션 패널에서 저장 경로를 지정하세요", 1}, "");
         return;
@@ -275,7 +301,8 @@ void EditorApp::RequestSaveProject() {
     for (Document* doc : m_project->Documents()) {
         if (!doc->Path().empty()) continue;
         if (doc->GetKind() != Document::Kind::Scene) {
-            { m_animationId = doc->Id(); m_panels->Open("mye.anim"); ReportFileResult(Error{"Save the new animation in the animation panel first", 1}, ""); }
+            if (doc->GetKind() == Document::Kind::Ui) { m_uiId = doc->Id(); m_panels->Open("mye.ui"); m_panels->Focus("mye.ui"); ReportFileResult(Error{"Save the new UI in its panel first", 1}, ""); }
+            else { m_animationId = doc->Id(); m_panels->Open("mye.anim"); ReportFileResult(Error{"Save the new animation in the animation panel first", 1}, ""); }
             if (!doc->Path().empty() && !m_fileError) continue;
             return;
         }

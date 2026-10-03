@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 
+namespace mye::ui { struct UiDocument; }
 namespace mye::editor {
 
 // 뷰포트 카메라 상태(패널이 팬/줌으로 갱신, EditorModule이 렌더에 소비).
@@ -55,6 +56,9 @@ public:
         return Error{"Texture preview is unavailable", 1};
     }
     virtual Expected<void, Error> RefreshAssetIndex() { return Error{"Asset index is unavailable", 1}; }
+    virtual Expected<TexturePreview, Error> UiDocumentPreview(const ui::UiDocument&, DocumentId, uint64_t) {
+        return Error{"UI preview is unavailable", 1};
+    }
 
     // 좌표 변환(뷰포트 이미지 로컬 픽셀 ↔ 월드). localPx: 이미지 좌상단(0,0)~(RenderW,RenderH),
     //   +Y 아래(ImGui 화면 좌표). 픽킹·기즈모·그리드가 소비.

@@ -92,7 +92,7 @@ std::string_view EditorApp::CentralPanelId() const {
 
 void EditorApp::SelectWorkspace(Workspace workspace) {
     m_workspace = workspace;
-    m_animationFocused = false;
+    m_focusedAsset = {};
     if (m_playMode) m_playMode->SetInputEnabled(false);
     if (m_viewport && (workspace == Workspace::Scene2D || workspace == Workspace::Scene3D)) {
         auto camera = m_viewport->Camera();

@@ -33,6 +33,7 @@
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/FileSystem.h"
 #include "mye/asset/Importer.h"
+#include "mye/asset/AssetMeta.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 
@@ -971,6 +972,147 @@ MYE_TEST(EditorProjectRejectsBrokenSceneAndMetadata) {
     project.NewScene();
     MYE_EXPECT(!project.Open(Utf8String(root / "valid" / "project.myeproj")));
     MYE_EXPECT(project.HasUnsavedChanges());
+}
+
+MYE_TEST(EditorUiDocumentsPreserveDraftGuidAndSceneAcrossFailureAndReopen) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("ui-document");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(!app.Project().NewUi());
+    MYE_EXPECT(app.CreateProject("UI", Utf8String(root / "project")));
+    auto* scene = app.Project().Active();
+    auto created = app.Project().NewUi(); MYE_EXPECT(created); if (!created) return;
+    auto* doc = created.Value();
+    app.SelectUiDocument(doc->Id());
+    MYE_EXPECT(doc->IsDirty() && app.Project().Active() == scene);
+    auto value = doc->Ui();
+    ui::UiNodeDesc hp; hp.typeName = "ProgressBar"; hp.name = "hp";
+    hp.anchors = ui::AnchorRect::TopLeft({32,64},{296,12});
+    hp.properties = {{"value","75"},{"maximum","100"}};
+    value.root.children.push_back(hp);
+    MYE_EXPECT(doc->EditUi(app.Context(), value, "HP gauge"));
+    const auto file = Utf8Path(app.Project().RootDir()) / "assets/ui/hud.ui";
+    MYE_EXPECT(app.Project().SaveUi(doc->Id(), Utf8String(file)));
+    auto original = ReadJsonFile(file); MYE_EXPECT(original); if (!original) return;
+    doc->Commands().Undo(); MYE_EXPECT(doc->Ui().root.children.empty() && doc->IsDirty());
+    doc->Commands().Redo(); MYE_EXPECT(doc->Ui().root.children.size() == 1 && !doc->IsDirty());
+    app.SetUiFocused(); MYE_EXPECT(&app.Commands() == &doc->Commands());
+    auto invalid = value; invalid.root.children.push_back(hp);
+    doc->StageUi(invalid);
+    MYE_EXPECT(doc->IsDirty() && app.Project().HasUnsavedChanges());
+    MYE_EXPECT(!app.Project().SaveUi(doc->Id(), Utf8String(file)));
+    MYE_EXPECT(!app.OpenProject(app.Project().ProjectFilePath()));
+    const auto position = doc->Commands().Position();
+    MYE_EXPECT(!doc->EditUi(app.Context(), invalid, "duplicate"));
+    MYE_EXPECT(doc->UiDraft() && doc->Commands().Position() == position);
+    MYE_EXPECT(json::Stringify(ReadJsonFile(file).Value()) == json::Stringify(original.Value()));
+    doc->DiscardUiDraft();
+    asset::VirtualFileSystem vfs;
+    vfs.Mount("assets", std::make_unique<asset::LooseFileSystem>(Utf8String(file.parent_path().parent_path())), 0);
+    asset::AssetManager manager(vfs, nullptr);
+    asset::AssetDatabase database(manager, nullptr);
+    MYE_EXPECT(database.ScanDirectory(Utf8String(file.parent_path().parent_path())));
+    const auto guid = database.GuidFromPath("assets://ui/hud.ui"); MYE_EXPECT(guid.IsValid());
+    const auto metaPath = Utf8Path(asset::MetaPathFor(Utf8String(file)));
+    auto meta = ReadJsonFile(metaPath); MYE_EXPECT(meta);
+    value.root.children[0].properties[0].value = "0";
+    MYE_EXPECT(doc->EditUi(app.Context(), value, "HP zero"));
+    std::ofstream(root / "project/assets/blocked").put('x');
+    MYE_EXPECT(!app.Project().SaveUi(doc->Id(), "assets/blocked/hud.ui"));
+    MYE_EXPECT(!app.Project().SaveUi(doc->Id(), "../outside.ui"));
+    MYE_EXPECT(!app.Project().SaveUi(doc->Id(), "hud.ui"));
+    MYE_EXPECT(!app.Project().SaveUi(doc->Id(), std::string("assets/") + char(0xff) + ".ui"));
+    MYE_EXPECT(doc->IsDirty() && doc->Path() == Utf8String(file));
+    app.SaveActive(); MYE_EXPECT(!doc->IsDirty());
+    MYE_EXPECT(database.ScanDirectory(Utf8String(file.parent_path().parent_path())));
+    MYE_EXPECT(database.GuidFromPath("assets://ui/hud.ui") == guid);
+    MYE_EXPECT(json::Stringify(ReadJsonFile(metaPath).Value()) == json::Stringify(meta.Value()));
+    auto another = app.Project().NewUi(); MYE_EXPECT(another);
+    if (another) {
+        MYE_EXPECT(!app.Project().SaveUi(another.Value()->Id(), Utf8String(file)));
+        MYE_EXPECT(another.Value()->Path().empty() && another.Value()->IsDirty());
+        app.Project().CloseDocument(another.Value()->Id());
+    }
+    const auto badFile = root / "project/assets/bad.ui";
+    std::ofstream(badFile) << "{}";
+    const auto count = app.Project().Documents().size();
+    MYE_EXPECT(!app.OpenUi(Utf8String(badFile)) && app.Project().Documents().size() == count);
+    MYE_EXPECT(app.Project().OpenUi(Utf8String(file)).Value() == doc);
+    app.Project().CloseDocument(doc->Id()); MYE_EXPECT(!app.UiDocument());
+    DocumentId lastUiId{};
+    for (int i=0; i<3; ++i) {
+        MYE_EXPECT(app.OpenUi(Utf8String(file)));
+        auto* reopened = app.UiDocument(); MYE_EXPECT(reopened && !reopened->IsDirty());
+        if (!reopened) break;
+        MYE_EXPECT(reopened->Ui().root.children[0].properties[0].value == "0");
+        MYE_EXPECT(app.Project().Active() == scene);
+        lastUiId = reopened->Id();
+        app.Project().CloseDocument(reopened->Id());
+    }
+    const std::string projectFile(app.Project().ProjectFilePath());
+    MYE_EXPECT(app.SaveProject());
+    MYE_EXPECT(app.OpenProject(projectFile));
+    MYE_EXPECT(app.OpenUi(Utf8String(file)));
+    MYE_EXPECT(app.UiDocument() && app.UiDocument()->Id().value > lastUiId.value);
+    app.Shutdown();
+}
+
+MYE_TEST(EditorUiPanelUsesActualWidgetsAndKeepsDraftAcrossPanelLifetime) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("ui-panel");
+    EditorTestContext engine(root);
+    EditorApp app;
+    MYE_EXPECT(app.Initialize(engine, ""));
+    MYE_EXPECT(app.CreateProject("UI", Utf8String(root / "project")));
+    auto factory = MakeUiEditorPanelFactory(); auto panel = factory->Create();
+    auto frame = [&]() { ImGui::NewFrame(); panel->OnGui(app.Context()); ImGui::Render(); };
+    frame(); frame();
+    auto* window = ImGui::FindWindowByName("게임 UI###mye.ui"); MYE_EXPECT(window);
+    if (!window) return;
+    ImGui::ActivateItemByID(window->GetID("새 UI")); frame(); frame();
+    auto* doc = app.UiDocument(); MYE_EXPECT(doc); if (!doc) return;
+    // Drive the real tab and button IDs, without replacing the production panel's data flow.
+    ImGuiWindow* work = nullptr;
+    for (auto* candidate : ImGui::GetCurrentContext()->Windows)
+        if (candidate->ParentWindow == window && candidate->ChildId == window->GetID("##ui_workspace")) work = candidate;
+    MYE_EXPECT(work); if (!work) { app.Shutdown(); return; }
+    ImGui::ActivateItemByID(ImHashStr("위젯 작성", 0, ImHashStr("##ui_tasks",0,work->ID))); frame(); frame();
+    const auto tabScope = ImHashStr("위젯 작성",0,ImHashStr("##ui_tasks",0,work->ID));
+    const auto propertyScope = ImHashStr("##ui_columns",0,tabScope);
+    const int documentIndex = static_cast<int>(doc->Id().value), childIndex = 0;
+    const auto rootScope = ImHashData(&documentIndex,sizeof(documentIndex),propertyScope);
+    const auto childScope = ImHashData(&childIndex,sizeof(childIndex),rootScope);
+    ImGui::ActivateItemByID(ImHashStr("위젯 추가",0,rootScope)); frame();
+    MYE_EXPECT(doc->Ui().root.children.size() == 1);
+    if (doc->Ui().root.children.empty()) { app.Shutdown(); return; }
+    const auto nameId = ImHashStr("##value",0,ImHashStr("이름",0,childScope));
+    ImGui::ActivateItemByID(nameId); frame();
+    ImGui::GetIO().AddInputCharactersUTF8("_edited"); frame();
+    MYE_EXPECT(doc->UiDraft() && doc->IsDirty());
+    const auto draftName = doc->UiDraft() ? doc->UiDraft()->root.children[0].name : "";
+    MYE_EXPECT(draftName.ends_with("_edited"));
+    panel.reset(); panel = factory->Create(); frame(); frame();
+    MYE_EXPECT(doc->UiDraft() && doc->UiDraft()->root.children[0].name == draftName);
+    ImGui::ActivateItemByID(ImHashStr("위젯 작성", 0, ImHashStr("##ui_tasks",0,work->ID))); frame(); frame();
+    ImGui::ActivateItemByID(ImHashStr("적용",0,rootScope)); frame();
+    MYE_EXPECT(!doc->UiDraft() && doc->Ui().root.children[0].name == draftName);
+    ImGui::ActivateItemByID(window->GetID("되돌리기")); frame();
+    MYE_EXPECT(doc->Ui().root.children[0].name == "Panel1");
+    ImGui::ActivateItemByID(window->GetID("다시 실행")); frame();
+    MYE_EXPECT(doc->Ui().root.children[0].name == draftName);
+    ImGui::ActivateItemByID(window->GetID("저장")); frame();
+    MYE_EXPECT(!doc->IsDirty() && !doc->Path().empty());
+    const auto saved = ReadJsonFile(Utf8Path(doc->Path())); MYE_EXPECT(saved);
+    if (saved) {
+        const auto roundtrip = ui::LoadDocumentJson(json::Stringify(saved.Value())); MYE_EXPECT(roundtrip);
+        MYE_EXPECT(roundtrip && roundtrip.Value().root.children[0].name == draftName);
+    }
+    ImGui::GetIO().DisplaySize = {360,600}; ImGui::GetIO().FontGlobalScale = 1.5f;
+    ImGui::SetWindowSize(window,{340,560},ImGuiCond_Always); frame(); frame();
+    MYE_EXPECT(window->Active && window->Size.x <= 360);
+    app.Shutdown();
 }
 
 MYE_TEST(EditorLauncherCreatesStarterExplicitlyAndPreservesUserEdits) {

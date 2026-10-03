@@ -12,39 +12,6 @@
 
 namespace mye::runtime {
 namespace {
-Expected<void, Error> BindSprites(ui::Widget& node, asset::AssetDatabase& database,
-    asset::AssetManager& assets, std::vector<asset::AssetHandle<asset::Texture>>& handles) {
-    ui::UiSprite* sprite = nullptr;
-    if (node.styleClass.IsValid()) return Error{node.name + ": GameUi does not load a skin; use inline properties", 1};
-    if (auto* image = node.As<ui::Image>()) sprite = &image->sprite;
-    else if (auto* window = node.As<ui::Window>()) sprite = &window->background;
-    else if (auto* panel = node.As<ui::Panel>()) sprite = &panel->background;
-    else if (auto* button = node.As<ui::Button>()) sprite = &button->normalSprite;
-    if (sprite && sprite->assetRef.guid.IsValid()) {
-        const auto path = database.PathFromGuid(sprite->assetRef.guid);
-        if (!path.ends_with(".png")) return Error{node.name + ": UI texture GUID does not resolve to a project PNG", 1};
-        auto loaded = assets.LoadSync<asset::Texture>(path);
-        const auto* texture = loaded.Get();
-        if (!texture || !texture->gpuTexture.IsValid()) return Error{node.name + ": cannot load UI texture " + path, 1};
-        auto region = sprite->source;
-        if (region.w == 0 && region.h == 0) region = {0, 0, static_cast<int32_t>(texture->width), static_cast<int32_t>(texture->height)};
-        if (region.x < 0 || region.y < 0 || region.w <= 0 || region.h <= 0 ||
-            uint64_t(region.x) + region.w > texture->width || uint64_t(region.y) + region.h > texture->height)
-            return Error{node.name + ": UI source region exceeds its PNG", 1};
-        sprite->texture = texture->gpuTexture;
-        sprite->nativeSize = {region.w, region.h};
-        sprite->uv = {float(region.x) / texture->width, float(region.y) / texture->height,
-            float(region.w) / texture->width, float(region.h) / texture->height};
-        handles.push_back(std::move(loaded));
-    } else if (sprite && (sprite->source.w != 0 || sprite->source.h != 0)) {
-        return Error{node.name + ": UI source region requires a texture GUID", 1};
-    }
-    for (const auto& child : node.children()) {
-        auto bound = BindSprites(*child, database, assets, handles);
-        if (!bound) return bound.GetError();
-    }
-    return {};
-}
 int Failure(lua_State* state, std::string_view message) {
     lua_pushnil(state);
     lua_pushlstring(state, message.data(), message.size());
@@ -75,15 +42,10 @@ Expected<void, Error> UiBindingModule::Load(ecs::World& world, asset::AssetDatab
     if (!bytes) return Error{path + ": " + bytes.GetError().message, 1};
     auto document = ui::LoadDocumentJson({reinterpret_cast<const char*>(bytes.Value().data()), bytes.Value().size()});
     if (!document) return Error{path + ": " + document.GetError().message, 1};
-    if (!document.Value().controllerScript.empty())
-        return Error{path + ": controllerScript is not connected; use ObjectBehavior Lua callbacks for local UI updates", 1};
-    auto root = document.Value().Instantiate(ui::WidgetFactory{});
-    if (!root) return Error{path + ": " + root.GetError().message, 1};
-    std::vector<asset::AssetHandle<asset::Texture>> textures;
-    auto bound = BindSprites(*root.Value(), *database, *assets, textures);
-    if (!bound) return Error{path + ": " + bound.GetError().message, 1};
-    m_root = std::move(root).Value();
-    m_textures = std::move(textures);
+    auto instance = ui::InstantiateGameUi(document.Value(), *database, *assets);
+    if (!instance) return Error{path + ": " + instance.GetError().message, 1};
+    m_root = std::move(instance.Value().root);
+    m_textures = std::move(instance.Value().textures);
     return {};
 }
 

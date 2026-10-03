@@ -4,6 +4,8 @@
 //   AnchorRect 는 core Vec2(비리플렉션)를 담으므로 CustomSerialize 훅으로 float 를 평탄화한다.
 //   재귀 children(std::vector<UiNodeDesc>)은 GetType<UiNodeDesc>() 지연 해석으로 동작.
 #include "mye/ui/UiDocument.h"
+#include "mye/asset/AssetDatabase.h"
+#include "mye/asset/AssetManager.h"
 #include "mye/ui/Widgets.h"
 #include "mye/core/Base.h"
 
@@ -101,6 +103,55 @@ template <> void mye::refl::Reflect(TypeBuilder<mye::ui::UiDocument>& b) {
 }
 
 namespace mye::ui {
+namespace {
+Expected<void, Error> BindSprites(ui::Widget& node, asset::AssetDatabase& database,
+    asset::AssetManager& assets, std::vector<asset::AssetHandle<asset::Texture>>& handles) {
+    ui::UiSprite* sprite = nullptr;
+    if (node.styleClass.IsValid()) return Error{node.name + ": GameUi does not load a skin; use inline properties", 1};
+    if (auto* image = node.As<ui::Image>()) sprite = &image->sprite;
+    else if (auto* window = node.As<ui::Window>()) sprite = &window->background;
+    else if (auto* panel = node.As<ui::Panel>()) sprite = &panel->background;
+    else if (auto* button = node.As<ui::Button>()) sprite = &button->normalSprite;
+    if (sprite && sprite->assetRef.guid.IsValid()) {
+        const auto path = database.PathFromGuid(sprite->assetRef.guid);
+        if (!path.ends_with(".png")) return Error{node.name + ": UI texture GUID does not resolve to a project PNG", 1};
+        auto loaded = assets.LoadSync<asset::Texture>(path);
+        const auto* texture = loaded.Get();
+        if (!texture || !texture->gpuTexture.IsValid()) return Error{node.name + ": cannot load UI texture " + path, 1};
+        auto region = sprite->source;
+        if (region.w == 0 && region.h == 0) region = {0, 0, static_cast<int32_t>(texture->width), static_cast<int32_t>(texture->height)};
+        if (region.x < 0 || region.y < 0 || region.w <= 0 || region.h <= 0 ||
+            uint64_t(region.x) + region.w > texture->width || uint64_t(region.y) + region.h > texture->height)
+            return Error{node.name + ": UI source region exceeds its PNG", 1};
+        sprite->texture = texture->gpuTexture;
+        sprite->nativeSize = {region.w, region.h};
+        sprite->uv = {float(region.x) / texture->width, float(region.y) / texture->height,
+            float(region.w) / texture->width, float(region.h) / texture->height};
+        handles.push_back(std::move(loaded));
+    } else if (sprite && (sprite->source.w != 0 || sprite->source.h != 0)) {
+        return Error{node.name + ": UI source region requires a texture GUID", 1};
+    }
+    for (const auto& child : node.children()) {
+        auto bound = BindSprites(*child, database, assets, handles);
+        if (!bound) return bound.GetError();
+    }
+    return {};
+}
+}
+
+Expected<UiInstance, Error> InstantiateGameUi(const UiDocument& document,
+    asset::AssetDatabase& database, asset::AssetManager& assets) {
+    if (!document.controllerScript.empty())
+        return Error{"controllerScript is not connected; use ObjectBehavior Lua callbacks for local UI updates", 1};
+    auto root = document.Instantiate(WidgetFactory{});
+    if (!root) return root.GetError();
+    UiInstance instance;
+    instance.root = std::move(root).Value();
+    auto bound = BindSprites(*instance.root, database, assets, instance.textures);
+    if (!bound) return bound.GetError();
+    return instance;
+}
+
 
 // --- 내장 위젯 생성 함수 ---
 template <typename T> static WidgetPtr MakeWidget() { return std::make_unique<T>(); }

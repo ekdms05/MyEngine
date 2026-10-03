@@ -88,6 +88,7 @@ void EditorApp::RegisterBuiltinPanels() {
     m_panels->RegisterFactory(MakeTilemapEditorPanelFactory());
     m_panels->RegisterFactory(MakeTilePalettePanelFactory());
     m_panels->RegisterFactory(MakeAnimationEditorPanelFactory());
+    m_panels->RegisterFactory(MakeUiEditorPanelFactory());
     m_panels->RegisterFactory(MakeLuaPanelFactory());
 
     // 확장 경로(플러그인·MCP·Lua)로 등록된 패널 팩토리를 PanelManager로 위임(07 §확장:
@@ -210,7 +211,7 @@ void EditorApp::OnFrame() {
     ImGui::End();                                    // 호스트 종료
 
     DrawStatusBar();
-    m_animationFocused = false;
+    m_focusedAsset = {};
     if (m_panels) m_panels->DrawPanels(m_ctx);       // 패널들(도크스페이스로 도킹)
     DrawWorkspaceDialogs();
     DrawInputSettings();
@@ -254,15 +255,15 @@ void EditorApp::ExpandEditorWindow() {
 CommandStack& EditorApp::Commands() {
     // 포커스 문서 스택으로 위임. 문서 없으면 빈 정적 스택(안전한 no-op 대상).
     static CommandStack s_null;
-    Document* active = m_project ? m_project->Active() : nullptr;
-    return active ? active->Commands() : s_null;
+    auto* stack = ActiveStack();
+    return stack ? *stack : s_null;
 }
 
 // 현재 편집 대상 스택(플레이 중이면 플레이 스택).
 CommandStack* EditorApp::ActiveStack() {
     if (m_playMode && m_playMode->IsPlaying())
         return m_playMode->PlayCommandStack();
-    if (m_animationFocused) if (auto* doc = AnimationDocument()) return &doc->Commands();
+    if (auto* doc = FocusedAssetDocument()) return doc->UiDraft() ? nullptr : &doc->Commands();
     Document* active = m_project ? m_project->Active() : nullptr;
     return active ? &active->Commands() : nullptr;
 }
@@ -311,8 +312,9 @@ void EditorApp::DrawMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem(T("file.newscene"), "Ctrl+N", false, editing && open)) NewScene();
         if (ImGui::MenuItem(T("file.openscene"), "Ctrl+O", false, editing && open)) RequestOpenScene();
-        if (ImGui::MenuItem(T("file.save"), "Ctrl+S", false, editing && m_project->Active())) SaveActive();
-        if (ImGui::MenuItem(T("file.saveas"), "Ctrl+Shift+S", false, editing && m_project->Active())) RequestSaveAs();
+        const bool haveDocument = m_project->Active() || FocusedAssetDocument();
+        if (ImGui::MenuItem(T("file.save"), "Ctrl+S", false, editing && haveDocument)) SaveActive();
+        if (ImGui::MenuItem(T("file.saveas"), "Ctrl+Shift+S", false, editing && haveDocument)) RequestSaveAs();
         ImGui::Separator();
         if (ImGui::MenuItem(T("file.savelayout"))) ReportFileResult(SaveLayout(), T("file.savelayout"));
         ImGui::EndMenu();
@@ -529,11 +531,10 @@ void EditorApp::SaveActive() {
         ReportFileResult(Error{mye::i18n::T("file.stopfirst"), 1}, "");
         return;
     }
-    if (m_animationFocused) {
-        if (auto* doc = AnimationDocument()) {
-            auto saved = m_project->SaveAnimation(doc->Id(), doc->Path());
-            ReportFileResult(saved, mye::i18n::T("file.saved"));
-        }
+    if (auto* doc = FocusedAssetDocument()) {
+        auto saved = doc->GetKind() == Document::Kind::Ui ? m_project->SaveUi(doc->Id(), doc->Path())
+            : m_project->SaveAnimation(doc->Id(), doc->Path());
+        ReportFileResult(saved, mye::i18n::T("file.saved"));
         return;
     }
     Document* active = m_project ? m_project->Active() : nullptr;

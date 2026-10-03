@@ -101,6 +101,20 @@ def main():
     guid = json.loads(metadata.read_text(encoding="utf-8"))["guid"]
     entity["components"]["GameUi"] = dict(__version=1,enabled=True,document=dict(guid=guid,type="0"))
     metadata_hash = digest(metadata)
+    entity["components"]["ObjectBehavior"] = dict(__version=1,connections=[],luaSource='return {on_init=function(self) error("UI_EDIT_RAN_GAME_LUA") end}')
+    write_json(scene_path,scene)
+    preview_capture = folder / "MyEditor-document-preview.bmp"
+    preview_args = ["--project",manifest,"--ui","assets/hud.ui","--frames","8","--dump",preview_capture]
+    preview_log = run_app(editor,preview_args,folder,"MyEditor-document-preview")
+    assert "UI_EDIT_RAN_GAME_LUA" not in preview_log and preview_capture.is_file()
+    preview_width,preview_height,preview_pixel = bitmap(preview_capture)
+    preview_colours = {(0,204,102):0, (204,48,64):0}
+    for y in range(preview_height):
+        for x in range(preview_width):
+            colour = preview_pixel(x,y)
+            if colour in preview_colours: preview_colours[colour] += 1
+    assert preview_colours[(0,204,102)] >= 64 and preview_colours[(204,48,64)] >= 128, preview_colours
+    editor_preview = dict(command=[str(editor),*map(str,preview_args)],binary=digest(editor),capture=digest(preview_capture),colours={str(k):v for k,v in preview_colours.items()})
     records = []
     for hp in (100,75,0):
         entity["components"]["ObjectBehavior"] = dict(__version=1,connections=[],luaSource=f'''return {{on_init=function(self)
@@ -147,7 +161,7 @@ mye.log("HUD_BOUND",{hp}) end}}''')
         if case=="missing-png": (manifest.parent / "assets/ui-fixture.png.saved").rename(manifest.parent / "assets/ui-fixture.png")
         if case=="missing-ui": target.with_suffix(".ui.saved").rename(target)
         target.write_bytes(valid)
-    write_json(folder / "report.json",dict(records=records,negativeApps=8,metadataPreserved=digest(metadata)==metadata_hash,
+    write_json(folder / "report.json",dict(records=records,editorPreview=editor_preview,negativeApps=8,metadataPreserved=digest(metadata)==metadata_hash,
         limits="Synthetic local state; native MyEditor dump is Play render target. No physical clicks/focus/IME/online/monitor-DPI claim."))
     print(f"PASS saved UI: {folder}")
 

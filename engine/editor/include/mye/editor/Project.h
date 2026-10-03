@@ -10,9 +10,11 @@
 #include "mye/editor/EditorTypes.h"
 #include "mye/editor/CommandStack.h"
 #include "mye/asset/AnimationAsset.h"
+#include "mye/ui/UiDocument.h"
 #include "mye/core/InputActions.h"
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -23,7 +25,7 @@ namespace mye::editor {
 // 열린 씬·애니메이션. 문서별 데이터와 Undo 스택 소유.
 class Document {
 public:
-    enum class Kind : std::uint8_t { Scene, Asset };
+    enum class Kind : std::uint8_t { Scene, Asset, Ui };
 
     Document(DocumentId id, Kind kind, std::string path);
     ~Document();
@@ -34,15 +36,23 @@ public:
     void             SetPath(std::string p) { m_path = std::move(p); }
 
     CommandStack&    Commands() { return m_commands; }
-    bool             IsDirty() const { return m_path.empty() || m_commands.IsDirty(); }
+    bool             IsDirty() const { return m_path.empty() || m_commands.IsDirty() || m_uiDraft.has_value(); }
     std::string      TabTitle() const;                        // 파일명 + dirty '*'
     ecs::World&      World() { return *m_world; }
     const ecs::World& World() const { return *m_world; }
     asset::AnimationAsset& Animation() { return m_animation; }
     const asset::AnimationAsset& Animation() const { return m_animation; }
+    ui::UiDocument& Ui() { return m_ui; }
+    const ui::UiDocument& Ui() const { return m_ui; }
+    Expected<void, Error> EditUi(EditorContext& ctx, ui::UiDocument after, std::string label);
+    const std::optional<ui::UiDocument>& UiDraft() const { return m_uiDraft; }
+    void StageUi(ui::UiDocument draft) { if (m_kind == Kind::Ui) m_uiDraft = std::move(draft); }
+    void DiscardUiDraft() { m_uiDraft.reset(); }
 
 private:
     asset::AnimationAsset m_animation;
+    ui::UiDocument m_ui;
+    std::optional<ui::UiDocument> m_uiDraft;
     DocumentId   m_id;
     Kind         m_kind;
     std::string  m_path;
@@ -85,6 +95,9 @@ public:
     Document* NewAnimation();
     Expected<Document*, Error> OpenAnimation(std::string_view path);
     Expected<void, Error> SaveAnimation(DocumentId id, std::string_view path);
+    Expected<Document*, Error> NewUi();
+    Expected<Document*, Error> OpenUi(std::string_view path);
+    Expected<void, Error> SaveUi(DocumentId id, std::string_view path);
     void      CloseDocument(DocumentId id);
     Document* Active() const;                           // 포커스 문서(null 가능)
     void      SetActive(DocumentId id);

@@ -55,6 +55,20 @@ MYE_TEST(EditorUiImportPreservesGuidAndProtectsUnopenedTextureReferences) {
     Text(root / "project/assets/icon.png.meta",imageMeta.Stringify());
     MYE_EXPECT(!CheckProjectAssetDeletion(project,"icon.png"));
     MYE_EXPECT(CheckProjectAssetDeletion(project,"hud.ui"));
+    // Pending UI edits protect references even before a document has a file name.
+    auto newUi = project.NewUi(); MYE_EXPECT(newUi);
+    if (newUi) {
+        Text(root / "project/assets/draft.png", "deletion fixture");
+        auto draftMeta = asset::AssetMeta::CreateFor("TextureImporter",1);
+        Text(root / "project/assets/draft.png.meta", draftMeta.Stringify());
+        auto draft = newUi.Value()->Ui(); draft.root.typeName = "Image";
+        draft.root.properties = {{"texture",draftMeta.guid.ToString()}};
+        newUi.Value()->StageUi(draft);
+        MYE_EXPECT(!CheckProjectAssetDeletion(project,"draft.png"));
+        newUi.Value()->DiscardUiDraft();
+        MYE_EXPECT(CheckProjectAssetDeletion(project,"draft.png"));
+        project.CloseDocument(newUi.Value()->Id());
+    }
     if (meta && project.Active()) {
         const auto entity = project.Active()->World().Create();
         project.Active()->World().Add<runtime::GameUi>(entity).document = {meta.Value().guid,0};

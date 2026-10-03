@@ -8,6 +8,7 @@
 #include "mye/scene/Transform.h"
 #include "mye/scene/Renderable.h"
 #include "mye/anim/SpriteAnimator.h"
+#include "mye/asset/AssetMeta.h"
 #include "mye/gameplay/Progression.h"
 #include "mye/runtime/ObjectComponents.h"
 #include "mye/runtime/GameInput.h"
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <vector>
 
 namespace mye::editor {
@@ -22,23 +24,27 @@ namespace {
 namespace fs = std::filesystem;
 
 Expected<fs::path, Error> ScenePath(const fs::path& root, std::string_view text, std::string_view extension = ".scene") {
-    auto path = Utf8Path(text);
-    if (path.empty() || text.find('\0') != std::string_view::npos || path.extension() != extension)
-        return Error{"Select a " + std::string(extension) + " file", 1};
-    std::error_code ec;
-    path = fs::weakly_canonical(path.is_absolute() ? path : root / path, ec);
-    if (ec) return Error{"Scene path is unavailable: " + ec.message(), ec.value()};
-    const auto relative = path.lexically_relative(root);
-    if (relative.empty() || relative.is_absolute() || *relative.begin() == "..")
-        return Error{"Scene files must be inside the current project", 1};
-    if (extension == ".anim") {
-        const auto assetRoot = fs::weakly_canonical(root / "assets", ec);
-        if (ec) return Error{"Asset folder is unavailable: " + ec.message(), ec.value()};
-        const auto assetRelative = path.lexically_relative(assetRoot);
-        if (assetRelative.empty() || assetRelative.is_absolute() || *assetRelative.begin() == "..")
-            return Error{"Animation files must be inside the project assets folder", 1};
+    try {
+        auto path = Utf8Path(text);
+        if (path.empty() || text.find('\0') != std::string_view::npos || path.extension() != extension)
+            return Error{"Select a " + std::string(extension) + " file", 1};
+        std::error_code ec;
+        path = fs::weakly_canonical(path.is_absolute() ? path : root / path, ec);
+        if (ec) return Error{"Scene path is unavailable: " + ec.message(), ec.value()};
+        const auto relative = path.lexically_relative(root);
+        if (relative.empty() || relative.is_absolute() || *relative.begin() == "..")
+            return Error{"Scene files must be inside the current project", 1};
+        if (extension == ".anim" || extension == ".ui") {
+            const auto assetRoot = fs::weakly_canonical(root / "assets", ec);
+            if (ec) return Error{"Asset folder is unavailable: " + ec.message(), ec.value()};
+            const auto assetRelative = path.lexically_relative(assetRoot);
+            if (assetRelative.empty() || assetRelative.is_absolute() || *assetRelative.begin() == "..")
+                return Error{"Asset documents must be inside the project assets folder", 1};
+        }
+        return path;
+    } catch (const std::system_error& error) {
+        return Error{"Document path is invalid: " + std::string(error.what()), error.code().value()};
     }
-    return path;
 }
 
 json::Value ProjectMetadata(std::string_view name, std::string_view mainScene) {
@@ -54,6 +60,21 @@ bool SameFile(std::string_view path, const fs::path& target) {
     std::error_code ec;
     return fs::equivalent(Utf8Path(path), target, ec);
 }
+
+class UiEditCommand final : public IEditorCommand {
+public:
+    // ponytail: snapshots cover <=512 nodes; switch to node deltas if measured history memory requires it.
+    UiEditCommand(ui::UiDocument& target, ui::UiDocument after, std::string label)
+        : m_target(target), m_before(target), m_after(std::move(after)), m_label(std::move(label)) {}
+    void Execute(EditorContext&) override { m_target = m_after; }
+    void Undo(EditorContext&) override { m_target = m_before; }
+    std::string_view Label() const override { return m_label; }
+private:
+    // The document owns this stack; no node pointers survive a structural edit.
+    ui::UiDocument& m_target;
+    ui::UiDocument m_before, m_after;
+    std::string m_label;
+};
 }
 
 // ---- Document ----
@@ -67,6 +88,16 @@ Document::Document(DocumentId id, Kind kind, std::string path)
     m_world->SetEventBus(m_worldEvents.get());
 }
 Document::~Document() = default;
+
+Expected<void, Error> Document::EditUi(EditorContext& ctx, ui::UiDocument after, std::string label) {
+    if (m_kind != Kind::Ui) return Error{"Select a UI document", 1};
+    auto valid = after.Validate();
+    if (!valid) return valid.GetError();
+    m_commands.SetContext(&ctx);
+    m_commands.Push(std::make_unique<UiEditCommand>(m_ui, std::move(after), std::move(label)));
+    m_uiDraft.reset();
+    return {};
+}
 
 std::string Document::TabTitle() const {
     std::string name = m_path.empty()
@@ -128,6 +159,8 @@ Expected<void, Error> ProjectContext::Open(std::string_view projectPath, bool di
     } else return Error{"Select a project folder or .myeproj file", 1};
 
     auto candidate = std::make_unique<Impl>();
+    // Document-backed preview/Undo IDs must not alias a previous project lifetime.
+    candidate->nextDocId = m_impl->nextDocId;
     candidate->rootDir = Utf8String(root);
     candidate->name = Utf8String(root.filename());
     if (projectFile.empty()) {
@@ -241,7 +274,7 @@ Expected<void, Error> ProjectContext::Save() {
         if (doc->Path().empty()) return Error{"Choose a file name for each unsaved scene first", 1};
     for (const auto& doc : m_impl->documents) {
         auto saved = doc->GetKind() == Document::Kind::Scene ? SaveScene(doc->Id(), doc->Path())
-            : SaveAnimation(doc->Id(), doc->Path());
+            : doc->GetKind() == Document::Kind::Ui ? SaveUi(doc->Id(), doc->Path()) : SaveAnimation(doc->Id(), doc->Path());
         if (!saved) return saved.GetError();
     }
     auto metadata = m_impl->metadata.AsObject();
@@ -390,6 +423,70 @@ Expected<void, Error> ProjectContext::SaveAnimation(DocumentId id, std::string_v
     fs::create_directories(resolved.Value().parent_path(), ec);
     if (ec) return Error{"Cannot create animation folder: " + ec.message(), ec.value()};
     auto saved = WriteJsonFile(resolved.Value(), doc->Animation().ToJson());
+    if (!saved) return saved.GetError();
+    doc->SetPath(Utf8String(resolved.Value()));
+    doc->Commands().MarkSaved();
+    return {};
+}
+
+Expected<Document*, Error> ProjectContext::NewUi() {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::Ui, std::string{});
+    doc->Ui().root.typeName = "Panel";
+    doc->Ui().root.name = "hud";
+    doc->Ui().root.anchors = ui::AnchorRect::Fill();
+    auto* raw = doc.get();
+    m_impl->documents.push_back(std::move(doc));
+    m_impl->RefreshPtrs();
+    return raw;
+}
+
+Expected<Document*, Error> ProjectContext::OpenUi(std::string_view path) {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".ui");
+    if (!resolved) return resolved.GetError();
+    for (auto& doc : m_impl->documents)
+        if (SameFile(doc->Path(), resolved.Value())) return doc.get();
+    std::ifstream file(resolved.Value(), std::ios::binary | std::ios::ate);
+    const auto size = file ? file.tellg() : std::streampos{-1};
+    if (size <= 0 || size > 4 * 1024 * 1024) return Error{"UI file is missing, empty or exceeds 4 MiB", 1};
+    std::string bytes(static_cast<size_t>(size), '\0');
+    file.seekg(0);
+    if (!file.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) return Error{"Cannot read UI document", 1};
+    auto value = ui::LoadDocumentJson(bytes);
+    if (!value) return Error{Utf8String(resolved.Value()) + ": " + value.GetError().message, 1};
+    auto doc = std::make_unique<Document>(DocumentId{m_impl->nextDocId++}, Document::Kind::Ui, Utf8String(resolved.Value()));
+    doc->Ui() = std::move(value).Value();
+    auto* raw = doc.get();
+    m_impl->documents.push_back(std::move(doc));
+    m_impl->RefreshPtrs();
+    return raw;
+}
+
+Expected<void, Error> ProjectContext::SaveUi(DocumentId id, std::string_view path) {
+    if (!IsOpen()) return Error{"Open a project first", 1};
+    auto* doc = m_impl->Find(id);
+    if (!doc || doc->GetKind() != Document::Kind::Ui) return Error{"No UI document", 1};
+    if (doc->UiDraft()) return Error{"Apply or cancel the pending UI properties before saving", 1};
+    auto encoded = ui::SaveDocumentJson(doc->Ui());
+    if (!encoded) return encoded.GetError();
+    auto resolved = ScenePath(Utf8Path(m_impl->rootDir), path, ".ui");
+    if (!resolved) return resolved.GetError();
+    std::error_code ec;
+    if (!SameFile(doc->Path(), resolved.Value())) {
+        const bool exists = fs::exists(resolved.Value(), ec);
+        if (ec) return Error{"Cannot inspect UI destination: " + ec.message(), ec.value()};
+        const bool metaExists = fs::exists(Utf8Path(asset::MetaPathFor(Utf8String(resolved.Value()))), ec);
+        if (ec) return Error{"Cannot inspect UI metadata: " + ec.message(), ec.value()};
+        if (exists || metaExists) return Error{"Open the existing UI file to edit it, or choose an unused path; its GUID is preserved", 1};
+    }
+    for (const auto& other : m_impl->documents)
+        if (other->Id() != id && SameFile(other->Path(), resolved.Value())) return Error{"That UI file is already open", 1};
+    auto value = json::Parse(encoded.Value());
+    if (!value) return value.GetError();
+    fs::create_directories(resolved.Value().parent_path(), ec);
+    if (ec) return Error{"Cannot create UI folder: " + ec.message(), ec.value()};
+    auto saved = WriteJsonFile(resolved.Value(), value.Value());
     if (!saved) return saved.GetError();
     doc->SetPath(Utf8String(resolved.Value()));
     doc->Commands().MarkSaved();

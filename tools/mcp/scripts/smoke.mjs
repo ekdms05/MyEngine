@@ -256,6 +256,10 @@ async function main() {
   check("engine_reference — 저장한 GameUi와 로컬 setter 경계", gameUi.result?.isError !== true &&
     firstText(gameUi.result).includes("set_progress") && firstText(gameUi.result).includes("nil/error") &&
     firstText(gameUi.result).includes("설치 0.3.0"));
+  const authoringUi = await request("tools/call", { name: "engine_reference", arguments: { topic: "editor", search: "--ui", lines: 20 } });
+  check("engine_reference — UI 문서 작성과 저장 경계", authoringUi.result?.isError !== true &&
+    firstText(authoringUi.result).includes(".ui") && firstText(authoringUi.result).includes("Undo") &&
+    firstText(authoringUi.result).includes("적용"));
   const asset = await request("tools/call", { name: "asset_import", arguments: {
     project: `${fixtureRel}/project.myeproj`, source: `${fixtureRel}/project.myeproj`, destination: "../escape.png",
   } });

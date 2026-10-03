@@ -270,8 +270,20 @@ Expected<void, Error> CheckProjectAssetDeletion(const ProjectContext& project, s
             return Error{"Close the asset document before deleting it", 1};
         ec.clear();
         auto value = document->GetKind() == Document::Kind::Scene ? SceneSerializer{}.WriteWorld(document->World()) : Expected<json::Value, Error>(document->Animation().ToJson());
+        if (document->GetKind() == Document::Kind::Ui) {
+            auto encoded = ui::SaveDocumentJson(document->Ui());
+            if (!encoded) return encoded.GetError();
+            value = json::Parse(encoded.Value());
+        }
         if (!value) return value.GetError();
         if (ContainsReference(value.Value(), guid, vpath)) return Error{"An open document uses this asset; remove its reference first", 1};
+        if (document->UiDraft()) {
+            auto encoded = ui::SaveDocumentJson(*document->UiDraft());
+            if (!encoded) return Error{"Apply or cancel pending UI properties before deleting assets: " + encoded.GetError().message, 1};
+            auto draft = json::Parse(encoded.Value());
+            if (!draft) return draft.GetError();
+            if (ContainsReference(draft.Value(), guid, vpath)) return Error{"A pending UI edit uses this asset; cancel or remove its reference first", 1};
+        }
     }
     auto metadata = ReadJsonFile(Utf8Path(project.ProjectFilePath()));
     if (!metadata) return metadata.GetError();

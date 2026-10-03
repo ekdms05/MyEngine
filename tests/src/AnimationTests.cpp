@@ -357,3 +357,36 @@ MYE_TEST(AnimSystemWorldBusPublish) {
     MYE_EXPECT(footsteps == 1);
     MYE_EXPECT(captured == e);
 }
+
+MYE_TEST(AnimPresentationPreservesEntryEventsAndTransitionTriggers) {
+    auto idle = MakeClip();
+    auto walk = MakeClip();
+    walk.events.push_back({0, "walk-start", "", 0});
+    SpriteSheet sheet;
+    for (int i = 0; i < 14; ++i) {
+        SpriteFrame frame; frame.rect = {0, 0, 16, 24}; frame.pivot = {8, 24};
+        frame.pivotInPixels = true; frame.uv = {.1f * i, 0, .1f, 1};
+        sheet.frames.push_back(frame);
+    }
+    AnimStateMachine machine;
+    AnimState state; state.directional = false; state.singleClip = &idle;
+    machine.states.push_back(state); state.singleClip = &walk; machine.states.push_back(state);
+    AnimTransition transition; transition.from = 0; transition.to = 1;
+    transition.conditions.push_back({"move", CmpOp::IsTrue, 0});
+    transition.consumeTriggers.push_back("move"); machine.transitions.push_back(transition);
+    SpriteAnimator animator; animator.machine = &machine; animator.sheet = &sheet;
+    animator.currentState = 0; animator.SetTrigger("move");
+    scene::SpriteRenderer renderer;
+    SampleAnimator(animator, &renderer); SampleAnimator(animator, &renderer);
+    MYE_EXPECT(animator.currentState == 0 && animator.GetBool("move") && !animator.started);
+    MYE_EXPECT(animator.cursor.step == 0 && animator.cursor.timeInStep == 0);
+    MYE_EXPECT(renderer.pivotPx == Vec2{8, 24});
+    int events = 0;
+    UpdateAnimator(animator, .01f, &renderer, [&](const auto& event) {
+        MYE_EXPECT(event.name == "walk-start"); ++events;
+    });
+    SampleAnimator(animator, &renderer);
+    UpdateAnimator(animator, .01f, &renderer, [&](const auto&) { ++events; });
+    MYE_EXPECT(animator.currentState == 1 && !animator.GetBool("move") && events == 1);
+    MYE_EXPECT_NEAR(animator.cursor.timeInStep, .02f, 1e-6f);
+}

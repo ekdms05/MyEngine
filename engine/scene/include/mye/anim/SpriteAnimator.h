@@ -100,6 +100,7 @@ struct SpriteAnimator {
     MYE_COMPONENT(SpriteAnimator);
 
     asset::AssetRef animation; // Persistent clip asset; runtime pointers are rebound after loading.
+    asset::AssetGuid requestedAnimation; // Runtime entry request; a successor must not restart it.
 
     // 상태 머신 정의(비소유). nullptr 이면 singleClip 직접 재생 모드로 동작.
     const AnimStateMachine* machine = nullptr;
@@ -146,6 +147,16 @@ struct SpriteAnimator {
         return params.back();
     }
 };
+
+inline void RequestAnimation(SpriteAnimator& animator, const asset::AssetRef& animation) {
+    if (!animation.guid.IsValid() || animator.requestedAnimation == animation.guid) return;
+    animator.requestedAnimation = animation.guid;
+    animator.animation = animation;
+    animator.sheet = nullptr;
+    animator.directClip = nullptr;
+    animator.cursor = {};
+    animator.started = false;
+}
 
 // 현재 애니메이터가 재생 중인 클립을 해석(상태머신/방향세트/단일클립 우선순위).
 // 반환 clip 이 null 이면 재생할 것이 없음(샘플링 no-op).

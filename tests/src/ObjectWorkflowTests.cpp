@@ -6,6 +6,7 @@
 #include "mye/editor/EditorContext.h"
 #include "mye/runtime/ObjectSystem.h"
 #include "mye/runtime/OnlineScene.h"
+#include "mye/anim/SpriteAnimator.h"
 #include "mye/scene/SceneSerializer.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
@@ -20,6 +21,7 @@
 #include "mye/gameplay/Progression.h"
 #include <chrono>
 #include <filesystem>
+#include <limits>
 
 using namespace mye;
 namespace {
@@ -111,6 +113,71 @@ MYE_TEST(OnlineScene2DUsesSharedCentersFloorsAndValidatedSpawns) {
     saved.pos = {.05f, .1f};
     MYE_EXPECT(phys::ValidateSpawn2D(saved, online.colliders));
     MYE_EXPECT(runtime::LoadOnlineScene2D(Utf8String(Utf8Path(MYE_STARTER_SOURCE_DIR) / "project.myeproj")));
+}
+
+MYE_TEST(SavedTwoDLocomotionMatchesPlayAndStandaloneFacing) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& authored = document.World();
+    const auto player = Player(authored);
+    const auto idle = asset::AssetGuid::Generate();
+    const auto walk = asset::AssetGuid::Generate();
+    authored.TryGet<runtime::CharacterController2D>(player)->idleAnimation.guid = idle;
+    authored.TryGet<runtime::CharacterController2D>(player)->walkAnimation.guid = walk;
+    authored.Add<anim::SpriteAnimator>(player).animation.guid = idle;
+    const auto saved = scene::SceneSerializer{}.WriteWorld(authored);
+    MYE_EXPECT(saved);
+    if (!saved) return;
+    editor::Document standalone({2}, editor::Document::Kind::Scene, "");
+    MYE_EXPECT(scene::SceneSerializer{}.ReadInto(standalone.World(), saved.Value()));
+    runtime::ObjectSystem objects(standalone.World());
+    MYE_EXPECT(objects.Initialize());
+    editor::PlayModeController play; play.SetEditWorld(&authored);
+    MYE_EXPECT(play.Play());
+    if (!play.ActiveWorld()) return;
+    for (int i = 0; i < static_cast<int>(anim::Dir8::Count); ++i) {
+        const auto direction = static_cast<anim::Dir8>(i);
+        const runtime::GameInput input{anim::Dir8Vector(direction)};
+        MYE_EXPECT(play.Tick(1.0f / 60, input, "") && objects.Tick(1.0f / 60, input));
+        for (auto* world : {play.ActiveWorld(), &standalone.World()}) {
+            const auto& animator = *world->TryGet<anim::SpriteAnimator>(player);
+            MYE_EXPECT(animator.facing == direction && animator.animation.guid == walk);
+        }
+    }
+    MYE_EXPECT(play.Tick(1.0f / 60, {}, "") && objects.Tick(1.0f / 60, {}));
+    for (auto* world : {play.ActiveWorld(), &standalone.World()}) {
+        const auto& animator = *world->TryGet<anim::SpriteAnimator>(player);
+        MYE_EXPECT(animator.facing == anim::Dir8::DownRight && animator.animation.guid == idle);
+    }
+    play.Stop();
+    MYE_EXPECT(authored.TryGet<anim::SpriteAnimator>(player)->facing == anim::Dir8::Down);
+    MYE_EXPECT(authored.TryGet<anim::SpriteAnimator>(player)->animation.guid == idle);
+}
+
+MYE_TEST(SharedTwoDAnimationRequestsPreserveSuccessorsAndStoppedFacing) {
+    runtime::CharacterController2D controller;
+    controller.idleAnimation.guid = asset::AssetGuid::Generate();
+    controller.walkAnimation.guid = asset::AssetGuid::Generate();
+    anim::SpriteAnimator animator;
+    runtime::UpdateCharacterAnimation2D(animator, controller, {.00001f, 0}, {1, 0});
+    MYE_EXPECT(animator.animation.guid == controller.walkAnimation.guid && animator.facing == anim::Dir8::Right);
+    const auto successor = asset::AssetGuid::Generate();
+    animator.animation.guid = successor; animator.cursor = {2, .045f, false}; animator.started = true;
+    runtime::UpdateCharacterAnimation2D(animator, controller, {0, .01f}, {0, 1});
+    MYE_EXPECT(animator.animation.guid == successor && animator.facing == anim::Dir8::Up);
+    MYE_EXPECT(animator.cursor.step == 2 && animator.started);
+    MYE_EXPECT_NEAR(animator.cursor.timeInStep, .045f, 1e-6f);
+    runtime::UpdateCharacterAnimation2D(animator, controller, {}, {-1, 0}); // Against a wall.
+    MYE_EXPECT(animator.animation.guid == controller.idleAnimation.guid && animator.facing == anim::Dir8::Left);
+    MYE_EXPECT(animator.cursor.step == 0 && !animator.started);
+    animator.animation.guid = successor;
+    runtime::UpdateCharacterAnimation2D(animator, controller, {}, {});
+    MYE_EXPECT(animator.animation.guid == successor && animator.facing == anim::Dir8::Left);
+    controller.idleAnimation = {};
+    runtime::UpdateCharacterAnimation2D(animator, controller, {}, {});
+    MYE_EXPECT(animator.animation.guid == successor);
+    const auto invalid = std::numeric_limits<float>::quiet_NaN();
+    MYE_EXPECT(anim::Dir8FromVector({invalid, 0}, anim::Dir8::Up) == anim::Dir8::Up);
+    MYE_EXPECT(anim::Dir8FromVector({0, std::numeric_limits<float>::infinity()}, anim::Dir8::Left) == anim::Dir8::Left);
 }
 
 MYE_TEST(SavedTwoDCameraMatchesPlayAndStandaloneFixedTicks) {

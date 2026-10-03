@@ -1,4 +1,5 @@
 #include "mye/runtime/ObjectComponents.h"
+#include "mye/anim/SpriteAnimator.h"
 #include "mye/core/JsonFile.h"
 #include "mye/ecs/World.h"
 #include "mye/phys/Collision.h"
@@ -53,6 +54,13 @@ template<> void mye::refl::Reflect(TypeBuilder<ObjectBehavior>& b) {
 }
 
 namespace mye::runtime {
+void UpdateCharacterAnimation2D(anim::SpriteAnimator& animator, const CharacterController2D& controller,
+                                Vec2 lastMove, Vec2 facing) {
+    const bool moving = lastMove.x * lastMove.x + lastMove.y * lastMove.y > 1e-12f;
+    anim::RequestAnimation(animator, moving ? controller.walkAnimation : controller.idleAnimation);
+    animator.facing = anim::Dir8FromVector(facing, animator.facing);
+}
+
 void RegisterObjectComponents(ecs::World& world) {
     (void)refl::GetType<CharacterController2D>(); (void)refl::GetType<InteractionTarget>();
     (void)refl::GetType<CharacterController3D>();

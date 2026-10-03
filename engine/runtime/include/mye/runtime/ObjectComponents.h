@@ -2,11 +2,13 @@
 
 #include "mye/asset/AssetGuid.h"
 #include "mye/core/Base.h"
+#include "mye/core/Math.h"
 #include "mye/ecs/ComponentType.h"
 #include <string>
 #include <vector>
 
 namespace mye::ecs { class World; }
+namespace mye::anim { struct SpriteAnimator; }
 namespace mye::runtime {
 
 struct CharacterController2D {
@@ -14,7 +16,6 @@ struct CharacterController2D {
     bool enabled = true;
     float speed = 3.0f;
     asset::AssetRef idleAnimation, walkAnimation;
-    asset::AssetGuid requestedMotion; // Runtime only: successors must not restart the movement state's entry clip.
 };
 
 struct CharacterController3D {
@@ -60,6 +61,9 @@ struct ObjectBehavior {
 
 void RegisterObjectComponents(ecs::World& world);
 Expected<void, Error> ValidateObjectComponents(ecs::World& world);
+// Facing follows the requested movement even against a wall; walking follows actual displacement.
+void UpdateCharacterAnimation2D(anim::SpriteAnimator& animator, const CharacterController2D& controller,
+                                Vec2 lastMove, Vec2 facing);
 } // namespace mye::runtime
 
 #include "mye/refl/TypeBuilder.h"

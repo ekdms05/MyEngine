@@ -379,8 +379,9 @@ private:
             pose.position.y = state.position.y;
             pose.dirty = true;
             if (auto* floor = m_scene->world.TryGet<scene::FloorLevel>(entity)) floor->level = state.floorLevel;
-            ApplyAnimation(entity, state.lastMove.Length() > 1e-6f ? controller->walkAnimation : controller->idleAnimation,
-                           state.facingRadians);
+            if (auto* animator = m_scene->world.TryGet<anim::SpriteAnimator>(entity))
+                runtime::UpdateCharacterAnimation2D(*animator, *controller, state.lastMove,
+                    {std::sin(state.facingRadians), std::cos(state.facingRadians)});
         };
         apply(m_player, predicted);
         for (const auto& snap : m_client.LatestSnapshot2D()) {
@@ -523,10 +524,10 @@ private:
         if (!animation) { Fail(animation.GetError()); return nullptr; }
         return &m_animations.emplace(guid, std::move(animation).Value()).first->second;
     }
-    void BindAnimations() {
+    void BindAnimations(bool fixedTick = false) {
         anim::ForEachAnimatedRenderer(m_scene->world, [&](ecs::Entity, auto& animator, auto& sprite) {
             const auto* data = Animation(animator.animation.guid);
-            if (data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
+            if (fixedTick && data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
                 if (const auto* next = Animation(data->nextAnimation.guid)) {
                     animator.animation = data->nextAnimation; animator.cursor = {}; animator.started = false; data = next;
                 }
@@ -537,7 +538,7 @@ private:
             }
             if (animator.directClip != &data->clip) { animator.cursor = {}; animator.started = false; }
             animator.sheet = &data->sheet; animator.directClip = &data->clip;
-            anim::UpdateAnimator(animator, 0.0f, &sprite, [](const asset::AnimEventMarker&) {});
+            anim::SampleAnimator(animator, &sprite);
         });
     }
     void Tick(float dt) {
@@ -563,7 +564,7 @@ private:
                 if (!loaded) { Fail(loaded.GetError()); return; }
             }
         }
-        BindAnimations();
+        BindAnimations(true);
         anim::RunAnimationSystem(m_scene->world, dt);
         scene::UpdateWorldTransforms(m_scene->world);
         if (m_online && m_onlineSpawnLogged) {

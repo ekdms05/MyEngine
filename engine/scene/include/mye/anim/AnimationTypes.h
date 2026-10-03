@@ -60,7 +60,7 @@ inline Vec2 Dir8Vector(Dir8 d) {
 // atan2 기반: 각도를 45° 섹터로 스냅. +Y=위, +X=오른쪽. down(-Y)=0, 시계 방향으로 증가.
 inline Dir8 Dir8FromVector(Vec2 v, Dir8 fallback = Dir8::Down) {
     const float lenSq = v.x * v.x + v.y * v.y;
-    if (lenSq < 1e-12f) return fallback;
+    if (!std::isfinite(v.x) || !std::isfinite(v.y) || lenSq < 1e-12f) return fallback;
     // 우리 규약의 각도: down 을 0으로, 시계 방향(down→down_left→left→up_left→up...)으로 증가.
     // +Y=위 좌표에서 이 시계 순서는 -Y(down)에서 -X(left) 쪽으로 도는 것 = atan2(-x, -y):
     //   down(0,-1)→0, down_left(-1,-1)→+45°, left(-1,0)→+90°, up(0,1)→±180°, right(1,0)→-90°(→+270°).

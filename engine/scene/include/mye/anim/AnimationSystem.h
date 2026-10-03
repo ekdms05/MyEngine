@@ -35,6 +35,22 @@ bool EvaluateCondition(const SpriteAnimator& a, const AnimCondition& c);
 // keepPhase=true(기본): 전이 시 클립 재생 위상(step/timeInStep)을 유지한다(걷기↔대기 자연 전환).
 bool StepTransitions(SpriteAnimator& a, bool keepPhase = true);
 
+// Presentation-only sampling: binding/rendering must not consume transitions or entry events.
+template <typename RendererT>
+void SampleAnimator(SpriteAnimator& animator, RendererT* renderer) {
+    const auto resolved = ResolveActiveClip(animator);
+    if (!resolved.clip || resolved.clip->frameIndices.empty()) return;
+    animator.flipX = resolved.flipX;
+    animator.currentFrameIndex = CurrentFrameIndex(*resolved.clip, animator.cursor);
+    if (!renderer || !animator.sheet || animator.currentFrameIndex >= animator.sheet->frames.size()) return;
+    const auto& frame = animator.sheet->frames[animator.currentFrameIndex];
+    renderer->srcUV = frame.uv;
+    renderer->pivotPx = frame.pivotInPixels ? frame.pivot :
+        Vec2{frame.pivot.x * frame.rect.w, frame.pivot.y * frame.rect.h};
+    renderer->flipX = animator.flipX;
+    renderer->sprite = animator.sheet->texture;
+}
+
 // 한 애니메이터를 dt 만큼 진행·샘플링. onEvent(entity, marker) 로 경과 이벤트를 보고한다.
 // renderer 가 non-null 이면 현재 프레임을 렌더러 필드로 옮긴다(sprite/srcUV/pivotPx/flipX).
 // SpriteRenderer 는 전방 선언만 필요하므로 템플릿으로 받는다(scene 헤더 강결합 회피).
@@ -71,23 +87,7 @@ void UpdateAnimator(SpriteAnimator& a, float dt, RendererT* renderer, OnEvent&& 
                     [&](const AnimEventMarker& m) { onEvent(m); });
     }
 
-    // 현재 프레임 인덱스 산출.
-    a.currentFrameIndex = CurrentFrameIndex(clip, a.cursor);
-
-    // 렌더러 샘플링.
-    if (renderer && a.sheet && a.currentFrameIndex < a.sheet->frames.size()) {
-        const asset::SpriteFrame& f = a.sheet->frames[a.currentFrameIndex];
-        renderer->srcUV = f.uv;
-        // pivot: 픽셀 피벗 규약(SpriteRenderer.pivotPx). pivotInPixels 면 그대로, 아니면 rect 기준 환산.
-        if (f.pivotInPixels) {
-            renderer->pivotPx = f.pivot;
-        } else {
-            renderer->pivotPx = Vec2{ f.pivot.x * static_cast<float>(f.rect.w),
-                                      f.pivot.y * static_cast<float>(f.rect.h) };
-        }
-        renderer->flipX = a.flipX;
-        renderer->sprite = a.sheet->texture;   // 텍스처(아틀라스) 참조 갱신
-    }
+    SampleAnimator(a, renderer);
 }
 
 // SystemScheduler(Update 페이즈)에 AnimationSystem 등록. 월드-로컬 버스로 AnimationEvent 발행.

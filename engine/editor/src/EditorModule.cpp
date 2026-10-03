@@ -182,12 +182,12 @@ struct EditorModule::Impl final : public IEditorViewport {
         }
         return &found->second;
     }
-    void BindAnimations(ecs::World& world) {
+    void BindAnimations(ecs::World& world, bool fixedTick = false) {
         anim::ForEachAnimatedRenderer(world,
             [&](ecs::Entity, anim::SpriteAnimator& animator, auto& sprite) {
                 if (!animator.animation.guid.IsValid()) { animator.sheet = nullptr; animator.directClip = nullptr; return; }
                 const auto* data = ResolveAnimation(animator.animation.guid);
-                if (data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
+                if (fixedTick && data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
                     const auto* next = ResolveAnimation(data->nextAnimation.guid);
                     const auto* image = next ? ResolveTexture(next->sheet.texture.guid) : nullptr;
                     if (next && image && next->imageSize.x == static_cast<int32_t>(image->width) && next->imageSize.y == static_cast<int32_t>(image->height)) {
@@ -203,7 +203,7 @@ struct EditorModule::Impl final : public IEditorViewport {
                 if (animator.directClip != &data->clip) { animator.cursor = {}; animator.started = false; }
                 animator.sheet = &data->sheet;
                 animator.directClip = &data->clip;
-                anim::UpdateAnimator(animator, 0.0f, &sprite, [](const asset::AnimEventMarker&) {});
+                anim::SampleAnimator(animator, &sprite);
             });
     }
 
@@ -430,7 +430,7 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
     if (!tick) MYE_LOG_ERROR("Editor", "{}", tick.GetError().message);
     w = pm.ActiveWorld();
     s.app->RefreshDocumentContext();
-    s.BindAnimations(*w);
+    s.BindAnimations(*w, true);
     // Fixed tick: Lua/controls -> collision/events -> animation -> transforms.
     anim::RunAnimationSystem(*w, dt);
     scene::UpdateWorldTransforms(*w);

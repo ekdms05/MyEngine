@@ -669,34 +669,46 @@ if ($Phase) {
         $null=Run-App $game 'capture-bmp-failure' @('--project',$project,'--headless','--input',$inputFile,'--capture-at','1','--dump',(Join-Path $run 'missing/output.bmp')) 1
         New-Item -ItemType Directory -Path (Join-Path $run 'blocked.step-1.json') | Out-Null
         $null=Run-App $game 'capture-json-failure' @('--project',$project,'--headless','--input',$inputFile,'--capture-at','1','--dump',(Join-Path $run 'blocked.bmp')) 1
-        $caseData=Join-Path $run 'continuous-data'; New-Item -ItemType Directory -Path $caseData | Out-Null
-        [IO.File]::WriteAllBytes((Join-Path $caseData 'state.json'),$initialState)
         $player.components.ObjectBehavior.luaSource='return { on_init=function(self) mye.log("client-lua-must-not-run"); error("client authority violation") end }'
         Write-Json $scenePath $scene
-        $owned=@()
-        try {
-            $hostProcess=Start-App $server 'continuous-server' @('--data',$caseData,'--project',$project,'--port','0','--ticks','1800');$owned+=$hostProcess
-            $timer=[Diagnostics.Stopwatch]::StartNew();$port=0
-            while ($timer.Elapsed.TotalSeconds -lt 5 -and -not $hostProcess.HasExited) {
-                $log=Get-Content -LiteralPath (Join-Path $run 'continuous-server.log') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-                if ($log -match 'MyServer .*?port (\d+), tickrate 60Hz') { $port=[int]$Matches[1];break }
-                Start-Sleep -Milliseconds 25
-            }
-            if (-not $port) { throw 'Continuous server readiness failed' }
-            $warmupTicks=360; $holdTicks=600; $windowStart=$warmupTicks+1; $windowEnd=$warmupTicks+32
-            $onlineSteps=$windowEnd+$holdTicks; $onlineCaptureAt=($windowStart..$windowEnd)-join ','
-            # Keep the peer moving in a bounded loop even when its replay clock differs.
-            $warmupMotion=@(for($i=0;$i -lt ($warmupTicks-40)/16;$i++){@{ticks=8;x=0;y=1};@{ticks=8;x=0;y=-1}})
-            $holdMotion=@(for($i=0;$i -lt $holdTicks/20;$i++){@{ticks=10;x=0;y=1};@{ticks=10;x=0;y=-1}})
-            $bInput=Replay 'continuous-b' (@(@{ticks=40;x=-1;y=0})+$warmupMotion+$continuous+$holdMotion)
-            $aInput=Replay 'continuous-a' (@(@{ticks=40;x=1;y=0})+$warmupMotion+$continuous+$holdMotion)
-            $b=Start-App $game 'continuous-b' @('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run 'directions-b.json'),'--input',$bInput,'--capture-at',$onlineCaptureAt,'--dump',(Join-Path $run 'continuous-b.bmp'));$owned+=$b
-            $a=Start-App $game 'continuous-a' @('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run 'directions-a.json'),'--input',$aInput,'--capture-at',$onlineCaptureAt,'--dump',(Join-Path $run 'continuous-a.bmp'));$owned+=$a
-            $aLog=Wait-App $a 'continuous-a' -Timeout 45000;$bLog=Wait-App $b 'continuous-b' -Timeout 45000
-            if ($aLog -notmatch "Input replay confirmed: steps=$onlineSteps, pending=0" -or $bLog -notmatch "Input replay confirmed: steps=$onlineSteps, pending=0") { throw 'Continuous authority acknowledgment failed' }
-            Check-Continuous 'continuous-a' $windowStart $windowEnd $true;Check-Continuous 'continuous-b' $windowStart $windowEnd $true
-            $null=Wait-App $hostProcess 'continuous-server' -Timeout 45000
-        } finally { foreach ($process in $owned) { if (-not $process.HasExited) { $process.Kill();$process.WaitForExit() };$process.Dispose() } }
+        # Capture one receiver per run to avoid simultaneous per-step readback on WARP.
+        foreach ($receiver in @('a','b')) {
+            $caseData=Join-Path $run "continuous-$receiver-data"; New-Item -ItemType Directory -Path $caseData | Out-Null
+            [IO.File]::WriteAllBytes((Join-Path $caseData 'state.json'),$initialState)
+            $owned=@()
+            try {
+                $hostName="continuous-$receiver-server"
+                $hostProcess=Start-App $server $hostName @('--data',$caseData,'--project',$project,'--port','0','--ticks','1800');$owned+=$hostProcess
+                $timer=[Diagnostics.Stopwatch]::StartNew();$port=0
+                while ($timer.Elapsed.TotalSeconds -lt 5 -and -not $hostProcess.HasExited) {
+                    $log=Get-Content -LiteralPath (Join-Path $run "$hostName.log") -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                    if ($log -match 'MyServer .*?port (\d+), tickrate 60Hz') { $port=[int]$Matches[1];break }
+                    Start-Sleep -Milliseconds 25
+                }
+                if (-not $port) { throw 'Continuous server readiness failed' }
+                $warmupTicks=360; $holdTicks=600; $windowStart=$warmupTicks+1; $windowEnd=$warmupTicks+32
+                $onlineSteps=$windowEnd+$holdTicks; $onlineCaptureAt=($windowStart..$windowEnd)-join ','
+                # Keep the peer moving in a bounded loop even when its replay clock differs.
+                $warmupMotion=@(for($i=0;$i -lt ($warmupTicks-40)/32;$i++){@{ticks=8;x=0;y=1};@{ticks=8;x=1;y=0};@{ticks=8;x=0;y=-1};@{ticks=8;x=-1;y=0}})
+                $holdMotion=@(for($i=0;$i -lt $holdTicks/40;$i++){@{ticks=10;x=0;y=1};@{ticks=10;x=1;y=0};@{ticks=10;x=0;y=-1};@{ticks=10;x=-1;y=0}})
+                $bInput=Replay 'continuous-b' (@(@{ticks=40;x=-1;y=0})+$warmupMotion+$continuous+$holdMotion)
+                $aInput=Replay 'continuous-a' (@(@{ticks=40;x=1;y=0})+$warmupMotion+$continuous+$holdMotion)
+                foreach ($side in @('b','a')) {
+                    $name=if($side -eq $receiver){"continuous-$side"}else{"continuous-$receiver-peer"}
+                    $arguments=@('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run "directions-$side.json"),'--input',$(if($side -eq 'a'){$aInput}else{$bInput}),'--dump',(Join-Path $run "$name.bmp"))
+                    if($side -eq $receiver){$arguments+=@('--capture-at',$onlineCaptureAt)}
+                    $process=Start-App $game $name $arguments;$owned+=$process
+                }
+                foreach($processIndex in 1..2){
+                    $side=if($processIndex -eq 1){'b'}else{'a'}
+                    $name=if($side -eq $receiver){"continuous-$side"}else{"continuous-$receiver-peer"}
+                    $log=Wait-App $owned[$processIndex] $name -Timeout 45000
+                    if($log -notmatch "Input replay confirmed: steps=$onlineSteps, pending=0"){throw "Continuous authority acknowledgment failed: $name"}
+                }
+                Check-Continuous "continuous-$receiver" $windowStart $windowEnd $true
+                $null=Wait-App $hostProcess $hostName -Timeout 45000
+            } finally { foreach ($process in $owned) { if (-not $process.HasExited) { $process.Kill();$process.WaitForExit() };$process.Dispose() } }
+        }
         $player.components.ObjectBehavior.luaSource='return { on_event=function(self, name, payload) if name == "animation" then mye.log("phase-event:" .. payload.name) end end }'
         Write-Json $scenePath $scene
     }
@@ -725,7 +737,7 @@ if ($Phase) {
         $owned=@()
         try {
             $hostName=$case.name+'-server'
-            $hostProcess=Start-App $server $hostName @('--data',$caseData,'--project',$project,'--port','0','--ticks','400'); $owned+=$hostProcess
+            $hostProcess=Start-App $server $hostName @('--data',$caseData,'--project',$project,'--port','0','--ticks','1800'); $owned+=$hostProcess
             $timer=[Diagnostics.Stopwatch]::StartNew(); $port=0
             while ($timer.Elapsed.TotalSeconds -lt 5 -and -not $hostProcess.HasExited) {
                 $log=Get-Content -LiteralPath (Join-Path $run ($hostName+'.log')) -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
@@ -734,17 +746,18 @@ if ($Phase) {
             }
             if (-not $port) { throw "Server readiness failed: $hostName" }
             $bName=$case.name+'-b'; $aName=$case.name+'-a'
-            $bInput=Replay $bName @($down12,@{ticks=30;x=-1;y=0},@{ticks=180;x=0;y=0}); $aInput=Replay $aName $case.steps
+            $peerHoldTicks=600; $peerSteps=42+$peerHoldTicks
+            $bInput=Replay $bName @($down12,@{ticks=30;x=-1;y=0},@{ticks=$peerHoldTicks;x=0;y=0}); $aInput=Replay $aName $case.steps
             foreach ($entry in @(@($bName,'directions-b',$bInput),@($aName,'directions-a',$aInput))) {
                 $process=Start-App $game $entry[0] @('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run ($entry[1]+'.json')),'--input',$entry[2],'--dump',(Join-Path $run ($entry[0]+'.bmp')))
                 $owned+=$process; if ($entry[0] -eq $bName) { Start-Sleep -Milliseconds 300 }
             }
-            $aLog=Wait-App $owned[2] $aName; $bLog=Wait-App $owned[1] $bName
+            $aLog=Wait-App $owned[2] $aName -Timeout 45000; $bLog=Wait-App $owned[1] $bName -Timeout 45000
             if ($aLog -notmatch "Input replay confirmed: steps=$($case.ticks), pending=0" -or $aLog -notmatch 'Network object added:' -or
-                $bLog -notmatch 'Input replay confirmed: steps=222, pending=0') { throw "Authority replay failed: $($case.name)" }
+                $bLog -notmatch "Input replay confirmed: steps=$peerSteps, pending=0") { throw "Authority replay failed: $($case.name)" }
             Check-Phase $aName $case.colour; Check-Phase $bName 0xFF8000
             Check-Pixel $aName $case.peerX $case.peerY 0xFF8000
-            $null=Wait-App $hostProcess $hostName
+            $null=Wait-App $hostProcess $hostName -Timeout 45000
         } finally {
             foreach ($process in $owned) { if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }; $process.Dispose() }
         }

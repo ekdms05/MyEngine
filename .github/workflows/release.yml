@@ -59,6 +59,7 @@ jobs:
             build/online2d/**/*.err
             build/animation2d/**/*.log
             build/animation2d/**/*.err
+            build/animation2d/**/*.step-*.json
             build/input-actions/**/*.log
             build/game-ui/**/*.log
           retention-days: 3

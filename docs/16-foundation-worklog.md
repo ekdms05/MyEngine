@@ -575,3 +575,11 @@ GUID·파일·삭제 경계: AssetDatabase::ScanDirectory의 기존 .anim 값 �
 실패/수정: 첫 Debug597/598은 기존 제목 기반 FindWindow가 타 프로세스 창을 선택한 테스트 결함이다. 기존 PID/class EnumWindows를 재사용하고 전체 두 구성을 재검증했다. 첫 앱 도우미는 구체적 TTF/FreeType 오류 대신 일반 문구를 기대해 실패했다. 새 fixture에서 경로/exit1을 검사하여 성공시켰고 제품 실패는 유지했다. 첫 가이드 복사/검사는 tools/mcp 작업 경로의 상대 경로 오류여서 저장소 절대 경로로 수정했다. ViewportPanel scope checker PASS; 스킬 전체 suite의 의미30/30·정적 검사 통과와 g++/c++ 부재로 공식 두 revision 템플릿 compile FAIL을 구분한다. MSVC 제품 빌드가 스킬 template/DPI 게이트를 대신하지 않는다.
 
 문서/도구/배포: 렌더/UI/실행/컴포넌트/우선순위/로드맵과 가이드를 갱신했다. 기존 초원 실제 Play 캡처를 추가하고 기존 이미지/GIF/영상/앵커를 보존했다. 가이드162 로컬 링크/앵커 PASS. MCP ui 참조와 build/smoke36 PASS; 로컬 개발/게임 제작/릴리즈 지침도 동기화했다. 사용자 아트/원문/GUID는 편집/공개하지 않고 상세 답변은 제작 프로젝트 docs에 로컬 기록했다. 기존 VERSION/tag/설치0.3.0은 유지하며 새 릴리즈/소비자 설치 검수는 아직 없다. 첫 안내 표시만 소스 연결 완료이고 작성 UI·게임 상태 HUD→행동 작성/입력→프리팹/질의→맵/저장 상태→권위 통합을 다음 순서로 유지한다. 공개 운영 보호·완성 게임 배포·측정 성능·전체 목표는 미완료다.
+
+## 2026-10-03 · 저장한 UI와 로컬 상태
+
+근거: 게임 상태는 프로젝트 Lua에 있지만 보이는 저장 UI의 앱 경로가 없었다. 기존 UiDocument/앵커/위젯·GUID/VFS/AssetManager를 재사용하여 .ui 임포트/sidecar·GameUi·로컬 setter·ProgressBar·PNG 영역을 연결했다. 문서/PNG를 Lua on_init 전에 준비하고 기존 GameOverlay에 표시한다. 맵 후보 준비 실패는 기존 World/HUD를 보존한다. 게임 규칙·픽셀 제작기·별도 UI 프레임워크·새 의존성을 추가하지 않았다. MyGame native sRGB 차이를 실제 픽셀에서 확인하고 기존 editor/Play와 같은 BGRA8Unorm으로 수정했다.
+
+검증: 전체 Debug/Release 빌드와 순차 CTest 각각601/601(42.20/32.91s). 공식 임포트와 native/headless 두 앱의 HP100/75/0·정수 폭/PNG/활성 상태12회·오류8회씩, 실제 프로젝트 Core snapshot7상태/18개 앱 캡처·로그/픽셀을 확인했다. 입력/버전/범위·중복/손상·무덮어쓰기/삭제 보호·Stop 재시작·맵 후보 실패 보존을 검사했다. MCP build/smoke37·가이드179 로컬 참조/HTML ID PASS. 격리 build QA이며 원본 규칙/카탈로그와 설치0.3.0 manifest84파일의 SHA/크기를 보존했다. 초기 API/fixture·색 기대값 실패는 최종 성공과 구분하여 로컬 기록했다.
+
+한계: [27](27-game-ui.md)의 저장 표시와 시각 작성/Undo·클릭/포커스/IME·온라인은 별도다. native MyEditor dump는 Play 타깃이며 별도 창 직접 화면/물리 입력/DPI 검수로 계산하지 않는다. 자동 파일 반영·UiSkin/controllerScript·완성 게임 내보내기·공개 운영 보호·성능 측정·전체 목표는 미완료다. 상세 답변은 게임 제작자의 같은 로컬 docs 폴더에 기록했다. 다음은 UI 작성/Undo·버튼/포커스, 행동 입력/중단, 프리팹/질의, 맵/저장 상태와 권위 통합이다. 기존 버전/tag/설치 패키지는 유지한다.

@@ -67,6 +67,16 @@ public:
     void draw(UiDrawContext& ctx) override;
 };
 
+// Display range; the game owns the value and updates it when its state changes.
+class ProgressBar : public Widget {
+public:
+    MYE_WIDGET(mye::ui::ProgressBar);
+    float value = 0, maximum = 100;
+    Color background{.08f, .08f, .1f, 1}, fill{.2f, .75f, .3f, 1};
+    Expected<void, Error> SetValue(float current, float max);
+    void draw(UiDrawContext& ctx) override;
+};
+
 // ---------------------------------------------------------------------------
 // Button — Pressed/Hover 상태 → 스킨 상태 스타일. onClick 콜백(→ Lua 컨트롤러 라우팅).
 // ---------------------------------------------------------------------------

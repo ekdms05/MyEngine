@@ -519,7 +519,7 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
     const float dt = static_cast<float>(step.deltaSeconds > 0.0 ? step.deltaSeconds : (1.0 / 60.0));
     const auto controls = s.gameInput.ConsumeTick();
     if (controls.exitGame) { pm.Stop(); s.gameInput.Clear(); s.inputConfigured = false; return; }
-    auto tick = pm.Tick(dt, controls, s.app->Project().RootDir());
+    auto tick = pm.Tick(dt, controls, s.app->Project().RootDir(), s.assetDb.get(), s.vfs.get(), s.assets.get());
     if (!tick) { s.ReportFrameError(tick.GetError()); return; }
     w = pm.ActiveWorld();
     s.app->RefreshDocumentContext();
@@ -579,7 +579,7 @@ void EditorModule::Frame(const TimeStep&) {
         if (rendered && s.app->PlayMode().IsPlaying()) {
             const Vec2i logicalSize{static_cast<int32_t>(s.rt.Width()), static_cast<int32_t>(s.rt.Height())};
             rendered = s.gameOverlay.Render(cmd, s.rt.ColorTarget(), logicalSize, {0, 0, logicalSize.x, logicalSize.y},
-                s.app->PlayMode().Prompt(), s.app->PlayMode().Message());
+                s.app->PlayMode().Prompt(), s.app->PlayMode().Message(), s.app->PlayMode().UiRoot());
         }
         if (!rendered) {
             s.ReportFrameError(rendered.GetError());
@@ -633,7 +633,7 @@ void EditorModule::Frame(const TimeStep&) {
         auto view = scene::BuildGameView(*s.app->PlayMode().ActiveWorld(), s.app->PlayMode().DefaultCamera());
         const auto rendered = view
             ? s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd,
-                s.app->PlayMode().Prompt(), s.app->PlayMode().Message())
+                s.app->PlayMode().Prompt(), s.app->PlayMode().Message(), s.app->PlayMode().UiRoot())
             : Expected<void, Error>{view.GetError()};
         if (!rendered) {
             s.ReportFrameError(rendered.GetError());

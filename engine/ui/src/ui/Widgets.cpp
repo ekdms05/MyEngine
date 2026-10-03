@@ -39,7 +39,26 @@ void Label::draw(UiDrawContext& ctx) {
     p.maxWidth = computedRect.w;
     p.align = align;
     p.wrap = wrap;
+    ctx.PushScissor(computedRect);
     ctx.DrawText(computedRect, text, style, p);
+    ctx.PopScissor();
+}
+
+Expected<void, Error> ProgressBar::SetValue(float current, float max) {
+    if (!std::isfinite(current) || !std::isfinite(max) || max <= 0 || current < 0 || current > max)
+        return Error{"ProgressBar requires finite 0 <= value <= maximum and maximum > 0", 1};
+    value = current; maximum = max;
+    return {};
+}
+
+void ProgressBar::draw(UiDrawContext& ctx) {
+    ctx.DrawRect(computedRect, background);
+    if (maximum > 0 && std::isfinite(value) && std::isfinite(maximum)) {
+        auto filled = computedRect;
+        filled.w = std::round(filled.w * std::clamp(value / maximum, 0.0f, 1.0f));
+        if (filled.w > 0) ctx.DrawRect(filled, fill);
+    }
+    drawChildren(ctx);
 }
 
 Vec2 Label::measure(Vec2 avail) {
@@ -93,11 +112,12 @@ void Button::draw(UiDrawContext& ctx) {
     if (state == State::Hover   && hoverSprite.texture.IsValid())   s = &hoverSprite;
     if (state == State::Pressed && pressedSprite.texture.IsValid()) s = &pressedSprite;
     if (s->texture.IsValid()) {
-        if (slice.Enabled()) ctx.DrawNineSlice(computedRect, *s, slice);
-        else                 ctx.DrawSprite(computedRect, *s);
+        if (slice.Enabled()) ctx.DrawNineSlice(computedRect, *s, slice, state == State::Disabled ? Color{.45f,.45f,.45f,1} : Color::White());
+        else                 ctx.DrawSprite(computedRect, *s, state == State::Disabled ? Color{.45f,.45f,.45f,1} : Color::White());
     } else {
         // 텍스처 미배선: 상태별 단색(헤드리스 덤프·프리뷰).
         Color c{0.30f, 0.30f, 0.34f, 1.0f};
+        if (state == State::Disabled) c = Color{0.14f, 0.14f, 0.16f, 1.0f};
         if (state == State::Hover)   c = Color{0.40f, 0.40f, 0.46f, 1.0f};
         if (state == State::Pressed) c = Color{0.20f, 0.20f, 0.24f, 1.0f};
         ctx.DrawRect(computedRect, c);

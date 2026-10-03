@@ -20,7 +20,8 @@
 | KinematicBody3D | settings의 speed/gravity/jumpSpeed/floorSnap/stepHeight/skin | 접지·벽·천장 상태. 조작 캐릭터와 함께 사용; 자유 강체·메시 물리 미지원 |
 | CharacterController3D | enabled/cameraRelative/idleAnimation/walkAnimation | 씬의 활성 조작 캐릭터 1명. WASD XZ·Space 점프 |
 | SpriteAnimator | animation에 .anim, stateMachine에 .animstate GUID 지정, speed/playing 설정 | stateMachine이 지정되면 상태의 클립/시트를 우선하며 매개변수/커서는 객체별이다. 전용 행동 작성/Undo는 다음. speed=재생 배율. 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요. main의 표시 샘플은 첫 이벤트/전이를 소비하지 않으며 후속 모션은 고정 틱에서 연결. 기본/8방향 .anim의 작성·Undo·반전/대체·진행률/발 피벗·연속 로컬/온라인 재생 검사와 남은 행동 작성은 [26](26-2d-animation.md)에서 확인 |
-| InteractionTarget | enabled/radius/prompt | radius 안에서 E. 행동은 ObjectBehavior로 연결. prompt 자동 HUD는 미연결 |
+| InteractionTarget | enabled/radius/prompt | radius 안에서 E. 행동은 ObjectBehavior로 연결. main 소스에서 게임 창 하단에 prompt 표시 |
+| GameUi | enabled/document | 저장한 .ui GUID, 로컬 월드 활성 하나. [작성/표시/API와 한계](27-game-ui.md) |
 | ScenePortal | scenePath/spawnName/onInteract | assets/scenes/*.scene과 목적지 ObjectName. E면 InteractionTarget, 자동 진입이면 trigger Collider2D/3D |
 | ObjectBehavior | 이벤트→행동 연결 또는 Lua return 테이블 | Start/Interact/TriggerEnter/TriggerExit. 연결 순서대로 실행, 최대64개. Lua64KiB |
 | Progression | level/xp/maxLevel | 현재 레벨 내 XP. 성장·보상 규칙은 게임에서 정의 |
@@ -54,6 +55,6 @@ CharacterController2D·Collider2D는 XY 물리를 유지한다. XYZ에는 별도
 
 ObjectBehavior의 연결은 이벤트, 행동, 대상, 매개변수 순서로 설정한다. 대상이 비어 있으면 현재 오브젝트다. Message는 메시지, SetVisible은 표시 전환, MoveTo는 즉시 위치 변경, ChangeMap은 씬 경로+도착 이름, LuaCallback은 return 테이블의 함수 이름을 사용한다. MoveTo는 경로 탐색 이동이 아니다.
 
-main 소스의 Message와 근처 InteractionTarget.prompt는 별도 Play/MyGame 화면 하단에 한글로 표시한다. Message는 로그에도 남고 Pause에도 유지된다. 각 문자열은 최대 4096 UTF-8 bytes이며 메시지는 줄바꿈/최대 높이 클리핑, 안내는 한 줄 영역을 사용한다. 선택/닫기·HP/가방/퀘스트 HUD·온라인 메시지 연결은 미완료다. [표시/글꼴/수명 계약](06-runtime-systems.md#게임-창의-안내와-message--main-소스)을 확인한다. 기존 설치 0.3.0과 구분한다.
+main 소스의 Message와 근처 InteractionTarget.prompt는 별도 Play/MyGame 화면 하단에 한글로 표시한다. Message는 로그에도 남고 Pause에도 유지된다. 각 문자열은 최대 4096 UTF-8 bytes이며 메시지는 줄바꿈/최대 높이 클리핑, 안내는 한 줄 영역을 사용한다. 선택/닫기·온라인 메시지는 미완료다. 저장한 GameUi의 로컬 상태 표시는 [27](27-game-ui.md)을 따른다. [표시/글꼴/수명 계약](06-runtime-systems.md#게임-창의-안내와-message--main-소스)을 확인한다. 기존 설치 0.3.0과 구분한다.
 
 Lua 콜백·함수·변수는 [Lua API](19-lua-api.md), 맵/저장 실패 흐름은 [오브젝트 작업](17-object-workflow.md)을 참고한다. 표시나 메시지 기반만으로 게임 HUD·퀘스트·온라인 동기화가 자동 완성되지는 않는다.

@@ -32,6 +32,13 @@ struct InteractionTarget {
     std::string prompt = "E: 상호작용";
 };
 
+// One screen-space document per local Play world; game rules remain in project Lua.
+struct GameUi {
+    MYE_COMPONENT(GameUi);
+    bool enabled = true;
+    asset::AssetRef document;
+};
+
 struct ScenePortal {
     MYE_COMPONENT(ScenePortal);
     std::string scenePath; // assets/scenes/*.scene, relative to the project
@@ -70,6 +77,7 @@ void UpdateCharacterAnimation2D(anim::SpriteAnimator& animator, const CharacterC
 MYE_REFLECT_NAME(mye::runtime::CharacterController2D, "CharacterController2D");
 MYE_REFLECT_NAME(mye::runtime::CharacterController3D, "CharacterController3D");
 MYE_REFLECT_NAME(mye::runtime::InteractionTarget, "InteractionTarget");
+MYE_REFLECT_NAME(mye::runtime::GameUi, "GameUi");
 MYE_REFLECT_NAME(mye::runtime::ScenePortal, "ScenePortal");
 MYE_REFLECT_NAME(mye::runtime::ObjectBehavior, "ObjectBehavior");
 MYE_REFLECT(mye::runtime::ObjectConnection);
@@ -79,6 +87,7 @@ namespace mye::refl {
 template<> void Reflect(TypeBuilder<mye::runtime::CharacterController2D>&);
 template<> void Reflect(TypeBuilder<mye::runtime::CharacterController3D>&);
 template<> void Reflect(TypeBuilder<mye::runtime::InteractionTarget>&);
+template<> void Reflect(TypeBuilder<mye::runtime::GameUi>&);
 template<> void Reflect(TypeBuilder<mye::runtime::ScenePortal>&);
 template<> void Reflect(TypeBuilder<mye::runtime::ObjectBehavior>&);
 }

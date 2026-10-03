@@ -12,6 +12,11 @@
 #include "mye/ser/Archive.h"
 #include "mye/ser/JsonArchive.h"
 #include "mye/core/Json.h"
+#include "mye/asset/Texture.h"
+#include "mye/text/RichText.h"
+#include <charconv>
+#include <cmath>
+#include <unordered_set>
 
 // -----------------------------------------------------------------------------
 // 리플렉션 등록 — 전역 스코프.
@@ -104,6 +109,7 @@ WidgetFactory::WidgetFactory() {
     Register("Panel",       &MakeWidget<Panel>);
     Register("Label",       &MakeWidget<Label>);
     Register("Image",       &MakeWidget<Image>);
+    Register("ProgressBar", &MakeWidget<ProgressBar>);
     Register("Button",      &MakeWidget<Button>);
     Register("StackLayout", &MakeWidget<StackLayout>);
     Register("GridLayout",  &MakeWidget<GridLayout>);
@@ -121,17 +127,93 @@ WidgetPtr WidgetFactory::Create(std::string_view typeName) const {
     return nullptr;
 }
 
-bool WidgetFactory::ApplyProperties(Widget& w, const std::vector<UiPropertyKV>& props) const {
-    // TODO(impl): 위젯 타입별 KV 적용(Label.text, Image.sprite vpath, Button.caption 등).
-    //   MVP: Label.text / Window.title 정도만. 후속 리플렉션 기반 일반화.
-    if (Label* lbl = w.As<Label>()) {
-        for (const auto& kv : props)
-            if (kv.key == "text") lbl->setText(kv.value);
-    } else if (Window* win = w.As<Window>()) {
-        for (const auto& kv : props)
-            if (kv.key == "title") win->title = kv.value;
+namespace {
+Expected<float, Error> Number(std::string_view text) {
+    float value = 0;
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || !std::isfinite(value) || std::abs(value) > 32768)
+        return Error{"UI number must be finite and within +/-32768", 1};
+    return value;
+}
+Expected<Color, Error> Colour(std::string_view text) {
+    if ((text.size() != 7 && text.size() != 9) || text.front() != '#') return Error{"UI colour requires #RRGGBB or #RRGGBBAA", 1};
+    for (const char c : text.substr(1))
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+            return Error{"UI colour contains a non-hex digit", 1};
+    return text::ParseHexColor(text);
+}
+Expected<RectInt, Error> Region(std::string_view text) {
+    int32_t fields[4]{};
+    for (int i = 0; i < 4; ++i) {
+        const auto comma = text.find(',');
+        const auto token = text.substr(0, comma);
+        const auto parsed = std::from_chars(token.data(), token.data() + token.size(), fields[i]);
+        if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() || fields[i] < 0 || fields[i] > 8192 ||
+            (i < 3 && comma == std::string_view::npos) || (i == 3 && comma != std::string_view::npos))
+            return Error{"UI source requires x,y,w,h integers in [0,8192]", 1};
+        if (i < 3) text.remove_prefix(comma + 1);
     }
-    return true;
+    if (fields[2] == 0 || fields[3] == 0) return Error{"UI source width/height must be positive", 1};
+    return RectInt{fields[0], fields[1], fields[2], fields[3]};
+}
+}
+
+Expected<void, Error> WidgetFactory::ApplyProperties(Widget& w, const std::vector<UiPropertyKV>& props) const {
+    auto* label = w.As<Label>();
+    auto* window = w.As<Window>();
+    Panel* panel = window ? static_cast<Panel*>(window) : w.As<Panel>();
+    auto* image = w.As<Image>();
+    auto* progress = w.As<ProgressBar>();
+    auto* button = w.As<Button>();
+    std::unordered_set<std::string_view> keys;
+    for (const auto& [key, value] : props) {
+        if (!keys.insert(key).second) return Error{"Duplicate UI property: " + key, 1};
+        if (key == "visible" || key == "interactive" || key == "clip" || key == "background" || key == "enabled") {
+            if (value != "true" && value != "false") return Error{"UI boolean requires true or false: " + key, 1};
+            const bool enabled = value == "true";
+            if (key == "visible") w.visibility = enabled ? Visibility::Visible : Visibility::Hidden;
+            else if (key == "interactive") w.interactive = enabled;
+            else if (key == "clip") w.clipChildren = enabled;
+            else if (key == "background" && panel) panel->drawBackground = enabled;
+            else if (key == "enabled" && button) button->state = enabled ? Button::State::Normal : Button::State::Disabled;
+            else return Error{"UI property is unsupported by " + w.name + ": " + key, 1};
+        } else if (key == "text" && label) label->setText(value);
+        else if (key == "title" && window) window->title = value;
+        else if (key == "fontSize" && label) {
+            auto number = Number(value); if (!number) return number.GetError();
+            if (number.Value() < 8 || number.Value() > 96 || std::floor(number.Value()) != number.Value())
+                return Error{"UI fontSize requires an integer in [8,96]", 1};
+            label->style.size = static_cast<uint16_t>(number.Value());
+        } else if (key == "colour" && label) {
+            auto colour = Colour(value); if (!colour) return colour.GetError(); label->style.color = colour.Value();
+        } else if (key == "tint" && (panel || image)) {
+            auto colour = Colour(value); if (!colour) return colour.GetError();
+            if (panel) panel->tint = colour.Value(); else image->tint = colour.Value();
+        } else if ((key == "fill" || key == "track") && progress) {
+            auto colour = Colour(value); if (!colour) return colour.GetError();
+            if (key == "fill") progress->fill = colour.Value(); else progress->background = colour.Value();
+        } else if ((key == "value" || key == "maximum") && progress) {
+            auto number = Number(value); if (!number) return number.GetError();
+            if (key == "value") progress->value = number.Value(); else progress->maximum = number.Value();
+        } else if ((key == "texture" || key == "source") && (image || panel || button)) {
+            auto& sprite = image ? image->sprite : panel ? panel->background : button->normalSprite;
+            if (key == "texture") {
+                auto guid = asset::AssetGuid::FromString(value);
+                if (!guid || !guid.Value().IsValid()) return Error{"UI texture requires a valid GUID", 1};
+                sprite.assetRef = {guid.Value(), asset::Texture::kAssetTypeId};
+            } else {
+                auto region = Region(value); if (!region) return region.GetError(); sprite.source = region.Value();
+            }
+        } else if (key == "spacing" && (w.As<StackLayout>() || w.As<GridLayout>())) {
+            auto number = Number(value); if (!number) return number.GetError();
+            if (number.Value() < 0) return Error{"UI spacing cannot be negative", 1};
+            if (auto* stack = w.As<StackLayout>()) stack->spacing = number.Value(); else w.As<GridLayout>()->spacing = number.Value();
+        } else return Error{"UI property is unsupported by " + w.name + ": " + key, 1};
+    }
+    if (panel && panel->background.assetRef.guid.IsValid() && !keys.contains("background")) panel->drawBackground = true;
+    if (button && button->state == Button::State::Disabled) button->interactive = false;
+    if (progress) return progress->SetValue(progress->value, progress->maximum);
+    return {};
 }
 
 // --- 트리 인스턴스화 ---
@@ -143,7 +225,8 @@ static Expected<WidgetPtr, Error> InstantiateNode(const UiNodeDesc& node,
     w->name = node.name;
     w->anchors = node.anchors;
     w->styleClass = MakeStyleClass(node.styleClass);
-    factory.ApplyProperties(*w, node.properties);
+    auto applied = factory.ApplyProperties(*w, node.properties);
+    if (!applied) return Error{node.name + ": " + applied.GetError().message, 1};
     for (const UiNodeDesc& childDesc : node.children) {
         auto child = InstantiateNode(childDesc, factory);
         if (!child) return child.GetError();
@@ -153,25 +236,91 @@ static Expected<WidgetPtr, Error> InstantiateNode(const UiNodeDesc& node,
 }
 
 Expected<WidgetPtr, Error> UiDocument::Instantiate(const WidgetFactory& factory) const {
+    auto valid = Validate(&factory); if (!valid) return valid.GetError();
     return InstantiateNode(root, factory);
+}
+
+Expected<void, Error> UiDocument::Validate(const WidgetFactory* customFactory) const {
+    if (version != 1 || controllerScript.size() > 4096) return Error{"UI document requires version 1 and a bounded controller path", 1};
+    std::unordered_set<std::string_view> names;
+    WidgetFactory builtins;
+    const auto& factory = customFactory ? *customFactory : builtins;
+    size_t count = 0;
+    auto check = [&](auto&& self, const UiNodeDesc& node, int depth) -> Expected<void, Error> {
+        if (++count > 512 || depth > 24) return Error{"UI document exceeds 512 nodes or 24 levels", 1};
+        if (node.typeName.empty() || node.typeName.size() > 64 || node.name.size() > 64 || node.styleClass.size() > 128 ||
+            node.name.find('\0') != std::string::npos || (!node.name.empty() && !names.insert(node.name).second))
+            return Error{"UI node has an invalid type/name/style or duplicate name", 1};
+        const auto& a = node.anchors;
+        for (const auto v : {a.anchorMin.x,a.anchorMin.y,a.anchorMax.x,a.anchorMax.y,a.pivot.x,a.pivot.y})
+            if (!std::isfinite(v) || v < 0 || v > 1) return Error{"UI anchors and pivot must be in [0,1]", 1};
+        if (a.anchorMin.x > a.anchorMax.x || a.anchorMin.y > a.anchorMax.y || a.sizeDelta.x < 0 || a.sizeDelta.y < 0)
+            return Error{"UI anchors must be ordered and sizes nonnegative", 1};
+        for (const auto v : {a.offsetMin.x,a.offsetMin.y,a.offsetMax.x,a.offsetMax.y,a.sizeDelta.x,a.sizeDelta.y})
+            if (!std::isfinite(v) || std::abs(v) > 32768) return Error{"UI offsets/sizes must be finite within +/-32768", 1};
+        if (node.properties.size() > 32) return Error{"UI node exceeds 32 properties", 1};
+        auto probe = factory.Create(node.typeName);
+        if (!probe) return Error{"Unknown UI widget: " + node.typeName, 1};
+        for (const auto& property : node.properties)
+            if (property.key.size() > 64 || property.value.size() > 4096) return Error{"UI property exceeds its text limit", 1};
+        auto applied = factory.ApplyProperties(*probe, node.properties); if (!applied) return applied.GetError();
+        for (const auto& child : node.children) { auto valid = self(self, child, depth + 1); if (!valid) return valid.GetError(); }
+        return {};
+    };
+    return check(check, root, 1);
+}
+
+// Validate JSON types before the tolerant archive can default malformed data.
+namespace {
+bool VersionOne(const json::Value& value) {
+    const auto* version = value.Find("__version");
+    return version && version->IsInteger() && version->AsInt() == 1;
+}
+Expected<void, Error> CheckNodeJson(const json::Value& node, size_t& count, int depth) {
+    if (!node.IsObject() || !VersionOne(node) || ++count > 512 || depth > 24) return Error{"UI JSON node/version/size/depth is invalid", 1};
+    for (const char* key : {"typeName", "name", "styleClass"}) {
+        const auto* value = node.Find(key); if (!value || !value->IsString()) return Error{std::string("UI JSON requires string ") + key, 1};
+    }
+    const auto* anchors = node.Find("anchors"), *properties = node.Find("properties"), *children = node.Find("children");
+    if (!anchors || !anchors->IsObject() || !VersionOne(*anchors) || !properties || !properties->IsArray() || properties->AsArray().size() > 32 || !children || !children->IsArray())
+        return Error{"UI JSON requires anchors object and bounded properties/children arrays", 1};
+    for (const char* key : {"anchorMinX","anchorMinY","anchorMaxX","anchorMaxY","pivotX","pivotY","offMinX","offMinY","offMaxX","offMaxY","sizeX","sizeY"}) {
+        const auto* value = anchors->Find(key); if (!value || !value->IsNumber() || !std::isfinite(value->AsDouble())) return Error{"UI JSON anchor must be a finite number", 1};
+    }
+    for (const auto& property : properties->AsArray()) {
+        const auto* key = property.Find("key"), *value = property.Find("value");
+        if (!property.IsObject() || !VersionOne(property) || !key || !key->IsString() || !value || !value->IsString()) return Error{"UI JSON property requires version 1 and string key/value", 1};
+    }
+    for (const auto& child : children->AsArray()) { auto valid = CheckNodeJson(child, count, depth + 1); if (!valid) return valid.GetError(); }
+    return {};
+}
 }
 
 // --- JSON 왕복 ---
 Expected<std::string, Error> SaveDocumentJson(const UiDocument& doc) {
+    auto valid = doc.Validate(); if (!valid) return valid.GetError();
     UiDocument copy = doc;   // Serialize 는 non-const 참조.
     auto wr = ser::JsonArchive::ForWrite();
     auto r = ser::Serialize(wr, copy);
     if (!r) return r.GetError();
-    return json::Stringify(wr.Root());
+    auto encoded = json::Stringify(wr.Root());
+    if (encoded.size() > 4 * 1024 * 1024) return Error{"UI document exceeds 4 MiB", 1};
+    return encoded;
 }
 
 Expected<UiDocument, Error> LoadDocumentJson(std::string_view jsonText) {
+    if (jsonText.size() > 4 * 1024 * 1024) return Error{"UI document exceeds 4 MiB", 1};
     auto parsed = json::Parse(jsonText);
     if (!parsed) return parsed.GetError();
+    const auto* version = parsed.Value().Find("version"), *root = parsed.Value().Find("root"), *controller = parsed.Value().Find("controllerScript");
+    if (!parsed.Value().IsObject() || !VersionOne(parsed.Value()) || !version || !version->IsInteger() || version->AsInt() != 1 || !root || !controller || !controller->IsString())
+        return Error{"UI JSON requires root, string controllerScript and version 1", 1};
+    size_t count = 0; auto shape = CheckNodeJson(*root, count, 1); if (!shape) return shape.GetError();
     UiDocument doc;
     auto rd = ser::JsonArchive::ForRead(parsed.Value());
     auto r = ser::Serialize(rd, doc);
     if (!r) return r.GetError();
+    auto valid = doc.Validate(); if (!valid) return valid.GetError();
     return doc;
 }
 

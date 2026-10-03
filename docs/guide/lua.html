@@ -34,7 +34,7 @@ end
 return Object</code></pre>
 <p>선택한 오브젝트에 <strong>상호작용</strong> 컴포넌트를 추가하면 플레이어가 반경 안에서 상호작용할 때 <code>on_interact</code>를 호출한다. 콜라이더를 트리거로 설정하면 <code>on_trigger_enter</code>와 <code>on_trigger_exit</code>도 사용할 수 있다. Lua 코드 자체는 오브젝트의 동작 컴포넌트에 저장한다. 편집 중에는 실행하지 않으며 Play에서 별도 월드에 인스턴스를 만든다.</p>
 <h2 id="section-2">사용 가능한 API 범위</h2>
-<div class="table-scroll"><table><tr><th>실행 경로</th><th>등록되는 API</th></tr><tr><td>에디터·프로젝트의 <code>ObjectSystem</code></td><td>로그, 코루틴, 수학 값, ECS 오브젝트 접근, 이름 기반 입력 액션(현재 main 소스)</td></tr><tr><td><code>MakeStandardBindings</code>를 사용하는 앱</td><td>위 API와 입력, 오디오, Lua 사용자 이벤트</td></tr><tr><td>앱이 추가 등록한 모듈</td><td>리플렉션, 데이터 컴포넌트, 대화·컷신·카메라·저장·번역·씬 전환, NPC</td></tr></table></div>
+<div class="table-scroll"><table><tr><th>실행 경로</th><th>등록되는 API</th></tr><tr><td>에디터·프로젝트의 <code>ObjectSystem</code></td><td>로그, 코루틴, 수학 값, ECS 오브젝트 접근, 이름 기반 입력 액션·저장한 GameUi의 표시 setter(현재 main 소스)</td></tr><tr><td><code>MakeStandardBindings</code>를 사용하는 앱</td><td>위 API와 입력, 오디오, Lua 사용자 이벤트</td></tr><tr><td>앱이 추가 등록한 모듈</td><td>리플렉션, 데이터 컴포넌트, 대화·컷신·카메라·저장·번역·씬 전환, NPC</td></tr></table></div>
 <p>아래의 <strong>추가 모듈</strong>은 라이브러리 API다. 에디터에 모두 자동 등록되는 기능으로 가정하지 않는다. <code>if mye.dialogue then ... end</code>처럼 등록 여부를 확인할 수 있지만, 실제 동작에는 해당 C++ 서비스 초기화와 갱신도 필요하다. 이름이 <code>__</code> 또는 <code>_</code>로 시작하는 엔진 내부 테이블은 호출·수정하지 않는다.</p>
 <h2 id="section-3">변수·수명·단위</h2>
 <div class="table-scroll"><table><tr><th>값</th><th>의미</th></tr><tr><td><code>self</code></td><td>이 오브젝트의 Lua 인스턴스. 콜론 메서드의 첫 인자</td></tr><tr><td><code>self.entity</code></td><td>세대 번호가 포함된 정수 엔티티 핸들. 직접 숫자를 만들어 넣지 않는다</td></tr><tr><td><code>self.state</code></td><td>인스턴스 상태 테이블. 에셋 핫 리로드 시 보존되며 Stop 후 다음 Play에는 새로 생성</td></tr><tr><td><code>dt</code></td><td>직전 시뮬레이션 갱신의 초 단위 시간</td></tr><tr><td>위치·반경</td><td>월드 단위. 기본 48px = 1 unit, +Y는 위쪽</td></tr><tr><td>속도</td><td>월드 단위/초</td></tr><tr><td>Lua 배열</td><td>첫 항목 인덱스 1. 대화 선택 인덱스만 0부터 시작</td></tr></table></div>
@@ -131,4 +131,5 @@ local grounded = entity:is_on_floor3d()
 local wall = entity:hit_wall3d()
 entity:set_position3d(mye.Vec3(0, 2, 0))</code></pre>
 <p>위치는 로컬 XYZ 복사본이고 속도·접지·벽은 이전 물리 틱 상태다. 위치 쓰기는 유한값의 순간 이동이며 다음 틱에서 충돌을 검증한다. 깊은 시작 충돌은 오류다. 일반 조작은 CharacterController3D, 속도/중력은 KinematicBody3D.settings를 사용한다. <a href="online.html">XYZ 구성과 한계</a>를 확인한다.</p>
+<p><a href="game-ui.html">저장한 GameUi와 Lua 상태 표시</a>: .ui 임포트·GUID·HP 게이지·일반 한글 텍스트·활성 상태의 main 소스 연결을 확인하세요. 시각 편집/Undo·클릭/포커스·IME·온라인·설치 0.3.0 지원은 미완료입니다.</p>
 <footer>정본: <a href="../19-lua-api.md">19-lua-api.md</a> · 구현 범위와 실패 조건을 확인하세요.</footer></main></div></body></html>

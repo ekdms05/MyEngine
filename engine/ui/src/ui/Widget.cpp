@@ -56,8 +56,10 @@ bool Widget::hitTest(Vec2 uiPos) const {
 }
 
 void Widget::drawChildren(UiDrawContext& ctx) {
+    if (clipChildren) ctx.PushScissor(computedRect);
     for (auto& c : m_children)
         if (c->visibility == Visibility::Visible) c->draw(ctx);
+    if (clipChildren) ctx.PopScissor();
 }
 
 // AnchorRect + 부모 사각형 → 자식 사각형(스크린 픽셀, 정수 스냅).

@@ -10,7 +10,7 @@ import { type ServerContext, textResult, errorResult, caughtResult } from "../st
 
 export function registerAssetImportTool(server: McpServer, ctx: ServerContext): void {
   server.registerTool("asset_import", {
-    description: "MyEditor의 기존 에셋 임포트 경계로 외부 제작 파일을 프로젝트 assets/에 복사·등록한다. " +
+    description: "MyEditor의 기존 에셋 임포트 경계로 PNG/애니메이션/Lua/저장한 .ui 문서를 프로젝트 assets/에 복사·등록한다. " +
       "설정된 엔진/프로젝트 루트의 파일만 허용하며 기존 파일 덮어쓰기와 GUI 메모리 원격 편집은 지원하지 않는다. GUID/.meta는 엔진이 생성한다.",
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     inputSchema: {

@@ -7,6 +7,7 @@
 #include "mye/scene/Camera3D.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
+#include "mye/ui/UiDocument.h"
 #include <cmath>
 #include <filesystem>
 #include <unordered_set>
@@ -25,10 +26,15 @@ template<> void mye::refl::Reflect(TypeBuilder<CharacterController2D>& b) {
         .Field("idleAnimation", &CharacterController2D::idleAnimation).Attr(Attribute::MakeTooltip("대기할 때 재생할 .anim 에셋을 드래그하세요.")).Field("walkAnimation", &CharacterController2D::walkAnimation).Attr(Attribute::MakeTooltip("이동할 때 재생할 .anim 에셋을 드래그하세요."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<InteractionTarget>& b) {
-    b.Version(1).Field("enabled", &InteractionTarget::enabled).Attr(Attribute::MakeTooltip("interact 조작(기본 E)의 대상 활성 여부입니다.")).Field("radius", &InteractionTarget::radius).Attr(Attribute::MakeTooltip("캐릭터와 대상의 상호작용 거리. 월드 단위이며 0보다 크고 100 이하입니다.")).Field("prompt", &InteractionTarget::prompt).Attr(Attribute::MakeTooltip("상호작용 안내 문자열. 자동 게임 HUD 표시는 아직 연결되지 않았습니다."));
+    b.Version(1).Field("enabled", &InteractionTarget::enabled).Attr(Attribute::MakeTooltip("interact 조작(기본 E)의 대상 활성 여부입니다.")).Field("radius", &InteractionTarget::radius).Attr(Attribute::MakeTooltip("캐릭터와 대상의 상호작용 거리. 월드 단위이며 0보다 크고 100 이하입니다.")).Field("prompt", &InteractionTarget::prompt).Attr(Attribute::MakeTooltip("상호작용 안내 문자열. 로컬 Play/MyGame 화면에 표시됩니다. 안내 키는 프로젝트 입력 설정과 함께 작성하세요."));
 }
 template<> void mye::refl::Reflect(TypeBuilder<ScenePortal>& b) {
     b.Version(1).Field("scenePath", &ScenePortal::scenePath).Attr(Attribute::MakeTooltip("프로젝트 기준 assets/scenes/*.scene 경로입니다. 프로젝트 밖으로 이동할 수 없습니다.")).Field("spawnName", &ScenePortal::spawnName).Attr(Attribute::MakeTooltip("목적지 씬의 ObjectName.value와 정확히 일치하는 고유 이름입니다.")).Field("onInteract", &ScenePortal::onInteract).Attr(Attribute::MakeTooltip("켜면 InteractionTarget + interact 조작, 끄면 트리거 Collider2D 진입으로 이동합니다."));
+}
+template<> void mye::refl::Reflect(TypeBuilder<GameUi>& b) {
+    b.Version(1).Field("enabled", &GameUi::enabled)
+        .Field("document", &GameUi::document)
+        .Attr(Attribute::MakeTooltip("저장한 .ui 에셋을 지정합니다. 로컬 Play/MyGame에서 mye.ui로 표시값을 갱신합니다. 클릭·IME·온라인 UI는 아직 연결되지 않았습니다."));
 }
 template<> void mye::refl::Reflect(EnumBuilder<ObjectEvent>& b) {
     b.Value("Start", ObjectEvent::Start).Value("Interact", ObjectEvent::Interact)
@@ -67,15 +73,25 @@ void UpdateCharacterAnimation2D(anim::SpriteAnimator& animator, const CharacterC
 void RegisterObjectComponents(ecs::World& world) {
     (void)refl::GetType<CharacterController2D>(); (void)refl::GetType<InteractionTarget>();
     (void)refl::GetType<CharacterController3D>();
+    (void)refl::GetType<GameUi>();
     (void)refl::GetType<ScenePortal>(); (void)refl::GetType<ObjectBehavior>();
     world.RegisterComponent<CharacterController2D>("CharacterController2D");
     world.RegisterComponent<CharacterController3D>("CharacterController3D");
+    world.RegisterComponent<GameUi>("GameUi");
     world.RegisterComponent<InteractionTarget>("InteractionTarget");
     world.RegisterComponent<ScenePortal>("ScenePortal");
     world.RegisterComponent<ObjectBehavior>("ObjectBehavior");
 }
 Expected<void, Error> ValidateObjectComponents(ecs::World& world) {
     std::string error;
+    int screens = 0;
+    world.Query<GameUi>().Each([&](ecs::Entity, const GameUi& ui) {
+        if (!ui.enabled) return;
+        ++screens;
+        if (!ui.document.guid.IsValid() || (ui.document.type != 0 && ui.document.type != ui::UiDocument::kAssetTypeId))
+            error = "GameUi needs a valid UiDocument asset reference";
+    });
+    if (screens > 1) error = "A local Play world supports one enabled GameUi document";
     std::unordered_set<std::string> names;
     world.Query<scene::ObjectName>().Each([&](ecs::Entity, const scene::ObjectName& n) {
         if (n.value.size() > 256 || (!n.value.empty() && !names.insert(n.value).second)) error = "Object names must be unique and at most 256 bytes";

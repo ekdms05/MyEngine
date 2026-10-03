@@ -11,6 +11,7 @@
 #include "mye/ui/UiTypes.h"
 #include "mye/ui/Widget.h"
 #include "mye/core/Base.h"
+#include "mye/asset/AssetGuid.h"
 
 #include <cstdint>
 #include <memory>
@@ -40,6 +41,7 @@ struct UiNodeDesc {
 
 // UiDocument 에셋. 루트 노드 서술 + 컨트롤러 스크립트 vpath.
 struct UiDocument {
+    MYE_ASSET_TYPE(UiDocument);
     UiNodeDesc  root;
     std::string controllerScript;         // Lua vpath(옵션) — 05 가 바인딩
     uint32_t    version = 1;
@@ -47,6 +49,7 @@ struct UiDocument {
     // 위젯 트리 인스턴스화. factory 로 typeName→Widget 생성, 프로퍼티 적용, 앵커·스킨 세팅.
     //   실패(알 수 없는 타입 등) 시 Error. 성공 시 루트 위젯 소유 반환.
     Expected<WidgetPtr, Error> Instantiate(const WidgetFactory& factory) const;
+    Expected<void, Error> Validate(const WidgetFactory* factory = nullptr) const;
 };
 
 // UiDocument ↔ JSON 텍스트 왕복(04 리플렉션/JsonArchive). 에셋 저장·로드·에디터 diff 용.
@@ -64,7 +67,7 @@ public:
     WidgetPtr Create(std::string_view typeName) const; // 미등록 시 nullptr
 
     // 프로퍼티 적용 훅: 위젯 타입별 KV → 필드 세팅(MVP 는 내장 위젯 스위치, 후속 리플렉션).
-    bool ApplyProperties(Widget& w, const std::vector<UiPropertyKV>& props) const;
+    Expected<void, Error> ApplyProperties(Widget& w, const std::vector<UiPropertyKV>& props) const;
 
 private:
     std::vector<std::pair<uint64_t, CreateFn>> m_factories;   // FNV(typeName) → fn

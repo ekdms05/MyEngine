@@ -27,7 +27,7 @@ return Object
 
 | 실행 경로 | 등록되는 API |
 |---|---|
-| 에디터·프로젝트의 `ObjectSystem` | 로그, 코루틴, 수학 값, ECS 오브젝트 접근, 이름 기반 입력 액션(현재 main 소스) |
+| 에디터·프로젝트의 `ObjectSystem` | 로그, 코루틴, 수학 값, ECS 오브젝트 접근, 이름 기반 입력 액션, 저장한 GameUi의 로컬 표시 갱신(현재 main 소스) |
 | `MakeStandardBindings`를 사용하는 앱 | 위 API와 입력, 오디오, Lua 사용자 이벤트 |
 | 앱이 추가 등록한 모듈 | 리플렉션, 데이터 컴포넌트, 대화·컷신·카메라·저장·번역·씬 전환, NPC |
 
@@ -323,3 +323,7 @@ API 근거는 [ObjectSystem](../engine/runtime/src/ObjectSystem.cpp), [바인딩
 | `entity:hit_wall3d()` | 이전 물리 틱의 벽 접촉 bool |
 
 CharacterController3D가 고정 틱의 이동을 처리한다. XYZ 위치 쓰기는 경로 탐색이나 물리 이동 함수가 아니다. 깊게 충돌한 위치는 오류로 거부한다. 일반 이동 속도·중력은 KinematicBody3D.settings에서 설정한다. 트리거는 기존 `on_trigger_enter/exit`와 이벤트 연결을 사용한다. 온라인 MyGame은 권위 상태를 적용하며 클라이언트 Lua·포털을 실행하지 않는다. [XYZ/온라인](21-3d-play-and-online.md)에 지원 범위를 정리했다.
+
+## 저장한 GameUi의 로컬 표시 · main 소스
+
+`mye.ui.set_text(name,text)`, `set_progress(name,value,maximum)`, `set_enabled(name,bool)`, `set_visible(name,bool)`은 로컬 Play/MyGame ObjectSystem에 등록된다. 이름과 위젯 타입·인수 수/타입/범위를 검사하며 성공 true, 실패 nil/error이고 실패한 위젯 값은 보존한다. 텍스트는 일반 UTF-8이며 태그를 해석하지 않는다. [상세 한계·게임 상태 연결 예제](27-game-ui.md)를 따른다. `Core:hud_snapshot()`은 프로젝트 메서드다. 클릭/포커스/IME·온라인·설치 0.3.0 지원을 뜻하지 않는다.

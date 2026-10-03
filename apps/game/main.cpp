@@ -265,7 +265,7 @@ private:
         if (!bound) return bound.GetError();
         if (m_cli.connect.empty()) {
             candidate->objects = std::make_unique<runtime::ObjectSystem>(candidate->world);
-            auto initialized = candidate->objects->Initialize();
+            auto initialized = candidate->objects->Initialize(m_assetDb.get(), m_vfs.get(), m_assets.get());
             if (!initialized) return initialized.GetError();
         }
         m_scene = std::move(candidate);
@@ -297,6 +297,8 @@ private:
         if (ctx.GetServiceRaw(kMainWindowServiceId)) {
             m_window = &ctx.MainWindow();
             rhi::SwapChainDesc desc{};
+            // Project PNG/UI colours use UNORM, matching the editor and native Play.
+            desc.format = rhi::Format::BGRA8Unorm;
             m_swapChain = m_device->CreateSwapChain(m_window->GetNativeHandle(), desc);
             if (!m_swapChain) return Error{"Game swap chain initialization failed", 1};
             m_resize = ScopedSubscription(ctx.Events(), ctx.Events().Subscribe<WindowResizedEvent>([this](const auto& event) {
@@ -739,7 +741,8 @@ private:
             : RectInt{0, 0, logicalSize.x, logicalSize.y};
         auto feedback = m_overlay.Render(cmd, m_swapChain ? m_swapChain->GetCurrentBackBuffer() : m_target.ColorTarget(),
             logicalSize, destination, m_scene->objects ? m_scene->objects->Prompt() : std::string_view{},
-            m_scene->objects ? m_scene->objects->Message() : std::string_view{});
+            m_scene->objects ? m_scene->objects->Message() : std::string_view{},
+            m_scene->objects ? m_scene->objects->UiRoot() : nullptr);
         if (!feedback) { m_device->EndFrame(); Fail(feedback.GetError()); return; }
         ++m_frame;
         const bool finished = m_replayFinished || (m_cli.frames && m_frame >= m_cli.frames) ||

@@ -10,6 +10,8 @@
 #include "mye/rhi/RhiTypes.h"
 
 #include <cstdint>
+#include <cstddef>
+#include <vector>
 
 namespace mye::asset {
 

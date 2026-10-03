@@ -1,4 +1,5 @@
 #include "mye/runtime/ObjectSystem.h"
+#include "UiBindings.h"
 #include "mye/anim/SpriteAnimator.h"
 #include "mye/core/Events.h"
 #include "mye/core/Log.h"
@@ -25,6 +26,7 @@ struct ObjectSystem::Impl {
     std::vector<std::pair<ecs::Entity, ecs::Entity>> triggers3D;
     script::ScriptRuntime lua;
     script::InputBindingModule inputBindings{nullptr};
+    UiBindingModule uiBindings;
     std::unique_ptr<script::EcsBindingModule> bindings;
     std::unique_ptr<script::ScriptSystem> scripts;
     std::vector<ScopedSubscription> subscriptions;
@@ -69,16 +71,20 @@ ObjectSystem::~ObjectSystem() {
     for (auto e : scripts) s.world.Remove<script::ScriptComponent>(e);
     s.lua.Shutdown();
 }
-Expected<void, Error> ObjectSystem::Initialize() {
+Expected<void, Error> ObjectSystem::Initialize(asset::AssetDatabase* database,
+    asset::VirtualFileSystem* files, asset::AssetManager* assets) {
     auto& s = *m_impl;
     auto valid = ValidateObjectComponents(s.world);
     if (!valid) return valid.GetError();
+    auto ui = s.uiBindings.Load(s.world, database, files, assets);
+    if (!ui) return ui.GetError();
     if (auto camera = scene::UpdateGameCamera2D(s.world, 0); !camera) return camera.GetError();
     s.lua.Initialize({}, s.world.Events(), nullptr);
     s.bindings = std::make_unique<script::EcsBindingModule>(&s.world);
     s.lua.AddBindingModule(std::make_unique<script::MathBindingModule>());
     s.lua.AddBindingModule(s.bindings.get());
     s.lua.AddBindingModule(&s.inputBindings);
+    s.lua.AddBindingModule(&s.uiBindings);
     s.scripts = std::make_unique<script::ScriptSystem>(s.lua, s.world, s.world.Events(), nullptr);
     s.scripts->RegisterComponent();
     std::vector<ecs::Entity> scriptedObjects;
@@ -305,4 +311,6 @@ void UpdateDefaultCamera2D(ecs::World& world, render::Camera2D& camera, bool res
             else camera.FollowDeadzone(target, {2.5f, 1.5f});
         });
 }
+
+ui::Widget* ObjectSystem::UiRoot() const { return m_impl->uiBindings.Root(); }
 } // namespace mye::runtime

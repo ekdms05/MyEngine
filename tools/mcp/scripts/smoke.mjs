@@ -252,6 +252,10 @@ async function main() {
   check("engine_reference — 게임 창 안내와 작성 HUD 경계", feedback.result?.isError !== true &&
     firstText(feedback.result).includes("GameOverlay") && firstText(feedback.result).includes("4096") &&
     firstText(feedback.result).includes("읽기 전용") && firstText(feedback.result).includes("아직 연결하지 않았다"));
+  const gameUi = await request("tools/call", { name: "engine_reference", arguments: { topic: "lua", search: "mye.ui", lines: 20 } });
+  check("engine_reference — 저장한 GameUi와 로컬 setter 경계", gameUi.result?.isError !== true &&
+    firstText(gameUi.result).includes("set_progress") && firstText(gameUi.result).includes("nil/error") &&
+    firstText(gameUi.result).includes("설치 0.3.0"));
   const asset = await request("tools/call", { name: "asset_import", arguments: {
     project: `${fixtureRel}/project.myeproj`, source: `${fixtureRel}/project.myeproj`, destination: "../escape.png",
   } });

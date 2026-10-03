@@ -1,0 +1,353 @@
+{
+  "__version": 1,
+  "version": 1,
+  "controllerScript": "",
+  "root": {
+    "__version": 1,
+    "typeName": "Panel",
+    "name": "hud",
+    "styleClass": "",
+    "anchors": {
+      "__version": 1,
+      "anchorMinX": 0,
+      "anchorMinY": 0,
+      "anchorMaxX": 1,
+      "anchorMaxY": 1,
+      "pivotX": 0,
+      "pivotY": 0,
+      "offMinX": 0,
+      "offMinY": 0,
+      "offMaxX": 0,
+      "offMaxY": 0,
+      "sizeX": 0,
+      "sizeY": 0
+    },
+    "properties": [
+      {
+        "__version": 1,
+        "key": "interactive",
+        "value": "false"
+      }
+    ],
+    "children": [
+      {
+        "__version": 1,
+        "typeName": "Panel",
+        "name": "status",
+        "styleClass": "",
+        "anchors": {
+          "__version": 1,
+          "anchorMinX": 0,
+          "anchorMinY": 0,
+          "anchorMaxX": 0,
+          "anchorMaxY": 0,
+          "pivotX": 0,
+          "pivotY": 0,
+          "offMinX": 20,
+          "offMinY": 20,
+          "offMaxX": 0,
+          "offMaxY": 0,
+          "sizeX": 320,
+          "sizeY": 204
+        },
+        "properties": [
+          {
+            "__version": 1,
+            "key": "background",
+            "value": "true"
+          },
+          {
+            "__version": 1,
+            "key": "tint",
+            "value": "#17202BFF"
+          },
+          {
+            "__version": 1,
+            "key": "clip",
+            "value": "true"
+          }
+        ],
+        "children": [
+          {
+            "__version": 1,
+            "typeName": "Label",
+            "name": "stats",
+            "styleClass": "",
+            "anchors": {
+              "__version": 1,
+              "anchorMinX": 0,
+              "anchorMinY": 0,
+              "anchorMaxX": 0,
+              "anchorMaxY": 0,
+              "pivotX": 0,
+              "pivotY": 0,
+              "offMinX": 12,
+              "offMinY": 10,
+              "offMaxX": 0,
+              "offMaxY": 0,
+              "sizeX": 296,
+              "sizeY": 30
+            },
+            "properties": [
+              {
+                "__version": 1,
+                "key": "text",
+                "value": "레벨 1 · HP 100 / 100"
+              },
+              {
+                "__version": 1,
+                "key": "fontSize",
+                "value": "16"
+              }
+            ],
+            "children": []
+          },
+          {
+            "__version": 1,
+            "typeName": "ProgressBar",
+            "name": "hp",
+            "styleClass": "",
+            "anchors": {
+              "__version": 1,
+              "anchorMinX": 0,
+              "anchorMinY": 0,
+              "anchorMaxX": 0,
+              "anchorMaxY": 0,
+              "pivotX": 0,
+              "pivotY": 0,
+              "offMinX": 12,
+              "offMinY": 46,
+              "offMaxX": 0,
+              "offMaxY": 0,
+              "sizeX": 296,
+              "sizeY": 16
+            },
+            "properties": [
+              {
+                "__version": 1,
+                "key": "value",
+                "value": "100"
+              },
+              {
+                "__version": 1,
+                "key": "maximum",
+                "value": "100"
+              },
+              {
+                "__version": 1,
+                "key": "fill",
+                "value": "#CC3040"
+              },
+              {
+                "__version": 1,
+                "key": "track",
+                "value": "#341820"
+              }
+            ],
+            "children": []
+          },
+          {
+            "__version": 1,
+            "typeName": "Label",
+            "name": "experience",
+            "styleClass": "",
+            "anchors": {
+              "__version": 1,
+              "anchorMinX": 0,
+              "anchorMinY": 0,
+              "anchorMaxX": 0,
+              "anchorMaxY": 0,
+              "pivotX": 0,
+              "pivotY": 0,
+              "offMinX": 12,
+              "offMinY": 70,
+              "offMaxX": 0,
+              "offMaxY": 0,
+              "sizeX": 296,
+              "sizeY": 25
+            },
+            "properties": [
+              {
+                "__version": 1,
+                "key": "text",
+                "value": "경험치 0 / 100"
+              },
+              {
+                "__version": 1,
+                "key": "fontSize",
+                "value": "14"
+              }
+            ],
+            "children": []
+          },
+          {
+            "__version": 1,
+            "typeName": "Label",
+            "name": "quest",
+            "styleClass": "",
+            "anchors": {
+              "__version": 1,
+              "anchorMinX": 0,
+              "anchorMinY": 0,
+              "anchorMaxX": 0,
+              "anchorMaxY": 0,
+              "pivotX": 0,
+              "pivotY": 0,
+              "offMinX": 12,
+              "offMinY": 103,
+              "offMaxX": 0,
+              "offMaxY": 0,
+              "sizeX": 296,
+              "sizeY": 44
+            },
+            "properties": [
+              {
+                "__version": 1,
+                "key": "text",
+                "value": "퀘스트 · 처치 0/3 · 결정 0/3"
+              },
+              {
+                "__version": 1,
+                "key": "fontSize",
+                "value": "14"
+              }
+            ],
+            "children": []
+          },
+          {
+            "__version": 1,
+            "typeName": "Button",
+            "name": "attack",
+            "styleClass": "",
+            "anchors": {
+              "__version": 1,
+              "anchorMinX": 0,
+              "anchorMinY": 0,
+              "anchorMaxX": 0,
+              "anchorMaxY": 0,
+              "pivotX": 0,
+              "pivotY": 0,
+              "offMinX": 12,
+              "offMinY": 155,
+              "offMaxX": 0,
+              "offMaxY": 0,
+              "sizeX": 132,
+              "sizeY": 34
+            },
+            "properties": [],
+            "children": [
+              {
+                "__version": 1,
+                "typeName": "Label",
+                "name": "attack_caption",
+                "styleClass": "",
+                "anchors": {
+                  "__version": 1,
+                  "anchorMinX": 0,
+                  "anchorMinY": 0,
+                  "anchorMaxX": 0,
+                  "anchorMaxY": 0,
+                  "pivotX": 0,
+                  "pivotY": 0,
+                  "offMinX": 8,
+                  "offMinY": 6,
+                  "offMaxX": 0,
+                  "offMaxY": 0,
+                  "sizeX": 116,
+                  "sizeY": 24
+                },
+                "properties": [
+                  {
+                    "__version": 1,
+                    "key": "text",
+                    "value": "공격 가능"
+                  },
+                  {
+                    "__version": 1,
+                    "key": "fontSize",
+                    "value": "14"
+                  },
+                  {
+                    "__version": 1,
+                    "key": "interactive",
+                    "value": "false"
+                  }
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "__version": 1,
+            "typeName": "Button",
+            "name": "potion",
+            "styleClass": "",
+            "anchors": {
+              "__version": 1,
+              "anchorMinX": 0,
+              "anchorMinY": 0,
+              "anchorMaxX": 0,
+              "anchorMaxY": 0,
+              "pivotX": 0,
+              "pivotY": 0,
+              "offMinX": 156,
+              "offMinY": 155,
+              "offMaxX": 0,
+              "offMaxY": 0,
+              "sizeX": 152,
+              "sizeY": 34
+            },
+            "properties": [
+              {
+                "__version": 1,
+                "key": "enabled",
+                "value": "false"
+              }
+            ],
+            "children": [
+              {
+                "__version": 1,
+                "typeName": "Label",
+                "name": "potion_caption",
+                "styleClass": "",
+                "anchors": {
+                  "__version": 1,
+                  "anchorMinX": 0,
+                  "anchorMinY": 0,
+                  "anchorMaxX": 0,
+                  "anchorMaxY": 0,
+                  "pivotX": 0,
+                  "pivotY": 0,
+                  "offMinX": 8,
+                  "offMinY": 6,
+                  "offMaxX": 0,
+                  "offMaxY": 0,
+                  "sizeX": 136,
+                  "sizeY": 24
+                },
+                "properties": [
+                  {
+                    "__version": 1,
+                    "key": "text",
+                    "value": "물약 3개"
+                  },
+                  {
+                    "__version": 1,
+                    "key": "fontSize",
+                    "value": "14"
+                  },
+                  {
+                    "__version": 1,
+                    "key": "interactive",
+                    "value": "false"
+                  }
+                ],
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

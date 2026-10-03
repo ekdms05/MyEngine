@@ -19,6 +19,13 @@
 #include "mye/core/JsonFile.h"
 #include "mye/ser/JsonArchive.h"
 #include "mye/gameplay/Progression.h"
+#include "mye/ui/UiDocument.h"
+#include "mye/ui/Widgets.h"
+#include "mye/asset/AssetDatabase.h"
+#include "mye/asset/AssetManager.h"
+#include "mye/asset/AssetMeta.h"
+#include "mye/asset/FileSystem.h"
+#include <fstream>
 #include <chrono>
 #include <filesystem>
 #include <limits>
@@ -52,6 +59,102 @@ std::filesystem::path OnlineProject(ecs::World& world) {
     MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/main.scene")));
     return root;
 }
+}
+
+MYE_TEST(SavedGameUiBindsLuaBeforeInitAndRestartsWithoutLeakingState) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World();
+    const auto object = Object(world,"HUD");
+    const auto root = FreshObjectRoot();
+    std::filesystem::create_directories(root / "assets");
+    ui::UiDocument hud;
+    hud.root.typeName = "Panel"; hud.root.name = "hud"; hud.root.anchors = ui::AnchorRect::Fill();
+    ui::UiNodeDesc label; label.typeName = "Label"; label.name = "stats"; label.properties = {{"text","saved"}};
+    ui::UiNodeDesc bar; bar.typeName = "ProgressBar"; bar.name = "hp";
+    ui::UiNodeDesc button; button.typeName = "Button"; button.name = "potion";
+    hud.root.children = {label,bar,button};
+    const auto saved = ui::SaveDocumentJson(hud); MYE_EXPECT(saved); if (!saved) return;
+    const auto path = root / "assets/hud.ui";
+    { std::ofstream output(path,std::ios::binary); output << saved.Value(); }
+    asset::VirtualFileSystem files;
+    files.Mount("assets",std::make_unique<asset::LooseFileSystem>(Utf8String(root / "assets")),0);
+    asset::AssetManager assets(files,nullptr);
+    asset::AssetDatabase database(assets,nullptr);
+    MYE_EXPECT(database.ScanDirectory(Utf8String(root / "assets")));
+    const auto guid = database.GuidFromPath("assets://hud.ui"); MYE_EXPECT(guid.IsValid());
+    MYE_EXPECT(database.ScanDirectory(Utf8String(root / "assets")));
+    MYE_EXPECT(database.GuidFromPath("assets://hud.ui") == guid);
+    world.Add<runtime::GameUi>(object).document = {guid,ui::UiDocument::kAssetTypeId};
+    world.Add<runtime::ObjectBehavior>(object).luaSource = R"(
+return {on_init=function(self)
+    assert(mye.ui.set_text("stats","한글 {color=#FF0000}literal"))
+    assert(mye.ui.set_progress("hp",75,100))
+    assert(mye.ui.set_enabled("potion",false))
+    assert(mye.ui.set_visible("stats",false))
+    for _,bad in ipairs({"75",0/0,math.huge,-1,101}) do
+        local ok,err=mye.ui.set_progress("hp",bad,100) assert(ok==nil and type(err)=="string")
+    end
+    assert(not mye.ui.set_text("hp","wrong type"))
+    assert(not mye.ui.set_text("stats",false))
+    assert(not mye.ui.set_text("stats",string.rep("x",4097)))
+    assert(not mye.ui.set_text("stats","nul"..string.char(0)))
+    assert(not mye.ui.set_visible("missing",true))
+    assert(not mye.ui.set_enabled("potion",1))
+    assert(not mye.ui.set_visible({},true))
+    assert(not mye.ui.set_progress("hp",0,0))
+    assert(not mye.ui.set_progress("hp",0,100,42))
+end,on_update=function(self,dt) assert(mye.ui.set_visible("stats",true)) end}
+)";
+    runtime::ObjectSystem unbound(world);
+    MYE_EXPECT(!unbound.Initialize()); MYE_EXPECT(!unbound.UiRoot());
+    editor::PlayModeController play;
+    play.SetEditWorld(&world);
+    for (int run=0;run<2;++run) {
+        MYE_EXPECT(play.Play());
+        MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets));
+        auto* uiRoot = play.UiRoot(); MYE_EXPECT(uiRoot);
+        if (uiRoot) {
+            auto* hp = uiRoot->findByName("hp")->As<ui::ProgressBar>();
+            auto* stats = uiRoot->findByName("stats")->As<ui::Label>();
+            auto* potion = uiRoot->findByName("potion")->As<ui::Button>();
+            MYE_EXPECT(hp->value == 75 && hp->maximum == 100);
+            MYE_EXPECT(stats->text == "한글 {{color=#FF0000}literal" && stats->visibility == ui::Visibility::Visible);
+            MYE_EXPECT(potion->state == ui::Button::State::Disabled && !potion->interactive);
+        }
+        MYE_EXPECT(play.Message().empty());
+        play.Stop(); MYE_EXPECT(!play.UiRoot() && world.Has<runtime::GameUi>(object));
+    }
+    // A destination whose UI fails to load must not replace the running world.
+    std::filesystem::create_directories(root / "assets/scenes");
+    Player(world);
+    editor::Document destination({2},editor::Document::Kind::Scene,"");
+    Player(destination.World());
+    const auto spawn = Object(destination.World(),"Spawn",{5,0});
+    destination.World().Add<runtime::GameUi>(spawn).document = {asset::AssetGuid::Generate(),0};
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(destination.World(),Utf8String(root / "assets/scenes/destination.scene")));
+    runtime::ObjectConnection portal;
+    portal.event = runtime::ObjectEvent::Start; portal.action = runtime::ObjectAction::ChangeMap;
+    portal.text = "assets/scenes/destination.scene"; portal.target = "Spawn";
+    world.TryGet<runtime::ObjectBehavior>(object)->connections.push_back(portal);
+    MYE_EXPECT(play.Play());
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets));
+    auto* originalWorld = play.ActiveWorld();
+    auto* originalUi = play.UiRoot();
+    bool refused = false;
+    for (int tick=0;tick<90 && !refused;++tick)
+        refused = !play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets);
+    MYE_EXPECT(refused && play.ActiveWorld() == originalWorld && play.UiRoot() == originalUi);
+    if (play.UiRoot()) MYE_EXPECT(play.UiRoot()->findByName("hp")->As<ui::ProgressBar>()->value == 75);
+    play.Stop();
+    world.TryGet<runtime::GameUi>(object)->document.guid = asset::AssetGuid::Generate();
+    runtime::ObjectSystem missing(world); MYE_EXPECT(!missing.Initialize(&database,&files,&assets));
+    MYE_EXPECT(!missing.UiRoot());
+    world.TryGet<runtime::GameUi>(object)->document.guid = guid;
+    { std::ofstream output(path,std::ios::binary); output << "{}"; }
+    runtime::ObjectSystem corrupt(world); MYE_EXPECT(!corrupt.Initialize(&database,&files,&assets));
+    MYE_EXPECT(!corrupt.UiRoot());
+    const auto another = Object(world,"AnotherHUD");
+    world.Add<runtime::GameUi>(another).document = {guid,0}; MYE_EXPECT(!runtime::ValidateObjectComponents(world));
 }
 
 MYE_TEST(OnlineScene2DUsesSharedCentersFloorsAndValidatedSpawns) {

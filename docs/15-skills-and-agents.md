@@ -64,3 +64,5 @@
 행동 재생 바인딩은 기존 상태 계산·GUID/DB·Lua·문서 CommandStack을 재사용했다. 일반 바인딩과 고정 틱, 문서/캐시 수명 세대를 구분하며 로컬 세 스킬과 MCP animation2d/lua/components 참조를 현재 범위로 갱신한다. 전용 행동 작성·Undo·실제 GUI 수명 검수는 다음 단위이며 새 패키지/에이전트/픽셀 제작 도구를 추가하지 않았다.
 
 게임 창 안내는 myengine-development와 game-ui-ux의 앵커/픽셀 배율·표시/게임 상태 경계를 적용했다. 기존 ImGui 안내 중복 제거에는 imgui-ui-ux-engineering의 scope checker를 적용했다. 기존 UiRenderer/TextLayout/GlyphAtlas/SpriteBatch와 배포 폰트를 사용하여 새 UI 프레임워크/패키지/에이전트 없이 실제 Play/MyGame에 연결한다. 로컬 세 스킬과 MCP ui 참조를 갱신한다. 합성 입력/픽셀 검사, 물리 장치/DPI, 작성 HUD·IME/포커스, 새 릴리즈를 각각 구분한다.
+
+저장한 게임 UI의 현재 앱 경로와 다음 검수는 [27](27-game-ui.md)을 따른다. 기존 UI/개발 스킬을 재사용하며 이번 연결을 위한 패키지·상시 에이전트를 추가하지 않는다.

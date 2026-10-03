@@ -9,12 +9,70 @@
 #include "mye/ui/Widgets.h"
 #include "mye/ui/UiDocument.h"
 #include "mye/ui/UiSkin.h"
+#include "mye/core/Json.h"
+#include <limits>
 
 #include <cstdint>
 #include <cstdio>
 #include <vector>
 
 using namespace mye;
+
+MYE_TEST(UiDocumentRejectsAmbiguousAndMalformedHudData) {
+    ui::UiDocument doc;
+    doc.root.typeName = "Panel"; doc.root.name = "hud"; doc.root.anchors = ui::AnchorRect::Fill();
+    ui::UiNodeDesc hp;
+    hp.typeName = "ProgressBar"; hp.name = "hp";
+    hp.properties = {{"value","75"},{"maximum","100"},{"fill","#C02030"}};
+    doc.root.children.push_back(hp);
+    auto saved = ui::SaveDocumentJson(doc); MYE_EXPECT(saved);
+    if (!saved) return;
+    auto loaded = ui::LoadDocumentJson(saved.Value()); MYE_EXPECT(loaded);
+    if (!loaded) return;
+    auto tree = loaded.Value().Instantiate(ui::WidgetFactory{}); MYE_EXPECT(tree);
+    if (tree) {
+        auto* progress = tree.Value()->findByName("hp")->As<ui::ProgressBar>();
+        MYE_EXPECT(progress && progress->value == 75 && progress->maximum == 100);
+        MYE_EXPECT(!tree.Value()->styleClass.IsValid());
+        MYE_EXPECT(!progress->SetValue(std::numeric_limits<float>::quiet_NaN(), 100));
+        MYE_EXPECT(!progress->SetValue(101,100) && !progress->SetValue(0,0));
+        MYE_EXPECT(progress->value == 75 && progress->maximum == 100);
+    }
+    auto bad = doc; bad.root.children.push_back(hp); MYE_EXPECT(!ui::SaveDocumentJson(bad));
+    bad = doc; bad.root.children[0].properties.push_back({"value","50"}); MYE_EXPECT(!bad.Validate());
+    bad = doc; bad.root.children[0].properties[0].value = "NaN"; MYE_EXPECT(!bad.Validate());
+    bad = doc; bad.root.children[0].properties[0].key = "misspelled"; MYE_EXPECT(!bad.Validate());
+    bad = doc; bad.root.anchors.anchorMin.x = -.1f; MYE_EXPECT(!bad.Validate());
+    bad = doc; bad.root.children[0].typeName = "Image";
+    bad.root.children[0].properties = {{"source","0,0,0,4"}}; MYE_EXPECT(!bad.Validate());
+    auto panel = ui::WidgetFactory{}.Create("Panel");
+    const auto guid = asset::AssetGuid::Generate().ToString();
+    MYE_EXPECT(ui::WidgetFactory{}.ApplyProperties(*panel,{{"background","false"},{"texture",guid}}));
+    MYE_EXPECT(!panel->As<ui::Panel>()->drawBackground);
+    MYE_EXPECT(ui::WidgetFactory{}.ApplyProperties(*panel,{{"texture",guid},{"background","false"}}));
+    MYE_EXPECT(!panel->As<ui::Panel>()->drawBackground);
+    auto raw = json::Parse(saved.Value()); MYE_EXPECT(raw);
+    if (raw) {
+        auto document = raw.Value().AsObject();
+        auto node = document["root"].AsObject();
+        auto anchors = node["anchors"].AsObject();
+        anchors["__version"] = json::Value(int64_t{2});
+        node["anchors"] = json::Value(anchors);
+        document["root"] = json::Value(node);
+        MYE_EXPECT(!ui::LoadDocumentJson(json::Stringify(json::Value(document))));
+        node["__version"] = json::Value(int64_t{2});
+        document["root"] = json::Value(node);
+        MYE_EXPECT(!ui::LoadDocumentJson(json::Stringify(json::Value(document))));
+        node["__version"] = json::Value(int64_t{1});
+        anchors["__version"] = json::Value(int64_t{1});
+        anchors["sizeX"] = json::Value(std::string("10"));
+        node["anchors"] = json::Value(std::move(anchors));
+        document["root"] = json::Value(std::move(node));
+        MYE_EXPECT(!ui::LoadDocumentJson(json::Stringify(json::Value(std::move(document)))));
+    }
+    MYE_EXPECT(!ui::LoadDocumentJson("{}"));
+    MYE_EXPECT(!ui::LoadDocumentJson(std::string(4 * 1024 * 1024 + 1, ' ')));
+}
 
 // -----------------------------------------------------------------------------
 // RectTransform 앵커 계산

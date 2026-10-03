@@ -1,10 +1,11 @@
-"""Render the two current API references into the offline guide without dependencies."""
+"""Render current API references into the offline guide without dependencies."""
+import argparse
 from html import escape
 from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = {"19-lua-api.md": "lua.html", "20-components.md": "components.html"}
+PAGES = {"19-lua-api.md": "lua.html", "20-components.md": "components.html", "27-game-ui.md": "game-ui.html"}
 
 
 def inline(text):
@@ -18,6 +19,8 @@ def inline(text):
             target = PAGES.get(target, "../" + target)
         return f'<a href="{target}">{label}</a>'
 
+    text = re.sub(r"!\[([^\]]+)\]\(([^)]+)\)",
+                  lambda m: f'<img src="{m[2] if m[2].startswith(("https://", "http://")) else "../" + m[2]}" loading="lazy" alt="{m[1]}">', text)
     return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", link, text)
 
 
@@ -70,8 +73,15 @@ assert '<script>' not in sample and '&lt;script&gt;' in sample
 assert '<pre><code>a &lt; b</code></pre>' in sample and '<td>x</td>' in sample
 assert 'href="#section-0"' in navigation
 assert inline('[Lua](19-lua-api.md)') == '<a href="lua.html">Lua</a>'
+assert 'src="../guide/media/game-ui.png"' in inline('![UI](guide/media/game-ui.png)')
+assert 'src="https://example.com/ui.png"' in inline('![UI](https://example.com/ui.png)')
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--document", choices=PAGES.keys(), help="Render only the selected reference")
+selected = parser.parse_args().document
 for document, output in PAGES.items():
+    if selected and document != selected:
+        continue
     source = (ROOT / "docs" / document).read_text(encoding="utf-8")
     content, navigation = render(source)
     title = source.splitlines()[0].lstrip("# ")

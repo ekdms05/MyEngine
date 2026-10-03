@@ -32,6 +32,7 @@ struct PlayModeController::Impl {
     render::Camera2D defaultCamera;
     runtime::SceneTransitionManager transition;
     std::unique_ptr<ecs::World> candidate;
+    std::unique_ptr<runtime::ObjectSystem> candidateObjects;
     std::string root, spawnName, loadError;
     bool activate = false, transitionBound = false;
     bool stepRequested = false;
@@ -147,6 +148,7 @@ void PlayModeController::Stop() {
     m_impl->objects.reset();
     m_impl->transition.Shutdown();
     m_impl->transitionBound = false;
+    m_impl->candidateObjects.reset();
     m_impl->candidate.reset();
     m_impl->activate = false;
     m_impl->loadError.clear();
@@ -164,7 +166,8 @@ void PlayModeController::Stop() {
 Expected<void, Error> PlayModeController::Tick(float dt, Vec2 movement, bool interact, std::string_view projectRoot) {
     return Tick(dt,runtime::GameInput{movement,interact},projectRoot);
 }
-Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInput& input, std::string_view projectRoot) {
+Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInput& input, std::string_view projectRoot,
+    asset::AssetDatabase* database, asset::VirtualFileSystem* files, asset::AssetManager* assets) {
     auto& s = *m_impl;
     if (!IsPlaying() || !s.playWorld) return {};
     if (!s.objects) {
@@ -173,14 +176,15 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
             if (!prepared) return prepared.GetError();
         }
         s.objects = std::make_unique<runtime::ObjectSystem>(*s.playWorld);
-        auto initialized = s.objects->Initialize();
+        auto initialized = s.objects->Initialize(database, files, assets);
         if (!initialized) { s.objects.reset(); return initialized.GetError(); }
     }
     if (!s.transitionBound) {
         s.root = std::string(projectRoot);
         runtime::SceneLoaderFn loader;
-        loader.begin = [this](const runtime::SceneRef& ref) {
+        loader.begin = [this, database, files, assets](const runtime::SceneRef& ref) {
             auto& state = *m_impl;
+            state.candidateObjects.reset();
             state.candidate.reset(); state.loadError.clear();
             std::error_code ec;
             const auto root = std::filesystem::weakly_canonical(Utf8Path(state.root) / "assets", ec);
@@ -224,7 +228,12 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
                 auto prepared = m_prepareWorld(*world);
                 if (!prepared) { state.loadError = prepared.GetError().message; return runtime::SceneLoadTicket{1}; }
             }
+            world->SetEventBus(state.playEvents.get());
+            auto objects = std::make_unique<runtime::ObjectSystem>(*world);
+            auto initialized = objects->Initialize(database, files, assets);
+            if (!initialized) { state.loadError = initialized.GetError().message; return runtime::SceneLoadTicket{1}; }
             state.candidate = std::move(world);
+            state.candidateObjects = std::move(objects);
             return runtime::SceneLoadTicket{1};
         };
         loader.poll = [](runtime::SceneLoadTicket, bool& done) { done = true; return 1.0f; };
@@ -244,9 +253,7 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
         s.playWorld->SetEventBus(s.playEvents.get());
         runtime::UpdateDefaultCamera2D(*s.playWorld, s.defaultCamera, true);
         s.playCommands->Clear();
-        s.objects = std::make_unique<runtime::ObjectSystem>(*s.playWorld);
-        auto initialized = s.objects->Initialize();
-        if (!initialized) return initialized.GetError();
+        s.objects = std::move(s.candidateObjects);
     }
     if (!s.transition.ConsumesInput()) {
         auto tick=s.objects->Tick(dt,input);
@@ -272,6 +279,7 @@ std::string_view PlayModeController::Message() const {
 std::string_view PlayModeController::Prompt() const {
     return m_impl->objects ? m_impl->objects->Prompt() : std::string_view{};
 }
+ui::Widget* PlayModeController::UiRoot() const { return m_impl->objects ? m_impl->objects->UiRoot() : nullptr; }
 float PlayModeController::FadeAlpha() const { return m_impl->transition.FadeAlpha(); }
 
 ecs::World* PlayModeController::ActiveWorld() const {

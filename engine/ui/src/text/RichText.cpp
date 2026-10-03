@@ -9,6 +9,16 @@
 
 namespace mye::text {
 
+std::string EscapeRichText(std::string_view source) {
+    std::string result;
+    result.reserve(source.size());
+    for (const auto character : source) {
+        result.push_back(character);
+        if (character == '{') result.push_back('{');
+    }
+    return result;
+}
+
 Color ParseHexColor(std::string_view hex, Color fallback) {
     if (hex.size() >= 1 && hex[0] == '#') hex.remove_prefix(1);
     auto hexNib = [](char c) -> int {

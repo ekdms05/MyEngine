@@ -1,5 +1,6 @@
 #include "mye/ui/GameOverlay.h"
 #include "mye/ui/Widget.h"
+#include "mye/text/RichText.h"
 #include "mye/core/JsonFile.h"
 #include "mye/rhi/Rhi.h"
 
@@ -15,16 +16,6 @@ constexpr int32_t kTextInset = 2 * (kMargin + kPadding);
 constexpr float kMaxPanelHeight = 180;
 constexpr float kMaxPromptHeight = 26;
 constexpr size_t kMaxTextBytes = 4096;
-// Message/prompt are plain text; authored braces must not become rich-text commands.
-std::string EscapeText(std::string_view source) {
-    std::string result;
-    result.reserve(source.size());
-    for (const auto character : source) {
-        result.push_back(character);
-        if (character == '{') result.push_back('{');
-    }
-    return result;
-}
 } // namespace
 
 GameOverlay::~GameOverlay() { Shutdown(); }
@@ -71,13 +62,13 @@ void GameOverlay::Shutdown() {
 }
 
 Expected<void, Error> GameOverlay::Render(rhi::ICommandContext& command, rhi::TextureHandle target,
-    Vec2i logicalSize, RectInt destination, std::string_view prompt, std::string_view message) {
+    Vec2i logicalSize, RectInt destination, std::string_view prompt, std::string_view message, Widget* root) {
     if (!IsInitialized() || !target.IsValid()) return Error{"Game UI render surface is unavailable", 1};
     if (logicalSize.x <= kTextInset || logicalSize.y <= kTextInset || destination.w <= 0 || destination.h <= 0)
         return Error{"Game UI render dimensions are invalid", 1};
     if (prompt.size() > kMaxTextBytes || message.size() > kMaxTextBytes)
         return Error{"Game UI prompt/message exceeds 4096 UTF-8 bytes", 1};
-    if (prompt.empty() && message.empty()) return {};
+    if (prompt.empty() && message.empty() && !root) return {};
 
     const bool resized = m_logicalSize != logicalSize;
     m_atlas.BeginFrame(++m_frame);
@@ -90,13 +81,13 @@ Expected<void, Error> GameOverlay::Render(rhi::ICommandContext& command, rhi::Te
         m_prompt.assign(prompt);
         parameters.wrap = text::WrapMode::None;
         style.color = {.73f, .8f, .9f, 1};
-        m_promptLayout.Set(command, m_atlas, *m_fonts, EscapeText(prompt), style, parameters);
+        m_promptLayout.Set(command, m_atlas, *m_fonts, text::EscapeRichText(prompt), style, parameters);
     }
     if (resized || m_message != message) {
         m_message.assign(message);
         parameters.wrap = text::WrapMode::WordChar;
         style.color = Color::White();
-        m_messageLayout.Set(command, m_atlas, *m_fonts, EscapeText(message), style, parameters);
+        m_messageLayout.Set(command, m_atlas, *m_fonts, text::EscapeRichText(message), style, parameters);
     }
     m_logicalSize = logicalSize;
     m_renderer.SetScreenSize(logicalSize);
@@ -126,16 +117,26 @@ Expected<void, Error> GameOverlay::Render(rhi::ICommandContext& command, rhi::Te
     UiDrawContext draw(m_batch, command, m_atlas, m_text, *m_fonts);
     draw.SetScreenSize(logicalSize);
     draw.SetWhiteTexture(m_renderer.WhiteTexture());
-    draw.DrawRect(panel, {.035f, .045f, .065f, .94f});
-    draw.PushScissor({panel.x + kPadding, panel.y + kPadding, panel.w - 2 * kPadding, panel.h - 2 * kPadding});
-    const Vec2 origin{panel.x + kPadding, panel.y + kPadding};
-    if (!prompt.empty()) {
-        draw.PushScissor({origin.x, origin.y, panel.w - 2 * kPadding, promptHeight});
-        draw.DrawTextLayout(m_promptLayout, origin);
+    if (root && root->visibility == Visibility::Visible) {
+        const UiRect screen{0, 0, static_cast<float>(logicalSize.x), static_cast<float>(logicalSize.y)};
+        root->measure({screen.w, screen.h});
+        root->arrange(ComputeAnchoredRect(root->anchors, screen));
+        draw.PushScissor(screen);
+        root->draw(draw);
         draw.PopScissor();
     }
-    if (!message.empty()) draw.DrawTextLayout(m_messageLayout, {origin.x, origin.y + promptHeight + gap});
-    draw.PopScissor();
+    if (!prompt.empty() || !message.empty()) {
+        draw.DrawRect(panel, {.035f, .045f, .065f, .94f});
+        draw.PushScissor({panel.x + kPadding, panel.y + kPadding, panel.w - 2 * kPadding, panel.h - 2 * kPadding});
+        const Vec2 origin{panel.x + kPadding, panel.y + kPadding};
+        if (!prompt.empty()) {
+            draw.PushScissor({origin.x, origin.y, panel.w - 2 * kPadding, promptHeight});
+            draw.DrawTextLayout(m_promptLayout, origin);
+            draw.PopScissor();
+        }
+        if (!message.empty()) draw.DrawTextLayout(m_messageLayout, {origin.x, origin.y + promptHeight + gap});
+        draw.PopScissor();
+    }
     m_batch.End(command);
     command.EndRenderPass();
     return {};

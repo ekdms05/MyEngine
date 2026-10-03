@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>27. 저장한 게임 UI와 Lua 상태 표시 · MyEngine</title><link rel="stylesheet" href="style.css"></head>
+<body><a class="skip" href="#main">본문으로 이동</a><header><a class="brand" href="index.html">MyEngine</a><span>27. 저장한 게임 UI와 Lua 상태 표시</span><a href="index.html">제작 가이드</a></header>
+<div class="layout"><aside aria-label="API 목차"><nav><a href="#section-0">27. 저장한 게임 UI와 Lua 상태 표시</a>
+<a href="#section-1">만들기와 불러오기</a>
+<a href="#section-2">좌표와 속성</a>
+<a href="#section-3">게임 상태 연결</a>
+<a href="#section-4">확인한 범위와 다음 조건</a></nav></aside><main id="main"><h1 id="section-0">27. 저장한 게임 UI와 Lua 상태 표시</h1>
+<p><strong>main 소스는 <code>.ui</code> 문서를 씬의 GameUi에 지정하고 프로젝트 Lua의 표시값을 로컬 Play/MyGame에 출력한다.</strong> 기존 설치 0.3.0에는 이 연결이 없다. 시각 편집·Undo, 버튼 클릭·키보드 포커스·IME, 온라인 HUD는 다음 작업이다. 이 문서의 Button은 표시와 활성 상태 갱신을 지원하며 실제 입력 경로에는 아직 연결하지 않았다.</p>
+<p><img src="../guide/media/game-ui.png" loading="lazy" alt="저장한 UI와 Lua의 HP75·버튼 상태를 표시한 실제 Play 타깃"></p>
+<h2 id="section-1">만들기와 불러오기</h2>
+<ol><li><a href="../examples/hud.ui">HUD 예제</a>를 복사하여 외부 텍스트 편집기에서 위젯 이름·앵커·속성을 작성한다. PNG 제작은 외부 도구를 사용한다.</li><li>에셋 브라우저의 에셋 추가 또는 <code>MyEditor --project &lt;project.myeproj&gt; --import-asset &lt;hud.ui&gt; --asset-destination hud.ui --headless --frames 1</code>로 임포트한다. 대상과 <code>.meta</code>는 덮어쓰지 않는다. 새 GUID를 만들고 기존 스캔 경로에서 재사용한다.</li><li>인스펙터의 컴포넌트 추가에서 <strong>GameUi</strong>를 붙이고 <code>document</code>에 <code>.ui</code> 에셋을 드래그한 뒤 씬을 저장한다. 한 로컬 월드에서 enabled인 GameUi는 하나다. 여러 패널/창은 같은 문서의 자식으로 둔다.</li><li>프로젝트의 ObjectBehavior Lua에서 아래 API를 호출한다. 문서와 PNG는 <code>on_init</code> 전에 준비된다. 문서/PNG 변경은 Stop/재실행으로 반영한다. 변경 파일의 자동 반영은 미연결이다. Stop/재시작은 저장한 문서로 새 트리를 만들고 UI의 런타임 값은 씬이나 <code>.ui</code>에 저장하지 않는다.</li></ol>
+<p><code>.ui</code>의 top-level은 <code>__version: 1</code>, <code>version: 1</code>, <code>controllerScript: &quot;&quot;</code>, <code>root</code>다. 노드의 <code>__version: 1</code>, <code>typeName</code>, <code>name</code>, <code>styleClass: &quot;&quot;</code>, <code>anchors</code>, <code>properties</code>, <code>children</code>은 예제와 같은 기존 UiDocument/JsonArchive 형식을 사용한다. <code>controllerScript</code> 자동 로딩과 UiSkin 연결은 현재 앱에서 지원하지 않아 지정하면 실패한다. ObjectBehavior를 사용한다. 저장 문자열을 생성하는 C++ API는 <code>SaveDocumentJson</code>이며 기존 <code>WriteJsonFile</code> 경계로 파일에 저장할 수 있다. 에디터 안에서 UI 문서를 새로 만들거나 수정·저장하는 작업대는 미완료다.</p>
+<h2 id="section-2">좌표와 속성</h2>
+<p>UI는 좌상단 원점·+Y 아래인 논리 픽셀 좌표다. 월드 카메라 회전·줌·스냅 잔차를 적용하지 않는다. 기본 960×540을 월드와 같은 정수 확대/여백으로 표시한다. 계산된 사각형은 정수로 반올림한다. MyGame·에디터·별도 Play의 출력은 UNORM 색을 사용한다.</p>
+<p>점 앵커는 min=max이며 offsetMin은 앵커에서 pivot까지의 위치, sizeDelta는 크기다. 스트레치 앵커는 min/max가 다르고 offsetMin/Max는 시작/끝 여백이다. <code>anchors</code>는 <code>anchorMinX/Y</code>, <code>anchorMaxX/Y</code>, <code>pivotX/Y</code>, <code>offMinX/Y</code>, <code>offMaxX/Y</code>, <code>sizeX/Y</code>를 저장한다. 모서리는 0/1, 중앙은 0.5다. 앵커·피벗은 [0,1], 크기는 음수가 아니며 오프셋/크기는 유한한 ±32768 범위다.</p>
+<p><code>properties</code>는 <code>{ &quot;__version&quot;:1, &quot;key&quot;:&quot;text&quot;, &quot;value&quot;:&quot;문구&quot; }</code> 배열이다. 중복 키·모르는 속성·잘못된 타입은 거부한다.</p>
+<div class="table-scroll"><table><tr><th>위젯/범위</th><th>저장할 속성</th><th>값/제약</th></tr><tr><td>공통</td><td>visible, interactive, clip</td><td>문자열 true/false. clip은 자식 출력을 부모 사각형으로 자른다</td></tr><tr><td>Panel/Window</td><td>background, tint, texture, source</td><td>배경 true/false, #RRGGBB 또는 #RRGGBBAA, PNG GUID, x,y,w,h</td></tr><tr><td>Window</td><td>title</td><td>저장한 제목. 제목을 자동 표시하는 게임 창 스킨은 미연결</td></tr><tr><td>Image</td><td>texture, source, tint</td><td>PNG GUID, 원본 픽셀 영역, 색</td></tr><tr><td>Label</td><td>text, fontSize, colour</td><td>UTF-8 리치 텍스트, 정수 8~96px, 색. 라벨 사각형 밖은 자른다</td></tr><tr><td>ProgressBar</td><td>value, maximum, fill, track</td><td>0≤value≤maximum≤32768, maximum&gt;0. 왼쪽부터 채우는 정수 폭</td></tr><tr><td>Button</td><td>enabled, texture, source</td><td>true/false, 기본 PNG/영역. 캡션은 자식 Label; 비활성은 어둡게 표시</td></tr><tr><td>StackLayout/GridLayout</td><td>spacing</td><td>유한한 0~32768. 방향/패딩·열/셀 크기의 문서 속성 편집은 미연결</td></tr></table></div>
+<p>source는 각 정수 [0,8192], w/h&gt;0이고 PNG 실제 크기 안이어야 한다. 생략하면 전체 PNG다. 파일·GUID 누락, 잘못된 에셋 타입/PNG/영역은 Play/MyGame 실행 실패로 보고한다. <code>.ui</code>는 최대 4 MiB, 트리는 512노드/24단계, 노드별 속성은 32개, 이름은 64 bytes이며 비어 있지 않은 이름은 문서에서 고유하다. 속성 값/텍스트는 4096 bytes다. UI PNG가 다른 앱별 식별자를 사용하지 않도록 AssetDatabase/VFS/AssetManager를 재사용한다. <code>.ui</code>의 PNG 참조와 씬의 GameUi 참조는 기존 삭제 검사로 보호한다.</p>
+<h2 id="section-3">게임 상태 연결</h2>
+<pre><code>function Core:update_hud()
+    local h = self:hud_snapshot() -- 게임 프로젝트의 읽기 전용 값. 엔진 API가 아니다.
+    assert(mye.ui.set_progress(&quot;hp&quot;, h.hp, h.max_hp))
+    assert(mye.ui.set_text(&quot;stats&quot;, &quot;레벨 &quot; .. h.level .. &quot; · HP &quot; .. h.hp .. &quot; / &quot; .. h.max_hp))
+    assert(mye.ui.set_text(&quot;experience&quot;, &quot;경험치 &quot; .. h.xp .. &quot; / &quot; .. h.xp_to_next))
+    assert(mye.ui.set_text(&quot;potion_caption&quot;, &quot;물약 &quot; .. h.potion_count .. &quot;개&quot;))
+    assert(mye.ui.set_enabled(&quot;potion&quot;, h.can_use_potion))
+    assert(mye.ui.set_enabled(&quot;attack&quot;, h.can_attack))
+end</code></pre>
+<p>초기화와 게임 규칙이 상태를 성공적으로 변경한 뒤 호출한다. 엔진이 HP·물약·보상 규칙을 계산하거나 매 프레임 프로젝트 상태를 폴링하지 않는다. <code>Core:hud_snapshot()</code>은 게임 제작자가 작성한 메서드이므로 예제 HUD API와 구분한다.</p>
+<div class="table-scroll"><table><tr><th>API</th><th>성공</th><th>실패/보존</th></tr><tr><td>mye.ui.set_text(name, text)</td><td>Label 문자열 갱신</td><td>일반 텍스트의 <code>{</code>는 리치 태그로 해석하지 않는다. 4096 bytes/NUL/정확한 string 타입 검사</td></tr><tr><td>mye.ui.set_progress(name, value, maximum)</td><td>ProgressBar 값/최댓값 갱신</td><td>정확한 number, 유한 범위 검사; 실패 시 기존 두 값 유지</td></tr><tr><td>mye.ui.set_enabled(name, enabled)</td><td>Button의 표시/interactive 상태</td><td>정확한 boolean; 클릭 기능의 완료가 아니다</td></tr><tr><td>mye.ui.set_visible(name, visible)</td><td>위젯 표시/숨김</td><td>Hidden은 레이아웃 공간을 유지한다</td></tr></table></div>
+<p>모두 정확한 인수 수와 1~64 bytes/NUL 없는 이름을 요구하며 성공은 true, 실패는 <code>nil, error</code>다. 없는 문서/이름·다른 위젯 타입은 실패다. 여러 setter를 묶은 트랜잭션은 제공하지 않으므로 필요한 이름/타입을 문서에 일치시킨다. 값이 잘못되었을 때 조용히 성공으로 진행하지 않는다. 오류를 처리하거나 assert로 Lua 오류 위치를 남긴다. 인증 온라인 클라이언트는 ObjectSystem/Lua를 만들지 않아 이 로컬 API를 실행하지 않는다.</p>
+<h2 id="section-4">확인한 범위와 다음 조건</h2>
+<p><code>python tools/verify-game-ui.py --config Release</code>는 공식 임포트→GUID→저장한 씬→로컬 Play/MyGame의 HP100/75/0·버튼 활성/비활성·PNG 영역의 실제 픽셀과 누락/손상/범위 오류를 검사한다. 별도 Debug 실행도 가능하다. 네이티브 MyEditor의 CLI dump는 Play 렌더 타깃이며 별도 Play 창의 화면 캡처와 구분한다. 실제 장치 클릭·해상도 변경·포커스·IME·온라인 검증으로 계산하지 않는다.</p>
+<p><a href="../guide/media/game-ui.png">실제 앱 출력</a>은 격리한 샘플의 저장 UI와 Lua 표시값이다. UI 전체를 한 배경 PNG로 그리지 않는다. 한글 표시와 IME 입력은 다른 기능이다. 다음 완료 조건은 UI 문서 작업대/Undo/저장 실패 보존, 버튼 이벤트·모달 포커스/게임 입력 차단·좌표 변환, 실제 창 크기/DPI/한글 입력, 배포 패키지와 서버 상태 연결이다. 현재 설치본/릴리즈를 수정하거나 완성 MMORPG를 선언하지 않는다.</p>
+<footer>정본: <a href="../27-game-ui.md">27-game-ui.md</a> · 구현 범위와 실패 조건을 확인하세요.</footer></main></div></body></html>

@@ -1,5 +1,6 @@
 #include "mye/editor/ProjectAssetOperations.h"
 #include "mye/editor/Project.h"
+#include "mye/ui/UiDocument.h"
 #include "mye/editor/SceneSerializer.h"
 #include "mye/asset/AssetMeta.h"
 #include "mye/asset/AnimationAsset.h"
@@ -148,6 +149,11 @@ Expected<std::string, Error> ValidateSource(const fs::path& source, const fs::pa
         if (!decoded) return decoded.GetError();
         return std::string("TextureImporter");
     }
+    if (extension == ".ui") {
+        auto document = ui::LoadDocumentJson({reinterpret_cast<const char*>(bytes.data()), bytes.size()});
+        if (!document) return document.GetError();
+        return std::string("UiDocument");
+    }
     if (extension == ".anim") {
         const std::string_view text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
         auto parsed = json::Parse(text);
@@ -178,7 +184,7 @@ Expected<std::string, Error> ValidateSource(const fs::path& source, const fs::pa
             return Error{lua_tostring(state.get(), -1), 1};
         return std::string("ScriptImporter");
     }
-    return Error{"Supported imports: PNG, .anim, Lua, WAV and embedded GLB/glTF", 1};
+    return Error{"Supported imports: PNG, .anim, .ui, Lua, WAV and embedded GLB/glTF", 1};
 }
 
 std::string LowerAscii(std::string text) {
@@ -278,7 +284,7 @@ Expected<void, Error> CheckProjectAssetDeletion(const ProjectContext& project, s
         if (it->is_directory(ec) && Utf8String(it->path().filename()).starts_with('.')) { it.disable_recursion_pending(); continue; }
         if (!it->is_regular_file(ec) || it->path() == target.Value() || it->path() == sidecar) continue;
         const auto extension = Extension(it->path());
-        if (extension != ".scene" && extension != ".anim" && extension != ".animstate" && extension != ".prefab" && extension != ".lua") continue;
+        if (extension != ".scene" && extension != ".anim" && extension != ".animstate" && extension != ".prefab" && extension != ".ui" && extension != ".lua") continue;
         auto bytes = ReadSource(it->path()); if (!bytes) return bytes.GetError();
         const std::string text(reinterpret_cast<const char*>(bytes.Value().data()), bytes.Value().size());
         if (TextReferences(text, guid, vpath))

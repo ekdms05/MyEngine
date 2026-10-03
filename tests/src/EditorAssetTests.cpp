@@ -11,6 +11,7 @@
 #include "mye/core/JsonFile.h"
 #include "mye/ecs/World.h"
 #include "mye/runtime/ObjectComponents.h"
+#include "mye/ui/UiDocument.h"
 #include "mye/scene/Renderable.h"
 #include "mye/scene/Transform.h"
 
@@ -25,6 +26,40 @@ namespace {
 namespace fs = std::filesystem;
 void Write(const fs::path& path, const void* data, size_t size) { std::ofstream output(path, std::ios::binary); output.write(static_cast<const char*>(data), static_cast<std::streamsize>(size)); }
 void Text(const fs::path& path, std::string_view text) { Write(path, text.data(), text.size()); }
+}
+MYE_TEST(EditorUiImportPreservesGuidAndProtectsUnopenedTextureReferences) {
+    const auto root = Utf8Path(MYE_TEST_DATA_DIR) / "ui-import" / std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    fs::create_directories(root);
+    ProjectContext project;
+    MYE_EXPECT(project.Create("UI import",Utf8String(root / "project")));
+    const std::string projectRoot(project.RootDir());
+    ui::UiDocument document; document.root.typeName = "Image"; document.root.name = "icon";
+    const auto image = asset::AssetGuid::Generate();
+    document.root.properties = {{"texture",image.ToString()},{"source","0,0,16,16"}};
+    auto encoded = ui::SaveDocumentJson(document); MYE_EXPECT(encoded); if (!encoded) return;
+    const auto source = root / "hud.ui"; Text(source,encoded.Value());
+    MYE_EXPECT(ImportProjectAsset(projectRoot,Utf8String(source),"hud.ui"));
+    const auto metadata = root / "project/assets/hud.ui.meta";
+    auto original = ReadJsonFile(metadata); MYE_EXPECT(original); if (!original) return;
+    auto meta = asset::AssetMeta::Parse(json::Stringify(original.Value())); MYE_EXPECT(meta);
+    MYE_EXPECT(meta && meta.Value().importer == "UiDocument");
+    MYE_EXPECT(!ImportProjectAsset(projectRoot,Utf8String(source),"hud.ui"));
+    auto after = ReadJsonFile(metadata); MYE_EXPECT(after);
+    MYE_EXPECT(after && json::Stringify(after.Value()) == json::Stringify(original.Value()));
+    Text(root / "broken.ui","{}");
+    MYE_EXPECT(!ImportProjectAsset(projectRoot,Utf8String(root / "broken.ui"),"broken.ui"));
+    MYE_EXPECT(!fs::exists(root / "project/assets/broken.ui") && !fs::exists(root / "project/assets/broken.ui.meta"));
+    // A .ui not opened by the editor still protects its PNG dependency.
+    Text(root / "project/assets/icon.png","fixture only; deletion check does not decode");
+    auto imageMeta = asset::AssetMeta::CreateFor("TextureImporter",1); imageMeta.guid = image;
+    Text(root / "project/assets/icon.png.meta",imageMeta.Stringify());
+    MYE_EXPECT(!CheckProjectAssetDeletion(project,"icon.png"));
+    MYE_EXPECT(CheckProjectAssetDeletion(project,"hud.ui"));
+    if (meta && project.Active()) {
+        const auto entity = project.Active()->World().Create();
+        project.Active()->World().Add<runtime::GameUi>(entity).document = {meta.Value().guid,0};
+        MYE_EXPECT(!CheckProjectAssetDeletion(project,"hud.ui"));
+    }
 }
 MYE_TEST(EditorAssetImportAndDeletionBoundaries) {
     const auto root = Utf8Path(MYE_STARTER_SOURCE_DIR).parent_path().parent_path().parent_path() / "build" / "asset-operation-tests"

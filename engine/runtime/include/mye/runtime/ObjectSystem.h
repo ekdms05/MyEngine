@@ -7,6 +7,9 @@
 #include "mye/render/Camera2D.h"
 #include <memory>
 
+namespace mye::asset { class AssetDatabase; class VirtualFileSystem; class AssetManager; }
+namespace mye::ui { class Widget; }
+
 namespace mye::runtime {
 struct MapRequest { std::string scenePath, spawnName; };
 
@@ -19,12 +22,14 @@ class ObjectSystem {
 public:
     explicit ObjectSystem(ecs::World& world);
     ~ObjectSystem();
-    Expected<void, Error> Initialize();
+    Expected<void, Error> Initialize(asset::AssetDatabase* database = nullptr,
+        asset::VirtualFileSystem* files = nullptr, asset::AssetManager* assets = nullptr);
     Expected<void, Error> Tick(float dt, const GameInput& input);
     Expected<void, Error> Tick(float dt, Vec2 movement, bool interact) { return Tick(dt, GameInput{movement,interact}); }
     MapRequest TakeMapRequest();
     std::string_view Message() const;
     std::string_view Prompt() const;
+    ui::Widget* UiRoot() const; // Borrow only until this ObjectSystem/Play world is destroyed.
     void Dispatch(ecs::Entity object, ObjectEvent event);
 private:
     struct Impl;

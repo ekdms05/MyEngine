@@ -153,9 +153,9 @@ Expected<void, Error> AssetDatabase::ScanDirectory(std::string_view rootDir) {
         } else {
             const auto* importer = m_impl->manager->FindImporterForPath(vpath);
             const auto extension = it->path().extension();
-            if (!importer && extension != ".anim" && extension != ".animstate") continue;
+            if (!importer && extension != ".anim" && extension != ".animstate" && extension != ".ui") continue;
             meta = AssetMeta::CreateFor(importer ? importer->Name() :
-                (extension == ".animstate" ? "AnimationStateAsset" : "AnimationAsset"), importer ? importer->Version() : 1);
+                (extension == ".ui" ? "UiDocument" : extension == ".animstate" ? "AnimationStateAsset" : "AnimationAsset"), importer ? importer->Version() : 1);
             if (const auto cached = m_impl->manager->CachedGuid(vpath); cached.IsValid()) meta.guid = cached;
             auto value = json::Parse(meta.Stringify());
             if (!value) return value.GetError();

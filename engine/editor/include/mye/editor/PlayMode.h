@@ -16,6 +16,8 @@
 #include <functional>
 #include <memory>
 
+namespace mye::asset { class AssetDatabase; class VirtualFileSystem; class AssetManager; }
+namespace mye::ui { class Widget; }
 namespace mye::ecs { class World; }
 namespace mye::runtime { struct GameInput; }
 namespace mye::render { class Camera2D; }
@@ -52,9 +54,11 @@ public:
     bool ConsumeStepRequest(); // Fixed-update owner consumes one paused tick.
     void Stop();       // Play World 파기 + Play Undo 스택 파기 → Edit 복귀
     Expected<void, Error> Tick(float dt, Vec2 movement, bool interact, std::string_view projectRoot);
-    Expected<void, Error> Tick(float dt, const runtime::GameInput& input, std::string_view projectRoot);
+    Expected<void, Error> Tick(float dt, const runtime::GameInput& input, std::string_view projectRoot,
+        asset::AssetDatabase* database = nullptr, asset::VirtualFileSystem* files = nullptr, asset::AssetManager* assets = nullptr);
     std::string_view Message() const;
     std::string_view Prompt() const;
+    ui::Widget* UiRoot() const;
     float FadeAlpha() const;
     void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }
     bool InputEnabled() const { return m_inputEnabled; }

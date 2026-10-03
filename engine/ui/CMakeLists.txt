@@ -54,6 +54,6 @@ target_include_directories(mye_ui PUBLIC
 )
 
 target_link_libraries(mye_ui
-    PUBLIC  mye_core mye_render mye_rhi mye_reflect
+    PUBLIC  mye_core mye_render mye_rhi mye_reflect mye_asset
     PRIVATE mye_thirdparty_freetype
 )

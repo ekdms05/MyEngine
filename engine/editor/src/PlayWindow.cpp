@@ -93,7 +93,7 @@ bool PlayWindow::OnMessage(void* handle, uint32_t message, uint64_t wparam, int6
 }
 Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
                         const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command,
-                        std::string_view prompt, std::string_view message) {
+                        std::string_view prompt, std::string_view message, ui::Widget* root) {
     if (!m_window || !m_swapChain || !m_target.IsInitialized()) return Error{"Play render surface is unavailable", 1};
     if (paused != m_paused) {
         m_window->SetTitle(paused ? "MyEngine — Play · 일시정지" : "MyEngine — Play");
@@ -108,7 +108,7 @@ Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const
         m_target.Blit(command, Backbuffer(), size, view.subpixelResidual);
         const Vec2i logicalSize{static_cast<int32_t>(m_target.Width()), static_cast<int32_t>(m_target.Height())};
         return m_overlay.Render(command, Backbuffer(), logicalSize,
-            render::PixelPerfectTarget::ComputeLayout(logicalSize, size).destRect, prompt, message);
+            render::PixelPerfectTarget::ComputeLayout(logicalSize, size).destRect, prompt, message, root);
     }
     return {};
 }

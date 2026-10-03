@@ -9,8 +9,9 @@
 #include <string>
 
 namespace mye::ui {
+class Widget;
 
-// Read-only game feedback. The app owns simulation and chooses the presentation surface.
+// Read-only saved widgets and game feedback. The app owns simulation and chooses the presentation surface.
 class GameOverlay {
 public:
     GameOverlay() = default;
@@ -25,7 +26,7 @@ public:
     // Destination uses the same integer upscale/letterbox rectangle as the world, without its camera residual.
     // Open a separate load pass with no depth, after world rendering/blit. One render per instance per frame.
     Expected<void, Error> Render(rhi::ICommandContext& command, rhi::TextureHandle target,
-        Vec2i logicalSize, RectInt destination, std::string_view prompt, std::string_view message);
+        Vec2i logicalSize, RectInt destination, std::string_view prompt, std::string_view message, Widget* root = nullptr);
 
 private:
     UiRenderer m_renderer;

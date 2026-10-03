@@ -57,5 +57,7 @@ public:
 
 // 색 헬퍼: "#RRGGBB" / "#RRGGBBAA" → Color. 실패 시 fallback.
 Color ParseHexColor(std::string_view hex, Color fallback = Color::White());
+// Plain game text must not become authored rich-text commands.
+std::string EscapeRichText(std::string_view plainText);
 
 } // namespace mye::text

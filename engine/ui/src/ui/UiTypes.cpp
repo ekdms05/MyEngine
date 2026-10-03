@@ -5,7 +5,7 @@
 namespace mye::ui {
 
 StyleClassId MakeStyleClass(std::string_view name) {
-    return StyleClassId{HashFnv1a64(name)};
+    return name.empty() ? StyleClassId{} : StyleClassId{HashFnv1a64(name)};
 }
 
 } // namespace mye::ui

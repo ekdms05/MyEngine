@@ -9,6 +9,7 @@
 #pragma once
 
 #include "mye/core/Math.h"
+#include "mye/asset/AssetGuid.h"
 #include "mye/ui/UiTypes.h"
 #include "mye/text/TextTypes.h"
 #include "mye/text/TextRenderer.h"
@@ -28,6 +29,8 @@ struct UiSprite {
     rhi::TextureHandle texture{};
     Rect               uv{0, 0, 1, 1};
     Vec2i              nativeSize{};   // 9-slice 계산용 소스 픽셀 크기
+    asset::AssetRef     assetRef{};    // Stored GUID; the consuming app retains the loaded texture.
+    RectInt            source{};      // All-zero = full texture; otherwise a checked pixel region.
 };
 
 // 위젯이 그리기에 쓰는 파사드. UiRenderer 가 생성·주입.

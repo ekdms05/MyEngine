@@ -8,7 +8,7 @@
 namespace mye::editor {
 PlayWindow::~PlayWindow() { Close(); }
 
-Expected<void, Error> PlayWindow::Open(rhi::IDevice& device) {
+Expected<void, Error> PlayWindow::Open(rhi::IDevice& device, std::string_view fontPath) {
     if (IsOpen()) return {};
     WindowDesc description;
     description.title = "MyEngine — Play";
@@ -25,6 +25,8 @@ Expected<void, Error> PlayWindow::Open(rhi::IDevice& device) {
     targetDescription.backbufferFormat = m_swapChain->GetFormat();
     m_target.Init(device, targetDescription);
     if (!m_target.IsInitialized()) { Close(); return Error{"게임 창의 픽셀 타깃을 만들 수 없습니다.", 1}; }
+    auto overlay = m_overlay.Init(device, m_swapChain->GetFormat(), fontPath);
+    if (!overlay) { Close(); return overlay.GetError(); }
     m_resized = ScopedSubscription{m_events, m_events.Subscribe<WindowResizedEvent>([this](const auto& event) {
         if (m_swapChain) m_swapChain->Resize(event.clientSize.x, event.clientSize.y);
         return false;
@@ -40,6 +42,7 @@ Expected<void, Error> PlayWindow::Open(rhi::IDevice& device) {
 void PlayWindow::Close() {
     m_resized.Reset();
     if (m_window) m_window->RemoveMessageHook(this);
+    m_overlay.Shutdown();
     m_target.Shutdown();
     m_swapChain.reset();
     m_window.reset();
@@ -89,7 +92,8 @@ bool PlayWindow::OnMessage(void* handle, uint32_t message, uint64_t wparam, int6
     return false;
 }
 Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
-                        const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command) {
+                        const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command,
+                        std::string_view prompt, std::string_view message) {
     if (!m_window || !m_swapChain || !m_target.IsInitialized()) return Error{"Play render surface is unavailable", 1};
     if (paused != m_paused) {
         m_window->SetTitle(paused ? "MyEngine — Play · 일시정지" : "MyEngine — Play");
@@ -100,7 +104,12 @@ Expected<void, Error> PlayWindow::Render(render::HybridRenderer& renderer, const
     m_target.EndScenePass(command);
     if (!rendered) return rendered.GetError();
     const auto size = m_window->GetClientSize();
-    if (size.x > 0 && size.y > 0) m_target.Blit(command, Backbuffer(), size, view.subpixelResidual);
+    if (size.x > 0 && size.y > 0) {
+        m_target.Blit(command, Backbuffer(), size, view.subpixelResidual);
+        const Vec2i logicalSize{static_cast<int32_t>(m_target.Width()), static_cast<int32_t>(m_target.Height())};
+        return m_overlay.Render(command, Backbuffer(), logicalSize,
+            render::PixelPerfectTarget::ComputeLayout(logicalSize, size).destRect, prompt, message);
+    }
     return {};
 }
 void PlayWindow::Present() { if (m_swapChain) m_swapChain->Present(false); }

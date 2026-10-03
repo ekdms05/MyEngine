@@ -83,6 +83,6 @@ target_include_directories(mye_editor PUBLIC
 
 # 에디터는 엔진 전 계층을 소비. imgui는 도킹 셸(DebugUi 직접 사용).
 target_link_libraries(mye_editor
-    PUBLIC  mye_core mye_reflect mye_scene mye_asset mye_render mye_gameplay
+    PUBLIC  mye_core mye_reflect mye_scene mye_asset mye_render mye_gameplay mye_ui
     PRIVATE mye_runtime mye_imgui mye_thirdparty_lua ole32 shell32 uuid
 )

@@ -52,7 +52,7 @@ npm run build     # tsc → dist/
 | `engine_logs` | 최근 빌드/테스트/실행/캡처 원본 로그 tail + 레벨(warn/error)·정규식 필터 |
 | `project_status` | configure 상태·마지막 작업 요약·앱 소스 목록·최근 캡처·서버 버전. 항상 성공 |
 | `project_inspect` | 프로젝트/씬의 계층·컴포넌트·에셋 GUID 조회, 검색·페이지 지원 |
-| `engine_reference` | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더·camera2d·input·animation2d·online2d·roadmap 문서 검색·줄 범위 조회 |
+| `engine_reference` | 현재 Lua·컴포넌트·에디터·에셋·씬·렌더·camera2d·input·animation2d·ui·online2d·roadmap 문서 검색·줄 범위 조회 |
 | `asset_import` | 에디터 CLI를 통한 에셋 복사·GUID/.meta 등록. assets 기준 대상 경로, 덮어쓰기 거부 |
 
 공통 규약: 반환 텍스트 ≤8KB(원문은 `.state/logs/`에 저장 후 경로 안내), 빌드·테스트·실행·캡처는
@@ -66,9 +66,11 @@ npm run build     # tsc → dist/
 |---|---|
 | `--frames <N>` | N 프레임 렌더 후 exit 0 자동 종료 |
 | `--ticks <N>` | MyGame/MyServer 고정 틱 한도. engine_run의 ticks 입력이 frames 대신 전달됨 |
-| `--dump <path.bmp>` | MyGame의 지정 한도 최종 프레임을 BMP로 저장. 한도 없으면 3번째 프레임 기록 |
+| `--dump <path.bmp>` | MyGame의 지정 한도 최종 프레임을 BMP로 저장. 창이 있으면 실제 backbuffer/UI, headless는 내부 타깃. 한도 없으면 3번째 프레임 기록 |
 
 MyGame의 ticks는 현재 개발 소스 옵션으로 기존 0.3.0 바이너리에는 없다. MyEditor 등의 ticks 입력은 거부하며 engine_capture_frame은 프레임 기준을 유지한다. CLI에서 frames/ticks를 모두 지정하면 먼저 도달한 한도로 종료한다. 물리 확인에는 렌더 프레임 수를 고정 틱 수로 간주하지 않는다.
+
+ui는 main의 게임 창 Message/prompt·한글/클리핑/배율·글꼴 오류 계약과 작성 HUD/IME/포커스의 미완료 상태를 조회한다. 새 원격 UI 편집 API나 설치된 0.3.0 지원은 추가하지 않는다. 네이티브 최종 dump와 내부 2D 스텝 capture-at의 좌표/합성 범위를 구분한다.
 
 ## 상태 디렉터리 (`.state/`, gitignore)
 

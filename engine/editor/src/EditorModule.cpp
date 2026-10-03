@@ -91,6 +91,8 @@ struct EditorModule::Impl final : public IEditorViewport {
     scene::RenderProxyList           proxies;
     mye::ScopedSubscription          onResized;
     PlayWindow                       playWindow;
+    ui::GameOverlay                   gameOverlay;
+    std::string                      uiFontPath;
 
     // 뷰포트 상태(패널이 통지, 렌더가 소비).
     // Handles are released before the manager and device.
@@ -378,6 +380,7 @@ void EditorModule::OnLoad(EngineContext& ctx) {
 void EditorModule::OnInitialize(EngineContext& ctx) {
     Impl& s = *m_impl;
     s.engine = &ctx;
+    s.uiFontPath = Utf8String(Utf8Path(ctx.GetPaths().engineDir) / "fonts/NanumSquareRoundR.ttf");
     s.input = ctx.GetService<InputState>();
 
     // 프로젝트 경로는 --project(EnginePaths.projectDir). frames/dump/headless CLI 는
@@ -536,6 +539,10 @@ void EditorModule::Frame(const TimeStep&) {
     auto synced = s.SyncAssets();
     if (!synced) s.ReportFrameError(synced.GetError());
     bool frameFailed = !synced;
+    if (s.app->PlayMode().IsPlaying() && !s.gameOverlay.IsInitialized()) {
+        auto overlay = s.gameOverlay.Init(*s.device, s.rt.ColorFormat(), s.uiFontPath);
+        if (!overlay) { s.ReportFrameError(overlay.GetError()); frameFailed = true; }
+    }
     if (auto* world = s.app->PlayMode().ActiveWorld()) {
         auto bound = s.BindAnimations(*world);
         if (!bound) { s.ReportFrameError(bound.GetError()); frameFailed = true; }
@@ -567,8 +574,13 @@ void EditorModule::Frame(const TimeStep&) {
             }
         }
         s.rt.BeginScenePass(cmd, kViewportClear);
-        const auto rendered = s.hybrid.Render(s.proxies, view, cmd);
+        auto rendered = s.hybrid.Render(s.proxies, view, cmd);
         s.rt.EndScenePass(cmd);
+        if (rendered && s.app->PlayMode().IsPlaying()) {
+            const Vec2i logicalSize{static_cast<int32_t>(s.rt.Width()), static_cast<int32_t>(s.rt.Height())};
+            rendered = s.gameOverlay.Render(cmd, s.rt.ColorTarget(), logicalSize, {0, 0, logicalSize.x, logicalSize.y},
+                s.app->PlayMode().Prompt(), s.app->PlayMode().Message());
+        }
         if (!rendered) {
             s.ReportFrameError(rendered.GetError());
             s.proxies.Clear();
@@ -607,7 +619,7 @@ void EditorModule::Frame(const TimeStep&) {
     ++s.frameCount;
 
     if (!s.headless && s.app->PlayMode().IsPlaying()) {
-        auto opened = s.playWindow.Open(*s.device);
+        auto opened = s.playWindow.Open(*s.device, s.uiFontPath);
         if (!opened) {
             MYE_LOG_ERROR("Editor", "{}", opened.GetError().message);
             s.app->PlayMode().Stop();
@@ -620,7 +632,8 @@ void EditorModule::Frame(const TimeStep&) {
         }
         auto view = scene::BuildGameView(*s.app->PlayMode().ActiveWorld(), s.app->PlayMode().DefaultCamera());
         const auto rendered = view
-            ? s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd)
+            ? s.playWindow.Render(s.hybrid, s.proxies, view.Value(), s.app->PlayMode().State() == PlayState::Paused, cmd,
+                s.app->PlayMode().Prompt(), s.app->PlayMode().Message())
             : Expected<void, Error>{view.GetError()};
         if (!rendered) {
             s.ReportFrameError(rendered.GetError());
@@ -677,6 +690,7 @@ void EditorModule::OnShutdown(EngineContext& ctx) {
 
     s.onResized.Reset();
     s.debugUi.Shutdown();
+    s.gameOverlay.Shutdown();
     s.hybrid.Shutdown();
     s.rt.Shutdown();
     s.proxies.Clear();

@@ -21,6 +21,8 @@
 #include "mye/editor/EditorModule.h"
 #include "mye/editor/ExtensionRegistry.h"
 #include "mye/editor/PlayWindow.h"
+#include "mye/render/HybridRenderer.h"
+#include "mye/scene/RenderExtract.h"
 #include "mye/editor/Project.h"
 #include "mye/editor/Viewport.h"
 #include "mye/runtime/ObjectComponents.h"
@@ -1013,15 +1015,17 @@ MYE_TEST(PlayWindowReopensWithoutRetainingInputOrResources) {
     MYE_EXPECT(device);
     if (!device) return;
     PlayWindow window;
-    MYE_EXPECT(window.Open(*device.Value()));
+    const auto fontPath = Utf8String(Utf8Path(MYE_STARTER_SOURCE_DIR).parent_path().parent_path().parent_path() / "assets/fonts/NanumSquareRoundR.ttf");
+    MYE_EXPECT(window.Open(*device.Value(), fontPath));
     MYE_EXPECT(window.IsOpen() && !window.CloseRequested());
     window.Input().SetKeyboardSuppressed(false);
     window.Input().OnKey(KeyCode::D, true);
     MYE_EXPECT(window.Input().IsDown(KeyCode::D));
-    const auto handle = FindWindowW(nullptr, L"MyEngine — Play");
-    DWORD processId = 0; GetWindowThreadProcessId(handle, &processId);
-    MYE_EXPECT(handle && processId == GetCurrentProcessId());
-    if (handle && processId == GetCurrentProcessId()) {
+    EditorProcessWindow ownedWindow{GetCurrentProcessId()};
+    EnumWindows(FindEditorProcessWindow, reinterpret_cast<LPARAM>(&ownedWindow));
+    const auto handle = ownedWindow.hwnd;
+    MYE_EXPECT(handle);
+    if (handle) {
         SendMessageW(handle, WM_SETFOCUS, 0, 0);
         auto bindings = runtime::DefaultGameInputMap();
         for (auto& action : bindings.actions) if (action.name == "interact")
@@ -1043,11 +1047,35 @@ MYE_TEST(PlayWindowReopensWithoutRetainingInputOrResources) {
         window.Input().NewFrame(); buffer.Capture(window.Input(), true);
         MYE_EXPECT(buffer.ConsumeTick().movement == Vec2{});
     }
+    const auto feedbackRoot = ProjectTestDirectory("native-feedback");
+    render::HybridRenderer renderer;
+    renderer.Init(*device.Value(), {});
+    scene::RenderProxyList proxies;
+    render::HybridViewInfo view;
+    const auto capture = [&](std::string_view name, bool paused, std::string_view message) {
+        device.Value()->BeginFrame();
+        auto& command = device.Value()->GetImmediateContext();
+        MYE_EXPECT(window.Render(renderer, proxies, view, paused, command, "[E] 상호작용", message));
+        const auto path = feedbackRoot / Utf8Path(std::string(name) + ".bmp");
+        MYE_EXPECT(rhi::CaptureBackbuffer(*device.Value(), window.Backbuffer(), Utf8String(path)));
+        device.Value()->EndFrame();
+        std::ifstream file(path, std::ios::binary);
+        return std::vector<uint8_t>((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    };
+    const auto visible = capture("playing", false, "요정 안내자: 게임 창의 메시지입니다.");
+    size_t ink = 0;
+    for (size_t at = 54; at + 3 < visible.size(); at += 4)
+        if (visible[at] > 220 && visible[at+1] > 220 && visible[at+2] > 220) ++ink;
+    MYE_EXPECT(ink > 100);
+    view.subpixelResidual = {.49f, -.49f};
+    MYE_EXPECT(capture("paused", true, "요정 안내자: 게임 창의 메시지입니다.") == visible);
     window.Close();
     MYE_EXPECT(!window.IsOpen() && !window.HasFocus() && !window.Input().IsDown(KeyCode::D));
-    MYE_EXPECT(window.Open(*device.Value()));
+    MYE_EXPECT(window.Open(*device.Value(), fontPath));
     MYE_EXPECT(!window.Input().IsDown(KeyCode::D));
+    MYE_EXPECT(capture("reopened", false, {}) != visible);
     window.Close();
+    renderer.Shutdown();
 }
 
 MYE_TEST(EditorWorkspacePreservesDocumentsAndSwitchesProjection) {

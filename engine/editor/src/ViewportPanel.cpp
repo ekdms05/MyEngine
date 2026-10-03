@@ -254,11 +254,6 @@ public:
                     (ctx.playMode && ctx.playMode->IsPlaying()) ? "  [PLAY]" : "");
 
         if (ctx.playMode && ctx.playMode->IsPlaying()) {
-            const auto prompt = ctx.playMode->Prompt(), message = ctx.playMode->Message();
-            ImGui::SetCursorScreenPos(ImVec2(imgPos.x + 12, imgPos.y + avail.y - 70));
-            ImGui::TextWrapped("%.*s", static_cast<int>(message.size()), message.data());
-            ImGui::Text("%.*s", static_cast<int>(prompt.size()), prompt.data());
-            ImGui::TextDisabled("WASD / 방향키: 이동    E: 상호작용");
             dl->AddRectFilled(imgPos, ImVec2(imgPos.x + avail.x, imgPos.y + avail.y), IM_COL32(0,0,0,static_cast<int>(ctx.playMode->FadeAlpha() * 255)));
         }
         vp->SetCamera(m_cam);

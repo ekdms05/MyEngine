@@ -22,4 +22,9 @@
 <h2 id="section-3">코드 없이 연결</h2>
 <p>ObjectBehavior의 연결은 이벤트, 행동, 대상, 매개변수 순서로 설정한다. 대상이 비어 있으면 현재 오브젝트다. Message는 메시지, SetVisible은 표시 전환, MoveTo는 즉시 위치 변경, ChangeMap은 씬 경로+도착 이름, LuaCallback은 return 테이블의 함수 이름을 사용한다. MoveTo는 경로 탐색 이동이 아니다.</p>
 <p>Lua 콜백·함수·변수는 <a href="lua.html">Lua API</a>, 맵/저장 실패 흐름은 <a href="../17-object-workflow.md">오브젝트 작업</a>을 참고한다. 표시나 메시지 기반만으로 게임 HUD·퀘스트·온라인 동기화가 자동 완성되지는 않는다.</p>
+<h2 id="game-feedback">안내를 게임 창에서 확인하세요.</h2>
+<p><strong>main 소스의 Interact → Message는 별도 Play 창과 MyGame 하단에 표시됩니다.</strong> 씬을 저장하고 Play에서 대상 근처에 접근한 뒤 상호작용 입력(기본 E)을 누르세요. 위에는 대상의 prompt, 아래에는 Message가 보이고 로그에도 남습니다.</p>
+<figure><img src="media/game-feedback.png" width="960" height="540" loading="lazy" alt="초원 마을 게임 창 하단의 우물 안내와 한글 Message"><figcaption>실제 Release Play 창 캡처. 검수 복사본의 Start → Message로 안내를 고정 표시했습니다. 입력 검수 사진이 아닙니다.</figcaption></figure>
+<p>게임 카메라와 독립된 하단 앵커에 그리므로 카메라 잔여 이동에 따라 글자가 흔들리지 않습니다. 월드와 같은 정수 배율/여백을 사용합니다. 메시지는 줄바꿈하고 최대 높이에서 자릅니다. Pause는 표시를 유지하고 다음 Message·Stop·맵 교체가 이전 문구의 수명을 끝냅니다.</p>
+<details><summary>표시 한계와 문제 해결</summary><p>각 문자열 최대 4096 UTF-8 bytes, 최대 패널 높이 180px이며 스크롤/닫기/선택지는 없습니다. 앱 옆 fonts/NanumSquareRoundR.ttf가 누락/손상되면 오류를 확인하세요. 읽기 전용 안내는 HP/가방/퀘스트 HUD나 온라인 대화를 완성하지 않습니다. 설치된 0.3.0에는 이 게임 창 표시 연결이 없습니다. <a href="../06-runtime-systems.md">UI 지원/수명 계약</a>을 확인하세요.</p></details>
 <footer>정본: <a href="../20-components.md">20-components.md</a> · 구현 범위와 실패 조건을 확인하세요.</footer></main></div></body></html>

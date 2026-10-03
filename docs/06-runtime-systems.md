@@ -11,10 +11,26 @@
 | UiDocument·UiSkin | UI 데이터·스타일 | [UiDocument.h](../engine/ui/include/mye/ui/UiDocument.h), [UiSkin.h](../engine/ui/include/mye/ui/UiSkin.h) |
 | FontFace·GlyphAtlas | FreeType 래스터·동적 글리프 아틀라스 | [FontFace.h](../engine/ui/include/mye/text/FontFace.h), [GlyphAtlas.h](../engine/ui/include/mye/text/GlyphAtlas.h) |
 | TextLayout·TextRenderer | 줄바꿈·리치 텍스트·출력 | [TextLayout.h](../engine/ui/include/mye/text/TextLayout.h), [TextRenderer.h](../engine/ui/include/mye/text/TextRenderer.h) |
+| GameOverlay | Play/MyGame의 화면 공간 안내·Message | [GameOverlay.h](../engine/ui/include/mye/ui/GameOverlay.h) |
 
 게임 UI는 자체 위젯/스프라이트 경로이고 에디터는 ImGui다. 화면은 좌상단 원점·+Y 아래, 글리프 R8은 coverage이며 [렌더 계약](02-rendering.md)의 `yDown`·`alphaMask`로 출력한다. 클릭 좌표도 픽셀 타깃의 destRect·배율을 따른다.
 
 TextInput·ScrollView·ListView 로직 구현과 실제 채팅·인벤토리 화면 통합은 별개다. 현재 MyGame에 UI 문서 편집기·타이틀·채팅·인벤토리는 연결되지 않았다. 한글 출력·글꼴 배포·IME 입력·후보창 UX도 각각 검증한다.
+
+### 게임 창의 안내와 Message · main 소스
+
+**ObjectBehavior의 Message와 근처 InteractionTarget의 prompt는 별도 Play 창·MyGame 화면 하단에 표시된다.** 에디터 Play 뷰포트와 headless Play에도 같은 텍스트 렌더러를 연결한다. Message는 로그에도 남는다. 기존 저장 씬의 이벤트→Message 연결을 그대로 사용하며 새 UI 파일이나 Lua API는 필요하지 않다.
+
+World 고정 틱이 문자열을 생성하고 앱은 `ObjectSystem::Prompt()/Message()`를 읽어 `GameOverlay::Render`로 전달한다. 위젯의 앵커 계산·TextLayout·GlyphAtlas·UiDrawContext·SpriteBatch를 재사용한다. 별도 게임 창은 월드의 정수 확대 후 depth 없는 load pass에서 UI를 그린다. 월드와 같은 destRect/배율을 쓰고 카메라의 subpixelResidual은 적용하지 않는다. 화면 표시는 틱·이벤트·게임 값을 변경하지 않는다.
+
+- 기본 960×540의 하단/좌우 여백 16px, 내부 여백 12px, 나눔스퀘어라운드 16px. 메시지는 줄바꿈하며 패널 최대 높이 180px에서 자른다. 안내는 한 줄 영역에 표시한다.
+- 문자열은 각각 최대 4096 UTF-8 bytes다. `{...}`도 그대로 표시하여 리치 텍스트 명령으로 해석하지 않는다. 자동 스크롤·선택지·닫기·입력 포커스는 없다.
+- 마지막 Message는 다음 Message로 교체될 때까지 유지한다. Pause는 표시를 유지하며 Stop/맵의 ObjectSystem 교체는 이전 메시지의 수명을 끝낸다. prompt는 근처 대상/층/반경 조건에 따라 갱신된다.
+- 앱 옆 `fonts/NanumSquareRoundR.ttf`와 OFL 라이선스를 배포한다. 누락/손상 글꼴·잘못된 출력 크기·텍스트 상한 실패는 Expected로 전달한다. 자동 실행에서는 성공 캡처로 계산하지 않는다.
+
+실제 DX11 검사로 한글·변경 없는 반복 출력·빈 메시지·문자 그대로 표시·긴 문장 클리핑·2배 확대/여백·카메라 잔여 이동·Pause/창 재실행을 확인한다. 앱의 네이티브/헤드리스 캡처와 글꼴 실패도 별도로 검증한다. 합성 Win32 입력은 물리 키보드 검수와 구분한다. 안내 패널은 **읽기 전용**이며 작성/저장 가능한 HP·가방·퀘스트 HUD, 버튼/IME/포커스, 서버 상태 메시지는 아직 연결하지 않았다. 기존 설치 0.3.0의 기능으로 설명하지 않는다.
+
+사용 흐름과 실제 캡처는 [컴포넌트 가이드](guide/components.html#game-feedback), 상태값 연결의 다음 완료 조건은 [개발 우선순위](14-development-priorities.md)를 따른다.
 
 ## 오디오
 

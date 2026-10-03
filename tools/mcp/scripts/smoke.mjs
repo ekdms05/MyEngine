@@ -248,6 +248,10 @@ async function main() {
   check("project_inspect — 경로 탈출 거부", escaped.result?.isError === true && firstText(escaped.result).includes("루트 밖"));
   const reference = await request("tools/call", { name: "engine_reference", arguments: { topic: "rendering", search: "48" } });
   check("engine_reference — 현재 렌더 계약 조회", reference.result?.isError !== true && firstText(reference.result).includes("48"));
+  const feedback = await request("tools/call", { name: "engine_reference", arguments: { topic: "ui", lines: 120 } });
+  check("engine_reference — 게임 창 안내와 작성 HUD 경계", feedback.result?.isError !== true &&
+    firstText(feedback.result).includes("GameOverlay") && firstText(feedback.result).includes("4096") &&
+    firstText(feedback.result).includes("읽기 전용") && firstText(feedback.result).includes("아직 연결하지 않았다"));
   const asset = await request("tools/call", { name: "asset_import", arguments: {
     project: `${fixtureRel}/project.myeproj`, source: `${fixtureRel}/project.myeproj`, destination: "../escape.png",
   } });

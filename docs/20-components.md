@@ -54,4 +54,6 @@ CharacterController2D·Collider2D는 XY 물리를 유지한다. XYZ에는 별도
 
 ObjectBehavior의 연결은 이벤트, 행동, 대상, 매개변수 순서로 설정한다. 대상이 비어 있으면 현재 오브젝트다. Message는 메시지, SetVisible은 표시 전환, MoveTo는 즉시 위치 변경, ChangeMap은 씬 경로+도착 이름, LuaCallback은 return 테이블의 함수 이름을 사용한다. MoveTo는 경로 탐색 이동이 아니다.
 
+main 소스의 Message와 근처 InteractionTarget.prompt는 별도 Play/MyGame 화면 하단에 한글로 표시한다. Message는 로그에도 남고 Pause에도 유지된다. 각 문자열은 최대 4096 UTF-8 bytes이며 메시지는 줄바꿈/최대 높이 클리핑, 안내는 한 줄 영역을 사용한다. 선택/닫기·HP/가방/퀘스트 HUD·온라인 메시지 연결은 미완료다. [표시/글꼴/수명 계약](06-runtime-systems.md#게임-창의-안내와-message--main-소스)을 확인한다. 기존 설치 0.3.0과 구분한다.
+
 Lua 콜백·함수·변수는 [Lua API](19-lua-api.md), 맵/저장 실패 흐름은 [오브젝트 작업](17-object-workflow.md)을 참고한다. 표시나 메시지 기반만으로 게임 HUD·퀘스트·온라인 동기화가 자동 완성되지는 않는다.

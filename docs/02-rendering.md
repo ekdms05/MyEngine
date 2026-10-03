@@ -94,6 +94,10 @@ depth = anchorDepth + (0.5 - n) * biasEps
 
 ## 캡처·검증·남은 범위
 
+main의 게임 안내 UI는 월드의 depth/cutout과 별도의 화면 공간 pass다. GameOverlay는 기존 UiRenderer/TextLayout/GlyphAtlas/SpriteBatch와 하단 앵커를 사용하며 depth를 끈다. 네이티브 Play/MyGame에서는 월드 Blit 뒤 같은 정수 destRect에 그려 카메라의 subpixelResidual에 따라 UI가 움직이지 않는다. 에디터 Play 뷰포트/headless는 자기 타깃에 별도 load pass로 합성한다. 표면별 SpriteBatch를 소유하고 한 프레임에 같은 배치의 End를 반복하지 않는다. 표시로 고정 틱/입력/이벤트를 진행하지 않는다.
+
+MyGame의 최종 `--dump`는 창이 있으면 UI가 포함된 실제 backbuffer 크기, headless이면 내부 타깃 크기를 저장한다. `--capture-at`의 스텝 BMP/JSON은 기존 내부 2D 타깃 진단이다. 네이티브 스텝 캡처는 Blit 뒤 UI를 포함하지 않으며 headless의 내부 타깃에는 UI가 합성된다. 월드 진단 좌표를 창 좌표로 바꾸지 않는다. [게임 안내 계약](06-runtime-systems.md#게임-창의-안내와-message--main-소스)과 [모션 캡처](26-2d-animation.md)를 함께 확인한다.
+
 프레임 캡처는 DX11의 `CaptureBackbuffer` 경로를 쓴다. 일반 GPU readback의 `CopyTextureToBuffer`·`EnqueueReadback`·`TryGetReadback`은 아직 stub이므로 완성된 ID 버퍼 픽킹·썸네일 비동기 경로로 설명하지 않는다. `WriteTimestamp`·`ResolveTimestamps`도 현재 DX11 stub이며 GPU 측정 완료 기능으로 설명하지 않는다.
 
 검증은 `mye_tests`의 깊이·카메라·R8 글리프 픽셀 검사와 현재 마을의 MyEditor 2D/3D·플레이 캡처로 수행한다. 삭제한 과거 렌더 데모는 현재 실행 항목으로 표시하지 않는다. 조명·파티클 계산 데이터의 존재는 GPU 합성 완료가 아니다. 실루엣·오버헤드 페이드·라이트맵·포스트·다른 그래픽 API는 [개선 목록](14-development-priorities.md)에 따라 실제 수요와 장면 측정으로 결정한다.

@@ -560,3 +560,18 @@ GUID·파일·삭제 경계: AssetDatabase::ScanDirectory의 기존 .anim 값 �
 문서/미디어/도구: 구조·우선순위·스킬 역할·로드맵·Lua/컴포넌트·모션 가이드와 MCP 설명을 갱신했다. 부분 알파 전경 관찰은 바이너리 알파 자산의 렌더 결함으로 단정하지 않고 임포트/가이드에 cutout 0/255 마감·원본 보존·두 앱 재검수 경계를 설명했다. 실제 Release 7틱을 RGB 변경 없이 GIF로 인코딩하고 틱당 500ms의 진단 속도/아트·장치 검수 한계를 표시했다. 기존 이미지/GIF/영상은 보존했다. 첫 가이드 검사는 재생성한 Lua 페이지에서 lua.html#xyz 등 기존 앵커 누락을 찾았다. Lua 페이지의 원래 앵커/예제를 복원하고 파라미터 세 행과 새 설명만 수정했으며 컴포넌트 HTML의 기존 단독 SpriteAnimator 행도 정본의 전체 사용법 표로 복원하고 관계없는 3D 설명은 보존했다. 최종 로컬 링크/앵커·고유 ID 159개가 통과했다. MCP npm build/smoke 35개 통과, 로컬 개발·게임 제작·릴리즈 세 스킬도 동기화했다. 새 MCP 프로세스 검증과 현재 세션 연결은 구분한다. UI 코드를 변경하지 않아 이전 스킬 checker/템플릿 compiler gate의 한계를 새 통과로 표시하지 않는다.
 
 피드백/배포/한계: Project E docs의 engine-feedback-response-2026-10-03-2d-state-binding.md에 최신 요구·처리/미완료·근거·실행 순서·재검수 조건을 답변한다. 사용자 원문은 편집하지 않으며 그 파일의 사용자 갱신은 이전 답변의 해시와 구분한다. 사용자 게임 원본/에셋/GUID·VERSION 0.3.0·기존 태그/설치/패키지를 유지한다. 이번 main 소스 기능은 설치된 0.3.0 소비자 검증이 아니며 새 릴리즈는 아직 없다. D08d2a만 소스 연결 완료다. 행동 문서 작성/Undo·실제 반복 편집 수명·입력/중단, HUD/포커스/한글·프리팹·프로젝트 상태/맵·서버 규칙·운영/배포·측정된 성능과 전체 목표는 계속 진행한다.
+
+
+## 2026-10-03 · 게임 창의 안내 표시
+
+피드백 우선: 기존 Message의 콜백/로그와 편집기 문구는 확인됐지만 별도 Play 창에는 안내가 없었다. PlayWindow가 월드만 그리고 MyGame은 제목만 갱신하는 실제 호출 경로를 확인했다. 게임 Lua/수치 규칙은 변경하지 않고 표현 경계를 수정한다. 최신 드롭 생성 피드백도 기존 획득/제거/게임 규칙과 별도의 프리팹 경로로 유지한다.
+
+기존 mye_ui의 앵커·UiRenderer/TextLayout/GlyphAtlas/UiDrawContext/SpriteBatch로 읽기 전용 GameOverlay를 구성했다. ObjectSystem prompt/Message를 Play/MyGame/에디터 RT에서 소비한다. native는 월드 Blit 뒤 같은 정수 destRect의 별도 depth 없는 pass를 사용하고 카메라 residual을 UI에 적용하지 않는다. 표면별 batch/font/atlas는 소유 앱이 device보다 먼저 정리한다. 변경 없는 문자열은 기존 TextLayout을 유지하며 성능 개선을 측정했다고 주장하지 않는다. 중복 ImGui 표시/고정 WASD 안내를 제거하고 기존 페이드는 보존했다. 기존 나눔 글꼴/OFL을 MyGame 빌드에도 복사하고 타깃 의존성을 명시했다. 새 라이브러리/UI 프레임워크/픽셀 제작 도구는 없다.
+
+표시 계약은 각 4096 UTF-8 bytes, 문자 그대로 표시, 메시지 줄바꿈/패널180px 클리핑·한 줄 안내, Pause 유지·다음 메시지/Stop/맵 시스템 교체 수명이다. 입력·선택·스크롤·IME/포커스·작성 HUD/온라인 메시지는 추가하지 않았다. 누락/손상 font·자원/크기/텍스트 상한은 Expected/기존 앱 오류로 전달한다. MyGame 최종 native dump는 실제 backbuffer/UI를 기록하며 capture-at 내부 2D 좌표는 유지한다. native 스텝은 post-blit UI 제외, headless 내부 타깃에는 UI가 포함된다.
+
+검증: 전체 Debug/Release 빌드 성공, 순차 CTest 각각 러너598/598(집계1/1), 67.57/41.48초. 실제 DX11 글리프/반복/빈 값·중괄호·긴 문장 클리핑·2배/여백/카메라 residual·RGBA/BGRA/재초기화를 검사했다. 네이티브 Play 자원/합성 입력·Pause/재Open 회귀도 확인했다. 피드백의 두 NPC QA 복사본에서 자기 PID Play 창의 합성 Win32 E→각 콜백1회·한글 캡처와 원본241파일 SHA 보존을 확인했다. 초원 복사본 Start→Message로 두 앱의 native/headless 네 출력과 별도 exe 복사본의 누락/손상 font 네 exit1을 확인했다. MyGame 실제 E/물리 장치/DPI 검수로 확대하지 않는다. Release States/Temporal은 기존 상태/시트/이벤트/권위 두 클라이언트/ack/Lua 격리와 각32 로컬 경계, 원격 A32프레임/6변경/7 pause 중 이동·B32프레임/5변경/8이동을 통과했다.
+
+실패/수정: 첫 Debug597/598은 기존 제목 기반 FindWindow가 타 프로세스 창을 선택한 테스트 결함이다. 기존 PID/class EnumWindows를 재사용하고 전체 두 구성을 재검증했다. 첫 앱 도우미는 구체적 TTF/FreeType 오류 대신 일반 문구를 기대해 실패했다. 새 fixture에서 경로/exit1을 검사하여 성공시켰고 제품 실패는 유지했다. 첫 가이드 복사/검사는 tools/mcp 작업 경로의 상대 경로 오류여서 저장소 절대 경로로 수정했다. ViewportPanel scope checker PASS; 스킬 전체 suite의 의미30/30·정적 검사 통과와 g++/c++ 부재로 공식 두 revision 템플릿 compile FAIL을 구분한다. MSVC 제품 빌드가 스킬 template/DPI 게이트를 대신하지 않는다.
+
+문서/도구/배포: 렌더/UI/실행/컴포넌트/우선순위/로드맵과 가이드를 갱신했다. 기존 초원 실제 Play 캡처를 추가하고 기존 이미지/GIF/영상/앵커를 보존했다. 가이드162 로컬 링크/앵커 PASS. MCP ui 참조와 build/smoke36 PASS; 로컬 개발/게임 제작/릴리즈 지침도 동기화했다. 사용자 아트/원문/GUID는 편집/공개하지 않고 상세 답변은 제작 프로젝트 docs에 로컬 기록했다. 기존 VERSION/tag/설치0.3.0은 유지하며 새 릴리즈/소비자 설치 검수는 아직 없다. 첫 안내 표시만 소스 연결 완료이고 작성 UI·게임 상태 HUD→행동 작성/입력→프리팹/질의→맵/저장 상태→권위 통합을 다음 순서로 유지한다. 공개 운영 보호·완성 게임 배포·측정 성능·전체 목표는 미완료다.

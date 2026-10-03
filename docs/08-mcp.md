@@ -41,7 +41,11 @@ npm.cmd run smoke
 
 ## 실행·캡처 경계
 
+`engine_reference(topic="ui")`는 `docs/06-runtime-systems.md`에서 실제 Play/MyGame 안내 표시와 위젯 라이브러리/작성 HUD의 연결 상태를 조회한다. 참조 조회는 게임 UI 편집 API나 현재 세션 MCP 연결의 증거가 아니다.
+
 `--frames N`은 자동 종료, `--dump <path.bmp>`는 프레임 기록에 사용한다. 실행 타깃은 설정된 빌드 트리에서 찾는다. `MyEditor`에는 `args=["--project", "프로젝트 경로"]`를 전달해야 한다. 프로젝트 없이 실행하면 프로젝트 선택 창이 열린다. 모든 게임/서버 CLI를 임의로 호출하는 일반 셸 도구가 아니다.
+
+main의 MyGame 최종 `--dump`는 네이티브 창의 실제 backbuffer(UI 포함), headless는 내부 타깃을 저장한다. 스텝 `--capture-at`은 내부 2D 월드 진단 좌표를 유지한다. 설치 0.3.0의 캡처/표시 동작과 구분한다.
 
 개발 소스의 `MyGame --ticks N`은 실제 고정 시뮬레이션 N회 후 최종 프레임을 렌더/캡처하고 종료한다. MCP에서 `engine_run(sample="MyGame", ticks=4, args=["--project", "프로젝트.myeproj", "--headless"])`를 호출하면 기본 frames 대신 `--ticks 4`를 전달한다. MyEditor 등 다른 앱의 ticks는 거부한다. 한도는 양수이며 CLI에 frames/ticks를 모두 지정하면 먼저 도달한 한도로 종료한다. 프레임 수는 물리 틱 수나 서버 ack 수가 아니다. `engine_capture_frame`은 여전히 프레임 기준 도구다. 새 MyGame 틱 옵션은 기존 0.3.0 바이너리에 없다.
 

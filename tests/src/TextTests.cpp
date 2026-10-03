@@ -20,6 +20,10 @@
 
 #include "mye/rhi/Rhi.h"
 #include "mye/render/SpriteBatch.h"
+#include "mye/ui/GameOverlay.h"
+#include "mye/core/JsonFile.h"
+#include "mye/render/PixelPerfectTarget.h"
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 
@@ -544,4 +548,97 @@ MYE_TEST(TextSpriteBatchR8CoverageAndScreenOrientation) {
     batch.Shutdown();
     device->Destroy(mask);
     device->Destroy(target);
+}
+
+MYE_TEST(GameOverlayActualPixelsLiteralClippingUpscaleAndReinitialization) {
+    auto created = rhi::CreateDevice(rhi::Backend::DX11, {});
+    MYE_EXPECT(created);
+    if (!created) return;
+    auto device = std::move(created).Value();
+    const auto sourceRoot = Utf8Path(MYE_STARTER_SOURCE_DIR).parent_path().parent_path().parent_path();
+    const auto root = sourceRoot / "build/ui-feedback" / std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    std::filesystem::create_directories(root);
+    const auto font = Utf8String(sourceRoot / "assets/fonts/NanumSquareRoundR.ttf");
+    ui::GameOverlay overlay;
+    MYE_EXPECT(!overlay.Init(*device, rhi::Format::RGBA8Unorm, Utf8String(root / "missing.ttf")));
+    { std::ofstream invalid(root / "invalid.ttf", std::ios::binary); invalid << "not a font"; }
+    MYE_EXPECT(!overlay.Init(*device, rhi::Format::RGBA8Unorm, Utf8String(root / "invalid.ttf")));
+    MYE_EXPECT(!overlay.IsInitialized());
+    MYE_EXPECT(overlay.Init(*device, rhi::Format::RGBA8Unorm, font));
+    render::PixelPerfectTarget world;
+    render::PixelPerfectDesc description;
+    world.Init(*device, description);
+    auto draw = [&](std::string_view name, std::string_view prompt, std::string_view message) {
+        device->BeginFrame();
+        auto& command = device->GetImmediateContext();
+        world.BeginScenePass(command, {.2f, .3f, .4f, 1});
+        world.EndScenePass(command);
+        MYE_EXPECT(overlay.Render(command, world.ColorTarget(), {960,540}, {0,0,960,540}, prompt, message));
+        const auto path = root / (std::string(name) + ".bmp");
+        MYE_EXPECT(rhi::CaptureBackbuffer(*device, world.ColorTarget(), Utf8String(path)));
+        device->EndFrame();
+        std::ifstream file(path, std::ios::binary);
+        return std::vector<uint8_t>((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    };
+    const auto blank = draw("blank", {}, {});
+    const auto message = draw("message", "[E] 상호작용", "요정 안내자: 안녕하세요 모험가님!");
+    MYE_EXPECT(message.size() == 54 + 960 * 540 * 4 && message != blank);
+    MYE_EXPECT(draw("unchanged", "[E] 상호작용", "요정 안내자: 안녕하세요 모험가님!") == message);
+    MYE_EXPECT(draw("cleared", {}, {}) == blank);
+    if (message.size() == blank.size() && message.size() >= 54 + 960 * 540 * 4) {
+        size_t ink = 0;
+        bool outsideUnchanged = true;
+        for (int y = 0; y < 540; ++y) for (int x = 0; x < 960; ++x) {
+            const auto at = 54 + (y * 960 + x) * 4;
+            if (y < 344 || x < 16 || x >= 944 || y >= 524)
+                outsideUnchanged &= std::memcmp(message.data() + at, blank.data() + at, 4) == 0;
+            if (message[at] > 220 && message[at+1] > 220 && message[at+2] > 220) ++ink;
+        }
+        MYE_EXPECT(outsideUnchanged && ink > 100);
+    }
+    const auto literal = draw("literal", {}, "{color=#ff0000}문구{/color}");
+    size_t red = 0;
+    for (size_t at = 54; at + 3 < literal.size(); at += 4)
+        if (literal[at+2] > 180 && literal[at] < 80 && literal[at+1] < 80) ++red;
+    MYE_EXPECT(red == 0); // Messages are literal, never a rich-text style injection.
+    std::string longMessage;
+    for (int i = 0; i < 50; ++i) longMessage += "긴 안내문은 화면 아래 패널 안에서 줄을 바꿉니다. ";
+    const auto clipped = draw("clipped", "[E] 상호작용", longMessage);
+    if (clipped.size() == blank.size())
+        MYE_EXPECT(std::memcmp(clipped.data(), blank.data(), 54 + 344 * 960 * 4) == 0);
+    device->BeginFrame();
+    MYE_EXPECT(!overlay.Render(device->GetImmediateContext(), world.ColorTarget(), {960,540}, {0,0,960,540}, {}, std::string(4097, 'a')));
+    device->EndFrame();
+    overlay.Shutdown();
+    MYE_EXPECT(!overlay.IsInitialized());
+    MYE_EXPECT(overlay.Init(*device, rhi::Format::BGRA8Unorm, font));
+    rhi::TextureDesc targetDescription;
+    targetDescription.width = 2048; targetDescription.height = 1200;
+    targetDescription.format = rhi::Format::BGRA8Unorm;
+    targetDescription.usage = rhi::TextureUsage::RenderTarget | rhi::TextureUsage::CopySrc;
+    const auto target = device->CreateTexture(targetDescription);
+    MYE_EXPECT(target.IsValid());
+    device->BeginFrame();
+    auto& command = device->GetImmediateContext();
+    world.BeginScenePass(command, {.2f, .3f, .4f, 1}); world.EndScenePass(command);
+    world.Blit(command, target, {2048,1200}, {.49f,-.49f});
+    const auto destination = render::PixelPerfectTarget::ComputeLayout({960,540}, {2048,1200}).destRect;
+    MYE_EXPECT(overlay.Render(command, target, {960,540}, destination, "[E] 상호작용", "요정 안내자: 안녕하세요 모험가님!"));
+    MYE_EXPECT(rhi::CaptureBackbuffer(*device, target, Utf8String(root / "scaled.bmp")));
+    device->EndFrame();
+    std::ifstream scaledFile(root / "scaled.bmp", std::ios::binary);
+    const std::vector<uint8_t> scaled((std::istreambuf_iterator<char>(scaledFile)), std::istreambuf_iterator<char>());
+    MYE_EXPECT(scaled.size() == 54 + 2048 * 1200 * 4);
+    if (scaled.size() == 54 + 2048 * 1200 * 4 && message.size() == 54 + 960 * 540 * 4) {
+        bool matches = true;
+        for (int y = 0; y < 540; ++y) for (int x = 0; x < 960; ++x)
+            for (int dy = 0; dy < 2; ++dy) for (int dx = 0; dx < 2; ++dx) {
+                const auto source = 54 + (y * 960 + x) * 4;
+                const auto dest = 54 + ((destination.y + y * 2 + dy) * 2048 + destination.x + x * 2 + dx) * 4;
+                matches &= std::memcmp(message.data() + source, scaled.data() + dest, 4) == 0;
+            }
+        MYE_EXPECT(matches); // UI is stable at 2x despite the world's subpixel offset.
+        MYE_EXPECT(scaled[54] == 0 && scaled[55] == 0 && scaled[56] == 0); // Letterbox untouched.
+    }
+    overlay.Shutdown(); world.Shutdown(); device->Destroy(target);
 }

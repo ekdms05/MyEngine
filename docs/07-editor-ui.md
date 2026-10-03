@@ -41,6 +41,8 @@ build/dev/apps/editor/Release/MyEditor.exe --project <manifest> --import-asset <
 
 `--workspace`는 `2d`, `3d`, `lua`다. `--play`는 플레이로 시작한다. 창이 있는 플레이 캡처는 게임 창, 그 외 GUI 캡처는 에디터, headless는 월드 타깃을 담는다. `--add-element-dialog`는 추가 창 캡처용이다. headless 렌더도 DX11 장치가 필요하다.
 
+main의 Play 타깃에는 근처 상호작용 안내와 Message도 합성된다. 별도 Play 창·에디터 Play 뷰포트·headless Play는 같은 텍스트 경로를 사용한다. 기존 ImGui 전용 Message 출력은 제거했다. 메뉴/게임 입력을 선점하지 않는 읽기 전용 안내이며 [글꼴·줄바꿈·수명·미완료 HUD 범위](06-runtime-systems.md#게임-창의-안내와-message--main-소스)를 확인한다. 기존 설치 0.3.0에는 이 게임 창 연결이 없다.
+
 ## 공식 벤치마킹 근거
 
 확인: 2026-10-02. 공식 문서의 동작을 참고했으며 Godot 코드를 복사하지 않았다.

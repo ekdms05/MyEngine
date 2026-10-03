@@ -6,6 +6,7 @@
 #include "mye/asset/Importer.h"
 #include "mye/asset/MeshImporter.h"
 #include "mye/core/App.h"
+#include "mye/ui/GameOverlay.h"
 #include "mye/core/Events.h"
 #include "mye/core/Input.h"
 #include "mye/core/JsonFile.h"
@@ -164,6 +165,7 @@ public:
         m_assetDb.reset();
         m_assets.reset();
         m_vfs.reset();
+        m_overlay.Shutdown();
         m_hybrid.Shutdown();
         m_target.Shutdown();
         m_swapChain.reset();
@@ -310,6 +312,9 @@ private:
         renderer.colorFormat = m_target.ColorFormat();
         m_hybrid.Init(*m_device, renderer);
         if (!m_target.IsInitialized() || !m_hybrid.IsInitialized()) return Error{"Game render targets initialization failed", 1};
+        auto overlay = m_overlay.Init(*m_device, m_swapChain ? m_swapChain->GetFormat() : m_target.ColorFormat(),
+            Utf8String(Utf8Path(ctx.GetPaths().engineDir) / "fonts/NanumSquareRoundR.ttf"));
+        if (!overlay) return overlay.GetError();
         m_vfs = std::make_unique<asset::VirtualFileSystem>();
         m_vfs->Mount("assets", std::make_unique<asset::LooseFileSystem>(Utf8String(m_root / "assets")), 0);
         m_assets = std::make_unique<asset::AssetManager>(*m_vfs, m_device.get());
@@ -728,6 +733,14 @@ private:
             return;
         }
         if (m_swapChain) m_target.Blit(cmd, m_swapChain->GetCurrentBackBuffer(), m_swapChain->GetSize(), view.Value().subpixelResidual);
+        const Vec2i logicalSize{static_cast<int32_t>(m_target.Width()), static_cast<int32_t>(m_target.Height())};
+        const auto destination = m_swapChain
+            ? render::PixelPerfectTarget::ComputeLayout(logicalSize, m_swapChain->GetSize()).destRect
+            : RectInt{0, 0, logicalSize.x, logicalSize.y};
+        auto feedback = m_overlay.Render(cmd, m_swapChain ? m_swapChain->GetCurrentBackBuffer() : m_target.ColorTarget(),
+            logicalSize, destination, m_scene->objects ? m_scene->objects->Prompt() : std::string_view{},
+            m_scene->objects ? m_scene->objects->Message() : std::string_view{});
+        if (!feedback) { m_device->EndFrame(); Fail(feedback.GetError()); return; }
         ++m_frame;
         const bool finished = m_replayFinished || (m_cli.frames && m_frame >= m_cli.frames) ||
                                (m_cli.ticks && m_tick >= m_cli.ticks);
@@ -750,7 +763,7 @@ private:
             m_device->EndFrame(); Fail(Error{"Game ended before all replay step captures", 1}); return;
         }
         if (!m_cli.dump.empty() && (m_cli.frames || m_cli.ticks || !m_cli.input.empty() ? finished : m_frame == 3)) {
-            auto captured = rhi::CaptureBackbuffer(*m_device, m_target.ColorTarget(), m_cli.dump);
+            auto captured = rhi::CaptureBackbuffer(*m_device, m_swapChain ? m_swapChain->GetCurrentBackBuffer() : m_target.ColorTarget(), m_cli.dump);
             if (!captured) Fail(captured.GetError());
         }
         m_device->EndFrame();
@@ -776,6 +789,7 @@ private:
     std::unique_ptr<rhi::ISwapChain> m_swapChain;
     render::PixelPerfectTarget m_target;
     render::HybridRenderer m_hybrid;
+    ui::GameOverlay m_overlay;
     render::Camera2D m_camera;
     scene::RenderProxyList m_proxies;
     std::unique_ptr<asset::VirtualFileSystem> m_vfs;

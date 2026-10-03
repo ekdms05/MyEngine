@@ -26,6 +26,8 @@
 
 ## 데이터 흐름
 
+main의 화면 공간 GameOverlay는 ObjectSystem의 prompt/Message를 읽어 Play/MyGame 하단에 합성한다. 기존 mye_ui의 앵커·TextLayout·GlyphAtlas·UiDrawContext·SpriteBatch와 배포 나눔스퀘어라운드를 사용한다. 게임 창은 월드 Blit 뒤 같은 정수 destRect에 표시하고 카메라 subpixelResidual을 UI에 적용하지 않는다. 표면별 렌더 자원을 앱이 소유/해제하며 고정 틱·입력·게임 값을 표시 단계에서 변경하지 않는다. [06](06-runtime-systems.md)의 실제 연결/오류/수명과 미완료 작성 HUD·IME/포커스·온라인 상태를 구분한다. 기존 설치 0.3.0 지원으로 계산하지 않는다.
+
 ```text
 프로젝트 .myeproj → assets/scenes/*.scene → 편집 World·문서 Undo
 assets/ + .meta → AssetDatabase → assets:// VFS → AssetManager → 렌더/모션

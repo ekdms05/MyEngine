@@ -36,6 +36,7 @@ add_library(mye_ui STATIC
     include/mye/ui/UiSkin.h
     include/mye/ui/UiDocument.h
     include/mye/ui/UiRenderer.h
+    include/mye/ui/GameOverlay.h
     include/mye/ui/UiSystem.h
     src/ui/UiTypes.cpp
     src/ui/Widget.cpp
@@ -44,6 +45,7 @@ add_library(mye_ui STATIC
     src/ui/UiSkin.cpp
     src/ui/UiDocument.cpp
     src/ui/UiRenderer.cpp
+    src/ui/GameOverlay.cpp
     src/ui/UiSystem.cpp
 )
 

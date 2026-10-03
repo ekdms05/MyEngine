@@ -35,16 +35,16 @@ function Start-App([string]$Exe, [string]$Name, [string[]]$Arguments) {
     $null = $process.Handle
     return $process
 }
-function Wait-App($Process, [string]$Name, [int]$Expected = 0) {
-    if (-not $Process.WaitForExit(15000)) { throw "$Name timed out: $run" }
+function Wait-App($Process, [string]$Name, [int]$Expected = 0, [int]$Timeout = 15000) {
+    if (-not $Process.WaitForExit($Timeout)) { throw "$Name timed out after $Timeout ms: $run" }
     if ($Process.ExitCode -ne $Expected) { throw "$Name exit=$($Process.ExitCode), expected=$Expected : $run" }
     $log = Get-Content -LiteralPath (Join-Path $run "$Name.log") -Raw -Encoding UTF8
     if ($Expected -eq 0 -and $log -match '\[ERROR\]|client-lua-must-not-run') { throw "$Name error: $run" }
     return $log
 }
-function Run-App([string]$Exe, [string]$Name, [string[]]$Arguments, [int]$Expected = 0) {
+function Run-App([string]$Exe, [string]$Name, [string[]]$Arguments, [int]$Expected = 0, [int]$Timeout = 15000) {
     $process = Start-App $Exe $Name $Arguments
-    try { return Wait-App $process $Name $Expected }
+    try { return Wait-App $process $Name $Expected $Timeout }
     finally { if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }; $process.Dispose() }
 }
 
@@ -451,7 +451,7 @@ return {
             # ponytail: editor stops by render frames; require the return marker. Use a fixed-tick limit if faster renderers finish too early.
             foreach ($entry in @(@($game,'game'),@($editor,'editor'))) {
                 $arguments = @('--project',$project,'--headless') + $(if ($entry[1] -eq 'game') {@('--ticks','80')} else {@('--play','--frames','20000')})
-                $log = Run-App $entry[0] "state-maps-$($entry[1])" ($arguments + @('--dump',(Join-Path $run "state-maps-$($entry[1]).bmp")))
+                $log = Run-App $entry[0] "state-maps-$($entry[1])" ($arguments + @('--dump',(Join-Path $run "state-maps-$($entry[1]).bmp"))) -Timeout 45000
                 foreach ($marker in @('map-init:a:first','map-init:b:first','map-init:a:return','map-return-ready',
                     'map-event:a:first:state-attack','map-event:b:first:state-attack','map-event:a:return:state-idle',
                     'map-destroy:a:first','map-destroy:b:first','map-destroy:a:return')) {

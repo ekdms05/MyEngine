@@ -43,6 +43,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace mye {
 namespace {
@@ -51,6 +52,12 @@ struct GameCli {
     std::string project, scene, dump, connect, credentials, input;
     uint64_t frames = 0, ticks = 0;
     uint64_t character = 0;
+    std::vector<uint64_t> captureSteps;
+};
+
+struct InputReplayFrame {
+    runtime::GameInput input;
+    std::optional<bool> animationPlaying; // Local presentation diagnostic; never sent to the server.
 };
 
 Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
@@ -60,7 +67,7 @@ Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
         if (option == "--headless") continue;
         if (option.starts_with("--project=")) { cli.project = option.substr(10); continue; }
         if (option != "--project" && option != "--scene" && option != "--frames" && option != "--ticks" && option != "--dump" &&
-            option != "--connect" && option != "--credentials" && option != "--character" && option != "--input")
+            option != "--connect" && option != "--credentials" && option != "--character" && option != "--input" && option != "--capture-at")
             return Error{"Unknown option: " + option, 64};
         if (++i == args.size() || args[i].empty()) return Error{"Missing value: " + option, 64};
         const auto& value = args[i];
@@ -70,7 +77,21 @@ Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
         else if (option == "--connect") cli.connect = value;
         else if (option == "--credentials") cli.credentials = value;
         else if (option == "--input") cli.input = value;
-        else if (option == "--character") {
+        else if (option == "--capture-at") {
+            std::string_view remaining = value;
+            for (;;) {
+                const auto comma = remaining.find(',');
+                const auto token = remaining.substr(0, comma);
+                uint64_t step = 0;
+                const auto parsed = std::from_chars(token.data(), token.data() + token.size(), step);
+                if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() || step == 0 || step > 36000 ||
+                    cli.captureSteps.size() == 32 || (!cli.captureSteps.empty() && step <= cli.captureSteps.back()))
+                    return Error{"--capture-at requires up to 32 increasing replay steps in [1,36000]", 64};
+                cli.captureSteps.push_back(step);
+                if (comma == std::string_view::npos) break;
+                remaining.remove_prefix(comma + 1);
+            }
+        } else if (option == "--character") {
             const auto parsed = std::from_chars(value.data(), value.data() + value.size(), cli.character);
             if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || cli.character == 0)
                 return Error{"--character requires a positive character ID", 64};
@@ -85,6 +106,8 @@ Expected<GameCli, Error> ParseCli(const std::vector<std::string>& args) {
         return Error{"--project requires a .myeproj manifest", 64};
     if (cli.connect.empty() ? (!cli.credentials.empty() || cli.character != 0) : cli.credentials.empty())
         return Error{"Online mode requires --connect 127.0.0.1:port and --credentials file.json", 64};
+    if (!cli.captureSteps.empty() && (cli.input.empty() || cli.dump.empty()))
+        return Error{"--capture-at requires --input and --dump (BMP filename prefix)", 64};
     return cli;
 }
 
@@ -161,18 +184,23 @@ private:
             const auto* y = step.Find("y");
             const auto* jump = step.Find("jump");
             const auto* zoom = step.Find("cameraZoomSteps");
+            const auto* playing = step.Find("animationPlaying");
             if (!ticks || !ticks->IsInteger() || ticks->AsInt() < 1 || ticks->AsInt() > 36000 ||
                 !x || !x->IsNumber() || !y || !y->IsNumber() ||
                 !std::isfinite(x->AsDouble()) || !std::isfinite(y->AsDouble()) ||
                 std::abs(x->AsDouble()) > 1 || std::abs(y->AsDouble()) > 1 || (jump && !jump->IsBool()) ||
                 (zoom && (!zoom->IsNumber() || !std::isfinite(zoom->AsDouble()) || std::abs(zoom->AsDouble()) > 16)) ||
+                (playing && !playing->IsBool()) ||
                 m_replay.size() + static_cast<std::size_t>(ticks->AsInt()) > 36000)
-                return Error{"Input replay requires integer ticks, axes in [-1,1], finite cameraZoomSteps in [-16,16] and at most 36000 total ticks", 1};
+                return Error{"Input replay requires integer ticks, axes in [-1,1], finite cameraZoomSteps in [-16,16], optional boolean animationPlaying and at most 36000 total ticks", 1};
             runtime::GameInput input{{static_cast<float>(x->AsDouble()), static_cast<float>(y->AsDouble())},
                                           false, jump && jump->AsBool()};
             input.cameraZoomSteps = zoom ? static_cast<float>(zoom->AsDouble()) : 0;
-            m_replay.insert(m_replay.end(), static_cast<std::size_t>(ticks->AsInt()), input);
+            m_replay.insert(m_replay.end(), static_cast<std::size_t>(ticks->AsInt()),
+                InputReplayFrame{input, playing ? std::optional<bool>(playing->AsBool()) : std::nullopt});
         }
+        if (!m_cli.captureSteps.empty() && m_cli.captureSteps.back() > m_replay.size())
+            return Error{"--capture-at step exceeds input replay length", 1};
         return {};
     }
     Expected<fs::path, Error> SceneFile(std::string_view relative) const {
@@ -552,10 +580,10 @@ private:
     }
     void Tick(float dt) {
         // Catch-up may schedule several fixed ticks before the next render.
-        if (!m_ready || m_replayFinished || (m_cli.ticks && m_tick >= m_cli.ticks)) return;
+        if (!m_ready || m_replayFinished || m_capturePending || (m_cli.ticks && m_tick >= m_cli.ticks)) return;
         auto controls = m_gameInput.ConsumeTick();
         if (controls.exitGame) { m_exit(0); return; }
-        if (!m_cli.input.empty()) controls = m_replayTick < m_replay.size() ? m_replay[m_replayTick] : runtime::GameInput{};
+        if (!m_cli.input.empty()) controls = m_replayTick < m_replay.size() ? m_replay[m_replayTick].input : runtime::GameInput{};
         const auto previousReplayTick = m_replayTick;
         const auto tick = m_online ? TickOnline(dt, controls) : m_scene->objects->Tick(dt, controls);
         if (!tick) {
@@ -575,6 +603,10 @@ private:
         }
         BindAnimations(true);
         if (!m_ready) return;
+        if (previousReplayTick != m_replayTick && m_replay[previousReplayTick].animationPlaying) {
+            const bool playing = *m_replay[previousReplayTick].animationPlaying;
+            m_scene->world.Query<anim::SpriteAnimator>().Each([&](ecs::Entity, auto& animator) { animator.playing = playing; });
+        }
         anim::RunAnimationSystem(m_scene->world, dt);
         scene::UpdateWorldTransforms(m_scene->world);
         if (m_online && m_onlineSpawnLogged) {
@@ -594,6 +626,44 @@ private:
         }
         if (m_ready && ++m_tick == m_cli.ticks)
             MYE_LOG_INFO("Game", "Fixed tick limit reached: {}", m_tick);
+        // Render this exact replay boundary before a catch-up tick can advance it.
+        if (previousReplayTick != m_replayTick && m_captureIndex < m_cli.captureSteps.size() &&
+            m_replayTick == m_cli.captureSteps[m_captureIndex]) m_capturePending = true;
+    }
+    Expected<void, Error> CaptureReplayStep(const render::HybridViewInfo& view) {
+        if (view.geometryDepth) return Error{"Replay step captures require a 2D game camera", 1};
+        try {
+            const auto prefix = Utf8Path(m_cli.dump);
+            const auto stem = Utf8String(prefix.stem()) + ".step-" + std::to_string(m_replayTick);
+            const auto bitmap = prefix.parent_path() / Utf8Path(stem + ".bmp");
+            auto captured = rhi::CaptureBackbuffer(*m_device, m_target.ColorTarget(), Utf8String(bitmap));
+            if (!captured) return captured.GetError();
+            json::Value::Array actors;
+            for (const auto& item : m_proxies.items) {
+                const auto* animator = m_scene->world.TryGet<anim::SpriteAnimator>(item.sourceEntity);
+                if (!animator) continue;
+                uint32_t netId = item.sourceEntity == m_player ? m_client.Id() : 0;
+                // ponytail: linear peer lookup in at most 32 diagnostic frames; index only if large captures require it.
+                for (const auto& [id, entity] : m_remotes) if (entity == item.sourceEntity) { netId = id; break; }
+                const Vec4 anchor = Vec4{item.worldTransform.m[3][0], item.worldTransform.m[3][1],
+                    item.worldTransform.m[3][2], 1} * view.viewProj;
+                actors.emplace_back(json::Value::Object{
+                    {"netId", json::Value(int64_t{netId})}, {"local", json::Value(item.sourceEntity == m_player)},
+                    {"facing", json::Value(int64_t{static_cast<uint8_t>(animator->facing)})},
+                    {"frame", json::Value(int64_t{animator->currentFrameIndex})},
+                    {"cursorStep", json::Value(int64_t{animator->cursor.step})}, {"cursorSeconds", json::Value(double{animator->cursor.timeInStep})},
+                    {"playing", json::Value(animator->playing)}, {"finished", json::Value(animator->cursor.finished)},
+                    {"worldX", json::Value(double{item.worldTransform.m[3][0]})}, {"worldY", json::Value(double{item.worldTransform.m[3][1]})},
+                    {"flipX", json::Value(item.flipX)}, {"screenX", json::Value(double{(anchor.x / anchor.w * .5f + .5f) * view.viewportWidth})},
+                    {"screenY", json::Value(double{(.5f - anchor.y / anchor.w * .5f) * view.viewportHeight})}});
+            }
+            auto written = WriteJsonFile(prefix.parent_path() / Utf8Path(stem + ".json"), json::Value::Object{
+                {"version", json::Value(int64_t{1})}, {"replayStep", json::Value(static_cast<int64_t>(m_replayTick))},
+                {"fixedTick", json::Value(static_cast<int64_t>(m_tick))}, {"actors", json::Value(std::move(actors))}});
+            if (!written) return written.GetError();
+            MYE_LOG_INFO("Game", "Replay step captured: step={}, tick={}", m_replayTick, m_tick);
+            return {};
+        } catch (const std::system_error& error) { return Error{"Replay capture path: " + std::string(error.what()), error.code().value()}; }
     }
     void Render() {
         if (!m_ready) return;
@@ -628,6 +698,14 @@ private:
                 MYE_LOG_INFO("Game", "Camera2D final: zoom={}, center=({}, {})", camera.zoom,
                              camera.view.Position().x, camera.view.Position().y);
         });
+        if (m_capturePending) {
+            auto captured = CaptureReplayStep(view.Value());
+            if (!captured) { m_device->EndFrame(); Fail(captured.GetError()); return; }
+            m_capturePending = false; ++m_captureIndex;
+        }
+        if (finished && m_captureIndex != m_cli.captureSteps.size()) {
+            m_device->EndFrame(); Fail(Error{"Game ended before all replay step captures", 1}); return;
+        }
         if (!m_cli.dump.empty() && (m_cli.frames || m_cli.ticks || !m_cli.input.empty() ? finished : m_frame == 3)) {
             auto captured = rhi::CaptureBackbuffer(*m_device, m_target.ColorTarget(), m_cli.dump);
             if (!captured) Fail(captured.GetError());
@@ -663,8 +741,9 @@ private:
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Texture>> m_textures;
     std::map<asset::AssetGuid, asset::AssetHandle<asset::Mesh>> m_meshes;
     std::map<asset::AssetGuid, asset::AnimationAsset> m_animations;
-    std::vector<runtime::GameInput> m_replay;
-    std::size_t m_replayTick = 0;
+    std::vector<InputReplayFrame> m_replay;
+    std::size_t m_replayTick = 0, m_captureIndex = 0;
+    bool m_capturePending = false;
     std::string m_title, m_currentTitle;
     uint64_t m_frame = 0, m_tick = 0;
     bool m_ready = false, m_replayFinished = false;
@@ -695,7 +774,7 @@ int main() {
         ::LocalFree(argv);
     }
     for (const auto& arg : launch.args) if (arg == "--help") {
-        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--ticks N] [--dump frame.bmp] [--headless]\nOnline: --connect 127.0.0.1:port --credentials file.json [--character ID]; the scene selects 2D or 3D.\nInput replay: --input file.json; version 1, steps [{ticks:60,x:1,y:0,jump:false}].\nReplay starts after online admission and exits after all inputs are acknowledged.\n--ticks limits fixed simulation steps; when both limits are set, the first ends play.\nDefault controls: WASD/arrows or gamepad movement, E interact, Escape exit. Configure bindings in the project inputMap.");
+        std::puts("MyGame --project <project.myeproj> [--scene assets/scenes/name.scene] [--frames N] [--ticks N] [--dump frame.bmp] [--headless]\nOnline: --connect 127.0.0.1:port --credentials file.json [--character ID]; the scene selects 2D or 3D.\nInput replay: --input file.json; version 1, steps [{ticks:60,x:1,y:0,jump:false}].\nReplay starts after online admission and exits after all inputs are acknowledged.\nReplay diagnostics: --capture-at 1,8,16 --dump run.bmp writes 2D run.step-N.bmp/json (up to 32 steps).\nOptional step animationPlaying toggles client presentation only.\n--ticks limits fixed simulation steps; when both limits are set, the first ends play.\nDefault controls: WASD/arrows or gamepad movement, E interact, Escape exit. Configure bindings in the project inputMap.");
         return 0;
     }
     auto cli = mye::ParseCli(launch.args);

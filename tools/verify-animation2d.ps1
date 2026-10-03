@@ -1,9 +1,11 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
     [string]$BuildDir = 'build/dev',
-    [switch]$Phase
+    [switch]$Phase,
+    [switch]$Temporal
 )
 $ErrorActionPreference = 'Stop'
+if ($Temporal) { $Phase = $true }
 $repo = Split-Path -Parent $PSScriptRoot
 $build = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $repo $BuildDir }
 $game = Join-Path $build "apps/game/$Configuration/MyGame.exe"
@@ -252,6 +254,118 @@ if ($Phase) {
         if ([regex]::Matches($log,'phase-event:phase-start').Count -ne 1 -or $log -match 'phase-event:phase-left-entry' -or
             [regex]::Matches($log,'phase-event:phase-left-step').Count -ne $case.events) { throw "Silent remap/actual crossing failed: $($case.name)" }
     }
+    if ($Temporal) {
+        $continuous = @(
+            @{ticks=9;x=0;y=-1;animationPlaying=$true},@{ticks=4;x=-1;y=0;animationPlaying=$false},
+            @{ticks=4;x=1;y=0;animationPlaying=$false},@{ticks=5;x=0;y=1;animationPlaying=$true},
+            @{ticks=5;x=1;y=1;animationPlaying=$true},@{ticks=5;x=0;y=-1;animationPlaying=$true})
+        $captureAt = (1..32) -join ','
+        $inputFile = Replay 'continuous-local' $continuous
+        $continuousLog = Run-App $game 'continuous-local' @('--project',$project,'--headless','--input',$inputFile,
+            '--capture-at',$captureAt,'--dump',(Join-Path $run 'continuous-local.bmp'))
+        function Clip-Layout([int]$Facing) {
+            if ($Facing -in @(2,6)) { return @{frames=@(4,5);seconds=@(.125,.375)} }
+            if ($Facing -eq 4) { return @{frames=@(7,6,5);seconds=@(.25,.125,.125)} }
+            if ($Facing -eq 5) { return @{frames=@(2,4,6,4);seconds=@(.125,.25,.125,.25)} }
+            return @{frames=@(0,1,2,3);seconds=@(.125,.125,.25,.5)}
+        }
+        function Check-Continuous([string]$Name,[int]$First,[int]$Last,[bool]$Online) {
+            $previous=@{}; $changes=0; $remoteChanges=0; $paused=0; $resumed=0; $remoteFrames=0; $remoteMovingPaused=0; $remoteFacings=@{}
+            for ($step=$First; $step -le $Last; $step++) {
+                $sample=Get-Content -LiteralPath (Join-Path $run "$Name.step-$step.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($sample.version -ne 1 -or $sample.replayStep -ne $step) { throw "Capture boundary mismatch: $Name $step" }
+                $local=@($sample.actors | Where-Object { $_.local -or -not $Online })
+                if ($local.Count -ne 1) { throw "Expected one local actor: $Name $step" }
+                $relative=$step-$First+1
+                if ($local[0].playing -ne ($relative -lt 10 -or $relative -ge 18)) { throw "Pause diagnostic mismatch: $Name $step" }
+                foreach ($actor in $sample.actors) {
+                    if ($actor.finished) { throw "Temporal check used a completed motion: $Name $step" }
+                    $key=[string]$actor.netId; $layout=Clip-Layout $actor.facing
+                    $total=($layout.seconds | Measure-Object -Sum).Sum
+                    if ($previous.ContainsKey($key)) {
+                        $old=$previous[$key]; $oldLayout=Clip-Layout $old.actor.facing
+                        if ($sample.fixedTick-$old.tick -ne 1) { throw "Nonconsecutive captured fixed ticks: $Name $step" }
+                        $elapsed=$old.actor.cursorSeconds
+                        for ($i=0; $i -lt $old.actor.cursorStep; $i++) { $elapsed+=$oldLayout.seconds[$i] }
+                        $fraction=$elapsed/($oldLayout.seconds | Measure-Object -Sum).Sum
+                        $elapsed=$fraction*$total
+                        if ($actor.playing) { $elapsed+=($sample.fixedTick-$old.tick)/60.0 }
+                        $elapsed=$elapsed%$total; $index=0
+                        while ($index+1 -lt $layout.seconds.Count -and $elapsed -ge $layout.seconds[$index]) { $elapsed-=$layout.seconds[$index]; $index++ }
+                        if ($actor.cursorStep -ne $index -or [math]::Abs($actor.cursorSeconds-$elapsed) -gt .00002 -or $actor.frame -ne $layout.frames[$index]) {
+                            throw "Phase/time mismatch: $Name step=$step peer=$key"
+                        }
+                        if ($actor.facing -ne $old.actor.facing) { $changes++; if (-not $actor.local -and $Online) { $remoteChanges++ } }
+                        if (-not $actor.playing) {
+                            $paused++
+                            $dx=$actor.worldX-$old.actor.worldX; $dy=$actor.worldY-$old.actor.worldY
+                            if ($actor.local -or -not $Online) {
+                                $expectedDx=$(if ($relative -lt 14) { -.05 } else { .05 })
+                                if ([math]::Abs($dx-$expectedDx) -gt .00005 -or [math]::Abs($dy) -gt .00005) { throw "Animation pause stopped character movement: $Name $step" }
+                            } elseif ([math]::Abs($dx)+[math]::Abs($dy) -gt .00001) { $remoteMovingPaused++ }
+                        }
+                        if ($actor.playing -and -not $old.actor.playing) { $resumed++ }
+                    }
+                    if ($actor.flipX -ne ($actor.facing -eq 6)) { throw "Mirrored facing mismatch: $Name $step" }
+                    $colour=[Convert]::ToInt32($phaseColours[$actor.frame],16)
+                    $x=[int][math]::Floor($actor.screenX); $y=[int][math]::Floor($actor.screenY)
+                    Check-Pixel "$Name.step-$step" ($x+10) ($y-16) $colour
+                    Check-Pixel "$Name.step-$step" $x ($y-1) 0xFFFFFF
+                    if (-not $actor.local -and $Online) { $remoteFrames++; $remoteFacings[[int]$actor.facing]=$true }
+                    $previous[$key]=@{actor=$actor;tick=$sample.fixedTick}
+                }
+            }
+            if ($Online) {
+                foreach ($facing in @(0,2,4,5,6)) { if (-not $remoteFacings.ContainsKey($facing)) { throw "Missing remote facing $facing : $Name" } }
+            }
+            if ($changes -lt 5 -or $paused -lt 8 -or $resumed -lt 1 -or ($Online -and ($remoteChanges -lt 1 -or $remoteFrames -lt 4 -or $remoteMovingPaused -lt 1))) {
+                throw "Incomplete continuous coverage: $Name changes=$changes remoteChanges=$remoteChanges paused=$paused resumed=$resumed remoteFrames=$remoteFrames"
+            }
+            Write-Output "PASS: $Name 32 exact input boundaries, incomplete-motion phase/pixels/pause/resume; remote changes=$remoteChanges frames=$remoteFrames paused authority moves=$remoteMovingPaused"
+        }
+        Check-Continuous 'continuous-local' 1 32 $false
+        if ([regex]::Matches($continuousLog,'phase-event:phase-start').Count -ne 1 -or
+            $continuousLog -match 'phase-event:phase-left-(entry|step)') { throw 'Continuous captures consumed or duplicated fixed-tick events' }
+        # Refuse invalid lists/diagnostic types and failed BMP/atomic JSON output.
+        foreach ($value in @('0','36001','18446744073709551616','2,1','1,1','-1','1,','1.5',((1..33)-join ','))) {
+            $null=Run-App $game ('bad-capture-'+[Guid]::NewGuid().ToString('N')) @('--project',$project,'--input',$inputFile,'--capture-at',$value,'--dump',(Join-Path $run 'bad.bmp')) 64
+        }
+        $null=Run-App $game 'missing-capture-input' @('--project',$project,'--capture-at','1','--dump',(Join-Path $run 'bad.bmp')) 64
+        $null=Run-App $game 'missing-capture-dump' @('--project',$project,'--capture-at','1','--input',$inputFile) 64
+        $null=Run-App $game 'long-capture' @('--project',$project,'--headless','--input',$inputFile,'--capture-at','33','--dump',(Join-Path $run 'bad.bmp')) 1
+        $badInput=Replay 'bad-playing' @(@{ticks=1;x=0;y=0;animationPlaying='false'})
+        $badNullInput=Replay 'bad-playing-null' @(@{ticks=1;x=0;y=0;animationPlaying=$null})
+        $null=Run-App $game 'bad-playing-null' @('--project',$project,'--headless','--input',$badNullInput) 1
+        $null=Run-App $game 'bad-playing' @('--project',$project,'--headless','--input',$badInput) 1
+        $null=Run-App $game 'capture-bmp-failure' @('--project',$project,'--headless','--input',$inputFile,'--capture-at','1','--dump',(Join-Path $run 'missing/output.bmp')) 1
+        New-Item -ItemType Directory -Path (Join-Path $run 'blocked.step-1.json') | Out-Null
+        $null=Run-App $game 'capture-json-failure' @('--project',$project,'--headless','--input',$inputFile,'--capture-at','1','--dump',(Join-Path $run 'blocked.bmp')) 1
+        $caseData=Join-Path $run 'continuous-data'; New-Item -ItemType Directory -Path $caseData | Out-Null
+        [IO.File]::WriteAllBytes((Join-Path $caseData 'state.json'),$initialState)
+        $player.components.ObjectBehavior.luaSource='return { on_init=function(self) mye.log("client-lua-must-not-run"); error("client authority violation") end }'
+        Write-Json $scenePath $scene
+        $owned=@()
+        try {
+            $hostProcess=Start-App $server 'continuous-server' @('--data',$caseData,'--project',$project,'--port','0','--ticks','600');$owned+=$hostProcess
+            $timer=[Diagnostics.Stopwatch]::StartNew();$port=0
+            while ($timer.Elapsed.TotalSeconds -lt 5 -and -not $hostProcess.HasExited) {
+                $log=Get-Content -LiteralPath (Join-Path $run 'continuous-server.log') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                if ($log -match 'MyServer .*?port (\d+), tickrate 60Hz') { $port=[int]$Matches[1];break }
+                Start-Sleep -Milliseconds 25
+            }
+            if (-not $port) { throw 'Continuous server readiness failed' }
+            $bInput=Replay 'continuous-b' (@(@{ticks=40;x=-1;y=0})+$continuous+@(@{ticks=180;x=0;y=0}))
+            $aInput=Replay 'continuous-a' (@(@{ticks=40;x=1;y=0})+$continuous)
+            $b=Start-App $game 'continuous-b' @('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run 'directions-b.json'),'--input',$bInput,'--capture-at',((41..72)-join ','),'--dump',(Join-Path $run 'continuous-b.bmp'));$owned+=$b
+            $a=Start-App $game 'continuous-a' @('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run 'directions-a.json'),'--input',$aInput,'--capture-at',((41..72)-join ','),'--dump',(Join-Path $run 'continuous-a.bmp'));$owned+=$a
+            $aLog=Wait-App $a 'continuous-a';$bLog=Wait-App $b 'continuous-b'
+            if ($aLog -notmatch 'Input replay confirmed: steps=72, pending=0' -or $bLog -notmatch 'Input replay confirmed: steps=252, pending=0') { throw 'Continuous authority acknowledgment failed' }
+            Check-Continuous 'continuous-a' 41 72 $true;Check-Continuous 'continuous-b' 41 72 $true
+            $null=Wait-App $hostProcess 'continuous-server'
+        } finally { foreach ($process in $owned) { if (-not $process.HasExited) { $process.Kill();$process.WaitForExit() };$process.Dispose() } }
+        $player.components.ObjectBehavior.luaSource='return { on_event=function(self, name, payload) if name == "animation" then mye.log("phase-event:" .. payload.name) end end }'
+        Write-Json $scenePath $scene
+    }
     # Completed motions retain their terminal frame after turning to a different period.
     $animation.loop = $false
     foreach ($step in $animation.timeline) { $step.seconds = .001 }
@@ -302,7 +416,8 @@ if ($Phase) {
         }
     }
     $player.components.PSObject.Properties.Remove('ObjectBehavior'); Write-Json $scenePath $scene
-    Write-Output 'PASS: normalized unequal/reverse/ping-pong phase, silent remap, asymmetric feet, completed Play/online endpoints (continuous partial online timing remains pending)'
+    Write-Output ('PASS: normalized unequal/reverse/ping-pong phase, silent remap, asymmetric feet, completed Play/online endpoints' +
+        $(if ($Temporal) { '; continuous partial local/online capture sequences passed' } else { ' (use -Temporal for continuous partial sequences)' }))
 }
 if ((Get-FileHash -LiteralPath $scenePath).Hash -ne $sceneHash -or
     (Get-FileHash -LiteralPath ($animationPath + '.meta')).Hash -ne $metaHash) { throw 'Authored scene/GUID changed' }

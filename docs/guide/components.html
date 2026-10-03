@@ -7,7 +7,7 @@
 <a href="#section-2">3D 표시와 게임 카메라</a>
 <a href="#section-3">코드 없이 연결</a></nav></aside><main id="main"><h1 id="section-0">20. 컴포넌트 사용법</h1>
 <p>하이어라키에서 오브젝트를 선택하고 인스펙터에서 필요한 컴포넌트를 펼친다. 설명은 펼친 헤더 아래, 필드의 단위·제약은 마우스를 올렸을 때 표시된다. 헤더 우클릭으로 제거하고 Ctrl+Z로 복원한다. 실행 중 편집은 PlayWorld의 임시 상태다.</p>
-<tr><td>SpriteAnimator</td><td>animation에 .anim 드래그, speed/playing 설정</td><td>speed=재생 배율. 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요. main의 표시 샘플은 첫 이벤트/전이를 소비하지 않으며 후속 모션은 고정 틱에서 연결. 기본/8방향 .anim의 작성·Undo·반전/대체·진행률/발 피벗과 남은 연속 온라인 검증은 <a href="animation2d.html">26</a>에서 확인</td></tr>
+<tr><td>SpriteAnimator</td><td>animation에 .anim 드래그, speed/playing 설정</td><td>speed=재생 배율. 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요. main의 표시 샘플은 첫 이벤트/전이를 소비하지 않으며 후속 모션은 고정 틱에서 연결. 기본/8방향 .anim의 작성·Undo·반전/대체·진행률/발 피벗·연속 로컬/온라인 재생 검사와 남은 행동 작성은 <a href="animation2d.html">26</a>에서 확인</td></tr>
 <h2 id="section-1">기본 조작 캐릭터</h2>
 <ol><li>최상위 오브젝트를 선택하고 <strong>캐릭터 기본 이동 구성</strong>을 누른다. 또는 <strong>+ 추가 → 캐릭터</strong>를 선택한다.</li><li>SpriteRenderer.sprite에 PNG를 지정하고 발밑 피벗과 충돌 박스를 맞춘다.</li><li>CharacterController2D.speed와 대기·걷기 모션을 지정한다.</li><li>재생하여 게임 창에서 WASD/방향키로 걷고 E로 상호작용한다. Pause/Stop은 에디터에 있다.</li></ol>
 <p>구성 버튼은 기존 값을 보존하며 누락된 스프라이트·충돌·본체·조작을 한 Undo 작업으로 추가한다. Lua로 별도 속도를 지정하려면 CharacterController2D를 제거하고 본체·충돌을 유지한다. 조작 컴포넌트가 있으면 Lua 이후 본체 속도를 다시 설정한다.</p>

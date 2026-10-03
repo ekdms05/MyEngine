@@ -8,6 +8,7 @@
 // 좌표(01): 왼손·+Y 업. 입력 방향벡터(월드, +Y=위)를 가장 가까운 8방향 인덱스로 스냅한다.
 #pragma once
 
+#include "mye/asset/SpriteSheet.h"
 #include "mye/core/Base.h"      // MYE_EVENT, EventTypeId
 #include "mye/core/Math.h"
 #include "mye/ecs/Entity.h"
@@ -18,27 +19,8 @@
 
 namespace mye::anim {
 
-// 8방향 인덱스(작업 규약: down=0, 시계 방향). docs/03 Facing8과 동일 집합이나 인덱스 정본은 이쪽.
-enum class Dir8 : uint8_t {
-    Down = 0, DownLeft = 1, Left = 2, UpLeft = 3,
-    Up = 4, UpRight = 5, Right = 6, DownRight = 7,
-    Count = 8,
-};
-
-// 방향별 접미사("down","down_left",...). 태그 이름 조립(walk_<suffix>)에 사용.
-inline const char* Dir8Suffix(Dir8 d) {
-    switch (d) {
-        case Dir8::Down:      return "down";
-        case Dir8::DownLeft:  return "down_left";
-        case Dir8::Left:      return "left";
-        case Dir8::UpLeft:    return "up_left";
-        case Dir8::Up:        return "up";
-        case Dir8::UpRight:   return "up_right";
-        case Dir8::Right:     return "right";
-        case Dir8::DownRight: return "down_right";
-        default:              return "down";
-    }
-}
+using asset::Dir8;
+using asset::Dir8Suffix;
 
 // 각 방향의 단위 벡터(월드, +Y 업). 대각은 정규화된 성분(1/√2 ≈ 0.70710677).
 inline Vec2 Dir8Vector(Dir8 d) {
@@ -72,23 +54,8 @@ inline Dir8 Dir8FromVector(Vec2 v, Dir8 fallback = Dir8::Down) {
     return static_cast<Dir8>(idx);
 }
 
-// 좌우 대칭 flipX 공유: 우측 계열(right/up_right/down_right)을 좌측 클립+flipX로 재사용한다.
-// 반환 = { 실제로 재생할 방향(좌측 계열로 매핑), flipX }. 대칭 없이 8클립을 다 쓰면 flipX=false.
-struct DirResolve {
-    Dir8 clipDir = Dir8::Down;   // 실제 클립 태그에 쓸 방향
-    bool flipX = false;          // 좌우 반전 필요 여부
-};
-
-// mirrorRight=true 이면 우측 3방향을 좌측 클립+flipX로 접는다(아트 절약, 절반 재사용).
-inline DirResolve ResolveDir(Dir8 d, bool mirrorRight) {
-    if (!mirrorRight) return { d, false };
-    switch (d) {
-        case Dir8::Right:     return { Dir8::Left,     true };
-        case Dir8::UpRight:   return { Dir8::UpLeft,   true };
-        case Dir8::DownRight: return { Dir8::DownLeft, true };
-        default:              return { d, false };
-    }
-}
+using asset::DirResolve;
+using asset::ResolveDir;
 
 // ---------------------------------------------------------------------------
 // 애니메이션 이벤트 — 월드-로컬 EventBus로 발행(docs/03 §2 이원화, §6). 06(오디오)·05(Lua) 구독.

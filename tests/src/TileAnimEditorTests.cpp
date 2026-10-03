@@ -329,10 +329,14 @@ MYE_TEST(DirectionalSetBuild) {
     MYE_EXPECT(resolved.clip != nullptr);
     MYE_EXPECT(resolved.clip->name == "walk_down");
 
-    // mirrorRight: 우측 3방향은 좌측 클립 + flipX.
+    // Explicit right clips take priority; mirror only an unassigned right slot.
     anim::DirectionalAnimSet mset = ed::BuildDirectionalSet("walk", clips, /*mirrorRight*/ true);
     auto right = mset.Resolve(anim::Dir8::Right);
     MYE_EXPECT(right.clip != nullptr);
+    MYE_EXPECT(!right.flipX && right.clip->name == "walk_right");
+    mset.clips[static_cast<size_t>(anim::Dir8::Right)] = nullptr;
+    right = mset.Resolve(anim::Dir8::Right);
     MYE_EXPECT(right.flipX == true);
     MYE_EXPECT(right.clip->name == "walk_left");
+    MYE_EXPECT(mset.Resolve(anim::Dir8::Count).clip == nullptr);
 }

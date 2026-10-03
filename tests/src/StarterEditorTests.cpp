@@ -195,9 +195,17 @@ MYE_TEST(StarterProjectAnimationRoundTripAndSceneUndo) {
     ed::EditorContext ctx;
     ctx.project = &project; ctx.playMode = &play; ctx.commands = &sceneDoc->Commands();
     sceneDoc->Commands().SetContext(&ctx); animationDoc->Commands().SetContext(&ctx);
+    const auto metadataBefore = ReadJsonFile(root / "assets/animations/novice_walk.anim.meta");
     auto after = animationDoc->Animation(); after.clip.frameDurations[0] = 0.22f;
+    const auto left = static_cast<size_t>(asset::Dir8::Left);
+    after.directions[left] = after.clip; after.directions[left]->name = "walk_left";
+    after.mirrorRight = true;
     animationDoc->Commands().Push(std::make_unique<ed::AnimAssetEditCommand>(animationDoc->Animation(), after, "duration"));
     MYE_EXPECT(animationDoc->IsDirty() && !sceneDoc->IsDirty() && project.HasUnsavedChanges());
+    animationDoc->Commands().Undo();
+    MYE_EXPECT(!animationDoc->Animation().directions[left] && !animationDoc->Animation().mirrorRight);
+    animationDoc->Commands().Redo();
+    MYE_EXPECT(animationDoc->Animation().directions[left]->name == "walk_left" && animationDoc->Animation().mirrorRight);
     MYE_EXPECT(!project.Open(MYE_STARTER_SOURCE_DIR));
     const auto recovery = Utf8Path(std::string(animationDoc->Path()) + ".tmp");
     MYE_EXPECT(WriteJsonFile(recovery, json::Value(std::string("recovery"))));
@@ -206,7 +214,11 @@ MYE_TEST(StarterProjectAnimationRoundTripAndSceneUndo) {
     MYE_EXPECT(ReadAnimation(Utf8Path(animationDoc->Path())).clip.frameDurations[0] == 0.14f);
     std::error_code ec; std::filesystem::remove(recovery, ec);
     MYE_EXPECT(project.Save());
-    MYE_EXPECT(ReadAnimation(root / "assets/animations/novice_walk.anim").clip.frameDurations[0] == 0.22f);
+    const auto saved = ReadAnimation(root / "assets/animations/novice_walk.anim");
+    MYE_EXPECT(saved.clip.frameDurations[0] == 0.22f && saved.directions[left] && saved.mirrorRight);
+    MYE_EXPECT(saved.Resolve(asset::Dir8::Right).flipX);
+    const auto metadataAfter = ReadJsonFile(root / "assets/animations/novice_walk.anim.meta");
+    MYE_EXPECT(metadataBefore && metadataAfter && json::Stringify(metadataBefore.Value()) == json::Stringify(metadataAfter.Value()));
 
     asset::VirtualFileSystem vfs;
     vfs.Mount("assets", std::make_unique<asset::LooseFileSystem>(Utf8String(root / "assets")), 0);
@@ -263,6 +275,53 @@ MYE_TEST(AnimationFileRejectsInvalidFramesAndEvents) {
     auto* animation = project.NewAnimation();
     animation->Animation() = original;
     MYE_EXPECT(!project.SaveAnimation(animation->Id(), "outside-assets.anim"));
+}
+
+MYE_TEST(DirectionalAnimationFileRoundTripAndStrictBoundaries) {
+    auto animation = ReadAnimation(Utf8Path(MYE_STARTER_SOURCE_DIR) / "assets/animations/novice_walk.anim");
+    MYE_EXPECT(animation.ToJson().Find("version")->AsInt() == 1);
+    for (size_t i = 0; i < animation.directions.size(); ++i) {
+        animation.directions[i] = animation.clip;
+        animation.directions[i]->name = asset::Dir8Suffix(static_cast<asset::Dir8>(i));
+        animation.directions[i]->frameIndices = {static_cast<uint32_t>(i % animation.sheet.frames.size())};
+        animation.directions[i]->frameDurations = {.1f}; animation.directions[i]->events.clear();
+    }
+    animation.mirrorRight = true;
+    auto value = animation.ToJson();
+    MYE_EXPECT(value.Find("version")->AsInt() == 2);
+    auto loaded = asset::AnimationAsset::FromJson(value);
+    MYE_EXPECT(loaded && loaded.Value().Validate());
+    if (!loaded) return;
+    for (size_t i = 0; i < animation.directions.size(); ++i) {
+        const auto resolved = loaded.Value().Resolve(static_cast<asset::Dir8>(i));
+        MYE_EXPECT(resolved.clip->name == asset::Dir8Suffix(static_cast<asset::Dir8>(i)) && !resolved.flipX);
+    }
+    auto copied = loaded.Value(); // Every pointer must resolve into the copied owner.
+    copied.directions[static_cast<size_t>(asset::Dir8::Right)].reset();
+    MYE_EXPECT(copied.Resolve(asset::Dir8::Right).clip == &*copied.directions[static_cast<size_t>(asset::Dir8::Left)]);
+    MYE_EXPECT(copied.Resolve(asset::Dir8::Right).flipX);
+    copied.directions[static_cast<size_t>(asset::Dir8::Left)].reset();
+    MYE_EXPECT(copied.Resolve(asset::Dir8::Right).clip == &copied.clip && !copied.Resolve(asset::Dir8::Right).flipX);
+    MYE_EXPECT(copied.Resolve(asset::Dir8::Count).clip == &copied.clip);
+    auto bad = value.AsObject(); bad["version"] = int64_t{1};
+    MYE_EXPECT(!asset::AnimationAsset::FromJson(json::Value(bad)));
+    bad = value.AsObject(); bad["version"] = int64_t{3}; MYE_EXPECT(!asset::AnimationAsset::FromJson(json::Value(bad)));
+    bad = value.AsObject(); bad.erase("mirrorRight"); MYE_EXPECT(!asset::AnimationAsset::FromJson(json::Value(bad)));
+    bad = value.AsObject(); bad["directions"] = false; MYE_EXPECT(!asset::AnimationAsset::FromJson(json::Value(bad)));
+    auto variants = value.Find("directions")->AsObject();
+    variants["north"] = variants.at("up"); variants.erase("up");
+    bad = value.AsObject(); bad["directions"] = json::Value(variants);
+    MYE_EXPECT(!asset::AnimationAsset::FromJson(json::Value(bad)));
+    variants = value.Find("directions")->AsObject();
+    auto fields = variants.at("up").AsObject(); fields["texture"] = json::Value(std::string("wrong"));
+    variants["up"] = json::Value(fields); bad = value.AsObject(); bad["directions"] = json::Value(variants);
+    MYE_EXPECT(!asset::AnimationAsset::FromJson(json::Value(bad)));
+    auto& up = *animation.directions[static_cast<size_t>(asset::Dir8::Up)];
+    up.frameDurations[0] = 0; MYE_EXPECT(!asset::AnimationAsset::FromJson(animation.ToJson()));
+    up.frameDurations[0] = .1f; up.frameIndices[0] = 4096;
+    MYE_EXPECT(!asset::AnimationAsset::FromJson(animation.ToJson()));
+    up.frameIndices[0] = 0; up.events.push_back({1, "bad-frame", "", 0});
+    MYE_EXPECT(!asset::AnimationAsset::FromJson(animation.ToJson()));
 }
 
 MYE_TEST(SpriteCornersRespectPivotScaleAndPosition) {

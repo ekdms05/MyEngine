@@ -14,7 +14,7 @@
 
 #include "mye/anim/AnimationTypes.h"
 #include "mye/anim/ClipPlayback.h"
-#include "mye/asset/SpriteSheet.h"
+#include "mye/asset/AnimationAsset.h"
 #include "mye/ecs/ComponentType.h"
 
 #include <cstdint>
@@ -36,8 +36,9 @@ struct DirectionalAnimSet {
     struct Resolved { const AnimationClipData* clip = nullptr; bool flipX = false; };
     Resolved Resolve(Dir8 d) const {
         const size_t i = static_cast<size_t>(d);
+        if (i >= clips.size()) return {};
         // 우선 직접 슬롯이 있으면 그대로(flip 없음).
-        if (!mirrorRight && clips[i]) return { clips[i], false };
+        if (clips[i]) return { clips[i], false };
         if (mirrorRight) {
             DirResolve r = ResolveDir(d, true);
             const size_t j = static_cast<size_t>(r.clipDir);
@@ -110,6 +111,7 @@ struct SpriteAnimator {
 
     // machine 없이 단일 클립을 바로 재생하고 싶을 때(테스트·간이 사용).
     const AnimationClipData* directClip = nullptr;
+    const asset::AnimationAsset* sourceAnimation = nullptr; // Non-owning saved directional data.
 
     // 파라미터 블랙보드(전이 조건 평가용). 이름으로 조회.
     std::vector<AnimParam> params;
@@ -154,6 +156,7 @@ inline void RequestAnimation(SpriteAnimator& animator, const asset::AssetRef& an
     animator.animation = animation;
     animator.sheet = nullptr;
     animator.directClip = nullptr;
+    animator.sourceAnimation = nullptr;
     animator.cursor = {};
     animator.started = false;
 }
@@ -170,6 +173,10 @@ inline ResolvedClip ResolveActiveClip(const SpriteAnimator& a) {
             return { r.clip, r.flipX };
         }
         return { st.singleClip, false };
+    }
+    if (a.directClip && a.sourceAnimation) {
+        const auto resolved = a.sourceAnimation->Resolve(a.facing);
+        return {resolved.clip, resolved.flipX};
     }
     if (a.directClip) return { a.directClip, false };
     return { nullptr, false };

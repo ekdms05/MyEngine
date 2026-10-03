@@ -441,6 +441,7 @@ private:
                 animator->animation = animation;
                 animator->sheet = nullptr;
                 animator->directClip = nullptr;
+                animator->sourceAnimation = nullptr;
                 animator->cursor = {};
                 animator->started = false;
             }
@@ -517,7 +518,10 @@ private:
         auto found = m_animations.find(guid);
         if (found != m_animations.end()) return &found->second;
         const auto path = m_assetDb->PathFromGuid(guid);
-        if (!path.starts_with("assets://") || !path.ends_with(".anim")) return nullptr;
+        if (!path.starts_with("assets://") || !path.ends_with(".anim")) {
+            Fail(Error{"Animation GUID does not identify a .anim file", 1});
+            return nullptr;
+        }
         auto json = ReadJsonFile(m_root / "assets" / Utf8Path(path.substr(9)));
         if (!json) { Fail(json.GetError()); return nullptr; }
         auto animation = asset::AnimationAsset::FromJson(json.Value());
@@ -526,18 +530,23 @@ private:
     }
     void BindAnimations(bool fixedTick = false) {
         anim::ForEachAnimatedRenderer(m_scene->world, [&](ecs::Entity, auto& animator, auto& sprite) {
+            if (!m_ready) return;
             const auto* data = Animation(animator.animation.guid);
             if (fixedTick && data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
                 if (const auto* next = Animation(data->nextAnimation.guid)) {
                     animator.animation = data->nextAnimation; animator.cursor = {}; animator.started = false; data = next;
                 }
             }
+            if (!m_ready) return;
             const auto* texture = data ? Texture(data->sheet.texture.guid) : nullptr;
             if (!data || !texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
-                animator.sheet = nullptr; animator.directClip = nullptr; return;
+                animator.sheet = nullptr; animator.directClip = nullptr; animator.sourceAnimation = nullptr;
+                if (m_ready && animator.animation.guid.IsValid())
+                    Fail(Error{"Animation asset or texture is missing, invalid or differs from its saved sheet size", 1});
+                return;
             }
             if (animator.directClip != &data->clip) { animator.cursor = {}; animator.started = false; }
-            animator.sheet = &data->sheet; animator.directClip = &data->clip;
+            animator.sheet = &data->sheet; animator.directClip = &data->clip; animator.sourceAnimation = data;
             anim::SampleAnimator(animator, &sprite);
         });
     }
@@ -565,6 +574,7 @@ private:
             }
         }
         BindAnimations(true);
+        if (!m_ready) return;
         anim::RunAnimationSystem(m_scene->world, dt);
         scene::UpdateWorldTransforms(m_scene->world);
         if (m_online && m_onlineSpawnLogged) {
@@ -588,6 +598,7 @@ private:
     void Render() {
         if (!m_ready) return;
         BindAnimations();
+        if (!m_ready) return;
         scene::UpdateWorldTransforms(m_scene->world);
         m_proxies.Clear();
         scene::ExtractRenderItems(m_scene->world, m_proxies);

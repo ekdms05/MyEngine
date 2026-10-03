@@ -1365,3 +1365,60 @@ MYE_TEST(EditorWorkspaceImGuiRoutingAndDialogs) {
     MYE_EXPECT(reopened.CurrentWorkspace() == EditorApp::Workspace::Lua);
     reopened.Shutdown();
 }
+
+MYE_TEST(EditorDirectionalAnimationWidgetsSaveAndUndo) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("animation-directions-ui");
+    EditorTestContext engine(root);
+    EditorApp app; TestEditorViewport viewport;
+    MYE_EXPECT(app.Initialize(engine, "")); app.SetViewport(&viewport);
+    MYE_EXPECT(app.Project().Create("Animation", Utf8String(root / "project"), false, MYE_STARTER_SOURCE_DIR));
+    app.RefreshDocumentContext();
+    MYE_EXPECT(app.OpenAnimation("assets/animations/novice_walk.anim"));
+    auto frame = [&]() { ImGui::NewFrame(); app.OnFrame(); ImGui::Render(); };
+    frame(); frame();
+    auto* window = ImGui::FindWindowByName("애니메이션###mye.anim");
+    auto* document = app.AnimationDocument();
+    MYE_EXPECT(window && document);
+    if (!window || !document) { app.Shutdown(); return; }
+    const auto original = document->Animation().ToJson();
+    const auto activate = [&](const char* label) { ImGui::ActivateItemByID(window->GetID(label)); frame(); };
+    activate("##편집 방향"); frame();
+    auto* popup = ImGui::FindWindowByName("##Combo_00");
+    MYE_EXPECT(popup && popup->Active);
+    if (!popup || !popup->Active) { app.Shutdown(); return; }
+    // Combo uses the item index as its ID scope; exercise the real selectable.
+    const int item = 3; // Base, Down, DownLeft, Left.
+    const auto scope = ImHashData(&item, sizeof(item), popup->IDStack.back());
+    ImGui::ActivateItemByID(ImHashStr("왼쪽", 0, scope)); frame(); frame();
+    const auto left = static_cast<size_t>(asset::Dir8::Left);
+    MYE_EXPECT(!document->Animation().directions[left] && !document->IsDirty());
+    activate("클립 추가");
+    MYE_EXPECT(document->Animation().directions[left] && document->IsDirty());
+    activate("되돌리기");
+    MYE_EXPECT(!document->Animation().directions[left]);
+    activate("다시 실행");
+    MYE_EXPECT(document->Animation().directions[left]);
+    activate("클립 제거"); MYE_EXPECT(!document->Animation().directions[left]);
+    activate("되돌리기"); MYE_EXPECT(document->Animation().directions[left]);
+    activate("우측 반전"); MYE_EXPECT(document->Animation().mirrorRight);
+    activate("저장"); MYE_EXPECT(!document->IsDirty());
+    const auto stored = ReadJsonFile(Utf8Path(document->Path()));
+    MYE_EXPECT(stored);
+    if (stored) {
+        auto decoded = asset::AnimationAsset::FromJson(stored.Value());
+        MYE_EXPECT(stored.Value().Find("version")->AsInt() == 2 && decoded);
+        if (decoded) {
+            MYE_EXPECT(decoded.Value().directions[left] && decoded.Value().Resolve(asset::Dir8::Right).flipX);
+            MYE_EXPECT(json::Stringify(*original.Find("timeline")) == json::Stringify(*stored.Value().Find("timeline")));
+        }
+    }
+    ImGui::DockContextProcessUndockWindow(GImGui, window);
+    ImGui::SetWindowPos(window, ImVec2(10, 40));
+    for (const float fontScale : {1.0f, 1.5f}) {
+        ImGui::GetStyle().FontScaleMain = fontScale;
+        ImGui::SetWindowSize(window, ImVec2(360, 800)); frame(); frame();
+        MYE_EXPECT(window->ContentSize.x <= window->WorkRect.GetWidth() + 1.0f);
+    }
+    app.Shutdown();
+}

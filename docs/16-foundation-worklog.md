@@ -436,3 +436,31 @@ UI 선택/검수: 기존 초안·저장·취소와 이름 ID/트리·두 열 위
 문서/도구 동기화: 구조·우선순위·스킬/에이전트·Lua/컴포넌트·작업 목록과 26번 모션 가이드를 갱신했다. D08은 진행 중이며 다음은 방향별 작성/엄격 파싱/저장·Undo→재로드/앱 바인딩→서로 다른 클립의 진행률/발 위치·실제 로컬/온라인 픽셀→공격/피격/사망 전환이다. 오프라인 가이드에 모션 페이지와 기존 단일 클립 이미지/GIF/영상을 연결하고 그 자료의 검증 범위를 명시했다. 기존 guide 생성기를 전체 실행하지 않고 소유한 블록만 바꿨으며 입력/카메라/XYZ 페이지를 보존했다. 147개 링크/앵커·중복 ID 검사가 통과했다. MCP에 animation2d 주제를 추가하고 npm build/smoke 34개를 통과했다. 로컬 개발·게임 제작·릴리즈 세 스킬의 실제 범위를 갱신했다. 빌드/새 MCP 프로세스 검증과 현재 세션 연결은 구분한다.
 
 피드백/배포/한계: Project E docs에 engine-feedback-response-2026-10-03-2d-motion.md로 main 소스의 수신 요구/변경 이유/검증/남은 조건을 별도 답변했다. 사용자 원문/게임 에셋·GUID는 변경하지 않았다. VERSION/v0.3.0·불변 설치/패키지를 유지하고 새 버전/릴리즈는 만들지 않는다. 직접 장치/전체 키보드 탐색/모니터 DPI, 방향별 파일/진행률, 전투/상태/온라인 게임 규칙·맵·HUD·운영 보호·완성 게임 배포가 남아 있다. 이 단위의 수정은 비용 측정에 따른 성능 최적화나 전체 엔진 완성 선언이 아니다.
+
+## 2026-10-03 · 방향별 클립 작성·저장·공식 앱 바인딩
+
+요구와 단위: 온라인 2D 픽셀 MMORPG 목표와 ME-008의 방향별 모션을 D08b로 진행했다. 한 .anim의 기본/선택적 8방향 작성→엄격 파싱→Undo/저장/재로드→Play/MyGame/인증 원격 픽셀을 완료 조건으로 삼았다. 서로 다른 클립의 진행률/발 위치/시간 시퀀스(D08c), 행동 전환(D08d), 권위 전투(D16)는 남긴다. 기존 개발·ImGui·Lua 계약을 적용했고 추가 패키지·새 에이전트·3D 확장·외부 소스 복사는 없었다. 비교 기능/공식 자료 URL과 선택 차이는 로컬 build/2d-foundation/d08b-benchmark.md에 남긴다. 필요한 기존 고지는 보존했다.
+
+호출 경로와 소유권: AssetDatabase GUID→AnimationAsset::FromJson→에디터 문서 또는 앱의 기존 캐시→SpriteAnimator 바인딩→ResolveActiveClip→UpdateAnimator/SampleAnimator→SpriteRenderer→실제 DX11 프레임을 추적했다. DirectionalAnimSet/ResolveDir·NpcSystem/Lua의 Dir8 사용과 두 앱의 모든 바인딩/해제 호출자를 확인했다. 순수 방향 값/반전 규칙은 기존 asset/SpriteSheet.h에 두고 anim의 공개 이름을 alias로 보존해 asset→scene 역참조를 피했다. sourceAnimation은 기존 안정된 에셋/문서 주소를 빌린다. 방향 클립은 optional 값 배열이므로 복사/Undo 이후 내부 self-pointer를 다시 만드는 캐시가 없다. 기존 directClip·메모리 상태 머신 테스트 경로도 유지했다.
+
+선택 이유: 한 시트·기본 클립·최대 8방향 클립으로 제한했다. 방향마다 새 GUID/중첩 로더·팩토리·별도 편집 문서를 만들 필요가 없으며 기존 값 Undo·메타데이터·저장 실패 보존을 재사용할 수 있다. 각 방향의 프레임/시간/반복/재생 순서/이벤트는 독립이고 시트/피벗·후속 에셋은 공유한다. 직접 지정한 방향이 먼저, 우측 반전을 켜면 누락된 우측에 대응 좌측+flip, 대응 좌측도 없으면 기본을 반전 없이 사용한다. 기존 메모리 세트는 모든 슬롯이 있는 경우에도 반전을 우선했으며, 이 단위에서 명시 클립 우선 계약으로 바꿨다. 해당 테스트는 직접 우측과 누락 우측/좌측 반전 둘 다 확인하도록 수정했다. 종전 파일에는 방향 저장이 없었고 사용자 파일을 자동 변환하지 않았다.
+
+파일 경계: 기본 전용 .anim은 기존 버전 1로 저장한다. 방향 값 또는 mirrorRight=true일 때만 버전 2와 directions/mirrorRight를 기록한다. 버전 2는 객체/불리언 타입, 알려진 8개 방향 키·각 방향의 다섯 클립 필드만 허용한다. v1의 방향 필드·지원하지 않는 버전·잘못된 시간/인덱스/마커/참조를 거부한다. 공유 ReadClip/ValidateClip/WriteClip으로 기존 기본 클립과 같은 1~4096/0.001~60초 경계를 사용한다. 공통 JSON 파서의 마지막 중복 키 우선 정책은 변경하지 않았으므로 중복 원문 키 거부를 주장하지 않는다.
+
+편집 동작: 기본 또는 방향 선택은 표시 상태만 변경한다. 미지정 방향은 대체 프리뷰를 보여주고 클립 추가 전에는 편집을 비활성화한다. 추가는 기본 타임라인의 값 복사, 제거/우측 반전은 기존 AnimAssetEditCommand 하나로 실행하며 Undo/Redo를 사용한다. 프리뷰·타임라인·설정·이벤트는 선택한 클립을 사용하고 시트 프레임 클릭도 미지정 방향의 기본을 몰래 수정하지 않는다. 시트 교체/그리드 재생성은 인덱스 계약이 바뀌므로 방향/반전까지 초기화하고 패널에 이유를 안내한다. Undo로 복구 가능하며 기존 PNG/사용자 에셋을 변경하지 않는다. 새 레이아웃 엔진/테마는 만들지 않았고 짧은 레이블·폭을 사용하는 기존 위젯·wrap 설명을 사용했다.
+
+실제 실패와 공통 수정: 초기 native 검사에서 잘못된 up 시간은 MyGame이 거부했지만 MyEditor는 로그만 남긴 뒤 exit 0이었다(build/animation2d/dc705a5d756746bd8b58f4d6b418e9f2). EditorModule::ResolveAnimation/BindAnimations가 실패를 nullable 포인터로 숨겼기 때문이다. Expected로 반환하고 모든 고정 틱/Frame 호출자가 쿼리 종료 후 기존 ReportFrameError로 전달한다. Play 월드를 쿼리하는 중 Stop을 호출해 월드를 파괴하지 않는다. 에셋 동기화/Play Tick 오류도 같은 호출 경계에서 반환하며 Stop 후 null 월드를 다시 진행하지 않는다. 추가 검사에서는 저장 width=433/실제 PNG=432를 MyGame이 성공 처리했다(d08b-size-before.log, d699e16d5ce54c738894d6b9e4f060b5). Game 바인딩에서 지정 애니메이션/텍스처·크기 불일치를 Fail로 전달하고 Tick/Render는 실패 뒤 진행하지 않는다. 누락된 후속 GUID도 실제 고정 틱 전환 시 두 앱이 실패하도록 확인했다.
+
+하네스 교정: 첫 테스트 빌드는 JSON Value의 const AsObject를 직접 수정한 테스트 코드 때문에 실패했다. 소유 Object 복사로 교정했고 새 shadow 경고 두 개도 제거했다. 첫 ImGui 검사(585/586, d08b-ui-tests.log)는 테스트 EngineContext에 기본 템플릿 경로가 없는 상태에서 app.CreateProject(useStarter=true)를 호출해 파일이 없는 것이 원인이었다. 기존 ProjectContext의 명시 템플릿 생성과 RefreshDocumentContext를 재사용했다. 한 native Play 캡처는 30 렌더 프레임이 0.014초 안에 끝나 고정 틱 없이 Down을 보였다(32448c1b8a7d445dab03d44f15a1411c). 최종 하네스는 3000 프레임과 실제 Lua tick 표식이 모두 있어야 픽셀을 평가한다. 초기 앱 실험은 기본 LOCALAPPDATA를 사용했으며 최종 스크립트는 프로세스 생성 동안만 build fixture의 LOCALAPPDATA를 상속하고 즉시 복원해 설정/로그/저장 실험을 격리한다. 실패를 제품 성공 증거로 사용하지 않는다.
+
+최종 제품 검증: 전체 Debug/Release CMake 빌드와 순차 CTest가 각각 586/586을 통과했다(Debug 39.41초, Release 30.01초). 추가된 두 회귀는 버전/방향/타입/프레임/시간/마커·값 복사/직접/반전/기본 해석과 실제 ImGui 방향 선택→추가/제거→Undo/Redo→저장을 확인한다. 기존 저장 테스트는 v2 값 Undo·Redo·실패 파일 보존·GUID/메타데이터 왕복으로 보완했다. 실제 위젯 회귀는 undock 360px 패널의 1/1.5 글꼴 배율에서 콘텐츠 가로 경계도 확인했다. 실제 모니터 DPI·전체 키보드/장치 탐색의 인증으로 확대하지 않는다. 기존 /EHc→/EHc- 경고는 별개다.
+
+실제 앱 검증: tools/verify-animation2d.ps1은 새 build/animation2d fixture에 9개 색/왼쪽 마커의 진단 시트를 만든다. 최종 Debug 00fe4008c91a4a63b4f9a39088fab20c, Release 819937c690824e89a0551c6adb2a7ba6가 통과했다. 여덟 입력+정지의 실제 MyGame 픽셀, 직접 우측 우선/누락 우측 반전/좌측도 없을 때 기본, Editor 패널·Play, 손상 시간/PNG 크기/누락 후속의 두 앱 실패를 확인했다. 두 계정의 인증/처리 ack 후 서로 다른 로컬·원격 방향 픽셀과 클라이언트 Lua 미실행도 확인했다. 작성 씬/애니메이션 메타데이터 해시는 동일하다. native 에디터와 Release 온라인 캡처를 직접 확인했고 단색 그림은 진단 자료이며 게임 아트 승인이 아니다.
+
+기존 회귀: Release d08a-app-973ea7ef9ef64e4e95a360c3d9a93f29에서 9틱 방향/후속/첫 이벤트, 한 틱의 후속 유무 동일 BMP를 유지했다. Release verify-online2d -SavedCamera(a1a397b7ca664e4b98709030028fecbc)는 두 계정의 원/offset/층·얇은 벽·ack·저장 카메라/원격 표시·퇴장·Lua 격리·저장/재시작/재접속을 통과했다. 합성 입력 재생은 물리 키보드/패드 검수와 구분한다.
+
+UI 스킬 검증의 한계: check_imgui_cpp.py는 기존과 현재 패널 모두 BeginPopupModal/EndPopup 이름과 분기 내 PopID를 오류로 판단했다(기준선 d08b-before-scopes.log). 실제 코드는 EndPopup을 사용하고 break 경로의 PopID 이후 바깥 PopID를 실행하지 않으며 제품 컴파일/위젯 테스트는 통과했다. 이를 checker 통과로 표시하지 않는다. run_quality_suite.py --imgui-dir third_party/imgui의 구조/contrast/참조 semantic 30/30은 통과했고 공식 v1.92.0/master를 가져왔으나 g++/c++가 없어 세 템플릿 컴파일 검사는 실패했다(d08b-ui-quality.log). MSVC 제품 통과와 스킬 템플릿 gate는 별개다. 새 컴파일러/패키지 설치나 전체 UI 검수 완료를 선언하지 않는다.
+
+문서·도구·피드백: 구조/우선순위/스킬 역할·Lua/컴포넌트·로드맵·26번 가이드와 기존 animation2d MCP 참조를 동기화했다. 149개 오프라인 가이드 링크/앵커·중복 ID 검사, MCP npm build/smoke 34개가 통과했다. 기존 전체 guide 생성기를 실행하지 않고 소유한 페이지/세 블록만 바꾸어 입력/카메라/XYZ 자료를 보존했다. native 패널 PNG와 기존 단일 클립 GIF/영상의 검증 범위를 명시했다. 로컬 세 스킬의 오래된 단일 클립 제한을 갱신했다. Project E docs에 engine-feedback-response-2026-10-03-2d-directions.md로 ID·원인·선택·검증·다음 재검수 답변을 기록했다. 사용자 원문의 SHA256 BBB46C82534D1126312F56B85C2BCBB7220A7022B5A49F5944FFDBFB2EAF47C4와 사용자 게임 에셋/GUID는 유지한다.
+
+남은 완료 조건: D08b만 main 소스 완료로 표시한다. D08c의 서로 다른 방향 클립 진행률/비반복 완료/발 피벗·이벤트와 시간별 로컬/온라인 픽셀, D08d 행동 전환, 직접 장치/모니터 DPI·게임 규칙·맵·HUD·운영 보호·완성 게임 배포는 남았다. VERSION/v0.3.0·불변 설치/패키지를 유지하고 새 태그/릴리즈를 만들지 않는다. 이 변경은 측정에 근거한 성능 최적화나 전체 엔진/게임 출시 완료 선언이 아니다.

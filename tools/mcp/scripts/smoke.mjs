@@ -221,7 +221,8 @@ async function main() {
   const animation2D = await request("tools/call", { name: "engine_reference", arguments: { topic: "animation2d", lines: 120 } });
   check("engine_reference — 2D 모션의 공통 요청과 표시/틱 경계", animation2D.result?.isError !== true &&
     firstText(animation2D.result).includes("같은 이동 상태") && firstText(animation2D.result).includes("트리거") &&
-    firstText(animation2D.result).includes("현재 파일은 단일 클립"));
+    firstText(animation2D.result).includes("버전 2") && firstText(animation2D.result).includes("mirrorRight") &&
+    firstText(animation2D.result).includes("진행률 보정은 다음 작업") && firstText(animation2D.result).includes("Play를 중단"));
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });
   fs.writeFileSync(path.join(fixture, "project.myeproj"), JSON.stringify({ version: 1, name: "Smoke", mainScene: "assets/scenes/main.scene" }));

@@ -163,48 +163,58 @@ struct EditorModule::Impl final : public IEditorViewport {
         }
         return found->second.Get();
     }
-    const asset::AnimationAsset* ResolveAnimation(asset::AssetGuid guid) {
-        if (!assetDb || !guid.IsValid()) return nullptr;
+    Expected<const asset::AnimationAsset*, Error> ResolveAnimation(asset::AssetGuid guid) {
+        if (!assetDb || !guid.IsValid()) return Error{"Animation requires an asset database and GUID", 1};
         const auto path = assetDb->PathFromGuid(guid);
-        if (!path.ends_with(".anim")) return nullptr;
+        if (!path.starts_with("assets://") || !path.ends_with(".anim"))
+            return Error{"Animation GUID does not identify a .anim file", 1};
         const auto osPath = Utf8Path(assetRoot) / Utf8Path(path.substr(9));
+        const auto diagnostic = [&](const Error& error) {
+            return Error{Utf8String(osPath) + ": " + error.message, error.code};
+        };
         for (auto* doc : app->Project().Documents()) {
             if (doc->GetKind() != Document::Kind::Asset || Utf8Path(doc->Path()) != osPath) continue;
-            return doc->Animation().Validate() ? &doc->Animation() : nullptr;
+            auto valid = doc->Animation().Validate();
+            if (!valid) return diagnostic(valid.GetError());
+            return &doc->Animation();
         }
         auto found = animations.find(guid);
         if (found == animations.end()) {
             auto value = ReadJsonFile(osPath);
-            if (!value) { MYE_LOG_ERROR("Editor", "{}", value.GetError().message); return nullptr; }
+            if (!value) return diagnostic(value.GetError());
             auto loaded = asset::AnimationAsset::FromJson(value.Value());
-            if (!loaded) { MYE_LOG_ERROR("Editor", "{}", loaded.GetError().message); return nullptr; }
+            if (!loaded) return diagnostic(loaded.GetError());
             found = animations.emplace(guid, std::move(loaded).Value()).first;
         }
         return &found->second;
     }
-    void BindAnimations(ecs::World& world, bool fixedTick = false) {
+    Expected<void, Error> BindAnimations(ecs::World& world, bool fixedTick = false) {
+        Expected<void, Error> result;
         anim::ForEachAnimatedRenderer(world,
             [&](ecs::Entity, anim::SpriteAnimator& animator, auto& sprite) {
-                if (!animator.animation.guid.IsValid()) { animator.sheet = nullptr; animator.directClip = nullptr; return; }
-                const auto* data = ResolveAnimation(animator.animation.guid);
-                if (fixedTick && data && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
-                    const auto* next = ResolveAnimation(data->nextAnimation.guid);
-                    const auto* image = next ? ResolveTexture(next->sheet.texture.guid) : nullptr;
-                    if (next && image && next->imageSize.x == static_cast<int32_t>(image->width) && next->imageSize.y == static_cast<int32_t>(image->height)) {
-                        animator.animation = data->nextAnimation;
-                        animator.cursor = {}; animator.started = false; data = next;
-                    }
+                if (!result) return;
+                if (!animator.animation.guid.IsValid()) { animator.sheet = nullptr; animator.directClip = nullptr; animator.sourceAnimation = nullptr; return; }
+                auto loaded = ResolveAnimation(animator.animation.guid);
+                if (!loaded) { result = loaded.GetError(); return; }
+                const auto* data = loaded.Value();
+                if (fixedTick && animator.playing && animator.cursor.finished && data->nextAnimation.guid.IsValid()) {
+                    auto next = ResolveAnimation(data->nextAnimation.guid);
+                    if (!next) { result = next.GetError(); return; }
+                    animator.animation = data->nextAnimation;
+                    animator.cursor = {}; animator.started = false; data = next.Value();
                 }
-                const auto* texture = data ? ResolveTexture(data->sheet.texture.guid) : nullptr;
-                if (!data || !texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
-                    animator.sheet = nullptr; animator.directClip = nullptr;
+                const auto* texture = ResolveTexture(data->sheet.texture.guid);
+                if (!texture || data->imageSize.x != static_cast<int32_t>(texture->width) || data->imageSize.y != static_cast<int32_t>(texture->height)) {
+                    animator.sheet = nullptr; animator.directClip = nullptr; animator.sourceAnimation = nullptr;
+                    result = Error{"Animation texture is missing, invalid or differs from its saved sheet size", 1};
                     return;
                 }
                 if (animator.directClip != &data->clip) { animator.cursor = {}; animator.started = false; }
                 animator.sheet = &data->sheet;
-                animator.directClip = &data->clip;
+                animator.directClip = &data->clip; animator.sourceAnimation = data;
                 anim::SampleAnimator(animator, &sprite);
             });
+        return result;
     }
 
     ViewportCamera vpCam{};
@@ -400,8 +410,11 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
         if (!state.app || !state.device) return;
         state.app->RefreshDocumentContext();
         auto synced = state.SyncAssets();
-        if (!synced) MYE_LOG_ERROR("Editor", "{}", synced.GetError().message);
-        if (auto* world = state.app->PlayMode().ActiveWorld()) state.BindAnimations(*world);
+        if (!synced) { state.ReportFrameError(synced.GetError()); return; }
+        if (auto* world = state.app->PlayMode().ActiveWorld()) {
+            auto bound = state.BindAnimations(*world);
+            if (!bound) { state.ReportFrameError(bound.GetError()); return; }
+        }
         TickPlayWorld(t);
     }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::PreRender,
@@ -427,10 +440,12 @@ void EditorModule::TickPlayWorld(const TimeStep& step) {
     const auto controls = s.gameInput.ConsumeTick();
     if (controls.exitGame) { pm.Stop(); s.gameInput.Clear(); s.inputConfigured = false; return; }
     auto tick = pm.Tick(dt, controls, s.app->Project().RootDir());
-    if (!tick) MYE_LOG_ERROR("Editor", "{}", tick.GetError().message);
+    if (!tick) { s.ReportFrameError(tick.GetError()); return; }
     w = pm.ActiveWorld();
     s.app->RefreshDocumentContext();
-    s.BindAnimations(*w, true);
+    if (!w) return;
+    auto bound = s.BindAnimations(*w, true);
+    if (!bound) { s.ReportFrameError(bound.GetError()); return; }
     // Fixed tick: Lua/controls -> collision/events -> animation -> transforms.
     anim::RunAnimationSystem(*w, dt);
     scene::UpdateWorldTransforms(*w);
@@ -444,7 +459,10 @@ void EditorModule::Frame(const TimeStep&) {
     auto synced = s.SyncAssets();
     if (!synced) s.ReportFrameError(synced.GetError());
     bool frameFailed = !synced;
-    if (auto* world = s.app->PlayMode().ActiveWorld()) s.BindAnimations(*world);
+    if (auto* world = s.app->PlayMode().ActiveWorld()) {
+        auto bound = s.BindAnimations(*world);
+        if (!bound) { s.ReportFrameError(bound.GetError()); frameFailed = true; }
+    }
 
     // 2) 활성 World 추출.
     ecs::World* world = s.app->PlayMode().ActiveWorld();

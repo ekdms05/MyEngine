@@ -266,6 +266,7 @@ Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& input) {
                     animator->animation = ref;
                     animator->sheet = nullptr;
                     animator->directClip = nullptr;
+                    animator->sourceAnimation = nullptr;
                     animator->cursor = {};
                     animator->started = false;
                 }

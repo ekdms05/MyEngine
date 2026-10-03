@@ -19,7 +19,7 @@
 | Collider3D | enabled/shape/half/offset/isTrigger | 축 정렬 상자/+Z 경사. half·offset은 로컬 단위이며 양수 Transform 스케일 적용 |
 | KinematicBody3D | settings의 speed/gravity/jumpSpeed/floorSnap/stepHeight/skin | 접지·벽·천장 상태. 조작 캐릭터와 함께 사용; 자유 강체·메시 물리 미지원 |
 | CharacterController3D | enabled/cameraRelative/idleAnimation/walkAnimation | 씬의 활성 조작 캐릭터 1명. WASD XZ·Space 점프 |
-| SpriteAnimator | animation에 .anim 드래그, speed/playing 설정 | speed=재생 배율. 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요. main의 표시 샘플은 첫 이벤트/전이를 소비하지 않으며 후속 모션은 고정 틱에서 연결. 기본/8방향 .anim의 작성·Undo·반전/대체와 남은 진행률 보정은 [26](26-2d-animation.md)에서 확인 |
+| SpriteAnimator | animation에 .anim 드래그, speed/playing 설정 | speed=재생 배율. 이동 속도와 별개. 이미지 크기·에셋 참조 일치 필요. main의 표시 샘플은 첫 이벤트/전이를 소비하지 않으며 후속 모션은 고정 틱에서 연결. 기본/8방향 .anim의 작성·Undo·반전/대체·진행률/발 피벗과 남은 연속 온라인 검증은 [26](26-2d-animation.md)에서 확인 |
 | InteractionTarget | enabled/radius/prompt | radius 안에서 E. 행동은 ObjectBehavior로 연결. prompt 자동 HUD는 미연결 |
 | ScenePortal | scenePath/spawnName/onInteract | assets/scenes/*.scene과 목적지 ObjectName. E면 InteractionTarget, 자동 진입이면 trigger Collider2D/3D |
 | ObjectBehavior | 이벤트→행동 연결 또는 Lua return 테이블 | Start/Interact/TriggerEnter/TriggerExit. 연결 순서대로 실행, 최대64개. Lua64KiB |

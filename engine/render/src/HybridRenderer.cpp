@@ -677,8 +677,8 @@ void HybridRenderer::BuildSpriteQuad(const scene::RenderItem& it, const HybridVi
     const Vec2 sourcePixels{it.srcUV.w * tex->width, it.srcUV.h * tex->height};
     if (sourcePixels.x <= 0 || sourcePixels.y <= 0) return;
     const auto corners = it.kind == scene::RenderItemKind::Billboard
-        ? scene::BillboardCorners(it.worldTransform, view.view, static_cast<scene::BillboardMode>(it.billboardMode), sourcePixels, it.pivotPx, kPixelsPerUnit)
-        : scene::SpriteCorners3D(it.worldTransform, sourcePixels, it.pivotPx, kPixelsPerUnit);
+        ? scene::BillboardCorners(it.worldTransform, view.view, static_cast<scene::BillboardMode>(it.billboardMode), sourcePixels, it.pivotPx, kPixelsPerUnit, it.flipX, it.flipY)
+        : scene::SpriteCorners3D(it.worldTransform, sourcePixels, it.pivotPx, kPixelsPerUnit, it.flipX, it.flipY);
 
     float u0 = it.srcUV.x, v0 = it.srcUV.y;
     float u1 = it.srcUV.x + it.srcUV.w, v1 = it.srcUV.y + it.srcUV.h;

@@ -59,20 +59,14 @@ bool StepTransitions(SpriteAnimator& a, bool keepPhase) {
         if (t.to == a.currentState) continue;         // self-transition 무시
         if (!TransitionReady(a, t)) continue;
 
-        // 전이 실행.
+        const auto previous = ResolveActiveClip(a, a.started ? a.playbackFacing : a.facing);
         ConsumeTriggers(a, t);
-        const int prevState = a.currentState;
         a.currentState = t.to;
-
-        // 위상 유지 정책: 걷기↔대기처럼 프레임 위상을 유지(step/timeInStep 보존).
-        // 단 finished 플래그는 새 클립 기준으로 리셋(비루프 재진입 대비).
-        if (!keepPhase) {
-            a.cursor = ClipCursor{};
-        } else {
-            a.cursor.finished = false;
-        }
+        const auto target = ResolveActiveClip(a);
+        // A new state starts a fresh cycle after completion; turning alone retains completion.
+        if (!keepPhase || a.cursor.finished || !previous.clip || !target.clip) a.cursor = {};
+        else if (previous.clip != target.clip) a.cursor = RemapClipCursor(*previous.clip, *target.clip, a.cursor);
         a.started = false;   // 새 상태 첫 프레임 이벤트 재발행
-        (void)prevState;
         return true;         // 1스텝당 1전이(체이닝은 다음 프레임)
     }
     return false;

@@ -5,8 +5,10 @@
 
 namespace mye::scene {
 // The render and editor picking paths share the source-pixel / foot-pivot contract.
-inline std::array<Vec3, 4> SpriteCorners3D(const Mat4& matrix, Vec2 sourcePixels, Vec2 pivotPixels, float pixelsPerUnit) {
+inline std::array<Vec3, 4> SpriteCorners3D(const Mat4& matrix, Vec2 sourcePixels, Vec2 pivotPixels, float pixelsPerUnit, bool flipX = false, bool flipY = false) {
     if (pivotPixels.x == 0 && pivotPixels.y == 0) pivotPixels = {sourcePixels.x * 0.5f, sourcePixels.y};
+    if (flipX) pivotPixels.x = sourcePixels.x - pivotPixels.x;
+    if (flipY) pivotPixels.y = sourcePixels.y - pivotPixels.y;
     const float left = -pivotPixels.x / pixelsPerUnit;
     const float top = pivotPixels.y / pixelsPerUnit;
     const float right = left + sourcePixels.x / pixelsPerUnit;
@@ -18,16 +20,16 @@ inline std::array<Vec3, 4> SpriteCorners3D(const Mat4& matrix, Vec2 sourcePixels
     }
     return corners;
 }
-inline std::array<Vec2, 4> SpriteCorners(const Mat4& matrix, Vec2 sourcePixels, Vec2 pivotPixels, float pixelsPerUnit) {
-    const auto world = SpriteCorners3D(matrix, sourcePixels, pivotPixels, pixelsPerUnit);
+inline std::array<Vec2, 4> SpriteCorners(const Mat4& matrix, Vec2 sourcePixels, Vec2 pivotPixels, float pixelsPerUnit, bool flipX = false, bool flipY = false) {
+    const auto world = SpriteCorners3D(matrix, sourcePixels, pivotPixels, pixelsPerUnit, flipX, flipY);
     std::array<Vec2, 4> corners;
     for (std::size_t i = 0; i < corners.size(); ++i) corners[i] = {world[i].x, world[i].y};
     return corners;
 }
 
 inline std::array<Vec3, 4> BillboardCorners(const Mat4& matrix, const Mat4& view,
-    BillboardMode mode, Vec2 sourcePixels, Vec2 pivotPixels, float pixelsPerUnit) {
-    if (mode == BillboardMode::None) return SpriteCorners3D(matrix, sourcePixels, pivotPixels, pixelsPerUnit);
+    BillboardMode mode, Vec2 sourcePixels, Vec2 pivotPixels, float pixelsPerUnit, bool flipX = false, bool flipY = false) {
+    if (mode == BillboardMode::None) return SpriteCorners3D(matrix, sourcePixels, pivotPixels, pixelsPerUnit, flipX, flipY);
     Vec3 right{view.m[0][0], view.m[1][0], view.m[2][0]};
     Vec3 up{view.m[0][1], view.m[1][1], view.m[2][1]};
     if (mode == BillboardMode::YAxis) {
@@ -45,6 +47,6 @@ inline std::array<Vec3, 4> BillboardCorners(const Mat4& matrix, const Mat4& view
     for (unsigned i = 0; i < 3; ++i) facing.m[3][i] = matrix.m[3][i];
     facing.m[0][0] = right.x; facing.m[0][1] = right.y; facing.m[0][2] = right.z;
     facing.m[1][0] = up.x; facing.m[1][1] = up.y; facing.m[1][2] = up.z;
-    return SpriteCorners3D(facing, sourcePixels, pivotPixels, pixelsPerUnit);
+    return SpriteCorners3D(facing, sourcePixels, pivotPixels, pixelsPerUnit, flipX, flipY);
 }
 } // namespace mye::scene

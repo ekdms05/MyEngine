@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Debug',
-    [string]$BuildDir = 'build/dev'
+    [string]$BuildDir = 'build/dev',
+    [switch]$Phase
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -159,6 +160,7 @@ foreach ($user in @('directions-a', 'directions-b')) {
     $null = Run-App $server "character-$user" @('--data', $data, '--make-char', $user, $user)
     Write-Json (Join-Path $run "$user.json") @{ username = $user; password = 'local-test-only' }
 }
+$initialState = if ($Phase) { [IO.File]::ReadAllBytes((Join-Path $data 'state.json')) }
 $owned = @()
 try {
     $hostProcess = Start-App $server 'server' @('--data', $data, '--project', $project, '--port', '0', '--ticks', '300')
@@ -192,6 +194,116 @@ try {
     }
 }
 $player.components.PSObject.Properties.Remove('ObjectBehavior'); Write-Json $scenePath $scene
+if ($Phase) {
+    # Unequal logical periods and asymmetric feet expose frame-index remapping and UV-only mirroring.
+    $phaseColours = @('FF0000','00FF00','0000FF','FFFF00','FF00FF','00FFFF','FF8000','808080')
+    $widths = @(48,40,32,56,32,40,56,48); $heights = @(48,40,48,32,40,48,32,48)
+    $pivots = @(12,8,14,24,14,8,14,12)
+    $atlas = [Drawing.Bitmap]::new(512,64)
+    try {
+        for ($i = 0; $i -lt 8; $i++) {
+            $colour = [Drawing.ColorTranslator]::FromHtml('#' + $phaseColours[$i])
+            for ($y = 0; $y -lt $heights[$i]; $y++) {
+                for ($x = 0; $x -lt $widths[$i]; $x++) {
+                    $foot = $y -ge $heights[$i]-2 -and $x -ge $pivots[$i]-2 -and $x -lt $pivots[$i]+2
+                    $atlas.SetPixel($i*64+$x,$y,$(if ($foot) { [Drawing.Color]::White } else { $colour }))
+                }
+            }
+        }
+        $atlas.Save($texturePath,[Drawing.Imaging.ImageFormat]::Png)
+    } finally { $atlas.Dispose() }
+    $animation.width = 512; $animation.height = 64
+    $animation.frames = @(0..7 | ForEach-Object { @{ x=$_*64; y=0; w=$widths[$_]; h=$heights[$_]; pivotX=$pivots[$_]; pivotY=$heights[$_] } })
+    $animation.timeline = @(@{frame=0;seconds=.125},@{frame=1;seconds=.125},@{frame=2;seconds=.25},@{frame=3;seconds=.5})
+    $animation.events = @(@{frame=0;name='phase-start';text='';value=0})
+    $animation.directions = @{
+        left = @{name='left';loop=$true;direction=0;timeline=@(@{frame=4;seconds=.125},@{frame=5;seconds=.375})
+            events=@(@{frame=0;name='phase-left-entry';text='';value=0},@{frame=1;name='phase-left-step';text='';value=0})}
+        up = @{name='reverse';loop=$true;direction=1;timeline=@(@{frame=5;seconds=.125},@{frame=6;seconds=.125},@{frame=7;seconds=.25});events=@()}
+        up_right = @{name='bounce';loop=$true;direction=2;timeline=@(@{frame=2;seconds=.125},@{frame=4;seconds=.25},@{frame=6;seconds=.125});events=@()}
+    }
+    Write-Json $animationPath $animation
+    $player.components | Add-Member -NotePropertyName ObjectBehavior -NotePropertyValue ([pscustomobject]@{
+        connections=@();luaSource='return { on_event=function(self, name, payload) if name == "animation" then mye.log("phase-event:" .. payload.name) end end }'
+    }) -Force
+    Write-Json $scenePath $scene
+    $down = @{ticks=9;x=0;y=-1}; $leftOne = @{ticks=1;x=-1;y=0}; $leftFour = @{ticks=4;x=-1;y=0}; $rightOne = @{ticks=1;x=1;y=0}
+    $cases = @(
+        @{name='phase-down';steps=@($down);colour=0x00FF00;events=0},
+        @{name='phase-left-early';steps=@($down,$leftOne);colour=0xFF00FF;events=0},
+        @{name='phase-left-later';steps=@($down,$leftFour);colour=0x00FFFF;events=1},
+        @{name='phase-mirror';steps=@($down,$leftFour,$rightOne);colour=0x00FFFF;events=1},
+        @{name='phase-reverse-early';steps=@($down,$leftFour,$rightOne,@{ticks=2;x=0;y=1});colour=0x808080;events=1},
+        @{name='phase-reverse-later';steps=@($down,$leftFour,$rightOne,@{ticks=10;x=0;y=1});colour=0xFF8000;events=1},
+        @{name='phase-bounce-early';steps=@($down,$leftFour,$rightOne,@{ticks=2;x=1;y=1});colour=0xFF00FF;events=1},
+        @{name='phase-bounce-apex';steps=@($down,$leftFour,$rightOne,@{ticks=10;x=1;y=1});colour=0xFF8000;events=1},
+        @{name='phase-bounce-back';steps=@($down,$leftFour,$rightOne,@{ticks=16;x=1;y=1});colour=0xFF00FF;events=1}
+    )
+    function Check-Phase([string]$Name,[int]$Colour) {
+        Check-Pixel $Name 490 254 $Colour; Check-Pixel $Name 480 269 0xFFFFFF
+        $bitmap = [Drawing.Bitmap]::new((Join-Path $run "$Name.bmp"))
+        try { $background = $bitmap.GetPixel(0,0).ToArgb() -band 0xFFFFFF } finally { $bitmap.Dispose() }
+        Check-Pixel $Name 480 272 $background
+    }
+    foreach ($case in $cases) {
+        $inputFile = Replay $case.name $case.steps
+        $log = Run-App $game $case.name @('--project',$project,'--headless','--input',$inputFile,'--dump',(Join-Path $run ($case.name+'.bmp')))
+        Check-Phase $case.name $case.colour
+        if ([regex]::Matches($log,'phase-event:phase-start').Count -ne 1 -or $log -match 'phase-event:phase-left-entry' -or
+            [regex]::Matches($log,'phase-event:phase-left-step').Count -ne $case.events) { throw "Silent remap/actual crossing failed: $($case.name)" }
+    }
+    # Completed motions retain their terminal frame after turning to a different period.
+    $animation.loop = $false
+    foreach ($step in $animation.timeline) { $step.seconds = .001 }
+    $animation.directions.left.timeline += @{frame=6;seconds=.001}
+    foreach ($clip in $animation.directions.Values) { $clip.loop=$false; foreach ($step in $clip.timeline) { $step.seconds=.001 } }
+    Write-Json $animationPath $animation
+    $player.components.ObjectBehavior.luaSource = 'local n=0; return { on_update=function(self,dt) n=n+1; local e=mye.world.entity_from_packed(self.entity); if n==1 then e:face_move(mye.Vec2(0,-1)) elseif n==2 then e:face_move(mye.Vec2(-1,0)) elseif n==4 then e:face_move(mye.Vec2(1,0)); mye.log("phase-play-ready") end end }'
+    Write-Json $scenePath $scene
+    $log = Run-App $editor 'phase-play' @('--project',$project,'--headless','--play','--frames','12000','--dump',(Join-Path $run 'phase-play.bmp'))
+    if ($log -notmatch 'phase-play-ready') { throw 'Completed Play did not reach its final turn' }
+    Check-Phase 'phase-play' 0xFF8000
+    # Endpoint sequences only: per-client phase is presentation, not a replicated animation clock.
+    $player.components.ObjectBehavior.luaSource = 'return { on_init=function(self) mye.log("client-lua-must-not-run"); error("client authority violation") end }'
+    Write-Json $scenePath $scene
+    $down12=@{ticks=12;x=0;y=-1}; $right12=@{ticks=12;x=1;y=0}; $up12=@{ticks=12;x=0;y=1}; $stop30=@{ticks=30;x=0;y=0}
+    foreach ($case in @(
+        @{name='phase-online-mirror';steps=@($down12,$right12,$stop30);ticks=54;colour=0xFF8000;peerX=288;peerY=254},
+        @{name='phase-online-reverse';steps=@($down12,$right12,$up12,$stop30);ticks=66;colour=0x00FFFF;peerX=288;peerY=312},
+        @{name='phase-online-bounce';steps=@($down12,$right12,$up12,@{ticks=12;x=1;y=1},$stop30);ticks=78;colour=0xFF00FF;peerX=248;peerY=353}
+    )) {
+        $caseData = Join-Path $run ($case.name+'-data'); New-Item -ItemType Directory -Path $caseData | Out-Null
+        [IO.File]::WriteAllBytes((Join-Path $caseData 'state.json'),$initialState)
+        $owned=@()
+        try {
+            $hostName=$case.name+'-server'
+            $hostProcess=Start-App $server $hostName @('--data',$caseData,'--project',$project,'--port','0','--ticks','400'); $owned+=$hostProcess
+            $timer=[Diagnostics.Stopwatch]::StartNew(); $port=0
+            while ($timer.Elapsed.TotalSeconds -lt 5 -and -not $hostProcess.HasExited) {
+                $log=Get-Content -LiteralPath (Join-Path $run ($hostName+'.log')) -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                if ($log -match 'MyServer .*?port (\d+), tickrate 60Hz') { $port=[int]$Matches[1]; break }
+                Start-Sleep -Milliseconds 25
+            }
+            if (-not $port) { throw "Server readiness failed: $hostName" }
+            $bName=$case.name+'-b'; $aName=$case.name+'-a'
+            $bInput=Replay $bName @($down12,@{ticks=30;x=-1;y=0},@{ticks=180;x=0;y=0}); $aInput=Replay $aName $case.steps
+            foreach ($entry in @(@($bName,'directions-b',$bInput),@($aName,'directions-a',$aInput))) {
+                $process=Start-App $game $entry[0] @('--project',$project,'--headless','--connect',"127.0.0.1:$port",'--credentials',(Join-Path $run ($entry[1]+'.json')),'--input',$entry[2],'--dump',(Join-Path $run ($entry[0]+'.bmp')))
+                $owned+=$process; if ($entry[0] -eq $bName) { Start-Sleep -Milliseconds 300 }
+            }
+            $aLog=Wait-App $owned[2] $aName; $bLog=Wait-App $owned[1] $bName
+            if ($aLog -notmatch "Input replay confirmed: steps=$($case.ticks), pending=0" -or $aLog -notmatch 'Network object added:' -or
+                $bLog -notmatch 'Input replay confirmed: steps=222, pending=0') { throw "Authority replay failed: $($case.name)" }
+            Check-Phase $aName $case.colour; Check-Phase $bName 0xFF8000
+            Check-Pixel $aName $case.peerX $case.peerY 0xFF8000
+            $null=Wait-App $hostProcess $hostName
+        } finally {
+            foreach ($process in $owned) { if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }; $process.Dispose() }
+        }
+    }
+    $player.components.PSObject.Properties.Remove('ObjectBehavior'); Write-Json $scenePath $scene
+    Write-Output 'PASS: normalized unequal/reverse/ping-pong phase, silent remap, asymmetric feet, completed Play/online endpoints (continuous partial online timing remains pending)'
+}
 if ((Get-FileHash -LiteralPath $scenePath).Hash -ne $sceneHash -or
     (Get-FileHash -LiteralPath ($animationPath + '.meta')).Hash -ne $metaHash) { throw 'Authored scene/GUID changed' }
 Write-Output "PASS: $Configuration saved 8-facing clips, direct/mirror/default pixels, editor preview/Play, strict rejection, two authoritative clients/Lua isolation ($run)"

@@ -9,6 +9,8 @@
 
 #include "mye/asset/SpriteSheet.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -69,6 +71,41 @@ inline uint32_t CurrentFrameIndex(const AnimationClipData& clip, const ClipCurso
     if (n == 0) return 0;
     const uint32_t slot = StepToFrameSlot(clip, c.step);
     return clip.frameIndices[slot];
+}
+
+// Preserve elapsed-time fraction, not frame numbers, when the visible clip changes.
+// A completed motion stays complete when turning, even if the destination is looping.
+// ponytail: scan periods only at a change; cache validated totals if long clips become a measured bottleneck.
+inline ClipCursor RemapClipCursor(const AnimationClipData& source, const AnimationClipData& target, const ClipCursor& cursor) {
+    const uint32_t sourcePeriod = ClipStepPeriod(source), targetPeriod = ClipStepPeriod(target);
+    if (!sourcePeriod || !targetPeriod) return {};
+    if (cursor.finished) return {targetPeriod - 1u, 0, true};
+    const uint32_t sourceStep = cursor.step % sourcePeriod;
+    double sourceSeconds = 0, elapsedSeconds = 0, targetSeconds = 0;
+    for (uint32_t step = 0; step < sourcePeriod; ++step) {
+        const double seconds = StepDuration(source, step);
+        if (!std::isfinite(seconds)) return {};
+        sourceSeconds += seconds;
+        if (step < sourceStep) elapsedSeconds += seconds;
+    }
+    if (std::isfinite(cursor.timeInStep))
+        elapsedSeconds += std::clamp(double{cursor.timeInStep}, 0.0, double{StepDuration(source, sourceStep)});
+    for (uint32_t step = 0; step < targetPeriod; ++step) {
+        const double seconds = StepDuration(target, step);
+        if (!std::isfinite(seconds)) return {};
+        targetSeconds += seconds;
+    }
+    if (sourceSeconds <= 0 || targetSeconds <= 0) return {};
+    double remaining = std::clamp(elapsedSeconds / sourceSeconds, 0.0, 1.0) * targetSeconds;
+    uint32_t targetStep = 0;
+    while (targetStep + 1u < targetPeriod && remaining >= StepDuration(target, targetStep)) {
+        remaining -= StepDuration(target, targetStep); ++targetStep;
+    }
+    const float duration = StepDuration(target, targetStep);
+    float time = static_cast<float>(remaining);
+    // Do not round a position just before a boundary onto that boundary.
+    if (time >= duration && remaining < duration) time = std::nextafter(duration, 0.0f);
+    return {targetStep, time, false};
 }
 
 // dt 만큼 커서를 진행하며, 경과한 프레임의 이벤트 마커를 onEvent(marker)로 순서대로 보고한다.

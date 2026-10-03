@@ -390,3 +390,88 @@ MYE_TEST(AnimPresentationPreservesEntryEventsAndTransitionTriggers) {
     MYE_EXPECT(animator.currentState == 1 && !animator.GetBool("move") && events == 1);
     MYE_EXPECT_NEAR(animator.cursor.timeInStep, .02f, 1e-6f);
 }
+
+MYE_TEST(AnimSavedDirectionsPreserveTimePhaseAndSilentSampling) {
+    asset::AnimationAsset asset;
+    asset.clip.name = "down"; asset.clip.frameIndices = {0, 1, 2, 3};
+    asset.clip.frameDurations = {.125f, .125f, .25f, .5f};
+    auto left = asset.clip; left.name = "left"; left.frameIndices = {4, 5};
+    left.frameDurations = {.125f, .375f}; left.events = {{0, "left-start", "", 0}, {1, "left-step", "", 0}};
+    asset.directions[static_cast<size_t>(Dir8::Left)] = left; asset.mirrorRight = true;
+    for (unsigned i = 0; i < 6; ++i) {
+        SpriteFrame frame; frame.rect = {static_cast<int>(i * 24), 0, 24, 32};
+        frame.uv = {i / 6.0f, 0, 1 / 6.0f, 1}; frame.pivot = {7, 31}; frame.pivotInPixels = true;
+        asset.sheet.frames.push_back(frame);
+    }
+    SpriteAnimator animator; animator.sourceAnimation = &asset; animator.directClip = &asset.clip;
+    animator.sheet = &asset.sheet;
+    scene::SpriteRenderer renderer;
+    int events = 0;
+    auto event = [&](const auto&) { ++events; };
+    UpdateAnimator(animator, .375f, &renderer, event);
+    MYE_EXPECT(animator.cursor.step == 2 && animator.cursor.timeInStep == .125f);
+    animator.facing = Dir8::Left;
+    // Render the equivalent phase, retaining the old fixed-tick cursor and events.
+    SampleAnimator(animator, &renderer); SampleAnimator(animator, &renderer);
+    MYE_EXPECT(animator.currentFrameIndex == 5 && renderer.srcUV.x == 5 / 6.0f);
+    MYE_EXPECT(animator.cursor.step == 2 && animator.cursor.timeInStep == .125f && events == 0);
+    UpdateAnimator(animator, 0, &renderer, event);
+    MYE_EXPECT(animator.cursor.step == 1);
+    MYE_EXPECT_NEAR(animator.cursor.timeInStep, .0625f, 1e-6f);
+    MYE_EXPECT(events == 0 && renderer.pivotPx == Vec2{7, 31});
+    animator.facing = Dir8::Right; animator.playing = false;
+    UpdateAnimator(animator, .25f, &renderer, event);
+    MYE_EXPECT(animator.cursor.step == 1 && animator.cursor.timeInStep == .0625f && renderer.flipX);
+    MYE_EXPECT(events == 0); // Changing only the mirrored view is not a new motion entry.
+    animator.playing = true;
+    UpdateAnimator(animator, .3125f, &renderer, event);
+    MYE_EXPECT(animator.cursor.step == 0 && animator.cursor.timeInStep == 0 && events == 1);
+}
+
+MYE_TEST(AnimDirectionalCompletionAndStateTimePhase) {
+    auto source = MakeClip(); source.frameDurations = {.125f, .125f, .125f, .125f};
+    auto reverse = source; reverse.frameIndices = {4, 5, 6};
+    reverse.frameDurations = {.125f, .125f, .25f}; reverse.direction = AnimationClipData::Direction::Reverse;
+    const ClipCursor cursor{1, .0625f, false};
+    auto mapped = RemapClipCursor(source, reverse, cursor);
+    MYE_EXPECT(mapped.step == 0 && mapped.timeInStep == .1875f && CurrentFrameIndex(reverse, mapped) == 6);
+    auto ping = reverse; ping.direction = AnimationClipData::Direction::PingPong;
+    ping.frameDurations = {.125f, .25f, .125f};
+    mapped = RemapClipCursor(source, ping, cursor);
+    MYE_EXPECT(mapped.step == 1 && mapped.timeInStep == .15625f);
+    ping.events = {{2, "apex", "", 0}};
+    int events = 0; AdvanceClip(ping, mapped, .125f, [&](const auto&) { ++events; });
+    MYE_EXPECT(mapped.step == 2 && mapped.timeInStep == .03125f && events == 1);
+    AnimationClipData empty;
+    MYE_EXPECT(RemapClipCursor(empty, ping, cursor).step == 0);
+
+    asset::AnimationAsset data; data.clip = source; data.clip.loop = false;
+    data.directions[static_cast<size_t>(Dir8::Up)] = reverse;
+    data.directions[static_cast<size_t>(Dir8::Left)] = ping;
+    SpriteAnimator animator; animator.directClip = &data.clip; animator.sourceAnimation = &data;
+    scene::SpriteRenderer renderer;
+    UpdateAnimator(animator, .5f, &renderer, [&](const auto&) { ++events; });
+    MYE_EXPECT(animator.cursor.finished);
+    const int before = events;
+    animator.facing = Dir8::Up;
+    SampleAnimator(animator, &renderer);
+    MYE_EXPECT(animator.currentFrameIndex == 4 && animator.cursor.step == 3);
+    UpdateAnimator(animator, 1, &renderer, [&](const auto&) { ++events; });
+    MYE_EXPECT(animator.cursor.finished && animator.cursor.step == 2 && events == before);
+    animator.facing = Dir8::Left;
+    UpdateAnimator(animator, 1, &renderer, [&](const auto&) { ++events; });
+    MYE_EXPECT(animator.cursor.finished && animator.currentFrameIndex == 5 && events == before);
+
+    AnimStateMachine machine;
+    AnimState state; state.directional = false; state.singleClip = &source;
+    machine.states.push_back(state); state.singleClip = &ping; machine.states.push_back(state);
+    AnimTransition transition; transition.from = 0; transition.to = 1;
+    transition.conditions = {{"change", CmpOp::IsTrue, 0}}; machine.transitions.push_back(transition);
+    SpriteAnimator actor; actor.machine = &machine; actor.currentState = 0; actor.cursor = cursor;
+    actor.SetBool("change", true);
+    MYE_EXPECT(StepTransitions(actor) && actor.cursor.step == 1 && actor.cursor.timeInStep == .15625f);
+    actor.currentState = 0; actor.cursor = {3, 0, true};
+    MYE_EXPECT(StepTransitions(actor) && actor.cursor.step == 0 && !actor.cursor.finished);
+    actor.currentState = 0; actor.cursor = cursor;
+    MYE_EXPECT(StepTransitions(actor, false) && actor.cursor.step == 0 && actor.cursor.timeInStep == 0);
+}

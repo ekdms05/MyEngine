@@ -69,6 +69,10 @@ class TestEditorViewport final : public IEditorViewport {
 public:
     ViewportCamera camera;
     uint32_t width = 640, height = 360;
+    TexturePreview texturePreview;
+    Expected<TexturePreview, Error> AssetTexture(asset::AssetGuid guid) override {
+        return texturePreview.id ? Expected<TexturePreview, Error>(texturePreview) : IEditorViewport::AssetTexture(guid);
+    }
     void SetViewportSize(uint32_t w, uint32_t h) override { width = w; height = h; }
     void SetCamera(const ViewportCamera& value) override { camera = value; }
     ViewportCamera Camera() const override { return camera; }
@@ -1420,5 +1424,59 @@ MYE_TEST(EditorDirectionalAnimationWidgetsSaveAndUndo) {
         ImGui::SetWindowSize(window, ImVec2(360, 800)); frame(); frame();
         MYE_EXPECT(window->ContentSize.x <= window->WorkRect.GetWidth() + 1.0f);
     }
+    app.Shutdown();
+}
+
+MYE_TEST(EditorAnimationDirectionPreviewKeepsPhaseAndPause) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("animation-phase-ui");
+    EditorTestContext engine(root); EditorApp app; TestEditorViewport viewport;
+    MYE_EXPECT(app.Initialize(engine, "")); app.SetViewport(&viewport);
+    MYE_EXPECT(app.Project().Create("Phase", Utf8String(root / "project"), false, MYE_STARTER_SOURCE_DIR));
+    app.RefreshDocumentContext(); MYE_EXPECT(app.OpenAnimation("assets/animations/novice_walk.anim"));
+    auto* document = app.AnimationDocument();
+    if (!document) { app.Shutdown(); return; }
+    auto& data = document->Animation();
+    data.clip.frameIndices = {0, 1, 2, 3}; data.clip.frameDurations = {.125f, .125f, .25f, .5f};
+    auto left = data.clip; left.frameIndices = {4, 5}; left.frameDurations = {.125f, .375f}; left.events.clear();
+    data.directions[static_cast<size_t>(asset::Dir8::Left)] = left;
+    viewport.texturePreview = {reinterpret_cast<void*>(uintptr_t{1234}),
+        static_cast<uint32_t>(data.imageSize.x), static_cast<uint32_t>(data.imageSize.y)};
+    auto& io = ImGui::GetIO();
+    auto frame = [&]() { ImGui::NewFrame(); app.OnFrame(); ImGui::Render(); };
+    frame(); frame();
+    auto* window = ImGui::FindWindowByName("애니메이션###mye.anim");
+    MYE_EXPECT(window);
+    if (!window) { app.Shutdown(); return; }
+    ImGui::DockContextProcessUndockWindow(GImGui, window);
+    ImGui::SetWindowSize(window, ImVec2(400, 820)); ImGui::SetWindowPos(window, ImVec2(900, 40)); frame();
+    const auto activate = [&](const char* label) { ImGui::ActivateItemByID(window->GetID(label)); frame(); };
+    const auto previewScope = ImHashStr("미리보기", 0, window->GetID("애니메이션 작업"));
+    const auto activatePreview = [&](const char* label) { ImGui::ActivateItemByID(ImHashStr(label, 0, previewScope)); frame(); };
+    activatePreview("재생"); io.DeltaTime = .1f;
+    for (int i = 0; i < 4; ++i) frame(); // 40% of the base clip, then 40% of the shorter left clip.
+    io.DeltaTime = 0.000001f;
+    activate("##편집 방향"); frame();
+    auto* popup = ImGui::FindWindowByName("##Combo_00");
+    MYE_EXPECT(popup && popup->Active);
+    if (!popup || !popup->Active) { app.Shutdown(); return; }
+    const int item = 3;
+    ImGui::ActivateItemByID(ImHashStr("왼쪽", 0, ImHashData(&item, sizeof(item), popup->IDStack.back()))); frame();
+    const auto checkImage = [&](size_t expectedFrame) {
+        bool found = false;
+        for (const auto& command : window->DrawList->CmdBuffer) {
+            if (command.TexRef._TexData || command.GetTexID() != ImTextureID{1234} || command.ElemCount < 6) continue;
+            const auto index = command.VtxOffset + window->DrawList->IdxBuffer[command.IdxOffset];
+            MYE_EXPECT_NEAR(window->DrawList->VtxBuffer[index].uv.x, data.sheet.frames[expectedFrame].uv.x, 1e-6f);
+            found = true;
+        }
+        MYE_EXPECT(found);
+    };
+    checkImage(5); io.DeltaTime = .1f;
+    for (int i = 0; i < 4; ++i) frame();
+    checkImage(4); // Direction selection keeps playback running through the next wrap.
+    activatePreview("일시 정지");
+    for (int i = 0; i < 8; ++i) frame();
+    checkImage(5); // Pause does not reset to the first left frame or silently resume.
     app.Shutdown();
 }

@@ -6,8 +6,9 @@
 <a href="#section-1">연결 방법</a>
 <a href="#section-2">방향 선택과 대체 규칙</a>
 <a href="#section-3">파일과 오류</a>
-<a href="#section-4">고정 틱과 이벤트</a>
-<a href="#section-5">현재 검증과 다음 작업</a></nav></aside><main id="main"><h1 id="section-0">2D 캐릭터 모션</h1>
+<a href="#section-4">진행률과 발 피벗</a>
+<a href="#section-5">고정 틱과 이벤트</a>
+<a href="#section-6">현재 검증과 다음 작업</a></nav></aside><main id="main"><h1 id="section-0">2D 캐릭터 모션</h1>
 <p><strong>한 <code>.anim</code>에 기본 클립과 8방향 클립을 작성하고, 대기·걷기 모션에 연결한다.</strong> main 소스의 에디터 Play·MyGame·인증 온라인 MyGame이 같은 방향 해석을 사용한다. 기존 단일 클립 파일은 그대로 읽는다. 아래 방향별 저장 기능은 배포된 0.3.0의 지원 범위가 아니다.</p>
 <h2 id="section-1">연결 방법</h2>
 <ol><li>외부 도구에서 만든 PNG를 가져오고 애니메이션 패널의 <strong>시트</strong> 탭에서 프레임 영역·발 피벗을 지정한다. 그림 제작·리깅은 외부에서 수행한다.</li><li><strong>편집 방향</strong>에서 기본 또는 방향을 선택한다. <strong>클립 추가</strong>는 기본 타임라인을 복사하고, <strong>클립 제거</strong>는 해당 방향을 비운다. 방향을 선택하는 것만으로 에셋은 변경되지 않는다.</li><li>선택한 클립의 <strong>미리보기</strong>에서 프레임 순서·표시 시간, <strong>클립</strong>에서 이름·반복·재생 방향, <strong>이벤트</strong>에서 마커를 편집한다. 미지정 방향은 대체 결과를 미리 보여주며 직접 편집은 클립 추가 후 가능하다.</li><li><code>.anim</code>을 저장하고 <code>SpriteAnimator.animation</code>과 <code>CharacterController2D.idleAnimation</code>·<code>walkAnimation</code>에 연결한다. 기존 <code>.meta</code> GUID와 문서 Undo·Redo를 사용한다.</li><li>씬을 저장하고 Play한다. 정지하면 대기, 실제 이동량이 한 틱에 0.000001 월드 단위보다 크면 걷기를 요청한다. 속도가 낮아도 같은 기준을 사용한다.</li><li>비반복 클립의 후속 모션은 완료 뒤 다음 고정 틱에서 재생한다. 같은 이동 상태는 매 틱 시작 클립을 다시 요청하지 않는다. 대기·걷기에 서로 다른 에셋을 연결하면 걷기→정지→걷기는 새로운 요청이므로 처음부터 시작한다.</li></ol>
@@ -29,11 +30,18 @@
 &quot;mirrorRight&quot;: true</code></pre>
 <p>시트·각 타임라인은 1~4096 프레임, 이벤트는 최대 4096개다. 표시 시간은 유한한 0.001~60초, 인덱스와 마커 위치는 각 범위 안이어야 한다. 잘못된 버전·방향·타입·참조·시간은 저장/로드에서 거부한다. 편집 중의 미완성 데이터는 저장할 수 없으며 씬에 지정하면 오류를 설명한다. 에디터의 바인딩 실패는 하단 오류로 전달하고 Play를 중단한다. 자동 실행은 MyGame과 마찬가지로 실패 종료한다. 저장 실패는 기존 파일과 <code>.meta</code>를 보존한다.</p>
 <p>공통 JSON 파서의 중복 키는 마지막 값을 사용한다. 이 형식 검증이 원본 JSON의 중복 키를 거부한다고 주장하지 않는다.</p>
-<h2 id="section-4">고정 틱과 이벤트</h2>
+<h2 id="section-4">진행률과 발 피벗</h2>
+<p><strong>방향을 바꿔도 전체 재생 시간의 진행률과 일시정지를 유지한다.</strong> 프레임 번호 대신 논리 재생 주기의 경과 시간 비율을 사용한다. 1초 클립의 40% 위치에서 0.5초 클립으로 바꾸면 0.2초 위치를 표시한다. 역재생과 왕복은 실제 논리 순서·각 프레임 시간으로 계산한다. 같은 좌측 클립을 우측 반전으로 표시할 때는 재생 위치를 그대로 사용한다.</p>
+<p>비반복 모션이 완료된 뒤 방향만 바꾸면 대상 클립의 논리 마지막 프레임에 머문다. 대상이 반복 클립이어도 완료 상태는 유지한다. 별도 에셋 요청·후속 모션은 새 재생이며 기존 첫 이벤트 규칙을 따른다. 메모리 상태 머신의 keepPhase는 같은 시간 비율을 사용하되 완료 후 새 상태에 진입하면 처음부터 시작한다. 공격·피격·사망 상태를 에디터에서 작성하는 기능은 아직 연결되지 않았다.</p>
+<p>애니메이션 패널의 편집 방향 선택도 재생 위치·일시정지를 유지한다. 처음부터 보려면 <strong>처음으로</strong>를 누른다. 타임라인 수정·Undo·시트 교체처럼 클립 데이터가 바뀌면 미리보기 커서를 초기화한다. 화면 샘플은 새 방향의 보정 위치만 보여주고 고정 틱 커서·이벤트 이력을 변경하지 않는다.</p>
+<p>반전된 이미지도 원본 프레임의 발 피벗이 같은 월드 위치에 오도록 사각형을 보정한다. x 반전은 너비−pivotX, y 반전은 높이−pivotY를 사용하며 렌더·에디터 선택 경계가 같은 계산을 사용한다. PPU·월드 앵커·깊이 계약은 유지한다.</p>
+<figure><img src="media/animation-phase.png" width="960" height="540" loading="lazy" alt="좌측 클립을 우측으로 반전해도 중앙 발 위치에 유지되는 흰 진단 표시"><figcaption>다른 길이의 클립으로 보정한 뒤 좌우 반전한 실제 MyGame 캡처. 흰 발 표시는 같은 월드 앵커에 유지됩니다. 합성 입력 접두사의 끝 화면이며 연속 온라인 녹화가 아닙니다.</figcaption></figure>
+<h2 id="section-5">고정 틱과 이벤트</h2>
 <p>첫 프레임과 이후 진입 프레임의 마커는 고정 틱에서 <code>on_event(&quot;animation&quot;, payload)</code>로 전달한다. 에셋 바인딩·정지/일시정지 화면의 표시는 커서·상태 전이·트리거·첫 이벤트를 소비하지 않는다. 반복 렌더로 이벤트가 사라지거나 재발행되면 결함이다. 인증 온라인 클라이언트에는 로컬 Lua가 실행되지 않으며 표현 이벤트를 권위 피해·보상으로 사용하지 않는다.</p>
-<p>같은 에셋의 방향 변경은 현재 커서를 유지한다. <strong>프레임 수·시간·반복 조건이 서로 다른 방향 사이의 진행률 보정은 다음 작업</strong>이다. 비반복 클립이 끝난 뒤 방향을 바꾸는 경우도 이 경계에서 검증한다. 방향 클립 저장 완료를 전체 행동 상태 전환 완료로 설명하지 않는다.</p>
-<h2 id="section-5">현재 검증과 다음 작업</h2>
+<p>방향 보정은 이벤트 없이 위치만 옮긴다. 새 방향의 처음부터 보정 위치까지 마커를 재생하거나 현재 마커를 재발행하지 않는다. 이후 고정 틱에서 실제로 경계를 넘은 마커만 발행한다. 방향 선택과 행동 상태 진입은 다른 동작이다.</p>
+<h2 id="section-6">현재 검증과 다음 작업</h2>
 <p>기존 테스트에 버전 1/2 왕복·잘못된 방향/타입/시간/프레임/이벤트, 값 복사와 대체/반전, 기존 GUID·저장 실패 보존·Undo·Redo, 실제 ImGui 방향 선택/추가/제거/저장을 남겼다. <code>tools/verify-animation2d.ps1 -Configuration Debug</code> 또는 <code>Release</code>는 <code>build/</code> 아래 새 프로젝트와 진단 시트를 만든다. 실제 MyGame의 8방향·정지·직접/반전/기본 대체 픽셀, 에디터 패널·Play, 손상 파일 거부, 두 인증 클라이언트의 로컬/원격 방향 픽셀과 Lua 격리를 검사한다. 단색 시트는 해석을 확인하기 위한 자료이며 고화질 게임 아트 승인이나 장치 입력의 증거가 아니다.</p>
-<p>다음은 서로 다른 방향 클립의 진행률·발 위치·로컬/온라인 픽셀 시퀀스(D08c), 이후 공격·피격·사망의 작성/입력/중단 전환(D08d)이다. 권위 전투·피해는 D16에서 연결한다. 실제 장치·전체 키보드 탐색·모니터 DPI, 게임 규칙·맵·HUD·운영 보호·완성 게임 배포는 별도 조건이다. <a href="../22-2d-mmorpg-roadmap.md">작업 목록</a>, <a href="lua.html">Lua API</a>, <a href="components.html">컴포넌트</a>, <a href="../16-foundation-worklog.md">근거 기록</a>을 함께 확인한다.</p>
+<p><code>-Phase</code>를 추가하면 길이가 다른 정방향·역방향·왕복의 로컬 재생 입력 접두사, 무음 보정/실제 마커, 크기·피벗이 다른 프레임의 발 픽셀, 완료된 Play·인증 온라인 전환 결과를 검사한다. 각 온라인 접두사는 새 접속에서 실행하며 완료 상태의 끝 프레임을 확인한다. 재생 도중 연속 온라인 전환의 시간별 픽셀·일시정지 검증은 남았다. 클라이언트 모션은 로컬 표현 시간이며 서버가 복제하는 공통 애니메이션 시계가 아니다.</p>
+<p>다음은 재생 도중 두 온라인 클라이언트의 연속 전환/시간별 픽셀 검증(D08c2), 이후 공격·피격·사망의 작성/입력/중단 전환(D08d)이다. 권위 전투·피해는 D16에서 연결한다. 실제 장치·전체 키보드 탐색·모니터 DPI, 게임 규칙·맵·HUD·운영 보호·완성 게임 배포는 별도 조건이다. <a href="../22-2d-mmorpg-roadmap.md">작업 목록</a>, <a href="lua.html">Lua API</a>, <a href="components.html">컴포넌트</a>, <a href="../16-foundation-worklog.md">근거 기록</a>을 함께 확인한다.</p>
 <figure><img src="media/animation-directions.png" width="1600" height="900" loading="lazy" alt="방향 선택과 우측 반전이 있는 애니메이션 패널"><figcaption>main 소스의 방향 선택·우측 반전. 이 화면의 단색 시트는 해석 검사용이며 게임 아트가 아닙니다.</figcaption></figure>
 <details><summary>기존 걷기 클립 GIF·영상</summary><p>같은 위치에서 렌더한 기존 단일 걷기 클립입니다. 8방향 전환이나 직접 장치 입력의 증거가 아닙니다.</p><video controls loop playsinline preload="none" poster="media/play.png" width="960" height="540" aria-label="기존 단일 걷기 클립"><source src="media/animation-playback.mp4" type="video/mp4">영상 대신 <a href="media/animation-playback.gif">GIF</a>를 보세요.</video></details><footer>정본: <a href="../26-2d-animation.md">26-2d-animation.md</a> · main 소스 전용</footer></main></div></body></html>

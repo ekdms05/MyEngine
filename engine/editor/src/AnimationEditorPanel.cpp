@@ -162,9 +162,13 @@ private:
         auto& data = doc.Animation();
         ImGui::TextUnformatted("편집 방향"); ImGui::SetNextItemWidth(-1);
         int selected = m_direction + 1;
+        const auto* previous = m_direction < 0 ? &data.clip : data.Resolve(static_cast<asset::Dir8>(m_direction)).clip;
         if (ImGui::Combo("##편집 방향", &selected, "기본\0아래\0왼쪽 아래\0왼쪽\0왼쪽 위\0위\0오른쪽 위\0오른쪽\0오른쪽 아래\0")) {
-            m_direction = selected - 1; m_cursor = {}; m_playing = false;
+            m_direction = selected - 1;
+            const auto* target = m_direction < 0 ? &data.clip : data.Resolve(static_cast<asset::Dir8>(m_direction)).clip;
+            if (previous != target) m_cursor = anim::RemapClipCursor(*previous, *target, m_cursor);
         }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("방향을 바꿔도 진행률과 일시정지를 유지합니다. 처음부터 보려면 처음으로를 누르세요.");
         if (m_direction >= 0) {
             const auto index = static_cast<size_t>(m_direction);
             if (!data.directions[index]) {

@@ -334,6 +334,24 @@ MYE_TEST(SpriteCornersRespectPivotScaleAndPosition) {
     MYE_EXPECT(std::abs(rotated[0].x + 1) < 0.0001f && std::abs(rotated[0].y + 0.5f) < 0.0001f);
 }
 
+MYE_TEST(SpriteGeometryMirrorsAnAsymmetricFootPivot) {
+    const Vec2 pixels{24, 32}, pivot{7, 31};
+    const auto matrix = Mat4::TRS({3, -4, 2}, Quat::FromAxisAngle({0, 0, 1}, .6f), {2, .5f, 1});
+    for (const bool flipX : {false, true}) for (const bool flipY : {false, true}) {
+        const auto corners = scene::SpriteCorners3D(matrix, pixels, pivot, 48, flipX, flipY);
+        const float x = (flipX ? pixels.x - pivot.x : pivot.x) / pixels.x;
+        const float y = (flipY ? pixels.y - pivot.y : pivot.y) / pixels.y;
+        const auto foot = corners[0] + (corners[2] - corners[0]) * x + (corners[1] - corners[0]) * y;
+        MYE_EXPECT_NEAR(foot.x, 3, 1e-5f); MYE_EXPECT_NEAR(foot.y, -4, 1e-5f); MYE_EXPECT_NEAR(foot.z, 2, 1e-5f);
+        const auto screen = scene::SpriteCorners(matrix, pixels, pivot, 48, flipX, flipY);
+        MYE_EXPECT_NEAR(screen[0].x, corners[0].x, 1e-5f);
+        const auto billboard = scene::BillboardCorners(Mat4::Identity(), Mat4::Identity(), scene::BillboardMode::Full,
+            pixels, pivot, 48, flipX, flipY);
+        const auto billboardFoot = billboard[0] + (billboard[2] - billboard[0]) * x + (billboard[1] - billboard[0]) * y;
+        MYE_EXPECT_NEAR(billboardFoot.x, 0, 1e-5f); MYE_EXPECT_NEAR(billboardFoot.y, 0, 1e-5f);
+    }
+}
+
 MYE_TEST(AssetScanPreservesGuidsAndRejectsDuplicateMetadata) {
     const auto root = FreshRoot();
     ed::ProjectContext project;

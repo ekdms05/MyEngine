@@ -115,3 +115,5 @@ BillboardRenderer는 Full(카메라 right/up), YAxis(월드 +Y 유지), None(원
 ViewportCamera는 같은 씬을 2D 또는 LH 원근 카메라로 표시한다. `BuildViewportView`와 투영/역투영을 렌더·그리드·팬·선택에서 공유하며 기준 편집 평면은 Z=0이다. SpriteCorners3D는 full TRS의 world XYZ를 유지한다. HybridViewInfo.geometryDepth가 켜지면 쿼드 VS는 clip Z/W, 메시 VS는 Geometry 깊이를 쓴다. 2D의 인코딩 깊이 경로는 그대로다.
 
 같은 XY 평면의 지형·소품은 원근 깊이가 같아 raster 정밀도로 부분 가림이 발생할 수 있다. 3D 쿼드에만 기존 EncodeDepth 결과 × `1e-5` NDC 바이어스를 더해 동률 순서를 정한다. 원근 XY/W와 물리 Transform을 바꾸지 않는다. 실제 3D 캡처에서 이 문제를 발견하고 수정 전후를 확인했다. 좌표·PPU48·960×540·alpha cutout은 유지하며 3D 뷰에서 물리가 3D로 바뀌지는 않는다.
+
+스프라이트 반전은 UV와 사각형 피벗에 함께 적용한다. x/y 반전의 피벗은 sourceWidth−pivotX/sourceHeight−pivotY이며 같은 원본 발점이 월드 앵커에 유지된다. SpriteGeometry를 렌더·빌보드·에디터 선택이 공유한다. 프레임/PPU·높이/깊이·cutout 계약과 기본 중심/하단 피벗은 유지한다.

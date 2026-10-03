@@ -119,6 +119,7 @@ struct SpriteAnimator {
     // ---- 런타임 상태 ----
     int        currentState = -1;      // machine->states 인덱스. -1 = 미초기화
     Dir8       facing = Dir8::Down;    // 현재 8방향
+    Dir8       playbackFacing = Dir8::Down; // Facing whose clip owns the fixed-tick cursor.
     ClipCursor cursor;                 // 현재 클립 재생 커서
     float      speed = 1.0f;           // 재생 속도 배수(dt 스케일)
     bool       flipX = false;          // 방향 대칭 재생 시 렌더러로 전달할 flipX
@@ -164,22 +165,34 @@ inline void RequestAnimation(SpriteAnimator& animator, const asset::AssetRef& an
 // 현재 애니메이터가 재생 중인 클립을 해석(상태머신/방향세트/단일클립 우선순위).
 // 반환 clip 이 null 이면 재생할 것이 없음(샘플링 no-op).
 struct ResolvedClip { const AnimationClipData* clip = nullptr; bool flipX = false; };
-inline ResolvedClip ResolveActiveClip(const SpriteAnimator& a) {
+inline ResolvedClip ResolveActiveClip(const SpriteAnimator& a, Dir8 facing) {
     if (a.machine && a.currentState >= 0 &&
         a.currentState < static_cast<int>(a.machine->states.size())) {
         const AnimState& st = a.machine->states[static_cast<size_t>(a.currentState)];
         if (st.directional) {
-            auto r = st.dirSet.Resolve(a.facing);
+            auto r = st.dirSet.Resolve(facing);
             return { r.clip, r.flipX };
         }
         return { st.singleClip, false };
     }
     if (a.directClip && a.sourceAnimation) {
-        const auto resolved = a.sourceAnimation->Resolve(a.facing);
+        const auto resolved = a.sourceAnimation->Resolve(facing);
         return {resolved.clip, resolved.flipX};
     }
     if (a.directClip) return { a.directClip, false };
     return { nullptr, false };
+}
+
+inline ResolvedClip ResolveActiveClip(const SpriteAnimator& animator) {
+    return ResolveActiveClip(animator, animator.facing);
+}
+
+// A render may show a new facing before a tick commits it; no events or playback state change here.
+inline ClipCursor CursorForFacing(const SpriteAnimator& animator, const ResolvedClip& target) {
+    if (!animator.started || animator.playbackFacing == animator.facing || !target.clip) return animator.cursor;
+    const auto previous = ResolveActiveClip(animator, animator.playbackFacing);
+    if (!previous.clip || previous.clip == target.clip) return animator.cursor;
+    return RemapClipCursor(*previous.clip, *target.clip, animator.cursor);
 }
 
 } // namespace mye::anim

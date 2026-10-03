@@ -76,7 +76,7 @@
         <ol><li>.anim 파일을 에셋 패널에서 더블클릭하거나 애니메이션 패널에서 새 클립을 만듭니다.</li><li><strong>시트</strong> 탭에 PNG를 놓고 그리드 또는 프레임 영역·발밑 피벗을 설정합니다.</li><li><strong>미리보기</strong> 탭에서 재생합니다. 타임라인을 펼쳐 순서·프레임 시간을 편집합니다. <strong>이벤트</strong> 탭에서 Lua에 전달할 이름·인자를 정합니다.</li><li><strong>클립</strong> 탭에서 반복·방향·저장 경로를 정합니다. 반복을 끈 모션에는 후속 .anim 파일을 놓을 수 있습니다. 저장 버튼으로 확정합니다.</li><li>인스펙터에서 캐릭터의 idleAnimation/walkAnimation 또는 SpriteAnimator.animation에 드래그합니다.</li></ol>
         <details><summary>제작 범위와 이유</summary><p>픽셀 그리기·뼈 리깅은 외부 도구가 담당합니다. 엔진은 프레임과 이벤트를 고정 틱에서 재생하는 데이터 계약을 담당합니다. 미리보기와 실제 Play를 모두 확인해야 합니다.</p></details>
         <details><summary>걷기 클립 GIF·영상 보기</summary><p>동일 위치에서 기본 걷기 클립의 네 프레임을 MyGame으로 각각 렌더하고, .anim에 기록된 프레임당 0.14초로 연결했습니다. 실제 키보드 이동을 녹화한 자료는 아닙니다.</p><figure><video controls loop playsinline preload="none" poster="media/play.png" width="960" height="540" aria-label="기본 걷기 클립의 네 프레임 재생"><source src="media/animation-playback.mp4" type="video/mp4">영상 대신 <a href="media/animation-playback.gif">GIF</a>를 보세요.</video><figcaption>같은 프레임을 사용하는 <a href="media/animation-playback.gif">GIF 보기</a>. 게임의 모션·가림은 별도 게임 창에서도 확인하세요.</figcaption></figure></details>
-<p id="two-d-motion">main 소스의 기본/8방향 클립 작성·저장/Undo·반전/대체와 로컬/온라인 바인딩은 <a href="animation2d.html">2D 캐릭터 모션</a>을 확인하세요. 서로 다른 방향의 진행률 보정과 행동 전환은 다음 작업입니다.</p>
+<p id="two-d-motion">main 소스의 기본/8방향 작성·저장/Undo·반전/대체·시간 비율 보정·발 피벗은 <a href="animation2d.html">2D 캐릭터 모션</a>에서 확인하세요. 재생 도중 연속 온라인 검증과 행동 전환은 다음 작업입니다.</p>
       </section>
       <section id="lua">
         <p class="eyebrow">게임 규칙 프로그래밍</p><h2>오브젝트가 반환하는 테이블에 Lua 콜백을 작성하세요.</h2>

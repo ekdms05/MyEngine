@@ -32,7 +32,7 @@ template<class Fn> void ForEachAnimatedRenderer(ecs::World& world, Fn&& fn) {
 bool EvaluateCondition(const SpriteAnimator& a, const AnimCondition& c);
 
 // 상태 전이 평가(1스텝). 전이가 일어나면 currentState 갱신 + 커서 리셋 정책 적용 후 true.
-// keepPhase=true(기본): 전이 시 클립 재생 위상(step/timeInStep)을 유지한다(걷기↔대기 자연 전환).
+// keepPhase=true(기본): 전이 시 클립 전체 시간의 진행률을 유지한다(걷기↔대기 자연 전환).
 bool StepTransitions(SpriteAnimator& a, bool keepPhase = true);
 
 // Presentation-only sampling: binding/rendering must not consume transitions or entry events.
@@ -41,7 +41,7 @@ void SampleAnimator(SpriteAnimator& animator, RendererT* renderer) {
     const auto resolved = ResolveActiveClip(animator);
     if (!resolved.clip || resolved.clip->frameIndices.empty()) return;
     animator.flipX = resolved.flipX;
-    animator.currentFrameIndex = CurrentFrameIndex(*resolved.clip, animator.cursor);
+    animator.currentFrameIndex = CurrentFrameIndex(*resolved.clip, CursorForFacing(animator, resolved));
     if (!renderer || !animator.sheet || animator.currentFrameIndex >= animator.sheet->frames.size()) return;
     const auto& frame = animator.sheet->frames[animator.currentFrameIndex];
     renderer->srcUV = frame.uv;
@@ -70,6 +70,8 @@ void UpdateAnimator(SpriteAnimator& a, float dt, RendererT* renderer, OnEvent&& 
     a.flipX = rc.flipX;
     if (!rc.clip || rc.clip->frameIndices.empty()) return;
     const AnimationClipData& clip = *rc.clip;
+    a.cursor = CursorForFacing(a, rc);
+    a.playbackFacing = a.facing;
 
     // 커서 step 이 클립 범위를 벗어났으면(상태/클립 교체 후) 클램프.
     const uint32_t period = ClipStepPeriod(clip);

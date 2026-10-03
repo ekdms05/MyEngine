@@ -98,7 +98,7 @@ Rect EntityBounds(EditorContext& ctx, ecs::World& world, ecs::Entity entity) {
         auto texture = viewport->AssetTexture(sprite->sprite.guid);
         if (texture) {
             const auto corners = scene::SpriteCorners(transform->matrix,
-                {sprite->srcUV.w * texture.Value().width, sprite->srcUV.h * texture.Value().height}, sprite->pivotPx, 48.0f);
+                {sprite->srcUV.w * texture.Value().width, sprite->srcUV.h * texture.Value().height}, sprite->pivotPx, 48.0f, sprite->flipX, sprite->flipY);
             float left = corners[0].x, right = left, bottom = corners[0].y, top = bottom;
             for (auto p : corners) {
                 left = std::min(left, p.x); right = std::max(right, p.x);
@@ -330,7 +330,7 @@ private:
                     const auto* transform = world.TryGet<scene::WorldTransform>(e);
                     const auto texture = vp->AssetTexture(sprite.sprite.guid);
                     if (!transform || !texture) return;
-                    const auto corners = scene::SpriteCorners3D(transform->matrix, {sprite.srcUV.w * texture.Value().width, sprite.srcUV.h * texture.Value().height}, sprite.pivotPx, 48);
+                    const auto corners = scene::SpriteCorners3D(transform->matrix, {sprite.srcUV.w * texture.Value().width, sprite.srcUV.h * texture.Value().height}, sprite.pivotPx, 48, sprite.flipX, sprite.flipY);
                     const auto inside = [&](Vec2 a, Vec2 b, Vec2 c) {
                         const auto cross = [](Vec2 a, Vec2 b, Vec2 p) { return (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x); };
                         const float ab = cross(a,b,localPixel), bc = cross(b,c,localPixel), ca = cross(c,a,localPixel);
@@ -375,7 +375,7 @@ private:
                 const auto* sprite = world.TryGet<scene::SpriteRenderer>(e);
                 const auto texture = sprite ? vp->AssetTexture(sprite->sprite.guid) : Expected<IEditorViewport::TexturePreview, Error>{Error{"No sprite",1}};
                 if (transform && sprite && texture) {
-                    const auto corners = scene::SpriteCorners3D(transform->matrix, {sprite->srcUV.w * texture.Value().width, sprite->srcUV.h * texture.Value().height}, sprite->pivotPx, 48);
+                    const auto corners = scene::SpriteCorners3D(transform->matrix, {sprite->srcUV.w * texture.Value().width, sprite->srcUV.h * texture.Value().height}, sprite->pivotPx, 48, sprite->flipX, sprite->flipY);
                     const int order[] = {0,2,3,1};
                     for (int i = 0; i < 4; ++i) {
                         const auto a = vp->WorldToScreen3D(corners[order[i]]), b = vp->WorldToScreen3D(corners[order[(i+1)%4]]);

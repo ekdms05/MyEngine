@@ -215,6 +215,8 @@ async function main() {
   check("engine_reference — 실제 고정 틱 액션과 종료 수명", inputLua.result?.isError !== true && firstText(inputLua.result).includes("on_destroy") && firstText(inputLua.result).includes("비소유"));
   const padInput = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", search: "원시 패드 축" } });
   check("engine_reference — 원시 패드와 단일 작성 데드존", padInput.result?.isError !== true && firstText(padInput.result).includes("한 번 적용") && firstText(padInput.result).includes("겹쳐 적용하지 않는다"));
+  const inputKeyboard = await request("tools/call", { name: "engine_reference", arguments: { topic: "input", search: "Enter", maxLines: 120 } });
+  check("engine_reference — 입력 작성 키보드와 검수 경계", inputKeyboard.result?.isError !== true && firstText(inputKeyboard.result).includes("포커스별 Escape") && firstText(inputKeyboard.result).includes("실제 모니터 DPI"));
   const fixtureRel = `build/mcp-smoke-${Date.now()}`;
   const fixture = path.join(repoRoot, fixtureRel);
   fs.mkdirSync(path.join(fixture, "assets", "scenes"), { recursive: true });

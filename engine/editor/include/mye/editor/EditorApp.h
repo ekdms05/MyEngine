@@ -138,6 +138,7 @@ private:
     bool           m_showAddElement = false;
     bool           m_showInputSettings = false;
     InputMap       m_inputDraft;
+    Vec2           m_inputSettingsViewportSize{};
     std::array<char, 65> m_inputActionName{};
     std::string    m_inputActionError;
     bool           m_toolbarInMenu = false;

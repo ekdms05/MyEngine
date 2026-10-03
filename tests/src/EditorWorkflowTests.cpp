@@ -1178,6 +1178,67 @@ MYE_TEST(EditorTwoDCameraElementUndoSaveReopenAndPlayIsolation) {
     reopened.Shutdown();
 }
 
+MYE_TEST(EditorInputSettingsResponsiveLayoutAndKeyboardOwnership) {
+    struct GuiScope {
+        GuiScope() { ImGui::CreateContext(); }
+        ~GuiScope() { ImGui::DestroyContext(); }
+    } gui;
+    auto& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
+    io.IniFilename = nullptr; io.DisplaySize = {800, 640}; io.DeltaTime = 1.0f / 60;
+    unsigned char* pixels = nullptr; int width = 0, height = 0;
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    const auto root = ProjectTestDirectory("input-settings-layout");
+    EditorTestContext engine(root); EditorApp app; TestEditorViewport viewport;
+    MYE_EXPECT(app.Initialize(engine, "")); app.SetViewport(&viewport);
+    MYE_EXPECT(app.CreateProject("Input", Utf8String(root / "project")));
+    const auto defaults = app.Project().InputSettings();
+    const auto frame = [&]() { ImGui::NewFrame(); app.OnFrame(); ImGui::Render(); };
+    frame(); MYE_EXPECT(app.RequestInputSettings()); frame(); frame();
+    auto* settings = ImGui::FindWindowByName("입력 설정###MyEngineInputSettings");
+    MYE_EXPECT(settings && settings->Active);
+    if (!settings) return;
+    MYE_EXPECT(ImGui::GetActiveID() == settings->GetID("##ActionName"));
+    io.AddInputCharactersUTF8("attack"); frame();
+    io.AddKeyEvent(ImGuiKey_Enter, true); frame();
+    io.AddKeyEvent(ImGuiKey_Enter, false); frame();
+    MYE_EXPECT(app.Project().InputSettings() == defaults);
+    ImGui::ActivateItemByID(settings->GetID("프로젝트에 저장")); frame();
+    MYE_EXPECT(app.Project().InputSettings().actions.size() == defaults.actions.size() + 1);
+    MYE_EXPECT(app.RequestInputSettings()); frame(); frame();
+    ImGuiWindow* actions = nullptr;
+    for (auto* window : ImGui::GetCurrentContext()->Windows)
+        if (window->ParentWindow == settings && window->ChildId == settings->GetID("Actions")) actions = window;
+    MYE_EXPECT(actions);
+    if (actions) {
+        const auto scope = ImHashStr("move_left", 0, actions->ID);
+        ImGui::ActivateItemByID(ImHashStr("move_left", 0, scope)); frame();
+    }
+    for (const float scale : {1.0f, 1.5f}) {
+        ImGui::GetStyle().FontScaleMain = scale;
+        ImGui::SetWindowSize(settings->Name, {350, 520}); frame(); frame();
+        MYE_EXPECT(settings->ContentSize.x <= settings->WorkRect.GetWidth() + 1);
+        if (actions) MYE_EXPECT(actions->ContentSize.x <= actions->WorkRect.GetWidth() + 1);
+        MYE_EXPECT(settings->ScrollMax.y == 0); // List scrolls; footer remains visible.
+    }
+    ImGui::GetStyle().FontScaleMain = 1;
+    io.DisplaySize = {480, 600}; frame(); frame();
+    const auto* screen = ImGui::GetMainViewport();
+    MYE_EXPECT(settings->Pos.x >= screen->WorkPos.x && settings->Pos.y >= screen->WorkPos.y);
+    MYE_EXPECT(settings->Pos.x + settings->Size.x <= screen->WorkPos.x + screen->WorkSize.x + 1);
+    MYE_EXPECT(settings->Pos.y + settings->Size.y <= screen->WorkPos.y + screen->WorkSize.y + 1);
+    auto* inspector = ImGui::FindWindowByName("인스펙터###mye.inspector");
+    MYE_EXPECT(inspector);
+    if (inspector) ImGui::FocusWindow(inspector);
+    frame(); frame(); io.AddKeyEvent(ImGuiKey_Escape, true); frame();
+    io.AddKeyEvent(ImGuiKey_Escape, false); frame();
+    MYE_EXPECT(settings->Active); // Escape in another workspace cannot discard the draft.
+    ImGui::FocusWindow(settings); frame(); frame();
+    io.AddKeyEvent(ImGuiKey_Escape, true); frame();
+    io.AddKeyEvent(ImGuiKey_Escape, false); frame();
+    MYE_EXPECT(!settings->Active);
+}
+
 MYE_TEST(EditorWorkspaceImGuiRoutingAndDialogs) {
     struct GuiScope {
         GuiScope() { ImGui::CreateContext(); }

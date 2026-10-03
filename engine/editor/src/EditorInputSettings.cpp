@@ -51,6 +51,7 @@ Expected<void, Error> EditorApp::RequestInputSettings() {
     if (!m_project || !m_project->IsOpen()) return Error{"입력 설정을 변경할 프로젝트를 먼저 여세요.", 1};
     if (m_playMode->IsPlaying()) return Error{"실행을 중지한 뒤 입력 설정을 변경하세요.", 1};
     m_inputDraft = m_project->InputSettings();
+    m_inputSettingsViewportSize = {};
     m_inputActionName.fill(0);
     m_inputActionError.clear();
     m_showInputSettings = true;
@@ -59,22 +60,36 @@ Expected<void, Error> EditorApp::RequestInputSettings() {
 void EditorApp::DrawInputSettings() {
     if (!m_showInputSettings || !m_project->IsOpen()) return;
     const auto* viewport = ImGui::GetMainViewport();
+    const Vec2 workSize{viewport->WorkSize.x, viewport->WorkSize.y};
+    const bool viewportResized = workSize != m_inputSettingsViewportSize;
+    m_inputSettingsViewportSize = workSize;
+    const ImVec2 maxSize{viewport->WorkSize.x * .9f, viewport->WorkSize.y * .85f};
+    ImGui::SetNextWindowSizeConstraints({std::min(maxSize.x, ImGui::GetFontSize() * 18),
+                                         std::min(maxSize.y, ImGui::GetFontSize() * 24)}, maxSize);
+    ImGui::SetNextWindowPos({viewport->WorkPos.x + viewport->WorkSize.x * .5f,
+                            viewport->WorkPos.y + viewport->WorkSize.y * .5f},
+                            viewportResized ? ImGuiCond_Always : ImGuiCond_Appearing, {.5f, .5f});
     ImGui::SetNextWindowSize({std::min(viewport->WorkSize.x * .9f, ImGui::GetFontSize() * 62),
                              std::min(viewport->WorkSize.y * .85f, ImGui::GetFontSize() * 36)}, ImGuiCond_Appearing);
-    const bool visible = ImGui::Begin("입력 설정###MyEngineInputSettings", &m_showInputSettings);
+    const bool visible = ImGui::Begin("입력 설정###MyEngineInputSettings", &m_showInputSettings, ImGuiWindowFlags_NoDocking);
     if (visible) {
+        ImGui::PushTextWrapPos(0);
         ImGui::TextWrapped("프로젝트: %s", m_project->Name().data());
-        ImGui::TextWrapped("조작 이름을 펼쳐 입력을 연결하세요. 여러 입력 중 가장 큰 값을 사용하며 대각선 속도는 일정합니다.");
-        ImGui::TextWrapped("키보드는 물리 키 위치, 패드는 1~4번입니다. 회전·점프는 3D, 확대·축소는 2D 카메라에서 사용합니다.");
         const bool playing = m_playMode->IsPlaying();
         if (playing) ImGui::TextWrapped("실행을 중지한 뒤 설정을 변경하세요.");
         ImGui::Separator();
         ImGui::BeginDisabled(playing);
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 18);
-        if (ImGui::InputTextWithHint("##ActionName", "새 조작 이름 (예: attack)", m_inputActionName.data(), m_inputActionName.size())) m_inputActionError.clear();
-        ImGui::SameLine();
+        const float availableWidth = ImGui::GetContentRegionAvail().x;
+        const float addWidth = ImGui::CalcTextSize("조작 추가").x + ImGui::GetStyle().FramePadding.x * 2;
+        const bool stackedName = availableWidth < ImGui::GetFontSize() * 18 + addWidth + ImGui::GetStyle().ItemSpacing.x;
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::SetNextItemWidth(stackedName ? availableWidth : ImGui::GetFontSize() * 18);
+        const bool addByEnter = ImGui::InputTextWithHint("##ActionName", "새 조작 이름 (예: attack)",
+            m_inputActionName.data(), m_inputActionName.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        if (ImGui::IsItemEdited()) m_inputActionError.clear();
+        if (!stackedName) ImGui::SameLine();
         ImGui::BeginDisabled(m_inputDraft.actions.size() >= 64 || !m_inputActionName[0]);
-        if (ImGui::Button("조작 추가")) {
+        if ((ImGui::Button("조작 추가") || addByEnter) && m_inputActionName[0] && m_inputDraft.actions.size() < 64) {
             InputMap addition{{{m_inputActionName.data(), .2f, {}}}};
             auto valid = addition.Validate();
             const bool duplicate = std::any_of(m_inputDraft.actions.begin(), m_inputDraft.actions.end(),
@@ -84,18 +99,35 @@ void EditorApp::DrawInputSettings() {
             else { m_inputDraft.actions.push_back(std::move(addition.actions.front())); m_inputActionName.fill(0); m_inputActionError.clear(); }
         }
         ImGui::EndDisabled();
-        ImGui::TextDisabled("영문·숫자·밑줄 1~64자. 첫 글자는 숫자 제외. Lua에서 같은 이름으로 조회합니다.");
-        if (!m_inputActionError.empty()) ImGui::TextWrapped("%s", m_inputActionError.c_str());
-        const float footerHeight = ImGui::GetFrameHeightWithSpacing() * 3;
-        if (ImGui::BeginChild("Actions", {0, -footerHeight})) {
+        const auto valid = m_inputDraft.Validate();
+        const char* status = valid ? "저장 전에는 적용되지 않습니다. 취소하면 편집을 버립니다." : valid.GetError().message.c_str();
+        const auto& style = ImGui::GetStyle();
+        const float buttonWidth = ImGui::CalcTextSize("프로젝트에 저장").x + ImGui::CalcTextSize("기본 조작 복원").x +
+                                  ImGui::CalcTextSize("취소").x + style.FramePadding.x * 6 + style.ItemSpacing.x * 2;
+        const bool stackedFooter = availableWidth < buttonWidth;
+        const float footerHeight = ImGui::CalcTextSize(status, nullptr, false, availableWidth).y + style.ItemSpacing.y +
+                                   ImGui::GetFrameHeightWithSpacing() * (stackedFooter ? 3 : 1);
+        if (ImGui::BeginChild("Actions", {0, std::max(ImGui::GetFrameHeight() * 2, ImGui::GetContentRegionAvail().y - footerHeight)})) {
+            ImGui::PushTextWrapPos(0);
+            if (ImGui::TreeNode("사용법")) {
+                ImGui::TextDisabled("이름: 영문·숫자·밑줄 1~64자, 숫자 시작 제외. 최대 64개.");
+                ImGui::TextWrapped("조작을 펼쳐 입력을 연결합니다. Lua에서 같은 이름으로 조회합니다.");
+                ImGui::TextWrapped("물리 키 위치 · 패드 1~4번 · 회전/점프 3D · 확대/축소 2D");
+                ImGui::TreePop();
+            }
+            if (!m_inputActionError.empty()) ImGui::TextWrapped("%s", m_inputActionError.c_str());
+            ImGui::Separator();
             if (m_inputDraft.actions.empty()) ImGui::TextWrapped("저장된 조작이 없습니다. 아래의 기본 조작 복원으로 시작하세요.");
             for (size_t actionIndex = 0; actionIndex < m_inputDraft.actions.size();) {
                 auto& action = m_inputDraft.actions[actionIndex];
                 bool removeAction = false;
                 ImGui::PushID(action.name.c_str());
                 const auto description = runtime::GameActionDescription(action.name);
-                if (ImGui::TreeNodeEx(action.name.c_str(), ImGuiTreeNodeFlags_None, "%s · %s", action.name.c_str(), description.data())) {
-                    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+                const bool expanded = ImGui::TreeNodeEx(action.name.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s · %s", action.name.c_str(), description.data());
+                if (expanded) {
+                    ImGui::TextWrapped("%s", description.data());
+                    ImGui::SetNextItemWidth(std::min(ImGui::GetFontSize() * 10, ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize("데드존").x - style.ItemInnerSpacing.x));
                     ImGui::SliderFloat("데드존", &action.deadzone, 0, .95f, "%.2f");
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("이 값 이하의 아날로그 입력은 무시합니다. 이동은 네 방향의 평균값을 원형으로 적용합니다.");
                     if (action.bindings.empty()) ImGui::TextDisabled("입력 없음 — 이 조작은 작동하지 않습니다.");
@@ -120,11 +152,11 @@ void EditorApp::DrawInputSettings() {
                 else ++actionIndex;
                 ImGui::Spacing();
             }
+            ImGui::PopTextWrapPos();
         }
         ImGui::EndChild();
-        const auto valid = m_inputDraft.Validate();
-        if (!valid) ImGui::TextWrapped("%s", valid.GetError().message.c_str());
-        else ImGui::TextDisabled("저장 전에는 설정이 적용되지 않습니다. 창을 닫으면 편집을 취소합니다.");
+        if (!valid) ImGui::TextWrapped("%s", status);
+        else ImGui::TextDisabled("%s", status);
         ImGui::BeginDisabled(!valid);
         if (ImGui::Button("프로젝트에 저장")) {
             const auto saved = m_project->SaveInputSettings(m_inputDraft);
@@ -132,11 +164,12 @@ void EditorApp::DrawInputSettings() {
             if (saved) m_showInputSettings = false;
         }
         ImGui::EndDisabled();
-        ImGui::SameLine();
+        if (!stackedFooter) ImGui::SameLine();
         if (ImGui::Button("기본 조작 복원")) m_inputDraft = runtime::DefaultGameInputMap();
         ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("취소") || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_showInputSettings = false;
+        if (!stackedFooter) ImGui::SameLine();
+        if (ImGui::Button("취소") || ImGui::Shortcut(ImGuiKey_Escape)) m_showInputSettings = false;
+        ImGui::PopTextWrapPos();
     }
     ImGui::End();
 }

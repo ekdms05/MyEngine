@@ -1868,3 +1868,93 @@ MYE_TEST(EditorAnimationStateRebindsAppliedUndoClosedAndRefreshedDefinitions) {
     MYE_EXPECT(live && live->machine && live->currentState == 1 && !live->GetBool("ready"));
     app->PlayMode().Stop(); modules.ShutdownAll(engine);
 }
+
+MYE_TEST(EditorAnimationStateMapRoundTripResetsInstancesAndPreservesFailedWorld) {
+    EditorGuiScope gui;
+    const auto root = ProjectTestDirectory("animation-state-maps");
+    EditorTestContext engine(root); ModuleRegistry modules;
+    engine.RegisterServiceRaw(ModuleRegistry::kServiceId, &modules);
+    modules.Register(std::make_unique<scene::SceneModule>());
+    auto editor = std::make_unique<EditorModule>(); auto* module = editor.get(); modules.Register(std::move(editor));
+    MYE_EXPECT(modules.InitializeAll(engine));
+    auto* app = module->App(); MYE_EXPECT(app); if (!app) return;
+    MYE_EXPECT(app->Project().Create("Maps", Utf8String(root / "project"), false, MYE_STARTER_SOURCE_DIR));
+    app->RefreshDocumentContext(); modules.Tick(UpdatePhase::PreRender, TimeStep{});
+    auto* db = engine.GetService<asset::AssetDatabase>(); MYE_EXPECT(db); if (!db) return;
+    auto created = app->Project().NewAnimationState(); MYE_EXPECT(created); if (!created) return;
+    auto* doc = created.Value(); auto definition = doc->AnimationState();
+    definition.states[0].animation = {db->GuidFromPath("assets://animations/novice_idle.anim")};
+    definition.parameters = {{"ready", asset::ParamType::Bool, 0}, {"seed", asset::ParamType::Float, .375f}};
+    MYE_EXPECT(doc->EditAnimationState(app->Context(), definition, "map states"));
+    MYE_EXPECT(app->Project().SaveAnimationState(doc->Id(), "assets/animations/player.animstate"));
+    MYE_EXPECT(app->Viewport()->RefreshAssetIndex()); db = engine.GetService<asset::AssetDatabase>();
+    auto* edit = app->Context().activeWorld(); ecs::Entity player{};
+    edit->Query<runtime::CharacterController2D>().Each([&](ecs::Entity e, const auto&) { player = e; });
+    MYE_EXPECT(AssignAnimationStateToEntity(app->Context(), player, {db->GuidFromPath("assets://animations/player.animstate")}));
+    edit->Add<runtime::ObjectBehavior>(player).luaSource = R"(
+return {on_init=function(self)
+    local e=mye.world.entity_from_packed(self.entity)
+    assert(MapProbe==nil and not e:get_bool('ready') and e:get_float('seed')==0.375)
+    MapProbe=true; e:set_bool('ready',true)
+end}
+)";
+    auto object = [&](const char* name, Vec3 position) {
+        const auto e = edit->Create(); edit->Add<scene::ObjectName>(e).value = name;
+        edit->Add<scene::LocalTransform>(e).position = position; edit->Add<scene::WorldTransform>(e);
+        return e;
+    };
+    object("MapSpawn", {4,2,0}); object("MapReturn", {-4,1,0});
+    const auto door = object("MapDoor", {}); edit->Add<runtime::InteractionTarget>(door);
+    auto& portal = edit->Add<runtime::ScenePortal>(door);
+    portal.scenePath = "assets/scenes/map-b.scene"; portal.spawnName = "MapSpawn";
+    const auto a = Utf8Path(app->Project().RootDir()) / "assets/scenes/map-a.scene";
+    const auto b = Utf8Path(app->Project().RootDir()) / "assets/scenes/map-b.scene";
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(*edit, Utf8String(a)));
+    portal.scenePath = "assets/scenes/map-a.scene"; portal.spawnName = "MapReturn";
+    edit->TryGet<scene::LocalTransform>(door)->position = {4,2,0};
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(*edit, Utf8String(b)));
+    portal.scenePath = "assets/scenes/map-b.scene"; portal.spawnName = "MapSpawn";
+    edit->TryGet<scene::LocalTransform>(door)->position = {};
+    modules.Tick(UpdatePhase::PreRender, TimeStep{});
+    auto& play = app->PlayMode(); MYE_EXPECT(play.Play());
+    modules.Tick(UpdatePhase::FixedUpdate, TimeStep{});
+    auto transition = [&](Vec2 spawn) {
+        auto* old = play.ActiveWorld(); auto* live = old->TryGet<anim::SpriteAnimator>(player);
+        MYE_EXPECT(live && live->GetBool("ready")); if (!live) return;
+        live->SetFloat("seed", .9f);
+        MYE_EXPECT(play.Tick(1.0f/60, {}, true, app->Project().RootDir()));
+        for (int i = 0; i < 40 && play.ActiveWorld() == old; ++i)
+            modules.Tick(UpdatePhase::FixedUpdate, TimeStep{});
+        MYE_EXPECT(play.ActiveWorld() != old);
+        live = play.ActiveWorld()->TryGet<anim::SpriteAnimator>(player);
+        MYE_EXPECT(live && live->machine && live->GetBool("ready") && live->GetFloat("seed") == .375f);
+        MYE_EXPECT(live && live->started && live->currentState == 0 && live->cursor.step == 0);
+        const auto* t = play.ActiveWorld()->TryGet<scene::LocalTransform>(player);
+        MYE_EXPECT(t && t->position.x == spawn.x && t->position.y == spawn.y);
+        MYE_EXPECT(play.Message().empty());
+        for (int i = 0; i < 20; ++i) modules.Tick(UpdatePhase::FixedUpdate, TimeStep{});
+    };
+    transition({4,2}); transition({-4,1}); play.Stop();
+    MYE_EXPECT(play.ActiveWorld() == edit && edit->TryGet<scene::LocalTransform>(player)->position.x == 0);
+
+    // A valid .anim GUID is an invalid graph: refuse before initializing candidate Lua.
+    auto* animator = edit->TryGet<anim::SpriteAnimator>(player);
+    const auto originalGraph = animator->stateMachine;
+    animator->stateMachine = definition.states[0].animation;
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(*edit, Utf8String(b)));
+    animator->stateMachine = originalGraph;
+    MYE_EXPECT(play.Play()); modules.Tick(UpdatePhase::FixedUpdate, TimeStep{});
+    auto* old = play.ActiveWorld(); auto* live = old->TryGet<anim::SpriteAnimator>(player);
+    live->SetFloat("seed", .9f); const auto* machine = live->machine;
+    MYE_EXPECT(play.Tick(1.0f/60, {}, true, app->Project().RootDir()));
+    bool refused = false;
+    for (int i = 0; i < 40 && !refused; ++i) {
+        const auto tick = play.Tick(1.0f/60, {}, false, app->Project().RootDir());
+        if (!tick) {
+            refused = true;
+            MYE_EXPECT(tick.GetError().message.find("assets/scenes/map-b.scene") != std::string::npos);
+        }
+    }
+    MYE_EXPECT(refused && play.ActiveWorld() == old && live->machine == machine && live->GetFloat("seed") == .9f);
+    MYE_EXPECT(play.Message().empty()); play.Stop(); modules.ShutdownAll(engine);
+}

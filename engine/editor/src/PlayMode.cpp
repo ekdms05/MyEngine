@@ -226,7 +226,7 @@ Expected<void, Error> PlayModeController::Tick(float dt, const runtime::GameInpu
             if (!valid) { state.loadError=valid.GetError().message; return runtime::SceneLoadTicket{1}; }
             if (m_prepareWorld) {
                 auto prepared = m_prepareWorld(*world);
-                if (!prepared) { state.loadError = prepared.GetError().message; return runtime::SceneLoadTicket{1}; }
+                if (!prepared) { state.loadError = ref.vpath + ": " + prepared.GetError().message; return runtime::SceneLoadTicket{1}; }
             }
             world->SetEventBus(state.playEvents.get());
             auto objects = std::make_unique<runtime::ObjectSystem>(*world);

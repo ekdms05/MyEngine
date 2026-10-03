@@ -277,7 +277,7 @@ private:
         scene::UpdateWorldTransforms(candidate->world);
         if (auto camera = scene::UpdateGameCamera2D(candidate->world, 0); !camera) return camera.GetError();
         auto bound = BindAnimations(candidate->world);
-        if (!bound) return bound.GetError();
+        if (!bound) return Error{std::string(relative) + ": " + bound.GetError().message, bound.GetError().code};
         if (m_cli.connect.empty()) {
             candidate->objects = std::make_unique<runtime::ObjectSystem>(candidate->world);
             auto initialized = candidate->objects->Initialize(m_assetDb.get(), m_vfs.get(), m_assets.get());

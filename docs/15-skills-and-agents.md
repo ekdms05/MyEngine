@@ -79,3 +79,5 @@ UI 문서 작성은 기존 개발·게임 UI·ImGui 지침과 문서 CommandStac
 
 
 행동 모션 작성은 기존 myengine-development·imgui-ui-ux-engineering과 Document/CommandStack·GUID/AssetDatabase를 사용한다. 전체 값 초안은 적용 전 문서에 보존하고 재생은 적용 값/문서 revision만 소비한다. 패널 수명·상태 제거/끝점·저장 실패/메타·정의/클립 재바인딩을 검사한다. 새 UI/그래프 프레임워크·패키지/에이전트·픽셀 제작기는 추가하지 않았다.
+
+행동 모션의 맵 수명은 기존 myengine-development와 로컬/Play 포털·바인딩 경계를 재사용한다. `verify-animation2d.ps1 -StateMaps`는 새 Lua/매개변수/커서·이벤트와 도착 모션 거부를 검사한다. 에셋 재바인딩과 새 맵 인스턴스, 일반 Lua의 게임 상태 전달을 구분하도록 로컬 개발 지침과 MCP animation2d 참조를 갱신했다. OS 작성 검수는 Computer Use 중단으로 미완료이며 새 패키지/에이전트를 추가하지 않는다.

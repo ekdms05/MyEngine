@@ -3,10 +3,12 @@ param(
     [string]$BuildDir = 'build/dev',
     [switch]$Phase,
     [switch]$Temporal,
-    [switch]$States
+    [switch]$States,
+    [switch]$StateMaps
 )
 $ErrorActionPreference = 'Stop'
 if ($Temporal) { $Phase = $true }
+if ($StateMaps) { $States = $true }
 $repo = Split-Path -Parent $PSScriptRoot
 $build = if ([IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $repo $BuildDir }
 $game = Join-Path $build "apps/game/$Configuration/MyGame.exe"
@@ -281,6 +283,98 @@ return {
         $player.components.SpriteAnimator.stateMachine.guid=$stateGuid;$graph.states[2].animation=$attackGuid
         $attack.timeline[0].seconds=1.0/60;$attack.width=48;$attack.texture=$attackTextureGuid
         [IO.File]::WriteAllBytes($statePath,$stateBytes);[IO.File]::WriteAllBytes($attackPath,$attackBytes);Write-Json $scenePath $scene
+    }
+    if ($StateMaps) {
+        $savedScene = [IO.File]::ReadAllBytes($scenePath)
+        $mapBPath = Join-Path $run 'project/assets/scenes/state-map-b.scene'
+        $badGraphPath = Join-Path $run 'project/assets/animations/state-map-bad.animstate'
+        $badGraphGuid = [Guid]::NewGuid().ToString()
+        $mapSource = @'
+local tag='_MAP_TAG_'
+local n,idles,attacks=0,0,0
+local returned=false
+return {
+    on_init=function(self)
+        local e=mye.world.entity_from_packed(self.entity)
+        assert(StateMapProbe==nil and not e:get_bool('ready') and e:get_float('seed')==0.375)
+        local p=e:get_position()
+        returned=tag=='a' and p.x==-4 and p.y==1
+        assert(returned or (tag=='a' and p.x==0 and p.y==0) or (tag=='b' and p.x==4 and p.y==2))
+        StateMapProbe=tag; e:set_bool('ready',true); e:set_float('seed',0.625)
+        mye.log('map-init:'..tag..(returned and ':return' or ':first'))
+    end,
+    on_update=function(self,dt)
+        n=n+1;local e=mye.world.entity_from_packed(self.entity)
+        assert(StateMapProbe==tag and e:get_bool('ready') and e:get_float('seed')==0.625)
+        if not returned then
+            if n==2 then e:set_trigger('attack') end
+            if n==4 then assert(attacks==1); e:set_position(mye.Vec2(2,0)) end
+        elseif n==6 then
+            assert(idles==1 and attacks==0);mye.log('map-return-ready')
+        end
+    end,
+    on_event=function(self,name,payload)
+        if name~='animation' then return end
+        if payload.name=='state-idle' then idles=idles+1 end
+        if payload.name=='state-attack' then attacks=attacks+1 end
+        assert(attacks<=1);mye.log('map-event:'..tag..(returned and ':return:' or ':first:')..payload.name)
+    end,
+    on_destroy=function(self) mye.log('map-destroy:'..tag..(returned and ':return' or ':first')) end
+}
+'@
+        $mapA = $scene | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+        $mapPlayer = $mapA.entities[0]
+        $mapPlayer.components.ObjectBehavior.luaSource = $mapSource.Replace('_MAP_TAG_', 'a')
+        $portalPose = $pose | ConvertTo-Json | ConvertFrom-Json
+        $portalPose.px = 2; $portalPose.py = 0
+        $spawnPose = $pose | ConvertTo-Json | ConvertFrom-Json
+        $spawnPose.px = -4; $spawnPose.py = 1
+        $mapA.entities += @(
+            [pscustomobject]@{id=901;components=@{
+                ObjectName=@{value='Portal'};LocalTransform=$portalPose
+                Collider2D=@{shape=@{kind='Box';half=@{x=.3;y=.3}};isTrigger=$true}
+                ScenePortal=@{scenePath='assets/scenes/state-map-b.scene';spawnName='Arrival';onInteract=$false}}},
+            [pscustomobject]@{id=902;components=@{ObjectName=@{value='Arrival'};LocalTransform=$spawnPose}})
+        $mapB = $mapA | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+        $mapB.entities[0].components.ObjectBehavior.luaSource = $mapSource.Replace('_MAP_TAG_', 'b')
+        $mapB.entities[2].components.ScenePortal.scenePath = $manifest.mainScene
+        $mapB.entities[3].components.LocalTransform.px = 4; $mapB.entities[3].components.LocalTransform.py = 2
+        Write-Json $scenePath $mapA; Write-Json $mapBPath $mapB
+        [IO.File]::WriteAllBytes((Join-Path $run 'state-map-a.input.json'),[IO.File]::ReadAllBytes($scenePath))
+        [IO.File]::WriteAllBytes((Join-Path $run 'state-map-b.input.json'),[IO.File]::ReadAllBytes($mapBPath))
+        $mapHashes = @((Get-FileHash -LiteralPath $scenePath).Hash, (Get-FileHash -LiteralPath $mapBPath).Hash)
+        try {
+            # ponytail: editor stops by render frames; require the return marker. Use a fixed-tick limit if faster renderers finish too early.
+            foreach ($entry in @(@($game,'game'),@($editor,'editor'))) {
+                $arguments = @('--project',$project,'--headless') + $(if ($entry[1] -eq 'game') {@('--ticks','80')} else {@('--play','--frames','20000')})
+                $log = Run-App $entry[0] "state-maps-$($entry[1])" ($arguments + @('--dump',(Join-Path $run "state-maps-$($entry[1]).bmp")))
+                foreach ($marker in @('map-init:a:first','map-init:b:first','map-init:a:return','map-return-ready',
+                    'map-event:a:first:state-attack','map-event:b:first:state-attack','map-event:a:return:state-idle',
+                    'map-destroy:a:first','map-destroy:b:first','map-destroy:a:return')) {
+                    if (([regex]::Matches($log,[regex]::Escape($marker))).Count -ne 1) {throw "Map $($entry[1]) marker failed: $marker"}
+                }
+                if ($log -match 'map-event:a:return:state-attack') {throw 'Departed trigger leaked into the returned animator'}
+                Check-Pixel "state-maps-$($entry[1])" 480 222 0x808080
+            }
+            if ((Get-FileHash -LiteralPath $scenePath).Hash -ne $mapHashes[0] -or
+                (Get-FileHash -LiteralPath $mapBPath).Hash -ne $mapHashes[1]) {throw 'Map playback changed saved scenes'}
+            # Only the destination uses this valid graph with a missing inactive clip.
+            $badGraph = $graph | ConvertTo-Json -Depth 32 | ConvertFrom-Json
+            $badGraph.states[2].animation = [Guid]::NewGuid().ToString()
+            Write-Json $badGraphPath $badGraph
+            Write-Json ($badGraphPath+'.meta') @{guid=$badGraphGuid;importer='AnimationStateAsset';importerVersion=1}
+            $mapB.entities[0].components.SpriteAnimator.stateMachine.guid = $badGraphGuid
+            Write-Json $mapBPath $mapB
+            foreach ($entry in @(@($game,'game'),@($editor,'editor'))) {
+                $arguments = @('--project',$project,'--headless') + $(if ($entry[1] -eq 'game') {@('--ticks','80')} else {@('--play','--frames','20000')})
+                $log = Run-App $entry[0] "state-map-refused-$($entry[1])" $arguments 1
+                if ($log -notmatch 'map-init:a:first' -or $log -match 'map-init:b:first|map-destroy:b:first' -or
+                    $log -notmatch 'assets/scenes/state-map-b\.scene: attack: animation GUID does not identify an \.anim file') {
+                    throw 'Broken destination ran Lua or lacked the destination animation diagnostic'
+                }
+            }
+        } finally { [IO.File]::WriteAllBytes($scenePath,$savedScene) }
+        Write-Output 'PASS: actual local/Play A-B-A portals, named spawns, fresh Lua/typed parameters/cursors, entry/attack event lifetime, source preservation and broken destination refusal before Lua'
     }
     $player.components.ObjectBehavior.luaSource='return {on_init=function(self) mye.log("client-lua-must-not-run");error("client authority violation") end}'
     Write-Json $scenePath $scene

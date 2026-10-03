@@ -515,10 +515,16 @@ void EditorModule::OnPostInitialize(EngineContext& ctx) {
             else state.inputConfigured = true;
         }
         if (state.playWindow.IsOpen()) input->PollGamepads();
-        if (input && state.app)
-            state.gameInput.Capture(*input, state.inputConfigured && state.app->PlayMode().InputEnabled() &&
-                                   state.app->PlayMode().State() == PlayState::Playing);
-        else state.gameInput.Clear();
+        if (input && state.app) {
+            bool enabled = state.inputConfigured && state.app->PlayMode().InputEnabled() &&
+                           state.app->PlayMode().State() == PlayState::Playing;
+            auto filtered = *input;
+            const auto pointer = render::PixelPerfectTarget::WindowToLogical({960,540},
+                state.playWindow.IsOpen() ? state.playWindow.ClientSize() : Vec2i{960,540}, input->MousePosition());
+            auto ui = state.app->PlayMode().FilterUiInput(filtered, pointer.value_or(Vec2{-1,-1}), enabled);
+            if (!ui) { state.ReportFrameError(ui.GetError()); state.gameInput.Clear(); return; }
+            state.gameInput.Capture(filtered, enabled && ui.Value());
+        } else state.gameInput.Clear();
     }, 100);
     ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& t) {
         auto& state = *m_impl;

@@ -146,9 +146,23 @@ public:
             m_input->SetMouseSuppressed(!m_inputFocused);
             if (!m_inputFocused) {
                 m_gameInput.Clear();
+                if (m_scene->objects) {
+                    auto filtered = *m_input;
+                    auto reset = m_scene->objects->FilterUiInput(filtered, {}, false);
+                    if (!reset) Fail(reset.GetError());
+                }
                 return;
             }
-            m_gameInput.Capture(*m_input, true);
+            auto filtered = *m_input;
+            bool enabled = true;
+            if (m_scene->objects) {
+                const auto pointer = render::PixelPerfectTarget::WindowToLogical({960,540},
+                    m_window ? m_window->GetClientSize() : Vec2i{960,540}, m_input->MousePosition());
+                auto ui = m_scene->objects->FilterUiInput(filtered, pointer.value_or(Vec2{-1,-1}), true);
+                if (!ui) { Fail(ui.GetError()); return; }
+                enabled = ui.Value();
+            }
+            m_gameInput.Capture(filtered, enabled);
         });
         ctx.Modules().AddTick(this, UpdatePhase::FixedUpdate, [this](const TimeStep& step) { Tick(static_cast<float>(step.deltaSeconds)); });
         ctx.Modules().AddTick(this, UpdatePhase::PreRender, [this](const TimeStep&) { Render(); });

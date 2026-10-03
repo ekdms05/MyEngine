@@ -27,5 +27,5 @@
 <figure><img src="media/game-feedback.png" width="960" height="540" loading="lazy" alt="초원 마을 게임 창 하단의 우물 안내와 한글 Message"><figcaption>실제 Release Play 창 캡처. 검수 복사본의 Start → Message로 안내를 고정 표시했습니다. 입력 검수 사진이 아닙니다.</figcaption></figure>
 <p>게임 카메라와 독립된 하단 앵커에 그리므로 카메라 잔여 이동에 따라 글자가 흔들리지 않습니다. 월드와 같은 정수 배율/여백을 사용합니다. 메시지는 줄바꿈하고 최대 높이에서 자릅니다. Pause는 표시를 유지하고 다음 Message·Stop·맵 교체가 이전 문구의 수명을 끝냅니다.</p>
 <details><summary>표시 한계와 문제 해결</summary><p>각 문자열 최대 4096 UTF-8 bytes, 최대 패널 높이 180px이며 스크롤/닫기/선택지는 없습니다. 앱 옆 fonts/NanumSquareRoundR.ttf가 누락/손상되면 오류를 확인하세요. 읽기 전용 안내는 HP/가방/퀘스트 HUD나 온라인 대화를 완성하지 않습니다. 설치된 0.3.0에는 이 게임 창 표시 연결이 없습니다. <a href="../06-runtime-systems.md">UI 지원/수명 계약</a>을 확인하세요.</p></details>
-<p><a href="game-ui.html">저장한 GameUi와 Lua 상태 표시</a>: .ui 임포트·GUID·HP 게이지·일반 한글 텍스트·활성 상태의 main 소스 연결을 확인하세요. UI 문서 작성/Undo·저장과 게임 렌더 미리보기도 연결했습니다. 클릭/포커스·IME·온라인·설치 0.3.0 지원은 미완료입니다.</p>
+<p><a href="game-ui.html">저장한 GameUi와 Lua 상태 표시</a>: .ui 임포트·GUID·HP 게이지·일반 한글 텍스트·활성 상태의 main 소스 연결을 확인하세요. UI 문서 작성/Undo·저장과 게임 렌더 미리보기도 연결했습니다. 로컬 클릭/키보드 포커스·모달 차단은 연결했습니다. 네이티브 입력 전체 gate와 직접 장치/DPI·IME/패드 UI·온라인·설치 0.3.0 지원은 미완료입니다.</p>
 <footer>정본: <a href="../20-components.md">20-components.md</a> · 구현 범위와 실패 조건을 확인하세요.</footer></main></div></body></html>

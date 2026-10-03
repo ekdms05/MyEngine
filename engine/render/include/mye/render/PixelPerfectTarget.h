@@ -7,6 +7,7 @@
 // 블릿: 풀스크린 삼각형을 destRect 뷰포트로 그려 내부 RT를 포인트 샘플. 서브픽셀 오프셋을
 //       UV에 반영. 백버퍼 전체를 먼저 검은색으로 클리어(레터박스 바) 후 블릿.
 #pragma once
+#include <optional>
 
 #include "mye/core/Math.h"
 #include "mye/rhi/RhiTypes.h"
@@ -62,6 +63,8 @@ public:
 
     // 창 크기 → 정수배·레터박스 레이아웃(순수 함수).
     static UpscaleLayout ComputeLayout(Vec2i internalSize, Vec2i windowSize);
+    // UI uses the same integer layout; letterbox and right/bottom edges are outside.
+    static std::optional<Vec2> WindowToLogical(Vec2i internalSize, Vec2i windowSize, Vec2i pointer);
 
     // 내부 RT를 백버퍼로 정수배 업스케일 블릿(포인트 샘플 + 서브픽셀 UV 오프셋 환원).
     // subpixelOffset = 카메라 SubpixelResidual()(내부 RT 픽셀, +Y 아래). 백버퍼를 자체 RenderPass로

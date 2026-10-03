@@ -326,4 +326,4 @@ CharacterController3D가 고정 틱의 이동을 처리한다. XYZ 위치 쓰기
 
 ## 저장한 GameUi의 로컬 표시 · main 소스
 
-`mye.ui.set_text(name,text)`, `set_progress(name,value,maximum)`, `set_enabled(name,bool)`, `set_visible(name,bool)`은 로컬 Play/MyGame ObjectSystem에 등록된다. 이름과 위젯 타입·인수 수/타입/범위를 검사하며 성공 true, 실패 nil/error이고 실패한 위젯 값은 보존한다. 텍스트는 일반 UTF-8이며 태그를 해석하지 않는다. [상세 한계·게임 상태 연결 예제](27-game-ui.md)를 따른다. `Core:hud_snapshot()`은 프로젝트 메서드다. 클릭/포커스/IME·온라인·설치 0.3.0 지원을 뜻하지 않는다.
+`mye.ui.set_text(name,text)`, `set_progress(name,value,maximum)`, `set_enabled(name,bool)`, `set_visible(name,bool)`은 로컬 Play/MyGame ObjectSystem에 등록된다. 이름과 위젯 타입·인수 수/타입/범위를 검사하며 성공 true, 실패 nil/error이고 실패한 위젯 값은 보존한다. 텍스트는 일반 UTF-8이며 태그를 해석하지 않는다. [상세 한계·게임 상태 연결 예제](27-game-ui.md)를 따른다. `Core:hud_snapshot()`은 프로젝트 메서드다. on_click(name,function 또는 nil)·focus(name 또는 nil)을 로컬 고정 틱 콜백/활성 Button에 연결했다. 모달 Panel/Window·입력 차단·수명/오류 계약은 27을 따른다. IME/패드 UI·온라인·설치 0.3.0 지원을 뜻하지 않는다.

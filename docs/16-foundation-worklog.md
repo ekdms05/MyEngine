@@ -600,3 +600,17 @@ UI/검증: 필드 위 이름·폭에 따른 버튼 줄바꿈·넓은 2열/좁은
 검사 한계/기록: 초기 테스트의 JSON 비교/헤더 추정·탭/테이블 ID·방어 없는 후속 접근과 MCP 일치 행 검색을 교정했고 로그를 로컬에 보존했다. 정적 ImGui checker는 올바른 BeginPopupModal/EndPopup을 짝으로 인식하지 못해 FAIL이다. quality suite 구조/semantic30/30은 PASS지만 g++/c++ 부재로 템플릿 compile gate는 실패했다. MSVC 제품 빌드/위젯 회귀를 그 스킬 gate 통과로 올리지 않는다. 기본 Git 변환을 끈 검사에서 CRLF를 전체 변경으로 읽은 출력은 제품 whitespace 결함이 아니며 기본 설정의 diff --check는 통과했다.
 
 상태/다음: D21b의 기본 작성/Undo/저장/미리보기만 main 소스 완료다. 상세 근거/실패/실행 명령/재검수 조건을 Project E docs의 engine-feedback-response-2026-10-03-ui-authoring.md에 남겼다. 사용자 원문 SHA85964a8c…/아트/GUID·VERSION/tag·설치0.3.0의84파일 해시/크기를 유지했다. 캔버스 드래그/재부모화·타입별 속성 폼·버튼 콜백/모달 포커스/좌표 변환/입력 차단/IME·온라인/새 배포는 미완료다. 다음은 ME-003 버튼/포커스, 행동 작성/입력·중단, 프리팹/질의, 맵/저장 상태와 서버 권위 통합이다. 공개 운영 보호/게임 내보내기·전체 목표는 계속 진행한다.
+
+## 2026-10-03 · 로컬 UI 입력과 고정 틱 콜백
+
+근거: ME-003의 버튼/대화·가방 포커스와 공격 차단 조건을 우선했다. 기존 UiSystem/InputState·GameInputBuffer/LuaReference·PixelPerfectTarget.ComputeLayout을 재사용해 앱 입력 복사→공통 UI→고정 틱 콜백→게임 입력/이동으로 연결했다. 공식 InputEvent/Control의 UI 선점/단일 포커스 흐름을 참고했으며 외부 코드는 복사하지 않았다. 게임 규칙·픽셀 제작기·새 패키지/에이전트는 추가하지 않았다.
+
+계약: Tab/Shift+Tab·Enter/Space·포커스 표시와 modal Panel/Window의 최상단 서브트리 제한이다. 포인터만 선점하면 마우스/휠·드래그, 키보드 포커스는 키 액션, 모달은 모든 게임 장치를 차단한다. 같은 틱 클릭으로 모달을 열어도 미리 잡힌 이동/액션을 중립화한다. 여백/끝 입력은 같은 정수 destRect에서 거부하며 월드 residual은 더하지 않는다. 장식 캡션은 입력 통과, 숨김/비활성·clip은 거부한다. 큐는 최대64개·명시적 오류, 프로젝트 Lua는 고정 틱에서만 실행한다.
+
+수명/공통 원인: Pause/포커스 이탈은 누름/큐를 취소한다. 소비 시 숨김/비활성/interactive=false를 재확인한다. UI/콜백을 VM/에셋보다 먼저 해제한다. 동일 canvas 문서 교체는 옛 핸들을 제거해 stale Close가 새 트리를 삭제하지 않게 했다. 콜백에서 모달을 연 직후의 명시적 focus도 새 모달 범위를 검사한다. 실패한 맵 후보와 사용자 데이터는 기존 경로로 보존한다.
+
+최종 검증: 전체 Debug/Release build·순차 CTest 각605/605(집계1/1), 총43.45/32.04초. 기존 두 회귀에 빠른 탭/좌표·Tab/모달·문서 교체와 Play 고정 틱/같은 틱 이동 차단·취소/콜백 오류·비활성 큐/64개 상한을 검증했다. 최종 각 구성의 두 앱 native/headless 저장 UI12출력·콘텐츠 오류8건 exit1·씬/메타 보존과 문서 미리보기 PNG1024/게이지4736픽셀을 통과했다. Release HP75 native 캡처를 직접 확인했다. MCP build/smoke39와 가이드182 로컬 링크/앵커 통과.
+
+미통과와 교정: 최종 Release 네이티브 전체 입력 gate는 MyGame-clicks foreground 획득 실패로 입력 전에 중단됐다. 자기 PID/foreground/포인터 검사를 유지하고 실패 보고서를 남겼다. 중간 Debug 세 케이스의 클릭/Enter/오류 관찰은 최종 코드 이전·네 번째 미완료이므로 최종 전체 PASS로 계산하지 않는다. stdout 버퍼링은 기존 실시간 file sink로, 과도한 검사 프레임은900으로 교정했다. 키 해제/자기 subprocess 종료와 thread detach는 finally에서 수행한다. 컴파일 전방 선언/부모 순회 타입 오류와 Lua 가이드 재생성의 xyz 앵커 유실을 수정 후 재검증했고 초기 실패 로그를 보존했다.
+
+상태: D22b1은 main 소스 연결·공통 회귀/표시 검사 통과이며 네이티브 전체 입력/직접 장치/DPI·IME/패드 UI·온라인/소비자 배포는 미완료다. 로컬 개발/UI 지침·MCP lua/ui·공개 가이드를 동기화했다. 상세 답변/근거/해시는 제작 프로젝트 docs와 build의 d21d-audit/benchmark/log에 둔다. 원문 SHA85964a8c…·VERSION/tag·설치0.3.0의84파일 해시/크기를 유지한다. 전체 MMORPG 목표는 계속 진행하며 ME-003 장치/입력 검수→행동 작성/입력·중단→프리팹/질의→맵/저장 상태→권위 통합 순서를 유지한다.

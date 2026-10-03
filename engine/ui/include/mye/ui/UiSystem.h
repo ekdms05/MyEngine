@@ -80,6 +80,10 @@ public:
     Widget* HitTest(Vec2 uiPos) const;
     // core InputState 를 소비해 UiEvent 생성·라우팅. 소비 여부(=UI 가 입력을 먹었나) 반환.
     bool HandleInput(const InputState& input, Vec2 uiPointer);
+    void ResetInput();
+    bool HasModal() const;
+    bool CapturesKeyboard() const { return m_focused && m_focused->keyboardFocused; }
+    bool Focus(Widget* widget);
     // 레이아웃(dirty 시 measure/arrange)·툴팁 타이머·애니(후속 UiTween).
     void Update(float dt);
 
@@ -98,6 +102,7 @@ private:
 
     // root 서브트리(root 포함)를 가리키던 hovered/focused/pressed 포인터를 해제(파괴 시 dangling 방지).
     void ClearInteractionState(const Widget* root);
+    Widget* ActiveModal() const;
 
     WidgetFactory                          m_factory;
     std::vector<std::unique_ptr<UiCanvas>> m_canvases;   // sortOrder 정렬 유지
@@ -114,6 +119,9 @@ private:
     Vec2     m_pressPos{};           // down 시점 포인터(드래그 임계 판정)
     Vec2     m_lastPointer{};        // 직전 프레임 포인터(드래그 델타)
     bool     m_dragging = false;
+    Widget*  m_keyPressed = nullptr;
+    Widget*  m_modal = nullptr;
+    KeyCode  m_activationKey = KeyCode::Unknown;
     static constexpr float kDragThreshold = 3.0f;   // 드래그 시작 픽셀 임계
     Vec2i    m_screen{960, 540};
     uint32_t m_nextDocId = 0;

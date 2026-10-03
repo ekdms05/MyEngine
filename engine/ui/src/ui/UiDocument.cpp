@@ -219,12 +219,13 @@ Expected<void, Error> WidgetFactory::ApplyProperties(Widget& w, const std::vecto
     std::unordered_set<std::string_view> keys;
     for (const auto& [key, value] : props) {
         if (!keys.insert(key).second) return Error{"Duplicate UI property: " + key, 1};
-        if (key == "visible" || key == "interactive" || key == "clip" || key == "background" || key == "enabled") {
+        if (key == "visible" || key == "interactive" || key == "clip" || key == "background" || key == "enabled" || key == "modal") {
             if (value != "true" && value != "false") return Error{"UI boolean requires true or false: " + key, 1};
             const bool enabled = value == "true";
             if (key == "visible") w.visibility = enabled ? Visibility::Visible : Visibility::Hidden;
             else if (key == "interactive") w.interactive = enabled;
             else if (key == "clip") w.clipChildren = enabled;
+            else if (key == "modal" && panel) w.modal = enabled;
             else if (key == "background" && panel) panel->drawBackground = enabled;
             else if (key == "enabled" && button) button->state = enabled ? Button::State::Normal : Button::State::Disabled;
             else return Error{"UI property is unsupported by " + w.name + ": " + key, 1};
@@ -276,6 +277,8 @@ static Expected<WidgetPtr, Error> InstantiateNode(const UiNodeDesc& node,
     w->name = node.name;
     w->anchors = node.anchors;
     w->styleClass = MakeStyleClass(node.styleClass);
+    // Decorative nodes pass input through; explicit interactive properties still override this.
+    w->interactive = w->As<Button>() || w->As<Window>();
     auto applied = factory.ApplyProperties(*w, node.properties);
     if (!applied) return Error{node.name + ": " + applied.GetError().message, 1};
     for (const UiNodeDesc& childDesc : node.children) {

@@ -21,6 +21,7 @@
 #include "mye/gameplay/Progression.h"
 #include "mye/ui/UiDocument.h"
 #include "mye/ui/Widgets.h"
+#include "mye/core/Input.h"
 #include "mye/asset/AssetDatabase.h"
 #include "mye/asset/AssetManager.h"
 #include "mye/asset/AssetMeta.h"
@@ -59,6 +60,86 @@ std::filesystem::path OnlineProject(ecs::World& world) {
     MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/main.scene")));
     return root;
 }
+}
+
+MYE_TEST(GameUiClicksRunAtFixedTickAndModalCancelsGameplayAndPendingInput) {
+    editor::Document document({1},editor::Document::Kind::Scene,"");
+    auto& world=document.World(); const auto player=Player(world); const auto object=Object(world,"HUD");
+    const auto root=FreshObjectRoot(); std::filesystem::create_directories(root/"assets");
+    ui::UiDocument hud; hud.root.typeName="Panel"; hud.root.name="hud"; hud.root.anchors=ui::AnchorRect::Fill();
+    ui::UiNodeDesc bar; bar.typeName="ProgressBar"; bar.name="count"; bar.anchors=ui::AnchorRect::TopLeft({20,120},{100,16});
+    ui::UiNodeDesc open; open.typeName="Button"; open.name="open"; open.anchors=ui::AnchorRect::TopLeft({20,20},{100,40});
+    ui::UiNodeDesc fail=open; fail.name="fail"; fail.anchors.offsetMin.y=70;
+    ui::UiNodeDesc dialog; dialog.typeName="Panel"; dialog.name="dialog"; dialog.anchors=ui::AnchorRect::TopLeft({200,100},{200,100});
+    dialog.properties={{"modal","true"},{"visible","false"}};
+    auto close=open; close.name="close"; close.anchors.offsetMin={10,10}; dialog.children={close};
+    hud.root.children={bar,open,fail,dialog};
+    const auto encoded=ui::SaveDocumentJson(hud); MYE_EXPECT(encoded); if(!encoded) return;
+    { std::ofstream file(root/"assets/hud.ui",std::ios::binary); file<<encoded.Value(); }
+    asset::VirtualFileSystem files; files.Mount("assets",std::make_unique<asset::LooseFileSystem>(Utf8String(root/"assets")),0);
+    asset::AssetManager assets(files,nullptr); asset::AssetDatabase database(assets,nullptr);
+    MYE_EXPECT(database.ScanDirectory(Utf8String(root/"assets")));
+    world.Add<runtime::GameUi>(object).document={database.GuidFromPath("assets://hud.ui"),0};
+    world.Add<runtime::ObjectBehavior>(object).luaSource=R"(
+return {on_init=function(self)
+    assert(not mye.ui.on_click("count",function() end))
+    assert(not mye.ui.on_click("open",true))
+    assert(not mye.ui.focus("missing"))
+    assert(mye.ui.on_click("open",function()
+        assert(mye.ui.set_progress("count",1,100))
+        assert(mye.ui.set_visible("dialog",true))
+        assert(not mye.ui.focus("open"))
+        assert(mye.ui.focus("close"))
+    end))
+    assert(mye.ui.on_click("close",function()
+        assert(mye.ui.set_progress("count",2,100))
+        assert(mye.ui.set_visible("dialog",false))
+    end))
+    assert(mye.ui.on_click("fail",function() error("CLICK_FAILURE_WITNESS") end))
+end}
+)";
+    editor::PlayModeController play; play.SetEditWorld(&world); MYE_EXPECT(play.Play());
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets));
+    auto* count=play.UiRoot()->findByName("count")->As<ui::ProgressBar>();
+    auto* transform=play.ActiveWorld()->TryGet<scene::LocalTransform>(player);
+    MYE_EXPECT(count && transform); if(!count || !transform) return;
+    const auto origin=transform->position;
+    InputState physical; physical.OnKey(KeyCode::D,true); physical.OnMouseButton(MouseButton::Left,true); physical.OnMouseButton(MouseButton::Left,false);
+    auto filtered=physical; auto allowed=play.FilterUiInput(filtered,{30,30},true);
+    MYE_EXPECT(allowed && allowed.Value() && filtered.IsMouseSuppressed() && !physical.IsMouseSuppressed());
+    MYE_EXPECT(count->value==0); // Frame input queues; Lua must run only at the fixed tick.
+    runtime::GameInputBuffer controls; MYE_EXPECT(controls.Configure(runtime::DefaultGameInputMap())); controls.Capture(filtered,allowed.Value());
+    MYE_EXPECT(play.Tick(1.0f/60,controls.ConsumeTick(),Utf8String(root),&database,&files,&assets));
+    MYE_EXPECT(count->value==1 && transform->position==origin);
+    physical.NewFrame(); filtered=physical; allowed=play.FilterUiInput(filtered,{500,500},true);
+    MYE_EXPECT(allowed && !allowed.Value()); controls.Capture(filtered,allowed.Value());
+    MYE_EXPECT(play.Tick(1.0f/60,controls.ConsumeTick(),Utf8String(root),&database,&files,&assets));
+    MYE_EXPECT(transform->position==origin);
+    physical.NewFrame(); physical.OnKey(KeyCode::Enter,true); physical.OnKey(KeyCode::Enter,false);
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{-1,-1},true));
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets)); MYE_EXPECT(count->value==2);
+    physical.NewFrame(); physical.OnMouseButton(MouseButton::Left,true); physical.OnMouseButton(MouseButton::Left,false);
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{30,30},true));
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{},false));
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets)); MYE_EXPECT(count->value==2);
+    physical.NewFrame(); physical.OnMouseButton(MouseButton::Left,true); physical.OnMouseButton(MouseButton::Left,false);
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{30,30},true));
+    auto* openButton=play.UiRoot()->findByName("open")->As<ui::Button>(); openButton->state=ui::Button::State::Disabled;
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets)); MYE_EXPECT(count->value==2);
+    openButton->state=ui::Button::State::Normal;
+    for (int index=0; index<65; ++index) {
+        physical.NewFrame(); physical.OnMouseButton(MouseButton::Left,true); physical.OnMouseButton(MouseButton::Left,false);
+        filtered=physical; const auto queued=play.FilterUiInput(filtered,{30,80},true);
+        MYE_EXPECT(index<64 ? bool(queued) : (!queued && queued.GetError().message.find("64 pending clicks")!=std::string::npos));
+    }
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{},false));
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets));
+    physical.NewFrame(); physical.OnMouseButton(MouseButton::Left,true); physical.OnMouseButton(MouseButton::Left,false);
+    filtered=physical; MYE_EXPECT(play.FilterUiInput(filtered,{30,80},true));
+    const auto failure=play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets);
+    MYE_EXPECT(!failure && failure.GetError().message.find("CLICK_FAILURE_WITNESS")!=std::string::npos);
+    MYE_EXPECT(play.Tick(1.0f/60,runtime::GameInput{},Utf8String(root),&database,&files,&assets));
+    play.Stop(); MYE_EXPECT(!play.UiRoot());
 }
 
 MYE_TEST(SavedGameUiBindsLuaBeforeInitAndRestartsWithoutLeakingState) {

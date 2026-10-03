@@ -81,6 +81,8 @@ public:
     virtual bool hitTest(Vec2 uiPos) const;             // 기본: computedRect 포함 검사
     bool         interactive = true;                    // false 면 히트 테스트 통과(아래로 전달)
     bool         clipChildren = false;
+    bool         modal = false;                         // visible subtree owns game input
+    bool         keyboardFocused = false;
 
 protected:
     // 자식들을 draw/measure/arrange 순회하는 기본 헬퍼(파생이 재사용).

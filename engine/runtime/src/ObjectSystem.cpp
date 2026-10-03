@@ -69,6 +69,7 @@ ObjectSystem::~ObjectSystem() {
     if (s.scripts) for (auto e : scripts) s.scripts->CallOnEntity(e, "on_destroy", script::LuaReference{});
     s.scripts.reset(); // releases tracked Lua references while the VM is alive
     for (auto e : scripts) s.world.Remove<script::ScriptComponent>(e);
+    s.uiBindings.Reset();
     s.lua.Shutdown();
 }
 Expected<void, Error> ObjectSystem::Initialize(asset::AssetDatabase* database,
@@ -148,15 +149,19 @@ void ObjectSystem::Dispatch(ecs::Entity object, ObjectEvent event) {
     if (event == ObjectEvent::Interact) s.scripts->CallOnEntity(object, "on_interact", script::LuaReference{});
 }
 
-Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& input) {
+Expected<void, Error> ObjectSystem::Tick(float dt, const GameInput& source) {
     auto& s = *m_impl;
     if (!s.scripts || !std::isfinite(dt) || dt <= 0 || dt > 1)
         return Error{"Object tick requires initialization and dt in (0,1]", 1};
-    Vec2 movement = input.movement;
+    Vec2 movement = source.movement;
     if (!std::isfinite(movement.x) || !std::isfinite(movement.y))
         return Error{"Movement input must be finite", 1};
     const float length = std::sqrt(movement.x * movement.x + movement.y * movement.y);
     if (length > 1) movement = movement / length;
+    auto clicks = s.uiBindings.ProcessClicks();
+    if (!clicks) return clicks.GetError();
+    const GameInput input = s.uiBindings.BlocksGameplay() ? GameInput{} : source;
+    if (s.uiBindings.BlocksGameplay()) movement = {};
     s.inputBindings.SetActions(input.actions);
     struct ClearInputOnExit {
         script::InputBindingModule& bindings;
@@ -313,4 +318,7 @@ void UpdateDefaultCamera2D(ecs::World& world, render::Camera2D& camera, bool res
 }
 
 ui::Widget* ObjectSystem::UiRoot() const { return m_impl->uiBindings.Root(); }
+Expected<bool, Error> ObjectSystem::FilterUiInput(InputState& input, Vec2 pointer, bool enabled) {
+    return m_impl->uiBindings.FilterInput(input, pointer, enabled);
+}
 } // namespace mye::runtime

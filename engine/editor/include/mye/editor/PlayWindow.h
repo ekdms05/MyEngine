@@ -21,6 +21,7 @@ public:
     bool CloseRequested() const;
     bool HasFocus() const;
     InputState& Input() { return m_input; }
+    Vec2i ClientSize() const { return m_window ? m_window->GetClientSize() : Vec2i{}; }
     Expected<void, Error> Render(render::HybridRenderer& renderer, const scene::RenderProxyList& proxies,
                 const render::HybridViewInfo& view, bool paused, rhi::ICommandContext& command,
                 std::string_view prompt = {}, std::string_view message = {}, ui::Widget* root = nullptr);

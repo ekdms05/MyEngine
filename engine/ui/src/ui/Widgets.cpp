@@ -87,7 +87,15 @@ void Image::draw(UiDrawContext& ctx) {
 // ---------------------------------------------------------------------------
 bool Button::onEvent(UiEvent& e) {
     if (state == State::Disabled) return false;
+    if (e.phase != UiRoutePhase::Target) return false;
     switch (e.type) {
+        case UiEventType::FocusLost: state = State::Normal; return false;
+        case UiEventType::KeyDown:
+            if (e.key == KeyCode::Enter || e.key == KeyCode::Space) { state = State::Pressed; return true; }
+            return false;
+        case UiEventType::KeyUp:
+            if (e.key == KeyCode::Enter || e.key == KeyCode::Space) { state = State::Normal; return true; }
+            return false;
         case UiEventType::PointerEnter:
             if (state == State::Normal) state = State::Hover;
             return false;
@@ -98,7 +106,7 @@ bool Button::onEvent(UiEvent& e) {
             state = State::Pressed;
             return true;
         case UiEventType::PointerUp:
-            if (state == State::Pressed) state = State::Hover;
+            if (state == State::Pressed) state = computedRect.Contains(e.pointerPos) ? State::Hover : State::Normal;
             return true;
         case UiEventType::PointerClick:
             if (onClick) { onClick(); return true; }
@@ -121,6 +129,12 @@ void Button::draw(UiDrawContext& ctx) {
         if (state == State::Hover)   c = Color{0.40f, 0.40f, 0.46f, 1.0f};
         if (state == State::Pressed) c = Color{0.20f, 0.20f, 0.24f, 1.0f};
         ctx.DrawRect(computedRect, c);
+    }
+    if (keyboardFocused) {
+        const auto& r = computedRect;
+        const Color outline{.35f, .65f, 1, 1};
+        ctx.DrawRect({r.x,r.y,r.w,1}, outline); ctx.DrawRect({r.x,r.y+r.h-1,r.w,1}, outline);
+        ctx.DrawRect({r.x,r.y,1,r.h}, outline); ctx.DrawRect({r.x+r.w-1,r.y,1,r.h}, outline);
     }
     drawChildren(ctx);
 }

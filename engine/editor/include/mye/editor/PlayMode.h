@@ -17,6 +17,7 @@
 #include <memory>
 
 namespace mye::asset { class AssetDatabase; class VirtualFileSystem; class AssetManager; }
+namespace mye { class InputState; }
 namespace mye::ui { class Widget; }
 namespace mye::ecs { class World; }
 namespace mye::runtime { struct GameInput; }
@@ -59,6 +60,7 @@ public:
     std::string_view Message() const;
     std::string_view Prompt() const;
     ui::Widget* UiRoot() const;
+    Expected<bool, Error> FilterUiInput(InputState& input, Vec2 pointer, bool enabled);
     float FadeAlpha() const;
     void SetInputEnabled(bool enabled) { m_inputEnabled = enabled; }
     bool InputEnabled() const { return m_inputEnabled; }

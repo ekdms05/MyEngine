@@ -62,7 +62,7 @@ main의 Play 타깃에는 근처 상호작용 안내와 Message도 합성된다.
 
 Windows 삭제는 [IFileOperation](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ifileoperation)의 STA·휴지통·Undo·취소 결과를 사용한다. 무조건 재귀 삭제하는 경로를 만들지 않았다.
 
-게임 UI 시각 편집·스크립트 자동 완성/디버깅·복구 정책·프로세스 격리·게임 배포 UI는 [개발 우선순위](14-development-priorities.md)에 남긴다. 현재 화면은 [제작 가이드](guide/index.html)에서 확인한다.
+게임 UI 캔버스/타입별 편집 확장·스크립트 자동 완성/디버깅·복구 정책·프로세스 격리·게임 배포 UI는 [개발 우선순위](14-development-priorities.md)에 남긴다. 현재 화면은 [제작 가이드](guide/index.html)에서 확인한다.
 
 요소 추가에는 캐릭터 3D·충돌 3D·경사 3D·트리거 3D가 있다. Play의 Space 점프·Q/R 회전·오른쪽 마우스 드래그는 활성 게임 창에만 전달한다. 첫 누름과 마우스 델타는 한 고정 틱에서만 소비한다. 에디터 Play는 로컬이며 온라인 연결은 별도 MyGame CLI에서 설정한다.
 
@@ -70,4 +70,4 @@ Windows 삭제는 [IFileOperation](https://learn.microsoft.com/en-us/windows/win
 
 창 → 게임 UI에서 새 `.ui`를 만들거나 에셋 더블 클릭/우클릭으로 연다. 위젯 트리·앵커 프리셋·속성 값을 편집 → 적용 → Undo/Redo → 프로젝트 assets에 저장 → GameUi.document 지정 → Stop/재실행 순서다. 적용 전 속성은 문서에 임시 보관하며 프로젝트 미저장 확인·저장 실패·패널 재생성에서 유지한다. 기존 파일/GUID는 새 문서의 저장으로 덮어쓰지 않는다. 미리보기는 Play와 같은 UI/PNG/한글 렌더 경로를 사용하며 프로젝트 Lua를 실행하지 않는다. CLI `--ui assets/ui/hud.ui`와 MCP engine_run의 args로 같은 패널을 열 수 있다.
 
-[UI 문서 가이드](27-game-ui.md)에 허용 속성·저장/닫기·오류/지원 범위를 기록한다. 캔버스 드래그/재부모화·전용 타입별 속성 UX·버튼 클릭/포커스/IME·온라인·설치 0.3.0에는 연결되지 않았다. 라이브러리/ImGui 이벤트 검사, 실제 앱 프레임과 직접 장치/DPI 검수를 구분한다.
+[UI 문서 가이드](27-game-ui.md)에 허용 속성·저장/닫기·오류/지원 범위를 기록한다. 로컬 버튼 클릭·키보드 포커스/모달 차단은 연결했다. 캔버스 드래그/재부모화·전용 타입별 속성 UX·IME/패드 UI·온라인·설치 0.3.0에는 연결되지 않았다. 네이티브 입력 전체 gate는 foreground 획득 실패로 미통과다. 라이브러리/ImGui 이벤트 검사, 실제 앱 프레임과 직접 장치/DPI 검수를 구분한다.

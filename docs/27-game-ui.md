@@ -1,6 +1,6 @@
 # 27. 저장한 게임 UI와 Lua 상태 표시
 
-**main 소스는 `.ui` 문서를 씬의 GameUi에 지정하고 프로젝트 Lua의 표시값을 로컬 Play/MyGame에 출력한다.** 기존 설치 0.3.0에는 이 연결이 없다. UI 문서 작성·Undo/Redo·저장/재열기와 게임 렌더 미리보기를 연결했다. 버튼 클릭·키보드 포커스·IME, 온라인 HUD는 다음 작업이다. 이 문서의 Button은 표시와 활성 상태 갱신을 지원하며 실제 입력 경로에는 아직 연결하지 않았다.
+**main 소스는 `.ui` 문서를 씬의 GameUi에 지정하고 프로젝트 Lua의 표시값을 로컬 Play/MyGame에 출력한다.** 기존 설치 0.3.0에는 이 연결이 없다. UI 문서 작성·Undo/Redo·저장/재열기와 게임 렌더 미리보기를 연결했다. 버튼 클릭·Tab/Shift+Tab·Enter/Space·모달 포커스와 게임 입력 차단을 로컬 Play/MyGame에 연결했다. 한글 IME·패드 UI 탐색·온라인 HUD와 새 소비자 배포는 다음 작업이다.
 
 ![저장한 UI와 Lua의 HP75·버튼 상태를 표시한 실제 Play 타깃](guide/media/game-ui.png)
 
@@ -26,7 +26,7 @@
 - 저장 경로는 프로젝트 assets 안의 `.ui`다. 처음 저장하거나 다른 이름으로 저장할 때 기존 파일/메타를 덮어쓰지 않는다. 기존 문서는 그 파일을 열어서 수정한다. 저장은 기존 원자적 WriteJsonFile 경로를 사용하고 성공 후에만 경로·saved 지점을 변경한다. 실패하면 파일/GUID·dirty·임시 편집을 보존한다. 성공 후 에셋 갱신이 실패하면 파일 저장 완료와 인덱스 실패를 구분해 표시한다.
 - 문서 닫기는 저장 후 닫기/버리기/취소를 제공한다. 적용한 값과 임시 UI의 PNG 참조 모두 에셋 삭제를 보호한다. Play 중 작성·저장을 잠그며 **Stop → UI 저장 → 재실행**으로 반영한다. 미저장 UI를 Play 스냅샷에 자동 포함하거나 파일 감시로 반영하지 않는다.
 
-미리보기는 960×540 게임 UI 렌더 결과를 편집기 패널 폭에 맞춰 보여준다. 좁은 패널의 축소는 제작 미리보기이며 게임 창의 정수 확대·여백 계약과 구분한다. 캔버스 드래그/재부모화·전용 타입별 속성 위젯·UiSkin/controllerScript·클릭/포커스/IME·온라인은 이 작성 단위의 지원 범위가 아니다.
+미리보기는 960×540 게임 UI 렌더 결과를 편집기 패널 폭에 맞춰 보여준다. 좁은 패널의 축소는 제작 미리보기이며 게임 창의 정수 확대·여백 계약과 구분한다. 캔버스 드래그/재부모화·전용 타입별 속성 위젯·UiSkin/controllerScript·IME/패드 탐색·온라인은 이 작성 단위의 지원 범위가 아니다.
 
 ## 좌표와 속성
 
@@ -39,12 +39,12 @@ UI는 좌상단 원점·+Y 아래인 논리 픽셀 좌표다. 월드 카메라 �
 | 위젯/범위 | 저장할 속성 | 값/제약 |
 |---|---|---|
 | 공통 | visible, interactive, clip | 문자열 true/false. clip은 자식 출력을 부모 사각형으로 자른다 |
-| Panel/Window | background, tint, texture, source | 배경 true/false, #RRGGBB 또는 #RRGGBBAA, PNG GUID, x,y,w,h |
+| Panel/Window | modal, background, tint, texture, source | modal/배경 true/false, #RRGGBB 또는 #RRGGBBAA, PNG GUID, x,y,w,h |
 | Window | title | 저장한 제목. 제목을 자동 표시하는 게임 창 스킨은 미연결 |
 | Image | texture, source, tint | PNG GUID, 원본 픽셀 영역, 색 |
 | Label | text, fontSize, colour | UTF-8 리치 텍스트, 정수 8~96px, 색. 라벨 사각형 밖은 자른다 |
 | ProgressBar | value, maximum, fill, track | 0≤value≤maximum≤32768, maximum>0. 왼쪽부터 채우는 정수 폭 |
-| Button | enabled, texture, source | true/false, 기본 PNG/영역. 캡션은 자식 Label; 비활성은 어둡게 표시 |
+| Button | enabled, texture, source | true/false, 기본 PNG/영역. 캡션은 자식 Label; 비활성은 클릭/포커스를 받지 않고 어둡게 표시 |
 | StackLayout/GridLayout | spacing | 유한한 0~32768. 방향/패딩·열/셀 크기의 문서 속성 편집은 미연결 |
 
 source는 각 정수 [0,8192], w/h>0이고 PNG 실제 크기 안이어야 한다. 생략하면 전체 PNG다. 파일·GUID 누락, 잘못된 에셋 타입/PNG/영역은 Play/MyGame 실행 실패로 보고한다. `.ui`는 최대 4 MiB, 트리는 512노드/24단계, 노드별 속성은 32개, 이름은 64 bytes이며 비어 있지 않은 이름은 문서에서 고유하다. 속성 값/텍스트는 4096 bytes다. UI PNG가 다른 앱별 식별자를 사용하지 않도록 AssetDatabase/VFS/AssetManager를 재사용한다. `.ui`의 PNG 참조와 씬의 GameUi 참조는 기존 삭제 검사로 보호한다.
@@ -78,4 +78,43 @@ end
 
 `python tools/verify-game-ui.py --config Release`는 공식 임포트→GUID→저장한 씬→로컬 Play/MyGame의 HP100/75/0·버튼 활성/비활성·PNG 영역의 실제 픽셀과 누락/손상/범위 오류를 검사한다. 별도 Debug 실행도 가능하다. 문서 패널의 네이티브 캡처는 프로젝트 Lua를 실행하지 않고 동일 PNG 영역/게이지 픽셀을 검사한다. 네이티브 MyEditor Play의 CLI dump는 Play 렌더 타깃이며 별도 Play 창의 화면 캡처와 구분한다. 실제 장치 클릭·해상도 변경·포커스·IME·온라인 검증으로 계산하지 않는다.
 
-[실제 앱 출력](guide/media/game-ui.png)은 격리한 샘플의 저장 UI와 Lua 표시값이다. UI 전체를 한 배경 PNG로 그리지 않는다. 한글 표시와 IME 입력은 다른 기능이다. UI 문서 작업대/Undo/저장 실패 보존을 연결했다. 다음 완료 조건은 버튼 이벤트·모달 포커스/게임 입력 차단·좌표 변환, 실제 창 크기/DPI/한글 입력, 배포 패키지와 서버 상태 연결이다. 현재 설치본/릴리즈를 수정하거나 완성 MMORPG를 선언하지 않는다.
+[실제 앱 출력](guide/media/game-ui.png)은 격리한 샘플의 저장 UI와 Lua 표시값이다. UI 전체를 한 배경 PNG로 그리지 않는다. 한글 표시와 IME 입력은 다른 기능이다. UI 문서 작업대/Undo/저장 실패 보존을 연결했다. 기본 버튼/포커스·모달 차단·공통 입력 좌표 변환을 연결했다. 다음 완료 조건은 창 크기 변경/DPI/물리 장치·전체 탐색·패드 UI·한글 입력, 배포 패키지와 서버 상태 연결이다. 현재 설치본/릴리즈를 수정하거나 완성 MMORPG를 선언하지 않는다.
+
+
+## 버튼과 모달 입력 · main 소스
+
+**on_click으로 게임 프로젝트의 함수를 연결하고, modal Panel/Window로 게임 입력을 막는다.** 버튼은 누름/해제가 같은 대상일 때 한 번 클릭한다. 드래그/다른 위치 해제·숨김/비활성은 클릭하지 않는다. 장식 Label/Image/ProgressBar/레이아웃/Panel은 기본적으로 입력을 통과하며 interactive=true로 명시하면 포인터를 차단한다. Button/Window는 기본 interactive=true다. 자식 캡션이 버튼을 가로채지 않으며 clip 영역 밖의 포인터를 거부한다.
+
+```lua
+function Core:connect_hud()
+    assert(mye.ui.on_click("potion", function()
+        local ok = self:use_potion() -- 프로젝트 규칙
+        if ok then self:update_hud() end
+    end))
+    assert(mye.ui.on_click("inventory_open", function()
+        assert(mye.ui.set_visible("inventory", true))
+        assert(mye.ui.focus("inventory_close"))
+    end))
+    assert(mye.ui.on_click("inventory_close", function()
+        assert(mye.ui.set_visible("inventory", false))
+    end))
+end
+```
+
+inventory Panel/Window에 modal=true·visible=false 속성을 저장하고 초기화에서 connect_hud를 호출한다. 위의 이름/프로젝트 메서드를 실제 문서/게임 코드와 일치시킨다. modal이 보이면 최상단 모달 서브트리만 클릭/포커스를 받고 이동·게임 액션·카메라/패드를 모두 차단한다. 같은 틱의 클릭으로 모달을 열어도 그 틱의 게임 입력을 차단한다. 닫기/게임 규칙은 프로젝트 콜백이 정한다. 모달에 버튼이 없으면 입력은 계속 차단되므로 닫는 동작을 반드시 작성한다.
+
+| 함수/입력 | 동작과 실패 계약 |
+|---|---|
+| mye.ui.on_click(name,function 또는 nil) | Button 하나의 핸들러 등록/교체/해제. 정확한 두 인수·이름/타입 검사, true 또는 nil/error |
+| mye.ui.focus(name 또는 nil) | 보이는 활성 Button의 포커스/해제. 모달 밖·숨김·비활성·다른 타입 거부; true 또는 nil/error |
+| Tab / Shift+Tab | 문서 순서의 활성 버튼을 순환. 모달이면 그 안에 제한 |
+| Enter / Space | 포커스 버튼의 누름/해제에서 한 번 실행. 포커스 표시선 제공 |
+| Escape / 바깥 클릭 | 비모달 포커스 해제. 포커스 해제 Escape는 게임 종료 액션으로 새지 않음. 모달 닫기는 작성한 버튼을 사용 |
+
+프레임의 InputState 복사본에서 UI를 먼저 처리한 뒤 GameInputBuffer에 전달한다. UI 포인터 선점은 마우스 액션/휠/카메라 드래그를 차단하며 HUD 위에서도 키보드 이동은 유지한다. 키보드 포커스는 키 액션을 차단하고 모달은 모든 장치를 차단한다. 원시 장치 상태를 수정하지 않는다. 두 게임 창은 PixelPerfectTarget의 같은 정수 destRect/배율로 클라이언트 좌표를 960×540에 변환한다. 여백·오른쪽/아래 끝은 대상이 아니며 월드 카메라 residual을 더하지 않는다. 작은 창은 기존 최소1배/crop 계약을 유지한다.
+
+Lua 핸들러는 프레임에서 큐에 보관한 뒤 ObjectSystem의 고정 틱에 실행한다. 소비 시 숨김·비활성·interactive=false인 버튼의 대기 콜백은 취소한다. 최대64개 대기 클릭을 넘으면 오류로 중단한다. 콜백 오류도 Expected로 전파하며 자동 앱 실행을 실패시킨다. 이미 실행한 게임 효과를 자동 롤백하지 않는다. 등록 교체/해제는 이후 클릭에 적용하며 이미 수락한 큐는 등록 당시 함수 참조를 가진다. 콜백의 게임 입력 조회는 중립이며 그 다음 on_update가 해당 틱의 게임 입력을 읽는다. 오브젝트 수명이 끝나면 on_destroy에서 on_click(name,nil)로 소유 핸들러를 해제한다.
+
+창 포커스 이탈/Play Pause는 누름·포커스와 미실행 큐를 취소한다. 재개 때 이전 눌림으로 클릭하지 않는다. Stop/맵 교체는 이전 UI/콜백을 VM·에셋보다 먼저 해제한다. 실패한 맵 후보는 기존 UI를 유지한다. UI 편집 미리보기는 여전히 프로젝트 Lua/게임 입력을 실행하지 않는다.
+
+`python tools/verify-game-ui-input.py --config Release`는 자기 PID/전면 창·포인터 대상 창을 확인한 합성 Win32 입력으로 두 앱의 클릭→Lua·모달→Enter·콜백 실패를 검사한다. 현재 네이티브 전체 gate는 Windows foreground 획득 실패로 미통과이며 다른 프로세스에 입력하지 않도록 중단한다. 실패해도 report.json에 완료된 케이스와 실패 원인을 남긴다. --app/--case로 검사 범위를 지정할 수 있으나 부분 통과를 전체 통과로 계산하지 않는다. 물리 장치/IME·모니터 DPI·온라인/게임 출시 승인과 구분한다. C++ 회귀는 실제 UiSystem의 좌표/빠른 탭/포커스/모달·취소와 Play의 고정 틱·입력/오류/수명을 검사한다.

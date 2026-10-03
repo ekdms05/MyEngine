@@ -10,6 +10,14 @@
 #include <cstring>
 
 namespace mye::render {
+std::optional<Vec2> PixelPerfectTarget::WindowToLogical(Vec2i internalSize, Vec2i windowSize, Vec2i pointer) {
+    if (internalSize.x <= 0 || internalSize.y <= 0 || windowSize.x <= 0 || windowSize.y <= 0 ||
+        pointer.x < 0 || pointer.y < 0 || pointer.x >= windowSize.x || pointer.y >= windowSize.y) return {};
+    const auto layout = ComputeLayout(internalSize, windowSize);
+    const auto& rect = layout.destRect;
+    if (pointer.x < rect.x || pointer.y < rect.y || pointer.x >= rect.x + rect.w || pointer.y >= rect.y + rect.h) return {};
+    return Vec2{float(pointer.x-rect.x)/layout.scale, float(pointer.y-rect.y)/layout.scale};
+}
 namespace {
 
 constexpr const char* kLog = "PixelPerfect";

@@ -1,6 +1,7 @@
-// mye/ui/UiSystem.cpp — 인게임 UI 시스템 (M5-A 골격; 라우팅·히트테스트·Lua 라우팅은 구현 에이전트)
+// 게임 UI 캔버스와 포인터·키보드 입력 라우팅.
 #include "mye/ui/UiSystem.h"
 #include "mye/ui/Widget.h"
+#include "mye/ui/Widgets.h"
 
 #include "mye/core/Input.h"
 #include "mye/text/TextRenderer.h"
@@ -20,6 +21,7 @@ void UiSystem::Init(rhi::IDevice& device, text::FontRegistry& fonts,
 }
 
 void UiSystem::Shutdown() {
+    ResetInput();
     m_renderer.Shutdown();
     m_canvases.clear();
     m_openDocs.clear();
@@ -67,14 +69,15 @@ bool IsInSubtree(const Widget* w, const Widget* root) {
 //   RouteEvent 의 use-after-free 방지). hovered/focused/pressed/dragging 전부 대상.
 void UiSystem::ClearInteractionState(const Widget* root) {
     if (!root) return;
-    if (IsInSubtree(m_hovered, root)) m_hovered = nullptr;
-    if (IsInSubtree(m_focused, root)) m_focused = nullptr;
-    if (IsInSubtree(m_pressed, root)) { m_pressed = nullptr; m_dragging = false; }
+    if (IsInSubtree(m_hovered, root) || IsInSubtree(m_focused, root) ||
+        IsInSubtree(m_pressed, root) || IsInSubtree(m_keyPressed, root) || IsInSubtree(m_modal, root)) ResetInput();
 }
 
 Expected<UiDocumentHandle, Error> UiSystem::Open(const UiDocument& doc, UiCanvas& canvas) {
     auto tree = doc.Instantiate(m_factory);
     if (!tree) return tree.GetError();
+    ClearInteractionState(canvas.root());
+    std::erase_if(m_openDocs, [&](const auto& entry) { return entry.second == canvas.root(); });
     Widget* raw = tree.Value().get();
     canvas.setRoot(std::move(tree).Value());
     const uint32_t id = m_nextDocId++;
@@ -105,17 +108,26 @@ void UiSystem::SetSkin(std::shared_ptr<UiSkin> skin) { m_skin = std::move(skin);
 //   그리기 순서: children() 순서대로 위로 쌓이므로 역순 탐색이 최상단.
 static Widget* HitTestSubtree(Widget* w, Vec2 uiPos) {
     if (!w || w->visibility != Visibility::Visible) return nullptr;
+    if (w->clipChildren && !w->computedRect.Contains(uiPos)) return nullptr;
+    if (const auto* button = w->As<Button>(); button && button->state == Button::State::Disabled) return nullptr;
     // 자식(위에 그려진 것)부터 역순.
     auto kids = w->children();
     for (auto it = kids.rbegin(); it != kids.rend(); ++it) {
         if (Widget* hit = HitTestSubtree(it->get(), uiPos)) return hit;
     }
     // 자기 자신.
-    if (w->interactive && w->computedRect.Contains(uiPos)) return w;
+    if (w->interactive && w->hitTest(uiPos) && uiPos.x < w->computedRect.x + w->computedRect.w &&
+        uiPos.y < w->computedRect.y + w->computedRect.h) return w;
     return nullptr;
 }
 
 Widget* UiSystem::HitTest(Vec2 uiPos) const {
+    if (uiPos.x < 0 || uiPos.y < 0 || uiPos.x >= m_screen.x || uiPos.y >= m_screen.y) return nullptr;
+    if (m_modal) {
+        for (auto* parent = m_modal->parent(); parent; parent = parent->parent())
+            if (parent->clipChildren && !parent->computedRect.Contains(uiPos)) return nullptr;
+        return HitTestSubtree(m_modal, uiPos);
+    }
     // sortOrder 큰 캔버스(위 레이어) 먼저.
     for (auto it = m_canvases.rbegin(); it != m_canvases.rend(); ++it) {
         if (!(*it)->visible) continue;
@@ -126,7 +138,76 @@ Widget* UiSystem::HitTest(Vec2 uiPos) const {
     return nullptr;
 }
 
+namespace {
+Widget* VisibleModal(Widget* root) {
+    if (!root || root->visibility != Visibility::Visible) return nullptr;
+    auto children = root->children();
+    for (auto it = children.rbegin(); it != children.rend(); ++it)
+        if (auto* modal = VisibleModal(it->get())) return modal;
+    return root->modal ? root : nullptr;
+}
+bool CanFocus(Widget* widget) {
+    if (!widget || !widget->As<Button>() || !widget->interactive || widget->As<Button>()->state == Button::State::Disabled) return false;
+    for (auto* parent = widget; parent; parent = parent->parent())
+        if (parent->visibility != Visibility::Visible) return false;
+    return true;
+}
+void FocusableButtons(Widget* root, std::vector<Widget*>& buttons) {
+    if (!root || root->visibility != Visibility::Visible) return;
+    if (CanFocus(root)) buttons.push_back(root);
+    for (const auto& child : root->children()) FocusableButtons(child.get(), buttons);
+}
+}
+Widget* UiSystem::ActiveModal() const {
+    for (auto it = m_canvases.rbegin(); it != m_canvases.rend(); ++it)
+        if ((*it)->visible) if (auto* modal = VisibleModal((*it)->root())) return modal;
+    return nullptr;
+}
+bool UiSystem::HasModal() const { return ActiveModal() != nullptr; }
+bool UiSystem::Focus(Widget* widget) {
+    if (widget) {
+        auto* modal = ActiveModal();
+        if (modal != m_modal) { ResetInput(); m_modal = modal; }
+        bool owned = false;
+        for (const auto& canvas : m_canvases) owned |= canvas->visible && IsInSubtree(widget, canvas->root());
+        if (!owned || !CanFocus(widget) || (m_modal && !IsInSubtree(widget, m_modal))) return false;
+    }
+    if (m_focused == widget) return true;
+    if (m_focused) {
+        m_focused->keyboardFocused = false;
+        UiEvent lost{}; lost.type = UiEventType::FocusLost; RouteEvent(m_focused, lost);
+    }
+    m_keyPressed = nullptr; m_activationKey = KeyCode::Unknown;
+    m_focused = widget;
+    if (widget) { UiEvent gained{}; gained.type = UiEventType::FocusGained; RouteEvent(widget, gained); }
+    return true;
+}
+void UiSystem::ResetInput() {
+    if (m_pressed) { UiEvent up{}; up.type = UiEventType::PointerUp; RouteEvent(m_pressed, up); }
+    if (m_hovered) { UiEvent leave{}; leave.type = UiEventType::PointerLeave; RouteEvent(m_hovered, leave); }
+    Focus(nullptr);
+    m_hovered = m_pressed = m_keyPressed = m_modal = nullptr;
+    m_dragging = false; m_activationKey = KeyCode::Unknown;
+}
+
 bool UiSystem::HandleInput(const InputState& input, Vec2 uiPointer) {
+    auto* modal = ActiveModal();
+    if (modal != m_modal) { ResetInput(); m_modal = modal; }
+    if (m_focused && !Focus(m_focused)) Focus(nullptr);
+    if (m_pressed && (!m_pressed->interactive || m_pressed->visibility != Visibility::Visible)) { ResetInput(); m_modal = modal; }
+    std::vector<Widget*> buttons;
+    if ((m_modal && !m_focused) || input.WasPressed(KeyCode::Tab)) {
+        if (m_modal) FocusableButtons(m_modal, buttons);
+        else for (const auto& canvas : m_canvases) if (canvas->visible) FocusableButtons(canvas->root(), buttons);
+        if (!buttons.empty()) {
+            const auto found = std::find(buttons.begin(), buttons.end(), m_focused);
+            const bool reverse = input.IsDown(KeyCode::LeftShift) || input.IsDown(KeyCode::RightShift);
+            size_t index = found == buttons.end() ? (reverse ? buttons.size()-1 : 0) : static_cast<size_t>(found-buttons.begin());
+            if (found != buttons.end() && input.WasPressed(KeyCode::Tab)) index = reverse ? (index+buttons.size()-1)%buttons.size() : (index+1)%buttons.size();
+            Focus(buttons[index]); m_focused->keyboardFocused = true;
+        }
+    }
+    if (input.WasPressed(KeyCode::Escape) && !m_modal) Focus(nullptr);
     bool consumed = false;
     Widget* hit = HitTest(uiPointer);
 
@@ -149,10 +230,11 @@ bool UiSystem::HandleInput(const InputState& input, Vec2 uiPointer) {
         m_pressPos = uiPointer;
         m_dragging = false;
         if (hit) {
-            m_focused = hit;
+            Focus(CanFocus(hit) ? hit : nullptr);
+            if (m_focused) m_focused->keyboardFocused = false;
             UiEvent down{}; down.type = UiEventType::PointerDown; down.pointerPos = uiPointer;
             consumed |= RouteEvent(hit, down);
-        }
+        } else Focus(nullptr);
     }
 
     // --- drag ---
@@ -197,8 +279,23 @@ bool UiSystem::HandleInput(const InputState& input, Vec2 uiPointer) {
         consumed |= RouteEvent(hit, sc);
     }
 
+    if (m_focused) {
+        for (const auto key : {KeyCode::Enter, KeyCode::Space}) {
+            if (input.WasPressed(key) && !m_keyPressed) {
+                m_keyPressed = m_focused; m_activationKey = key; m_focused->keyboardFocused = true;
+                UiEvent down{}; down.type = UiEventType::KeyDown; down.key = key; RouteEvent(m_focused, down);
+            }
+            if (input.WasReleased(key) && m_keyPressed && m_activationKey == key) {
+                UiEvent up{}; up.type = UiEventType::KeyUp; up.key = key; RouteEvent(m_keyPressed, up);
+                if (m_keyPressed == m_focused && CanFocus(m_focused)) {
+                    UiEvent click{}; click.type = UiEventType::PointerClick; RouteEvent(m_focused, click);
+                }
+                m_keyPressed = nullptr; m_activationKey = KeyCode::Unknown;
+            }
+        }
+    }
     m_lastPointer = uiPointer;
-    return consumed || hit != nullptr;
+    return consumed || hit != nullptr || m_pressed != nullptr || m_modal != nullptr;
 }
 
 void UiSystem::Update(float /*dt*/) {

@@ -7,6 +7,8 @@
 
 #include "mye/ui/Widget.h"
 #include "mye/ui/Widgets.h"
+#include "mye/ui/UiSystem.h"
+#include "mye/render/PixelPerfectTarget.h"
 #include "mye/ui/UiDocument.h"
 #include "mye/ui/UiSkin.h"
 #include "mye/core/Json.h"
@@ -197,6 +199,54 @@ MYE_TEST(UiButtonClickCallback) {
     ui::UiEvent click2{}; click2.type = ui::UiEventType::PointerClick;
     btn.onEvent(click2);
     MYE_EXPECT(clicks == 1);
+}
+
+MYE_TEST(UiPointerLayoutFocusModalAndCancellationUseActualSystem) {
+    const auto mapped = render::PixelPerfectTarget::WindowToLogical({960,540},{2000,1200},{180,100});
+    MYE_EXPECT(mapped && mapped->x == 70 && mapped->y == 20);
+    MYE_EXPECT(!render::PixelPerfectTarget::WindowToLogical({960,540},{2000,1200},{39,100}));
+    MYE_EXPECT(!render::PixelPerfectTarget::WindowToLogical({960,540},{2000,1200},{1960,100}));
+    MYE_EXPECT(!render::PixelPerfectTarget::WindowToLogical({960,540},{0,0},{0,0}));
+    ui::UiDocument doc; doc.root.typeName="Panel"; doc.root.name="hud"; doc.root.anchors=ui::AnchorRect::Fill();
+    ui::UiNodeDesc a; a.typeName="Button"; a.name="a"; a.anchors=ui::AnchorRect::TopLeft({20,20},{100,40});
+    ui::UiNodeDesc caption; caption.typeName="Label"; caption.name="caption"; caption.anchors=ui::AnchorRect::Fill();
+    a.children={caption};
+    auto b=a; b.name="b"; b.children.clear(); b.anchors.offsetMin.y=80;
+    ui::UiNodeDesc modal; modal.typeName="Panel"; modal.name="dialog"; modal.anchors=ui::AnchorRect::TopLeft({200,100},{120,100});
+    modal.properties={{"modal","true"},{"visible","false"},{"clip","true"}};
+    auto close=b; close.name="close"; close.anchors=ui::AnchorRect::TopLeft({10,10},{80,32}); modal.children={close};
+    doc.root.children={a,b,modal};
+    ui::UiSystem system; auto* canvas=system.CreateCanvas("hud");
+    const auto opened=system.Open(doc,*canvas); MYE_EXPECT(opened); if(!opened) return;
+    system.Update(0);
+    auto* first=canvas->root()->findByName("a")->As<ui::Button>();
+    auto* second=canvas->root()->findByName("b")->As<ui::Button>();
+    auto* dialog=canvas->root()->findByName("dialog");
+    int clicks=0; first->onClick=[&]{++clicks;};
+    MYE_EXPECT(system.HitTest({30,30})==first && !system.HitTest({500,500}));
+    InputState input; input.OnMouseButton(MouseButton::Left,true); input.OnMouseButton(MouseButton::Left,false);
+    MYE_EXPECT(system.HandleInput(input,{30,30}) && clicks==1);
+    input.NewFrame(); system.HandleInput(input,{30,30}); MYE_EXPECT(clicks==1);
+    input.OnKey(KeyCode::Tab,true); system.HandleInput(input,{500,500});
+    MYE_EXPECT(system.focused()==second && second->keyboardFocused && system.CapturesKeyboard());
+    input.NewFrame(); input.OnKey(KeyCode::Tab,false); input.OnKey(KeyCode::LeftShift,true); input.OnKey(KeyCode::Tab,true);
+    system.HandleInput(input,{500,500}); MYE_EXPECT(system.focused()==first);
+    input.NewFrame(); input.OnKey(KeyCode::Enter,true); input.OnKey(KeyCode::Enter,false);
+    system.HandleInput(input,{500,500}); MYE_EXPECT(clicks==2);
+    input.NewFrame(); input.OnMouseButton(MouseButton::Left,true); system.HandleInput(input,{30,30});
+    system.ResetInput(); input.NewFrame(); input.OnMouseButton(MouseButton::Left,false); system.HandleInput(input,{30,30});
+    MYE_EXPECT(clicks==2 && first->state!=ui::Button::State::Pressed);
+    dialog->visibility=ui::Visibility::Visible;
+    input.NewFrame(); MYE_EXPECT(system.HandleInput(input,{-1,-1}) && system.HasModal());
+    MYE_EXPECT(!system.HitTest({30,30}) && system.focused()->name=="close");
+    MYE_EXPECT(!system.Focus(first));
+    dialog->visibility=ui::Visibility::Hidden;
+    input.NewFrame(); system.HandleInput(input,{500,500});
+    MYE_EXPECT(!system.HasModal() && !system.focused());
+    // Replacing a canvas must invalidate old document and input pointers.
+    const auto replaced=system.Open(doc,*canvas); MYE_EXPECT(replaced);
+    system.Close(opened.Value()); MYE_EXPECT(canvas->root());
+    system.Close(replaced.Value()); MYE_EXPECT(!canvas->root() && !system.focused());
 }
 
 MYE_TEST(UiHitTestTopmostChild) {

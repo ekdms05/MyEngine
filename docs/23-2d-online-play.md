@@ -53,6 +53,8 @@ MyGame.exe --project game/project.myeproj --connect 127.0.0.1:27015 --credential
 
 저장소에서 `powershell -File tools/verify-online2d.ps1 -Configuration Debug` 또는 Release를 실행하면 새 build 하위 프로젝트/합성 데이터만 사용한다. 두 MyGame의 원·offset·층·0.01 폭 벽 접촉/ack, 실제 스프라이트 픽셀·퇴장 제거, 클라이언트 Lua 격리와 MyServer 재시작/저장 좌표 재접속을 검사한다. [작업 기록](16-foundation-worklog.md)에 실행 근거가 있다. MCP `engine_reference(topic="online2d")`로 이 계약을 조회한다. MCP `engine_run`은 단일 앱 실행이며 두 앱의 수명 관리/상호 검증을 자동 제공하지 않는다.
 
+프레임 한도가 없는 headless 온라인은 고정 틱이 바뀔 때 렌더하고 요청한 중간 캡처와 최종 결과도 출력한다. 같은 상태의 GPU 제출 누적을 줄이기 위한 정책이며 입력·예측·서버 시뮬레이션은 60Hz다. `--frames`는 렌더 횟수를 명시하는 별도 종료 조건이다. 완료 로그의 `fixedTicks`/`frames`로 검수한 실행 범위를 확인한다. 측정과 연결 종료 진단의 근거는 [작업 기록](16-foundation-worklog.md)을 따른다.
+
 ## 남은 범위
 
 각 맵은 정적 충돌·고정 층·동일 외형 원형을 사용한다. 캐릭터 간 solid 충돌, 원격 보간/개별 외형, 타일 편집과 권위 충돌 연결, 서버 NPC/스킬/보상·채팅/게임 UI, 암호화·운영 복구·export GUI/설치는 [작업 목록](22-2d-mmorpg-roadmap.md)에 남아 있다. 장치 입력·다른 GPU/클린 PC는 별도 검증이다. 기존 [XYZ 플레이](21-3d-play-and-online.md)와 저장 데이터는 보존한다.

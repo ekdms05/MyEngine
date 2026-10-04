@@ -741,3 +741,13 @@ Export: same-version Windows x64 Release manifest와 runtime/폰트/고지를 �
 추가 경계: assets/licenses 루트 자체의 symlink/junction도 각 project/runtime 소유 경계 안인지 확인한다. 지원 확장자와 meta는 대소문자를 구분하지 않고 이름/GUID를 그대로 복사한다. 잘못된 UTF-8 경로는 system_error를 Expected로 변환한다. GameExportTests와 실제 junction fixture에 회귀를 남겼다. gameserver의 BCrypt 초기 시드 호출은 해당 타깃의 PRIVATE bcrypt 의존성으로 명시했다.
 
 최종 로컬 검수: Debug619개 CTest84.16초, Release619개55.71초 통과. Release foundation의 고속 Box/Circle4틱/오류/저장·자동저장/재시작, 기존 saved-camera 온라인·입력·모션 Temporal/StateMaps/Actions·게임 UI 모두 통과. 첫 파일 잠금 실패는 빌드/실행을 분리해 재검증했다. 신규 world fixture는 첫 클라이언트의 실제 admission을 기다리고600틱 warmup/2400틱 서버로 서로 다른 앱의 수명을 보장한다. 실제 Release 공격·HP·왕복·도착 맵 재접속을 다시 통과했다. 새로운 Release 후보의 export CLI는 원본을 숨긴 독립 cwd 실행/동일 BMP 해시·기존 출력·assets root junction 거부를 통과했다. MCP build/45 smoke와 diff 공백 검사를 통과했다. 새 공개 배포의 CI/해시/사용자 전달은 로컬 소비자 답변에 후속 기록한다. 기존0.4.0 파일/태그는 보존한다.
+
+### 오프스크린 온라인 렌더 제출과 연결 진단
+
+첫 hosted 검사(37205720452)는 Release/CTest·기본 온라인·새 전투/맵·입력을 통과했지만 기존 phase-online-mirror 입장에서 실패했다. 같은 로컬 Release/WARP의 전체 모션 검수도 continuous-b 입장 후 종료를 재현했다. 서버의 300틱 유효 입력 만료와 GPU 캡처를 확인하며 인증/순서/만료 조건을 완화하지 않았다. 기존 stdout은 readiness 뒤 버퍼에 남아 강제 종료 시 진행 근거를 잃었으므로 초당 진행 로그를 flush하고 만료 시 처리/수신 순서·대기열을 남긴다.
+
+호출 경로는 core App의 가변 PreRender→MyGame Render→offscreen EndFrame이며 창이 없으면 Present를 호출하지 않는다. 같은 고정 상태를 무제한 제출하면 소프트웨어 GPU 작업/동기 readback과 네트워크 처리 시간이 경쟁한다. 프레임 한도가 없는 headless 온라인은 고정 틱이 바뀌거나 캡처/최종 결과가 필요할 때 그린다. 나머지 반복은 1ms 대기하며 추가 스레드/풀을 만들지 않는다. 60Hz 시뮬레이션·ACK·서버 판정과 명시적 프레임 한도는 유지한다.
+
+변경 전 Release 실행 파일을 보존하고 같은 PC/WARP·동일 씬·두 합성 계정·수신180/상대360개 정지 입력·120~151의 32개 캡처로 비교했다. 두 실행 모두 입력/ACK·상대 표시·32캡처를 완료했다. CPU 시간 합계는 21.953125초→1.21875초(94.45% 감소), 실행 시간은 7.77초→6.43초였고 32개 BMP가 바이트 단위로 일치했다. 변경 후 수신자는191고정 틱/192렌더 프레임이었다. 이는 이 오프스크린 검수의 측정이며 일반 게임/GPU 성능이나 세계 순위를 뜻하지 않는다. 원본 실행 파일·명령·CPU/해시·캡처 비교는 ignored build에 보존한다. 이후 전체 WARP 모션 및 최종 소스 hosted 검사로 배포 조건을 다시 확인한다.
+
+후속 검수(2026-10-05): 전체 Release/WARP Temporal·StateMaps·Actions를 통과했다. 두 수신자 모두 원격32프레임·방향 변화6회·pause 중 권위 이동7회를 확인했다. Debug/Release619개 회귀도54.77/39.68초로 통과했고 foundation/기존 온라인도 통과했다. 이후 신규 world 검사의 첫 HP 관찰은 별도 실패했다. A는0.263초에 입장했지만 stdout에 남은 로그 때문에 감독기가 B를 약10초 뒤에 시작했고, B는 첫 snapshot 때 이미HP127이었다. 피해/복제는 정상이었으나 이전HP145가 관찰되지 않아 검사 조건을 충족하지 못했다. 공통 TickOnline의 2D/XYZ 입장 완료 경계에서 stdout을 flush해 실제 readiness를 즉시 전달한다. 타이머나 HP/삭제 조건은 완화하지 않았다. 이후 실제 world의 공격·두 HP 상태·왕복/삭제·도착 저장/재시작과 MCP build/45 smoke를 모두 통과했다. 로그/해시는 로컬에 보존하며 새 정확한 커밋의 hosted 전체 검사 후 배포한다.

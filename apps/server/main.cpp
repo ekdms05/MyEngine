@@ -332,8 +332,10 @@ int main(int argc, char** argv) {
         metrics.Gauge("players", static_cast<double>(server.PlayerCount()));
         if (server.Net().KickedCount() > lastKicked) { metrics.Counter("kicks", static_cast<int64_t>(server.Net().KickedCount() - lastKicked)); lastKicked = server.Net().KickedCount(); }
 
-        if (tick % tickrate == 0)   // 대략 1초마다
+        if (tick % tickrate == 0) { // Supervisors need progress even when stdout is redirected.
             MYE_LOG_INFO("Server", "tick {} · clients {} · players {}", server.Net().CurrentTick(), server.Net().ClientCount(), server.PlayerCount());
+            std::fflush(stdout);
+        }
 
         // config 핫리로드 + 메트릭 스냅샷 기록(운영 관찰성).
         if (tick % reloadTicks == 0) {

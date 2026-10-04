@@ -45,6 +45,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -439,9 +440,12 @@ private:
         if (std::chrono::steady_clock::now() - m_networkActivity > std::chrono::seconds(5))
             return Error{"Online connection or snapshot timed out", 1};
         const bool send = m_cli.input.empty() || m_replayTick < m_replay.size();
+        const bool spawnWasLogged = m_onlineSpawnLogged;
         auto result = std::holds_alternative<runtime::OnlineScene2D>(*m_online)
                           ? TickOnline2D(dt, input, send) : TickOnline3D(dt, input, send);
         if (!result) return result.GetError();
+        // Admission is a process readiness boundary, including when stdout is redirected.
+        if (!spawnWasLogged && m_onlineSpawnLogged) std::fflush(stdout);
         if (m_onlineSpawnLogged && !m_cli.input.empty()) {
             if (send) ++m_replayTick;
             else if (m_client.PendingInputs() == 0 && !m_client.AttackPending2D() &&
@@ -806,7 +810,7 @@ private:
                 const auto* animator = m_scene->world.TryGet<anim::SpriteAnimator>(item.sourceEntity);
                 if (!animator) continue;
                 uint32_t netId = item.sourceEntity == m_player ? m_client.Id() : 0;
-                // ponytail: linear peer lookup in at most 32 diagnostic frames; index only if large captures require it.
+                // The bounded peer table is sufficient for diagnostic captures.
                 for (const auto& [id, entity] : m_remotes) if (entity == item.sourceEntity) { netId = id; break; }
                 const Vec4 anchor = Vec4{item.worldTransform.m[3][0], item.worldTransform.m[3][1],
                     item.worldTransform.m[3][2], 1} * view.viewProj;
@@ -833,6 +837,14 @@ private:
     }
     void Render() {
         if (!m_ready) return;
+        // Offscreen clients have no Present backpressure. Do not queue the same
+        // fixed state repeatedly while software rendering or readback falls behind.
+        if (!m_swapChain && m_online && !m_cli.frames && !m_capturePending && !m_replayFinished &&
+            m_frame && m_renderedTick == m_tick) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            return;
+        }
+        m_renderedTick = m_tick;
         auto bound = BindAnimations(m_scene->world);
         if (!bound) { Fail(bound.GetError()); return; }
         scene::UpdateWorldTransforms(m_scene->world);
@@ -869,6 +881,8 @@ private:
         ++m_frame;
         const bool finished = m_replayFinished || (m_cli.frames && m_frame >= m_cli.frames) ||
                                (m_cli.ticks && m_tick >= m_cli.ticks);
+        if (finished && m_online && !m_cli.input.empty())
+            MYE_LOG_INFO("Game", "Online replay render completed: fixedTicks={}, frames={}", m_tick, m_frame);
         if (finished && ((m_online && !m_onlineSpawnLogged) || (!m_cli.input.empty() && !m_replayFinished))) {
             m_device->EndFrame();
             Fail(Error{"Game ended before online admission or input replay confirmation", 1});
@@ -895,7 +909,11 @@ private:
         if (m_swapChain) m_swapChain->Present(false);
         if (finished) m_exit(m_ready ? 0 : 1);
     }
-    void Fail(const Error& error) { m_ready = false; MYE_LOG_ERROR("Game", "{}", error.message); m_exit(1); }
+    void Fail(const Error& error) {
+        m_ready = false;
+        MYE_LOG_ERROR("Game", "{} (fixedTicks={}, frames={}, replayStep={})", error.message, m_tick, m_frame, m_replayTick);
+        m_exit(1);
+    }
 
     GameCli m_cli;
     std::function<void(int)> m_exit;
@@ -933,7 +951,7 @@ private:
     std::size_t m_replayTick = 0, m_captureIndex = 0;
     bool m_capturePending = false;
     std::string m_title, m_currentTitle;
-    uint64_t m_frame = 0, m_tick = 0;
+    uint64_t m_frame = 0, m_tick = 0, m_renderedTick = 0;
     bool m_ready = false, m_replayFinished = false;
     runtime::GameInputBuffer m_gameInput;
     bool m_onlineSpawnLogged = false;

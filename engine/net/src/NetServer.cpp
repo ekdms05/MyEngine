@@ -116,6 +116,9 @@ void NetServer::Tick(float dt) {
                                : m_physics3D->Step(c.state, input.movement, input.jump, dt, m_settings3D);
             if (!moved || (Is2D() ? !ValidState2D(c.state2D) : !ValidState3D(c.state)) || ++c.idleTicks > 300) {
                 if (!moved) MYE_LOG_WARN("Net", "Motion failed for client {}: {}", c.id, moved.GetError().message);
+                else if (c.idleTicks > 300) MYE_LOG_WARN("Net", "Client {} expired without valid movement: processed={}, received={}, pending={}",
+                    c.id, c.lastInputSeq, c.receivedSeq, c.inputs.size());
+                else MYE_LOG_WARN("Net", "Client {} produced an invalid authoritative motion state", c.id);
                 KickIndex(i);
                 continue;
             }

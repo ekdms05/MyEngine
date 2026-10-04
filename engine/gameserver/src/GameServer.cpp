@@ -24,8 +24,8 @@ void GameServer::LoadRecordInto(const persist::CharacterRecord& rec, PlayerSessi
     s.stats.hp = rec.hp;
     s.stats.mp = rec.mp;
     s.stats.dirty = true;
-    // hp<=0 = 신규/부활 → 최대치로 채워 스폰.
-    gameplay::ComputeDerived(s.stats, rec.hp <= 0);
+    // Older/new records have no saved death; a saved death never heals on reconnect.
+    gameplay::ComputeDerived(s.stats, rec.hp <= 0 && !rec.dead);
 
     s.inv.gold = rec.gold;
     s.inv.slots.clear();
@@ -45,6 +45,7 @@ void GameServer::WriteSessionInto(const PlayerSession& s, persist::CharacterReco
     rec.intellect = s.stats.base.intellect;
     rec.vitality  = s.stats.base.vitality;
     rec.hp = s.stats.hp;
+    rec.dead = !s.world3D && !s.sceneId.empty() && s.stats.hp == 0;
     rec.mp = s.stats.mp;
     rec.gold = s.inv.gold;
     rec.items.clear();

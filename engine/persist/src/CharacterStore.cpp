@@ -47,6 +47,7 @@ std::vector<CharacterId> CharacterStore::ListByAccount(AccountId accountId) cons
 }
 
 Expected<void, Error> CharacterStore::Upsert(const CharacterRecord& rec) {
+    if (rec.dead && rec.hp != 0) return Error{"Upsert: dead characters require zero hp", 1};
     if (rec.floorLevel < 0 || rec.floorLevel > 7) return Error{"Upsert: floor must be in 0..7", 1};
     if (!std::isfinite(rec.posX) || !std::isfinite(rec.posY) || !std::isfinite(rec.posZ) || !std::isfinite(rec.facingRadians))
         return Error{"Upsert: character position and facing must be finite",1};
@@ -110,6 +111,7 @@ json::Value CharacterStore::ToJson() const {
         o["int"]       = json::Value(static_cast<std::int64_t>(c.intellect));
         o["vit"]       = json::Value(static_cast<std::int64_t>(c.vitality));
         o["hp"]        = json::Value(static_cast<std::int64_t>(c.hp));
+        o["dead"]      = json::Value(c.dead);
         o["mp"]        = json::Value(static_cast<std::int64_t>(c.mp));
         o["gold"]      = json::Value(static_cast<std::int64_t>(c.gold));
 
@@ -124,7 +126,9 @@ json::Value CharacterStore::ToJson() const {
         arr.push_back(json::Value(std::move(o)));
     }
     json::Value::Object root;
-    root["characters"] = json::Value(std::move(arr));
+    // Older binaries must refuse this schema instead of silently reviving dead characters.
+    root["version"] = json::Value(int64_t{2});
+    root["records"] = json::Value(std::move(arr));
     root["nextId"]     = json::Value(static_cast<std::int64_t>(m_nextId));
     return json::Value(std::move(root));
 }
@@ -142,7 +146,11 @@ Expected<void, Error> CharacterStore::LoadFromFile(std::string_view path) {
 Expected<void, Error> CharacterStore::LoadJson(const json::Value& root) {
     CharacterStore candidate;
     candidate.m_chars.clear();
-    const json::Value* arr = root.Find("characters");
+    const auto* version = root.Find("version");
+    if (version && (!version->IsInteger() || version->AsInt() != 2))
+        return Error{"CharacterStore: unsupported storage version", 1};
+    if (version && root.Find("characters")) return Error{"CharacterStore: mixed storage schemas", 1};
+    const json::Value* arr = root.Find(version ? "records" : "characters");
     if (!arr || !arr->IsArray()) return Error{"CharacterStore: missing characters array", 1};
     {
         for (const json::Value& v : arr->AsArray()) {
@@ -189,6 +197,12 @@ Expected<void, Error> CharacterStore::LoadJson(const json::Value& root) {
             if (const auto* p = v.Find("int"))       c.intellect = static_cast<int32_t>(p->AsInt());
             if (const auto* p = v.Find("vit"))       c.vitality  = static_cast<int32_t>(p->AsInt());
             if (const auto* p = v.Find("hp"))        c.hp        = static_cast<int32_t>(p->AsInt());
+            if (version && !v.Find("dead")) return Error{"CharacterStore: version 2 requires dead state", 1};
+            if (const auto* p = v.Find("dead")) {
+                if (!p->IsBool()) return Error{"CharacterStore: dead must be boolean", 1};
+                c.dead = p->AsBool();
+            }
+            if (c.dead && c.hp != 0) return Error{"CharacterStore: dead characters require zero hp", 1};
             if (const auto* p = v.Find("mp"))        c.mp        = static_cast<int32_t>(p->AsInt());
             if (const auto* p = v.Find("gold"))      c.gold      = p->AsInt();
             if (const auto* p = v.Find("items"); p && p->IsArray()) {

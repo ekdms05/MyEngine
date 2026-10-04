@@ -5,7 +5,17 @@
 #include <vector>
 #include <variant>
 namespace mye::runtime {
+struct OnlinePortal2D {
+    uint32_t id = 0;
+    Vec2 position{};
+    float radius = 0;
+    int8_t floorLevel = 0;
+    std::string sceneId, spawnName;
+};
+struct OnlineSpawn2D { std::string name; Vec2 position{}; int8_t floorLevel = 0; };
 struct OnlineScene2D {
+    std::vector<OnlinePortal2D> portals;
+    std::vector<OnlineSpawn2D> spawns;
     std::vector<phys::CollisionBody2D> colliders; // Character prototype excluded.
     phys::CollisionBody2D character;
     Vec2 offset{}, spawn{}; // spawn is the transform origin, not the collider center.
@@ -26,5 +36,6 @@ using OnlineScene = std::variant<OnlineScene2D, OnlineScene3D>;
 // Selects the enabled controller's dimension without retrying invalid scenes in another mode.
 Expected<OnlineScene, Error> LoadOnlineScene(std::string_view project, std::string_view scene = {});
 Expected<OnlineScene2D, Error> LoadOnlineScene2D(std::string_view project, std::string_view scene = {});
+Expected<std::vector<OnlineScene2D>, Error> LoadOnlineMaps2D(std::string_view project, std::string_view scene = {});
 Expected<OnlineScene3D, Error> LoadOnlineScene3D(std::string_view project, std::string_view scene = {});
 } // namespace mye::runtime

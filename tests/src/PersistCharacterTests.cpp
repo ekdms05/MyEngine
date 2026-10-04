@@ -91,6 +91,23 @@ MYE_TEST(CharacterWorldStateAndDelete) {
     MYE_EXPECT(static_cast<bool>(store.Create(7, "Dorn")));   // 이름 재사용
 }
 
+MYE_TEST(CharacterDeathSchemaRejectsDowngradeAndPreservesStateOnFailure) {
+    CharacterStore store;
+    const auto id = store.Create(1, "Dead").Value();
+    store.GetMutable(id)->dead = true;
+    auto saved = store.ToJson();
+    MYE_EXPECT(saved.Find("version")->AsInt() == 2 && !saved.Find("characters"));
+    CharacterStore loaded;
+    MYE_EXPECT(loaded.LoadJson(saved) && loaded.Get(id)->dead);
+    MYE_EXPECT(!loaded.LoadJson(json::Parse(R"({"version":3,"records":[],"nextId":1})").Value()));
+    MYE_EXPECT(loaded.Count() == 1 && loaded.Get(id)->dead);
+    MYE_EXPECT(!loaded.LoadJson(json::Parse(R"({"version":2,"records":[{"id":1,"accountId":1,"name":"invalid","hp":1,"dead":true}],"nextId":2})").Value()));
+    MYE_EXPECT(!loaded.LoadJson(json::Parse(R"({"version":2,"records":[{"id":1,"accountId":1,"name":"invalid"}],"nextId":2})").Value()));
+    MYE_EXPECT(loaded.Get(id)->dead);
+    MYE_EXPECT(loaded.LoadJson(json::Parse(R"({"characters":[{"id":2,"accountId":1,"name":"legacy","hp":0}],"nextId":3})").Value()));
+    MYE_EXPECT(!loaded.Get(2)->dead);
+}
+
 MYE_TEST(CharacterPersistRoundtrip) {
     namespace fs = std::filesystem;
     const std::string path = (fs::temp_directory_path() / "mye_characters.json").string();

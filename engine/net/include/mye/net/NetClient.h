@@ -39,6 +39,15 @@ public:
         state = m_prediction2D; return true;
     }
     const std::vector<EntitySnap2D>& LatestSnapshot2D() const { return m_snapshot2D; }
+    Expected<void, Error> Attack2D(uint32_t target);
+    bool AttackPending2D() const { return m_pendingAttack2D.has_value(); }
+    const AttackResult2D& LastAttack2D() const { return m_attackResult2D; }
+    const std::vector<EntityHealth2D>& LatestHealth2D() const { return m_health2D; }
+    Expected<void, Error> EnterPortal2D(uint32_t portal, uint64_t destinationHash,
+        std::span<const phys::CollisionBody2D> colliders, const phys::MotionSettings2D& settings);
+    bool PortalPending2D() const { return m_pendingPortal2D.has_value(); }
+    const PortalResult2D& LastPortal2D() const { return m_portalResult2D; }
+    uint64_t SceneHash2D() const { return m_settings2D ? m_sceneHash : 0; }
     std::string_view Failure() const { return m_failure; }
 
     // Keep polling after the final input: drains/reconciles and retries pending authenticated inputs at 100 ms.
@@ -80,6 +89,20 @@ private:
     phys::MotionState2D m_prediction2D;
     std::vector<EntitySnap2D> m_snapshot2D;
     std::string m_failure;
+    Expected<void, Error> SendAttack2D();
+    Expected<void, Error> SendPortal2D();
+    uint32_t m_mapEpoch2D = 0, m_portalSequence2D = 0;
+    std::optional<PortalRequest2D> m_pendingPortal2D;
+    PortalResult2D m_portalResult2D;
+    std::optional<phys::MotionSettings2D> m_preparedSettings2D;
+    std::span<const phys::CollisionBody2D> m_preparedColliders2D;
+    std::chrono::steady_clock::time_point m_portalStarted2D, m_portalSent2D;
+    std::optional<AttackRequest2D> m_pendingAttack2D;
+    AttackResult2D m_attackResult2D;
+    std::vector<EntityHealth2D> m_health2D;
+    uint32_t m_attackSequence2D = 0, m_healthTick2D = 0;
+    bool m_hasHealth2D = false;
+    std::chrono::steady_clock::time_point m_attackStarted2D, m_attackSent2D;
     std::vector<uint8_t> m_handshake;
     std::chrono::steady_clock::time_point m_lastHandshake;
     std::chrono::steady_clock::time_point m_lastMovementSend;

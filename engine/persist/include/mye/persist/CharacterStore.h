@@ -55,6 +55,7 @@ struct CharacterRecord {
     // 현재 자원.
     int32_t     hp = 0;
     int32_t     mp = 0;
+    bool        dead = false; // Distinguishes a new character (hp=0) from a saved death.
 
     // 인벤토리.
     int64_t                      gold = 0;

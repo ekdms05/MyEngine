@@ -330,6 +330,36 @@ MYE_TEST(OnlineScene2DUsesSharedCentersFloorsAndValidatedSpawns) {
     MYE_EXPECT(runtime::LoadOnlineScene2D(Utf8String(Utf8Path(MYE_STARTER_SOURCE_DIR) / "project.myeproj")));
 }
 
+MYE_TEST(OnlineMapCatalogValidatesNamedSpawnsAndCanonicalIdentities) {
+    editor::Document document({1}, editor::Document::Kind::Scene, "");
+    auto& world = document.World(); Player(world);
+    const auto gate = Object(world, "Gate");
+    auto& portal = world.Add<runtime::ScenePortal>(gate);
+    portal.scenePath = "assets/scenes/other.scene"; portal.spawnName = "Arrival"; portal.onInteract = true;
+    world.Add<runtime::InteractionTarget>(gate);
+    const auto arrival = Object(world, "Arrival", {2, 0});
+    scene::UpdateWorldTransforms(world);
+    const auto root = OnlineProject(world);
+    const auto project = Utf8String(root / "project.myeproj");
+    MYE_EXPECT(!runtime::LoadOnlineMaps2D(project)); // A missing reachable destination refuses startup.
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/other.scene")));
+    auto maps = runtime::LoadOnlineMaps2D(project);
+    MYE_EXPECT(maps && maps.Value().size() == 2);
+    if (maps) MYE_EXPECT(maps.Value()[0].hash != maps.Value()[1].hash); // Identical contents, separate map paths.
+    world.TryGet<scene::ObjectName>(arrival)->value = "Renamed";
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/other.scene")));
+    MYE_EXPECT(!runtime::LoadOnlineMaps2D(project));
+    world.TryGet<scene::ObjectName>(arrival)->value = "Arrival";
+    world.TryGet<scene::LocalTransform>(arrival)->position = {0, 0, 0};
+    auto wall = Object(world, "Blocked arrival"); world.Add<phys::Collider2D>(wall);
+    // Keep the prototype spawn clear while blocking the named arrival.
+    world.TryGet<scene::LocalTransform>(arrival)->position = {2, 0, 0};
+    world.TryGet<scene::LocalTransform>(wall)->position = {2, 0, 0};
+    scene::UpdateWorldTransforms(world);
+    MYE_EXPECT(scene::SceneSerializer{}.SaveToFile(world, Utf8String(root / "assets/scenes/other.scene")));
+    MYE_EXPECT(!runtime::LoadOnlineMaps2D(project));
+}
+
 MYE_TEST(SavedTwoDLocomotionMatchesPlayAndStandaloneFacing) {
     editor::Document document({1}, editor::Document::Kind::Scene, "");
     auto& authored = document.World();

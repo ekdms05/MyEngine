@@ -24,6 +24,8 @@ using SessionId = uint32_t;
 
 // 접속 플레이어의 런타임 상태(권위). 캐릭터 1명에 대응.
 struct PlayerSession {
+    uint32_t lastAttackTick2D = 0;
+    bool hasAttacked2D = false;
     SessionId              sessionId = 0;
     persist::AccountId     accountId = 0;
     persist::CharacterId   characterId = 0;

@@ -13,4 +13,5 @@ target_include_directories(mye_gameserver PUBLIC
 
 target_link_libraries(mye_gameserver
     PUBLIC mye_core mye_gameplay mye_persist mye_net
+    PRIVATE bcrypt
 )

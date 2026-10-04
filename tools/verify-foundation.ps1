@@ -30,7 +30,7 @@ Invoke-ServerCheck 0 @('--make-char', 'tester', 'TestCharacter')
 Invoke-ServerCheck 0 @('--port', '0', '--tickrate', '60', '--bots', '1', '--ticks', '125', '--autosave', '1')
 $snapshotPath = Join-Path $runDir 'state.json'
 $snapshot = Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$bot = $snapshot.characters.characters | Where-Object { $_.name -eq 'bot1' }
+$bot = $snapshot.characters.records | Where-Object { $_.name -eq 'bot1' }
 if (-not $bot -or $bot.hp -le 0 -or ([Math]::Abs($bot.posX) + [Math]::Abs($bot.posY)) -le 0.1) {
     throw 'Active bot state was not persisted'
 }
@@ -39,7 +39,7 @@ if (@($snapshot.accounts.accounts | Where-Object { $_.algorithm -ne 'pbkdf2-sha2
 }
 Invoke-ServerCheck 0 @('--port', '0', '--ticks', '0')
 $reloaded = Get-Content -LiteralPath $snapshotPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$reloadedBot = $reloaded.characters.characters | Where-Object { $_.name -eq 'bot1' }
+$reloadedBot = $reloaded.characters.records | Where-Object { $_.name -eq 'bot1' }
 if ($reloadedBot.posX -ne $bot.posX -or $reloadedBot.posY -ne $bot.posY -or $reloadedBot.hp -ne $bot.hp) {
     throw 'Restart changed persisted bot state'
 }

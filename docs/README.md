@@ -8,6 +8,7 @@
 | [개발 우선순위](14-development-priorities.md) | 미완료 항목, 근거와 완료 조건 |
 | [온라인 2D MMORPG 작업 목록](22-2d-mmorpg-roadmap.md) | 최종 목표, 작은 작업 36개와 실제 완료 조건 |
 | [온라인 2D 플레이](23-2d-online-play.md) | main 소스의 두 공식 앱 접속·공통 충돌·입력 재생·저장 재접속과 범위 |
+| [온라인 전투·맵](28-2d-online-world.md) / [게임 내보내기](29-game-export.md) | 기본 권위 공격·상호작용 포털·명시적 맵 재접속·독립 게임 폴더 CLI |
 | [2D 게임 카메라](24-2d-camera.md) | main 소스의 저장·추종·경계·줌/흔들림·Lua 좌표 변환과 실제 프레임 검증 |
 | [프로젝트 입력 설정](25-input-actions.md) | 기본/사용자 조작 작성·재매핑·저장·공통 틱/Lua 조회와 직접 장치 검수의 남은 범위 |
 | [2D 모션·행동](26-2d-animation.md) / [게임 UI](27-game-ui.md) | 방향별 클립·행동 전이·로컬 Lua HUD·문서 작성과 한계 |

@@ -50,6 +50,9 @@ add_executable(mye_tests
     src/LiveopsGachaTests.cpp         # 확률형 아이템 확률공개·결정론 롤·천장·감사
     src/LiveopsMetricsTests.cpp       # 서버 메트릭(카운터·게이지·타이밍·스냅샷)
     src/GameServerTests.cpp           # 통합: 게임플레이↔영속(로그인·로드·조작·저장·정합)
+    src/GameExportTests.cpp
+    src/NetCombatTests.cpp
+    src/NetMapTests.cpp
     src/NetGameServerTests.cpp        # 통합: 넷↔게임플레이↔영속 루프백(인증·세션·이동·저장)
     src/SpriteImportTests.cpp
     src/MeshTests.cpp
@@ -99,6 +102,7 @@ add_executable(mye_tests
 target_link_libraries(mye_tests PRIVATE mye_core mye_rhi mye_asset mye_scene mye_gameplay mye_net mye_persist mye_liveops mye_gameserver mye_reflect mye_plugin mye_ddc mye_social mye_mmo mye_audio mye_script mye_editor mye_imgui mye_ui mye_runtime)
 target_include_directories(mye_tests PRIVATE src)
 target_compile_definitions(mye_tests PRIVATE MYE_TEST_DATA_DIR="${PROJECT_BINARY_DIR}/test-data")
+target_compile_definitions(mye_tests PRIVATE MYE_EXPORT_RUNTIME_VERSION="${PROJECT_VERSION}")
 
 # Lua C API tests share the runtime ABI.
 target_link_libraries(mye_tests PRIVATE mye_thirdparty_lua)

@@ -34,7 +34,7 @@ export function registerRunTool(server: McpServer, ctx: ServerContext): void {
         config: z.enum(["Debug", "Release"]).default("Debug").describe("빌드 구성"),
         frames: z.number().int().min(1).default(120).describe("실행 한도(MyServer --ticks N, 나머지 --frames N)"),
         ticks: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional().describe("MyGame/MyServer 고정 틱 한도. 지정하면 frames 대신 사용"),
-        args: z.array(z.string()).optional().describe("앱에 넘길 추가 인자. MyEditor --ui assets/ui/hud.ui 또는 --animation-state assets/animations/character.animstate는 기존 문서 작성 패널을 연다(main 소스)"),
+        args: z.array(z.string()).optional().describe("앱 추가 인자. MyEditor --project FILE --export-game NEW_DIR --runtime RELEASE_DIR는 게임 내보내기 CLI. --ui 또는 --animation-state는 문서 패널. MyGame --input 재생은 선택 interact/attackTarget을 지원한다"),
         timeoutSec: z.number().int().min(1).max(600).default(30).describe("타임아웃(초)"),
       },
     },

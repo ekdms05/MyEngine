@@ -1,5 +1,7 @@
 # 08. MyEngine MCP 개발 도구
 
+0.5.0: `engine_reference(topic="world2d")`는 온라인 공격·포털/epoch·저장 맵 계약, `topic="export"`는 실제 MyEditor export CLI를 조회한다. 기존 `engine_run(sample="MyEditor", args=["--project", FILE, "--export-game", NEW_DIR, "--runtime", RELEASE_DIR])`로 내보내기를 실행한다. 새 원격 에디터 변경 도구는 추가하지 않았다. 이 개발 MCP의 설치/빌드와 현재 세션 연결, 소스 없는 소비자용 배포는 별개다.
+
 현재 MCP 서버는 [tools/mcp](../tools/mcp)의 TypeScript·공식 MCP SDK·stdio 구현이다. 엔진을 직접 링크하지 않고 CMake·CTest·실행 파일·캡처/로그 파일로 상호작용한다. 등록된 도구는 [index.ts](../tools/mcp/src/index.ts)를 기준으로 설명한다.
 
 ## 도구 목록

@@ -8,6 +8,8 @@
 #include "mye/scene/SceneReflection.h"
 #include "mye/scene/SceneSerializer.h"
 #include "mye/scene/Transform.h"
+#include "mye/scene/Renderable.h"
+#include <set>
 #include <filesystem>
 #include <algorithm>
 #include <system_error>
@@ -57,7 +59,7 @@ Expected<uint64_t, Error> LoadOnlineWorld(std::string_view project, std::string_
 Expected<OnlineScene2D, Error> BuildOnlineScene2D(ecs::World& world, uint64_t hash, std::string sceneId) {
     OnlineScene2D result;
     result.sceneId = std::move(sceneId);
-    result.hash = hash;
+    result.hash = HashFnv1a64(result.sceneId + "\n" + std::to_string(hash));
     ecs::Entity character;
     world.Query<CharacterController2D>().Each([&](ecs::Entity e, const auto& c) {
         if (c.enabled) character = e;
@@ -81,6 +83,25 @@ Expected<OnlineScene2D, Error> BuildOnlineScene2D(ecs::World& world, uint64_t ha
     result.spawn = {position.x, position.y};
     result.speed = controller->speed;
     result.maxSlideIters = world.TryGet<phys::KinematicBody2D>(character)->maxSlideIters;
+    std::string portalError;
+    world.Query<ScenePortal, scene::WorldTransform>().Each([&](ecs::Entity entity, const auto& portal, const auto& pose) {
+        if (!portal.onInteract) { portalError = "Online 2D portals currently require interact activation"; return; }
+        const auto* interaction = world.TryGet<InteractionTarget>(entity);
+        if (!interaction || !interaction->enabled) return;
+        const auto* floor = world.TryGet<scene::FloorLevel>(entity);
+        const auto id = static_cast<uint32_t>(entity.Packed()) + 1;
+        if (!id) { portalError = "Portal identity overflow"; return; }
+        result.portals.push_back({id, {pose.matrix.m[3][0], pose.matrix.m[3][1]}, interaction->radius,
+            floor ? floor->level : result.character.floorLevel, portal.scenePath, portal.spawnName});
+    });
+    if (!portalError.empty()) return Error{portalError, 1};
+    world.Query<scene::ObjectName, scene::WorldTransform>().Each([&](ecs::Entity entity, const auto& name, const auto& pose) {
+        if (name.value.empty()) return;
+        const auto* floor = world.TryGet<scene::FloorLevel>(entity);
+        result.spawns.push_back({name.value, {pose.matrix.m[3][0], pose.matrix.m[3][1]},
+            floor ? floor->level : result.character.floorLevel});
+    });
+    std::sort(result.portals.begin(), result.portals.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
     if (auto valid = phys::ValidateSpawn2D(result.character, result.colliders); !valid)
         return valid.GetError();
     // Scene-local opaque ids remain stable regardless of component-pool iteration order.
@@ -153,5 +174,48 @@ Expected<OnlineScene3D, Error> LoadOnlineScene3D(std::string_view project, std::
     auto loaded = LoadOnlineWorld(project, scene, world, sceneId);
     if (!loaded) return loaded.GetError();
     return BuildOnlineScene3D(world, loaded.Value(), std::move(sceneId));
+}
+Expected<std::vector<OnlineScene2D>, Error> LoadOnlineMaps2D(std::string_view project, std::string_view scene) {
+    auto first = LoadOnlineScene2D(project, scene);
+    if (!first) return first.GetError();
+    std::vector<OnlineScene2D> maps;
+    maps.push_back(std::move(first).Value());
+    std::set<std::string> visited{maps.front().sceneId};
+    for (size_t i = 0; i < maps.size(); ++i) {
+        const auto portals = maps[i].portals; // Loading a destination can reallocate maps.
+        for (size_t j = 0; j < portals.size(); ++j) {
+            const auto& portal = portals[j];
+            const auto existing = std::find_if(maps.begin(), maps.end(), [&](const auto& value) { return value.sceneId == portal.sceneId; });
+            if (existing != maps.end()) continue;
+            auto loaded = LoadOnlineScene2D(project, portal.sceneId);
+            if (!loaded) return loaded.GetError();
+            maps[i].portals[j].sceneId = loaded.Value().sceneId;
+            if (!visited.insert(loaded.Value().sceneId).second) continue;
+            if (maps.size() >= 64) return Error{"Online map catalog supports up to 64 reachable scenes", 1};
+            maps.push_back(std::move(loaded).Value());
+        }
+    }
+    for (const auto& map : maps) for (const auto& portal : map.portals) {
+        const auto target = std::find_if(maps.begin(), maps.end(), [&](const auto& value) { return value.sceneId == portal.sceneId; });
+        if (target == maps.end()) return Error{"Online portal destination is absent from the catalog", 1};
+        const auto& destination = *target;
+        const auto spawn = std::find_if(destination.spawns.begin(), destination.spawns.end(),
+            [&](const auto& value) { return value.name == portal.spawnName; });
+        if (spawn == destination.spawns.end() || spawn->floorLevel != destination.character.floorLevel ||
+            std::count_if(destination.spawns.begin(), destination.spawns.end(),
+                [&](const auto& value) { return value.name == portal.spawnName; }) != 1)
+            return Error{"Online portal spawn is missing or belongs to another floor: " + portal.spawnName, 1};
+        auto body = destination.character; body.pos = spawn->position + destination.offset;
+        if (auto valid = phys::ValidateSpawn2D(body, destination.colliders); !valid) return valid.GetError();
+    }
+    // Decorative names need not be unique. Publish only names actually used as arrival points.
+    for (auto& map : maps) std::erase_if(map.spawns, [&](const auto& spawn) {
+        return std::none_of(maps.begin(), maps.end(), [&](const auto& source) {
+            return std::any_of(source.portals.begin(), source.portals.end(), [&](const auto& portal) {
+                return portal.sceneId == map.sceneId && portal.spawnName == spawn.name;
+            });
+        });
+    });
+    return maps;
 }
 } // namespace mye::runtime

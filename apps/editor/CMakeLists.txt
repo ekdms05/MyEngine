@@ -6,7 +6,7 @@ add_executable(MyEditor
 )
 
 target_link_libraries(MyEditor PRIVATE
-    mye_core mye_scene mye_editor
+    mye_core mye_scene mye_editor mye_runtime
 )
 
 add_custom_target(MyEditorContent

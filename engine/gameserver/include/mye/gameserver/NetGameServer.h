@@ -6,15 +6,29 @@
 #pragma once
 
 #include "mye/gameserver/GameServer.h"
+#include "mye/gameplay/Combat.h"
 #include "mye/net/NetServer.h"
 
 #include <cstdint>
 #include <unordered_map>
 
 namespace mye::gameserver {
+struct CombatPolicy2D {
+    float range = 1.5f, power = 1;
+    uint32_t cooldownTicks = 30;
+};
+struct MapPortal2D {
+    uint32_t id = 0;
+    Vec2 position{};
+    float radius = 0;
+    int8_t floorLevel = 0;
+    std::string sceneId, spawnName;
+};
+struct MapSpawn2D { std::string name; Vec2 position{}; int8_t floorLevel = 0; };
 
 class NetGameServer {
 public:
+    Expected<void, Error> ConfigureCombat2D(const CombatPolicy2D& policy);
     explicit NetGameServer(persist::PersistenceService& persist);
 
     bool     Start(uint16_t port);
@@ -26,7 +40,11 @@ public:
     Expected<void,Error> Configure3D(const phys::PhysicsWorld3D& physics,const phys::MotionSettings3D& settings,
         uint64_t sceneHash,std::string sceneId,Vec3 spawn);
     Expected<void, Error> Configure2D(std::span<const phys::CollisionBody2D> colliders,
-        const phys::MotionSettings2D& settings, uint64_t sceneHash, std::string sceneId, Vec2 spawn);
+        const phys::MotionSettings2D& settings, uint64_t sceneHash, std::string sceneId, Vec2 spawn,
+        std::span<const MapPortal2D> portals = {}, std::span<const MapSpawn2D> spawns = {});
+    Expected<void, Error> RegisterMap2D(std::span<const phys::CollisionBody2D> colliders,
+        const phys::MotionSettings2D& settings, uint64_t sceneHash, std::string sceneId, Vec2 spawn,
+        std::span<const MapPortal2D> portals = {}, std::span<const MapSpawn2D> spawns = {});
 
     // 한 서버 틱: 수신 → 세션 diff → 시뮬 → 위치 동기 → 브로드캐스트.
     void Tick(float dt);
@@ -37,6 +55,21 @@ public:
     net::NetServer& Net() { return m_net; }
 
 private:
+    struct MapBinding2D {
+        uint64_t hash;
+        std::string sceneId;
+        int8_t floorLevel;
+        std::vector<MapPortal2D> portals;
+        std::vector<MapSpawn2D> spawns;
+    };
+    std::vector<MapBinding2D> m_maps2D;
+    Expected<void, Error> BindMap2D(std::span<const phys::CollisionBody2D> colliders,
+        const phys::MotionSettings2D& settings, uint64_t hash, std::string scene, Vec2 spawn,
+        bool additional, std::span<const MapPortal2D> portals, std::span<const MapSpawn2D> spawns);
+    Expected<void, Error> EnterPortal2D(uint32_t id, const net::PortalRequest2D& request);
+    net::AttackResult2D Attack2D(uint32_t attacker, const net::AttackRequest2D& request);
+    CombatPolicy2D m_combatPolicy;
+    gameplay::RngState m_combatRng;
     persist::PersistenceService&                  m_persist;
     net::NetServer                                m_net;
     GameServer                                    m_game;

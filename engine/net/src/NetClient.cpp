@@ -15,6 +15,10 @@ void NetClient::Connect(const Endpoint& server, std::string_view username, std::
         m_pendingMovement.clear();
         m_snapshot3D.clear();
         m_snapshot2D.clear();
+        m_pendingAttack2D.reset(); m_attackResult2D = {};
+        m_pendingPortal2D.reset(); m_preparedSettings2D.reset(); m_preparedColliders2D = {};
+        m_portalResult2D = {}; m_mapEpoch2D = m_portalSequence2D = 0;
+        m_health2D.clear(); m_hasHealth2D = false; m_attackSequence2D = m_healthTick2D = 0;
         m_token = 0;
         m_inputSeq = 0;
         m_lastAck = 0;
@@ -29,7 +33,7 @@ void NetClient::Connect(const Endpoint& server, std::string_view username, std::
             m_failure = "Connection nonce generation failed";
             return;
         }
-        WriteHeader(w, m_settings2D ? MsgType::Connect2D : MsgType::Connect3D);
+        WriteHeader(w, m_settings2D ? MsgType::ConnectMap2D : MsgType::Connect3D);
         WriteString(w, username);
         WriteString(w, password);
         WriteU64(w, m_sceneHash);
@@ -77,6 +81,8 @@ void NetClient::SendInput(uint32_t seq, float moveX, float moveY, float dt) {
 }
 
 void NetClient::Disconnect() {
+    m_pendingAttack2D.reset();
+    m_pendingPortal2D.reset(); m_preparedSettings2D.reset(); m_preparedColliders2D = {};
     std::fill(m_handshake.begin(), m_handshake.end(), uint8_t{0});
     m_handshake.clear();
     BitWriter w;
@@ -143,6 +149,22 @@ void NetClient::Receive() {
         if (auto sent = SendPendingMovement(); !sent) {
             m_failure = sent.GetError().message;
             Disconnect();
+        }
+    }
+    if (m_connected && m_pendingAttack2D) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - m_attackStarted2D >= std::chrono::seconds(5)) {
+            m_failure = "Attack acknowledgement timed out"; Disconnect();
+        } else if (now - m_attackSent2D >= std::chrono::milliseconds(100)) {
+            if (auto sent = SendAttack2D(); !sent) { m_failure = sent.GetError().message; Disconnect(); }
+        }
+    }
+    if (m_connected && m_pendingPortal2D) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - m_portalStarted2D >= std::chrono::seconds(5)) {
+            m_failure = "Portal acknowledgement timed out"; Disconnect();
+        } else if (now - m_portalSent2D >= std::chrono::milliseconds(100)) {
+            if (auto sent = SendPortal2D(); !sent) { m_failure = sent.GetError().message; Disconnect(); }
         }
     }
 }
@@ -215,6 +237,8 @@ Expected<void, Error> NetClient::Configure2D(std::span<const phys::CollisionBody
 }
 Expected<void, Error> NetClient::SendInput2D(Vec2 movement) {
     if (!m_settings2D) return Error{"2D input requires 2D configuration", 1};
+    if (m_pendingPortal2D) return Error{"Movement waits for the pending portal result", 1};
+    for (const auto& health : m_health2D) if (health.netId == m_id && health.hp == 0) movement = {};
     return SendMovementInput(movement, false);
 }
 Expected<void, Error> NetClient::SendMovementInput(Vec2 movement, bool jump) {
@@ -242,8 +266,9 @@ Expected<void, Error> NetClient::SendMovementInput(Vec2 movement, bool jump) {
 }
 Expected<void, Error> NetClient::SendPendingMovement() {
     BitWriter w;
-    WriteHeader(w, m_settings2D ? MsgType::Input2D : MsgType::Input3D);
+    WriteHeader(w, m_settings2D ? MsgType::InputMap2D : MsgType::Input3D);
     WriteU64(w, m_token);
+    if (m_settings2D) { WriteU64(w, m_sceneHash); w.WriteBits(m_mapEpoch2D, 32); }
     const auto count = std::min<size_t>(8, m_pendingMovement.size());
     w.WriteBits(static_cast<uint32_t>(count), 8);
     for (size_t i = 0; i < count; ++i)
@@ -255,10 +280,66 @@ Expected<void, Error> NetClient::SendPendingMovement() {
     return {};
 }
 void NetClient::ReceiveAuthenticated(MsgType type, BitReader& r, size_t size) {
+    if (m_settings2D && type == MsgType::PortalResult2D) {
+        if (!m_connected || ReadU64(r) != m_token || !r.Ok() || !m_pendingPortal2D) return;
+        PortalResult2D result;
+        result.sequence = r.ReadBits(32); result.accepted = r.ReadBits(1) != 0;
+        result.sceneHash = ReadU64(r); result.epoch = r.ReadBits(32);
+        if (!ReadState2D(r, result.state) || !ReadString(r, result.reason, 120) || !PacketComplete(r, size) ||
+            result.sequence != m_pendingPortal2D->sequence) return;
+        if (result.accepted) {
+            if (!m_preparedSettings2D || result.sceneHash != m_pendingPortal2D->destinationHash ||
+                result.epoch != m_mapEpoch2D + 1 || result.state.floorLevel != m_preparedSettings2D->body.floorLevel) return;
+            m_settings2D = *m_preparedSettings2D; m_colliders2D = m_preparedColliders2D;
+            m_sceneHash = result.sceneHash; m_mapEpoch2D = result.epoch;
+            m_prediction2D = result.state; m_hasPred = true;
+            m_inputSeq = m_lastAck = 0; m_pendingMovement.clear();
+            m_snapshot2D.clear(); m_health2D.clear(); m_hasSnapshot = m_hasHealth2D = false;
+        } else if (result.sceneHash != m_sceneHash || result.epoch != m_mapEpoch2D) return;
+        m_portalResult2D = std::move(result);
+        m_pendingPortal2D.reset(); m_preparedSettings2D.reset(); m_preparedColliders2D = {};
+        return;
+    }
+    if (m_settings2D && (type == MsgType::AttackResult2D || type == MsgType::Health2D || type == MsgType::HealthMap2D)) {
+        if (!m_connected || ReadU64(r) != m_token || !r.Ok()) return;
+        if (type == MsgType::HealthMap2D) {
+            const auto hash = ReadU64(r); const auto epoch = r.ReadBits(32);
+            if (hash != m_sceneHash || epoch != m_mapEpoch2D || !r.Ok()) return;
+        } else if (type == MsgType::Health2D && m_mapEpoch2D) return;
+        if (type == MsgType::AttackResult2D) {
+            AttackResult2D result;
+            result.sequence = r.ReadBits(32); result.target = r.ReadBits(32);
+            result.accepted = r.ReadBits(1) != 0;
+            const auto damage = r.ReadBits(32), hp = r.ReadBits(32);
+            if (damage > 1000000000 || hp > 1000000000 || (result.accepted ? damage == 0 : damage != 0) ||
+                !ReadString(r, result.reason, 120) || !PacketComplete(r, size) || !m_pendingAttack2D ||
+                result.sequence != m_pendingAttack2D->sequence || result.target != m_pendingAttack2D->target) return;
+            result.damage = static_cast<int32_t>(damage); result.targetHp = static_cast<int32_t>(hp);
+            m_attackResult2D = std::move(result); m_pendingAttack2D.reset();
+            return;
+        }
+        const auto tick = r.ReadBits(32), count = r.ReadBits(8);
+        if (!count || count > kMaxSnapshotEntities2D || (m_hasHealth2D && !SequenceNewer(tick, m_healthTick2D))) return;
+        std::vector<EntityHealth2D> health;
+        for (uint32_t i = 0; i < count; ++i) {
+            const auto id = r.ReadBits(32), hp = r.ReadBits(32), maximum = r.ReadBits(32);
+            if (!id || !maximum || maximum > 1000000000 || hp > maximum ||
+                std::any_of(health.begin(), health.end(), [&](const auto& value) { return value.netId == id; })) return;
+            health.push_back({id, static_cast<int32_t>(hp), static_cast<int32_t>(maximum)});
+        }
+        if (!PacketComplete(r, size) ||
+            std::none_of(health.begin(), health.end(), [&](const auto& value) { return value.netId == m_id; })) return;
+        m_health2D = std::move(health); m_healthTick2D = tick; m_hasHealth2D = true;
+        return;
+    }
     const auto disconnectType = m_settings2D ? MsgType::Disconnect2D : MsgType::Disconnect3D;
-    if (type == (m_settings2D ? MsgType::Accept2D : MsgType::Accept3D)) {
+    if (type == (m_settings2D ? MsgType::Accept2D : MsgType::Accept3D) || (m_settings2D && type == MsgType::AcceptMap2D)) {
         const auto id = r.ReadBits(32);
         const auto token = ReadU64(r), nonce = ReadU64(r);
+        if (type == MsgType::AcceptMap2D) {
+            const auto hash = ReadU64(r); const auto epoch = r.ReadBits(32);
+            if (hash != m_sceneHash || epoch != m_mapEpoch2D) return;
+        }
         if (id && token && nonce == m_nonce && PacketComplete(r, size) &&
             (!m_connected || (m_id == id && m_token == token))) {
             m_id = id;
@@ -269,7 +350,8 @@ void NetClient::ReceiveAuthenticated(MsgType type, BitReader& r, size_t size) {
         }
         return;
     }
-    if (type != (m_settings2D ? MsgType::Snapshot2D : MsgType::Snapshot3D) && type != disconnectType) return;
+    if (type != (m_settings2D ? MsgType::Snapshot2D : MsgType::Snapshot3D) && type != disconnectType &&
+        !(m_settings2D && type == MsgType::SnapshotMap2D)) return;
     const auto token = ReadU64(r);
     if (type == disconnectType) {
         const auto nonce = ReadU64(r);
@@ -283,6 +365,10 @@ void NetClient::ReceiveAuthenticated(MsgType type, BitReader& r, size_t size) {
         return;
     }
     if (!m_connected || token != m_token) return;
+    if (type == MsgType::SnapshotMap2D) {
+        const auto hash = ReadU64(r); const auto epoch = r.ReadBits(32);
+        if (hash != m_sceneHash || epoch != m_mapEpoch2D || !r.Ok()) return;
+    } else if (type == MsgType::Snapshot2D && m_mapEpoch2D) return;
     const auto tick = r.ReadBits(32), count = r.ReadBits(8);
     if (count == 0 || count > (m_settings2D ? kMaxSnapshotEntities2D : kMaxSnapshotEntities3D) ||
         (m_hasSnapshot && !SequenceNewer(tick, m_tick)))
@@ -370,4 +456,52 @@ void NetClient::Reconcile2D() {
         }
 }
 
+Expected<void, Error> NetClient::Attack2D(uint32_t target) {
+    if (!m_connected || !m_settings2D || !m_hasPred || !target || target == m_id || m_pendingAttack2D || m_pendingPortal2D ||
+        m_attackSequence2D == UINT32_MAX)
+        return Error{"Attack requires an admitted 2D player, another target and no pending attack", 1};
+    m_pendingAttack2D = AttackRequest2D{++m_attackSequence2D, target};
+    m_attackStarted2D = std::chrono::steady_clock::now();
+    auto sent = SendAttack2D();
+    if (!sent) { m_failure = sent.GetError().message; Disconnect(); }
+    return sent;
+}
+Expected<void, Error> NetClient::SendAttack2D() {
+    if (!m_pendingAttack2D) return Error{"No pending attack", 1};
+    BitWriter w;
+    WriteHeader(w, MsgType::AttackMap2D); WriteU64(w, m_token);
+    WriteU64(w, m_sceneHash); w.WriteBits(m_mapEpoch2D, 32);
+    w.WriteBits(m_pendingAttack2D->sequence, 32); w.WriteBits(m_pendingAttack2D->target, 32);
+    const auto& bytes = w.Finish();
+    m_attackSent2D = std::chrono::steady_clock::now();
+    if (m_sock.SendTo(m_server, bytes.data(), bytes.size()) != static_cast<int>(bytes.size()))
+        return Error{"Attack send failed", 1};
+    return {};
+}
+Expected<void, Error> NetClient::EnterPortal2D(uint32_t portal, uint64_t hash,
+    std::span<const phys::CollisionBody2D> colliders, const phys::MotionSettings2D& settings) {
+    if (!m_connected || !m_settings2D || !m_hasPred || !portal || !hash || m_pendingPortal2D ||
+        m_pendingAttack2D || !m_pendingMovement.empty() || m_portalSequence2D == UINT32_MAX || m_mapEpoch2D == UINT32_MAX)
+        return Error{"Portal requires a prepared destination and drained 2D input/attack acknowledgements", 1};
+    if (auto valid = phys::ValidateMotionSettings2D(settings); !valid) return valid.GetError();
+    if (auto valid = phys::ValidateCollisionBodies2D(colliders); !valid) return valid.GetError();
+    m_preparedSettings2D = settings; m_preparedColliders2D = colliders;
+    m_pendingPortal2D = PortalRequest2D{++m_portalSequence2D, portal, m_mapEpoch2D, m_sceneHash, hash};
+    m_portalStarted2D = std::chrono::steady_clock::now();
+    auto sent = SendPortal2D();
+    if (!sent) { m_failure = sent.GetError().message; Disconnect(); }
+    return sent;
+}
+Expected<void, Error> NetClient::SendPortal2D() {
+    if (!m_pendingPortal2D) return Error{"No pending portal", 1};
+    const auto& request = *m_pendingPortal2D;
+    BitWriter writer;
+    WriteHeader(writer, MsgType::Portal2D); WriteU64(writer, m_token);
+    WriteU64(writer, request.sourceHash); writer.WriteBits(request.sourceEpoch, 32);
+    writer.WriteBits(request.sequence, 32); writer.WriteBits(request.portal, 32); WriteU64(writer, request.destinationHash);
+    const auto& bytes = writer.Finish(); m_portalSent2D = std::chrono::steady_clock::now();
+    if (m_sock.SendTo(m_server, bytes.data(), bytes.size()) != static_cast<int>(bytes.size()))
+        return Error{"Portal request send failed", 1};
+    return {};
+}
 } // namespace mye::net

@@ -304,7 +304,7 @@ MYE_TEST(NetClient2DRefusesMalformedSnapshotsAndReplaysOnlyUnconfirmedInputs) {
     if (received <= 0) return;
     net::BitReader join(buffer, received); net::MsgType type;
     std::string user, pass;
-    MYE_EXPECT(net::ReadHeader(join, type) && type == net::MsgType::Connect2D);
+    MYE_EXPECT(net::ReadHeader(join, type) && type == net::MsgType::ConnectMap2D);
     MYE_EXPECT(net::ReadConnect(join, user, pass));
     MYE_EXPECT(net::ReadU64(join) == 123 && net::ReadU64(join) == 7);
     const auto nonce = net::ReadU64(join);
@@ -347,8 +347,9 @@ MYE_TEST(NetClient2DRefusesMalformedSnapshotsAndReplaysOnlyUnconfirmedInputs) {
     MYE_EXPECT(received > 0);
     if (received > 0) {
         net::BitReader retry(buffer, received);
-        MYE_EXPECT(net::ReadHeader(retry, type) && type == net::MsgType::Input2D);
-        MYE_EXPECT(net::ReadU64(retry) == 42 && retry.ReadBits(8) == 3);
+        MYE_EXPECT(net::ReadHeader(retry, type) && type == net::MsgType::InputMap2D);
+        MYE_EXPECT(net::ReadU64(retry) == 42 && net::ReadU64(retry) == 123);
+        MYE_EXPECT(retry.ReadBits(32) == 0 && retry.ReadBits(8) == 3);
         for (uint32_t seq = 1; seq <= 3; ++seq) {
             net::MovementInput input;
             MYE_EXPECT(net::ReadMovementInput(retry, input) && input.seq == seq && !input.jump);

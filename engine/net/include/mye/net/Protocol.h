@@ -43,6 +43,17 @@ enum class MsgType : uint8_t {
     Input2D = 13,
     Snapshot2D = 14,
     Disconnect2D = 15,
+    Attack2D = 16,
+    AttackResult2D = 17,
+    Health2D = 18,
+    Portal2D = 19,
+    PortalResult2D = 20,
+    InputMap2D = 21,
+    SnapshotMap2D = 22,
+    HealthMap2D = 23,
+    AttackMap2D = 24,
+    ConnectMap2D = 25,
+    AcceptMap2D = 26,
 };
 
 // 복제 엔티티 상태(스냅샷 원소). lastInputSeq 는 소유 클라의 마지막 처리 입력(재조정용).
@@ -54,9 +65,15 @@ struct EntitySnap {
 };
 
 // ---- 헤더(모든 패킷 공통) ----
+inline uint16_t ProtocolVersionFor(MsgType type) {
+    if (type >= MsgType::Attack2D) return 4;
+    if (type >= MsgType::Connect2D) return 3;
+    if (type >= MsgType::Connect3D) return 2;
+    return kProtocolVersion;
+}
 inline void WriteHeader(BitWriter& w, MsgType type) {
     w.WriteBits(kProtocolId, 32);
-    w.WriteBits(type >= MsgType::Connect2D ? 3 : type >= MsgType::Connect3D ? 2 : kProtocolVersion, 16);
+    w.WriteBits(ProtocolVersionFor(type), 16);
     w.WriteBits(static_cast<uint32_t>(type), 8);
 }
 // 헤더 검증 + 타입 반환. 실패 시 false.
@@ -64,8 +81,8 @@ inline bool ReadHeader(BitReader& r, MsgType& outType) {
     const uint32_t proto = r.ReadBits(32);
     const uint32_t version = r.ReadBits(16);
     const uint32_t t = r.ReadBits(8);
-    if (!r.Ok() || proto != kProtocolId || t < 1 || t > 15 ||
-        version != (t >= 11 ? 3u : t >= 6 ? 2u : kProtocolVersion))
+    if (!r.Ok() || proto != kProtocolId || t < static_cast<uint32_t>(MsgType::Connect) ||
+        t > static_cast<uint32_t>(MsgType::AcceptMap2D) || version != ProtocolVersionFor(static_cast<MsgType>(t)))
         return false;
     outType = static_cast<MsgType>(t);
     return true;
@@ -143,6 +160,32 @@ struct EntitySnap3D {
 struct EntitySnap2D {
     uint32_t netId = 0, ack = 0;
     phys::MotionState2D state;
+};
+struct AttackRequest2D {
+    uint32_t sequence = 0, target = 0;
+    bool operator==(const AttackRequest2D&) const = default;
+};
+struct AttackResult2D {
+    uint32_t sequence = 0, target = 0;
+    int32_t damage = 0, targetHp = 0;
+    bool accepted = false;
+    std::string reason;
+};
+struct EntityHealth2D {
+    uint32_t netId = 0;
+    int32_t hp = 0, maxHp = 0;
+};
+struct PortalRequest2D {
+    uint32_t sequence = 0, portal = 0, sourceEpoch = 0;
+    uint64_t sourceHash = 0, destinationHash = 0;
+    bool operator==(const PortalRequest2D&) const = default;
+};
+struct PortalResult2D {
+    uint32_t sequence = 0, epoch = 0;
+    uint64_t sceneHash = 0;
+    bool accepted = false;
+    phys::MotionState2D state;
+    std::string reason;
 };
 inline bool PacketComplete(BitReader& r, size_t bytes) {
     const size_t remaining = bytes * 8 - r.BitsRead();

@@ -213,7 +213,7 @@ try {
     }
     $stateFile = Join-Path $data 'state.json'
     $registered = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-    $foreign = $registered.characters.characters | Where-Object { $_.name -eq 'online-a' }
+    $foreign = $registered.characters.records | Where-Object { $_.name -eq 'online-a' }
     if ($server.Process.HasExited) { throw 'Ownership fixture server ended before the denial request' }
     $deniedLog = Invoke-App $gameExe 1 @('--project', $project, '--headless', '--connect', "127.0.0.1:$($server.Port)",
         '--credentials', (Join-Path $runDir 'online-b.json'), '--character', "$($foreign.id)", '--ticks', '45')
@@ -221,8 +221,8 @@ try {
     $serverLog = Wait-App $server.Process 'server' 45000
     if ($serverLog -notmatch '2D admission rejected: Character ownership mismatch') { throw 'Server did not enforce ownership at app admission' }
     $state = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-    $ca = $state.characters.characters | Where-Object { $_.name -eq 'online-a' }
-    $cb = $state.characters.characters | Where-Object { $_.name -eq 'online-b' }
+    $ca = $state.characters.records | Where-Object { $_.name -eq 'online-a' }
+    $cb = $state.characters.records | Where-Object { $_.name -eq 'online-b' }
     foreach ($character in @($ca, $cb)) {
         if (-not $character -or $character.world3D -or $character.posZ -ne 0 -or $character.floorLevel -ne 1 -or
             $character.sceneId -ne $manifest.mainScene) { throw 'Incorrect persisted 2D scene/floor contract' }
@@ -244,7 +244,7 @@ try {
     }
     $null = Wait-App $server.Process 'restart'
     $reloaded = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-    $restored = $reloaded.characters.characters | Where-Object { $_.name -eq 'online-a' }
+    $restored = $reloaded.characters.records | Where-Object { $_.name -eq 'online-a' }
     if ($restored.posX -ne $ca.posX -or $restored.posY -ne $ca.posY -or $restored.floorLevel -ne $ca.floorLevel -or
         $restored.facingRadians -ne $ca.facingRadians) { throw 'Idle reconnect changed saved motion' }
     if ((Get-FileHash -LiteralPath $sceneFile).Hash -ne $sceneHash) { throw 'Playing changed authored scene data' }

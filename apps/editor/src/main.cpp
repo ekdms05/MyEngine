@@ -12,6 +12,8 @@
 #include "mye/core/Log.h"
 #include "mye/core/I18n.h"
 #include "mye/core/JsonFile.h"
+#include "mye/runtime/GameExport.h"
+#include <cstdio>
 
 #include "mye/scene/SceneModule.h"
 #include "mye/editor/EditorModule.h"
@@ -204,6 +206,24 @@ int main(int /*argc*/, char** /*argv*/) {
         ::LocalFree(wideArgv);
     }
     launch.projectPath = mye::ProjectArgument(launch.args);
+    for (std::size_t i = 1; i < launch.args.size(); ++i) {
+        if (launch.args[i] != "--export-game") continue;
+        if (++i == launch.args.size()) { std::fputs("--export-game requires a new output directory\n", stderr); return 64; }
+        const auto output = launch.args[i];
+        std::array<wchar_t, 32768> executable{};
+        const auto count = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+        if (!count || count >= executable.size()) return 1;
+        auto runtime = mye::Utf8String(std::filesystem::path(executable.data()).parent_path());
+        for (std::size_t j = 1; j < launch.args.size(); ++j) {
+            if (launch.args[j] != "--runtime") continue;
+            if (++j == launch.args.size()) return 64;
+            runtime = launch.args[j];
+        }
+        auto exported = mye::runtime::ExportGameProject(launch.projectPath, output, runtime);
+        if (!exported) { std::fprintf(stderr, "%s\n", exported.GetError().message.c_str()); return 1; }
+        std::printf("Game exported: %s\n", output.c_str());
+        return 0;
+    }
     const auto project = mye::Utf8Path(launch.projectPath);
     if (project.extension() == ".myeproj") {
         // Core settings consume a directory; the editor still opens the selected manifest.

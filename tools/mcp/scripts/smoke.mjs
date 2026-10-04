@@ -193,6 +193,10 @@ async function main() {
   // Real file parsing in an isolated build/ project; no user data or engine build.
   const online = await request("tools/call", { name: "engine_reference", arguments: { topic: "online", search: "PhysicsWorld3D" } });
   check("engine_reference — XYZ 공통 물리/온라인 정본", online.result?.isError !== true && firstText(online.result).includes("21-3d-play-and-online.md") && firstText(online.result).includes("PhysicsWorld3D::Step"));
+  const world2D = await request("tools/call", { name: "engine_reference", arguments: { topic: "world2d", search: "epoch" } });
+  check("engine_reference — 온라인 맵 수명 계약", world2D.result?.isError !== true && firstText(world2D.result).includes("28-2d-online-world.md") && firstText(world2D.result).includes("A→B→A"));
+  const exporter = await request("tools/call", { name: "engine_reference", arguments: { topic: "export", search: "--export-game" } });
+  check("engine_reference — 실제 게임 내보내기 CLI", exporter.result?.isError !== true && firstText(exporter.result).includes("29-game-export.md") && firstText(exporter.result).includes("--runtime"));
   const roadmap = await request("tools/call", { name: "engine_reference", arguments: { topic: "roadmap", search: "D05" } });
   check("engine_reference — 2D 목표와 앱 연결 완료 조건", roadmap.result?.isError !== true && firstText(roadmap.result).includes("22-2d-mmorpg-roadmap.md") && firstText(roadmap.result).includes("두 계정"));
   const motion = await request("tools/call", { name: "engine_reference", arguments: { topic: "scene", search: "MoveAndSlide2D" } });

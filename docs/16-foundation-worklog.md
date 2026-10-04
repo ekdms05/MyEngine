@@ -719,3 +719,25 @@ GitHub Release 검사에 기존 공식 2D 접속/카메라·입력·모션/맵/�
 보완한 완료 endpoint도 로컬 Release/WARP -Phase에서 종료0, 세 새 서버/두 ack·동일 입력과 픽셀·원본 보존으로 통과했다. 다음 hosted 배포 검수는 수신자 분리와 이 수명 조건을 모두 사용한다.
 
 다음 hosted 검사는 온라인·입력·상태/맵·행동과 연속 A/B 및 완료 endpoint를 모두 통과했다(A 원격 변화7/32프레임/pause 이동8, B5/32/6). 이후 UI 검사가 MyGame 네이티브 캡처1028×749에서 실패했다. 기존 검사는 창이 항상960×540의 정수 배수라고 가정했다. 실제 MyGame은 PixelPerfectTarget::ComputeLayout의 min(가로/960,세로/540) 정수 확대와 중앙 destRect를 사용하고 전체 backbuffer를 덤프한다. 샘플 좌표를 동일한 배율/중앙 원점으로 변환하고 보고서에 배율/원점을 남긴다. HP296개 픽셀·아이콘·버튼·TextInput/Label 일치·텍스트 양·저장 보존·10개 거부 조건은 유지한다. 기존 TextTests는2048×1200 레터박스에서 모든 UI 픽셀과 검정 여백을 실제 렌더로 검증한다. 수정 UI 검사는 로컬 Release/WARP에서 통과했다. 이는 캡처 검사 가정 수정이며 UI 렌더러/게임 코드의 변경이 아니다.
+
+## 2026-10-04 · 인증 2D 전투·온라인 맵·게임 export
+
+요구: 사용자 제공 Godot 로컬 소스를 직접 참고해 온라인 전투·맵 전환·게임 내보내기를 계속 연결한다. 소비자 ME-001/014/015/019의 공식 앱·권위·저장·배포 경계를 우선하며 로컬 Lua 퀘스트와 MMO 완성을 혼동하지 않는다.
+
+참고 소스: 다운로드의 version.py는 4.8.0-dev다. Git commit 메타데이터 대신 실제 읽은 파일의 SHA256을 기록한다. modules/multiplayer/scene_rpc_interface.cpp = cca1423803e1f1cc58570ba9d0c6bd39be22ebaa39a283551aa984889659c6c7; scene/main/scene_tree.cpp = 44ba9e84b53c91450b262de2075735c40a1b75aa0f34a25348e570fa3be94eba; editor/export/editor_export_platform.cpp = f9694fea7f2bb2bc0bfa8948427b6fc569efcd03300b130a0660779307bda80f. 권한/연결/가시성 검증, 후보 씬을 준비한 뒤 교체, 런타임 자원/고지 수집·실패 전달의 동작을 채택했다. 새 Godot 코드를 복사하지 않았으며 기존 MIT/AUTHORS 고지는 보존한다.
+
+실제 경로: OnlineScene의 기존 SceneSerializer/GatherCollisionBodies2D가 포털/도착점과 소유 catalog를 만든다. apps가 값 metadata를 NetGameServer에 전달해 net→runtime/ECS 역참조를 만들지 않는다. 인증된 입력과 예측은 같은 StepMotion2D를 유지한다. NetGameServer는 기존 gameplay ComputeDamage/ApplyDamage와 플레이어 세션을 사용한다. NetServer가 fixed tick에서 이동→공격→포털을 처리하고 맵별 Snapshot/Health를 보낸다. MyGame은 도착 월드/모션/지정 렌더 자원을 준비하고 승인 뒤 교체한다. ExportGameProject는 기존 GUID/.meta와 VFS 경로를 보존하며 MyEditor CLI가 호출한다.
+
+선택 이유: 작은 요청에는 공통 RPC/새 스크립트 VM/블루프린트 프레임워크를 만들지 않는다. 한 개의 미확인 행동과 정확한 결과 캐시가 재전송의 이중 피해/이중 이동을 막는다. 맵 hash만으로 A-B-A의 이전 입력을 구분할 수 없으므로 세션별 epoch를 추가했다. 장식 이름은 중복을 허용하고 실제 도착점만 유일성/층/충돌을 검증한다. 최대64맵/전체40플레이어는 현재 snapshot 크기 경계이며 AOI로 대체할 조건을 남겼다. 성능 측정 없이 풀/스레드/캐시를 추가하지 않았다.
+
+저장: 기존 HP0가 신규/미저장 상태와 사망을 구분하지 못해 재접속 시 회복했다. authenticated 2D의 사망을 명시하고 character version2/records로 저장해 구형 실행 파일이 무시하지 않고 거부하게 했다. 구형 unversioned characters는 읽되 새 저장은 새 형식으로 쓴다. 3D/legacy 초기화는 유지한다. 운영 데이터·사용자 프로젝트를 실험에 쓰지 않았고 새 build 하위 경로만 사용한다.
+
+Export: same-version Windows x64 Release manifest와 runtime/폰트/고지를 요구한다. 새 임시 폴더의 RAII 소유권은 예약 성공 후 시작하며 실패 시 자기 폴더만 제거한다. 기존 출력·프로젝트/런타임 내부·링크·숨김 경로를 거부하고 명시적 runtime manifest 필드와 지원 asset 확장자를 복사한다. 동적 Lua 참조 때문에 지원 자원은 전부 복사한다. 의존성 최소화/임의 데이터/GUI/서버/설치/클린 PC는 미완료다.
+
+검증: Debug/Release 619개 CTest, 실제 두 MyGame/MyServer의 공격·HP·A-B-A·복제 제거·명시적 도착 맵 재접속을 확인했다. 기존 재전송 회귀는 새 packet header/hash/epoch를 실제로 읽도록 보정했다. 거리/벽/쿨다운/사망/중복·위조 endpoint/token/길이/순서·old epoch·named spawn 실패·저장 실패 보존·export 출력/버전/경로/임시 폴더 회귀를 포함한다. MCP build와45개 smoke를 통과했으며 world2d/export 참조와 기존 run 스키마를 갱신했다. 앱 CLI·프레임 검사는 실제 키보드·패드·네이티브 작성/IME·공개 운영의 완료가 아니다. Export 실제 앱/패키지 및 최종 배포 검수는 후속 기록에 결과를 남긴다.
+
+남은 조건: NPC/스킬/보상/온라인 HUD·클라이언트 표현 마커·자동 마지막 맵 discovery·전환별 durable transaction·네이티브 실패 복구는 미구현이다. 프로젝트가 정의한 Lua HP/가방/퀘스트의 로컬 맵/저장 수명은 별도다. 최신 피드백의 walk/run 실제 속도(P1), 분수 위치 도트 표시(P2), 공식 행동 CLI 임포트와 표현용 온라인 VFX(P2)를 별도 우선순위로 유지한다. 이번 커밋을 전체 MMORPG 완성으로 표시하지 않는다.
+
+추가 경계: assets/licenses 루트 자체의 symlink/junction도 각 project/runtime 소유 경계 안인지 확인한다. 지원 확장자와 meta는 대소문자를 구분하지 않고 이름/GUID를 그대로 복사한다. 잘못된 UTF-8 경로는 system_error를 Expected로 변환한다. GameExportTests와 실제 junction fixture에 회귀를 남겼다. gameserver의 BCrypt 초기 시드 호출은 해당 타깃의 PRIVATE bcrypt 의존성으로 명시했다.
+
+최종 로컬 검수: Debug619개 CTest84.16초, Release619개55.71초 통과. Release foundation의 고속 Box/Circle4틱/오류/저장·자동저장/재시작, 기존 saved-camera 온라인·입력·모션 Temporal/StateMaps/Actions·게임 UI 모두 통과. 첫 파일 잠금 실패는 빌드/실행을 분리해 재검증했다. 신규 world fixture는 첫 클라이언트의 실제 admission을 기다리고600틱 warmup/2400틱 서버로 서로 다른 앱의 수명을 보장한다. 실제 Release 공격·HP·왕복·도착 맵 재접속을 다시 통과했다. 새로운 Release 후보의 export CLI는 원본을 숨긴 독립 cwd 실행/동일 BMP 해시·기존 출력·assets root junction 거부를 통과했다. MCP build/45 smoke와 diff 공백 검사를 통과했다. 새 공개 배포의 CI/해시/사용자 전달은 로컬 소비자 답변에 후속 기록한다. 기존0.4.0 파일/태그는 보존한다.

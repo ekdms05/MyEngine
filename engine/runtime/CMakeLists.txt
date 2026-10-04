@@ -14,6 +14,8 @@
 #
 # 네임스페이스: mye::runtime. Lua 는 메인 스레드 전용(확정 규약).
 add_library(mye_runtime STATIC
+    include/mye/runtime/GameExport.h
+    src/GameExport.cpp
     src/OnlineScene.cpp
     src/ObjectComponents.cpp
     src/ObjectSystem.cpp
@@ -74,3 +76,4 @@ target_link_libraries(mye_runtime
     PUBLIC  mye_core mye_ui mye_scene mye_audio mye_asset mye_reflect
     PRIVATE mye_script mye_gameplay
 )
+target_compile_definitions(mye_runtime PRIVATE MYE_EXPORT_RUNTIME_VERSION="${PROJECT_VERSION}")

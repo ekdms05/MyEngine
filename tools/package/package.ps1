@@ -46,7 +46,7 @@ if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $zip) -or (Test-
 $publicDocs = @('README.md','01-core-platform.md','02-rendering.md','03-scene-world.md','04-asset-pipeline.md',
     '06-runtime-systems.md','07-editor-ui.md','08-mcp.md','13-architecture-and-features.md',
     '14-development-priorities.md','15-skills-and-agents.md','16-foundation-worklog.md',
-    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','23-2d-online-play.md','24-2d-camera.md','25-input-actions.md','26-2d-animation.md','27-game-ui.md','release-notes.md')
+    '17-object-workflow.md','19-lua-api.md','20-components.md','21-3d-play-and-online.md','22-2d-mmorpg-roadmap.md','23-2d-online-play.md','24-2d-camera.md','25-input-actions.md','26-2d-animation.md','27-game-ui.md','28-2d-online-world.md','29-game-export.md','release-notes.md')
 foreach ($name in $publicDocs) { $null = Repo-File "docs/$name" }
 $null = Repo-File 'docs/guide/index.html'
 $null = Repo-File 'game/starter/meadow_village/project.myeproj'
@@ -139,14 +139,16 @@ Play opens the project in a separate game window; pause/stop remain in the edito
 To play an existing project directly: MyGame.exe --project "path/to/project.myeproj".
 Saved 2D cameras, project input bindings, eight-direction animation and action-state documents are included.
 Game UI documents and local Lua HUD/input work in Play/MyGame. See docs/26-2d-animation.md and docs/27-game-ui.md.
-MyServer.exe supports authenticated loopback 2D/XYZ movement. Online gameplay rules and HUD are not connected.
+MyServer.exe supports authenticated loopback 2D/XYZ movement, 2D player attacks and interaction portals.
+See docs/28-2d-online-world.md for authority, saved-map reconnect and unimplemented NPC/reward/HUD features.
 See docs/23-2d-online-play.md and docs/21-3d-play-and-online.md for scene contracts, private credentials and online limits.
 
 Requirements: Windows 10/11 x64, DirectX 11 device/driver, latest Microsoft Visual C++ v14 x64 Redistributable.
 Official runtime download: https://aka.ms/vc14/vc_redist.x64.exe
 Editor Latin/Korean text uses the bundled NanumSquareRound Regular font.
 Japanese/Chinese coverage uses installed Windows language fonts. Install the language fonts if missing.
-This package contains the editor, local project player and starter, not a finished MMORPG or a game export installer.
+Use the MyEditor --export-game CLI for a standalone game folder; see docs/29-game-export.md.
+This package contains the editor, player, server and starter. MMORPG content and export installers remain separate.
 License notices: LICENSE and licenses/. File integrity: release-manifest.json and the ZIP SHA256 sidecar.
 "@
 

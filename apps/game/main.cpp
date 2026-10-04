@@ -34,6 +34,7 @@
 #include <chrono>
 #include <cmath>
 #include <optional>
+#include <limits>
 
 #include <Windows.h>
 #include <shellapi.h>
@@ -58,6 +59,7 @@ struct GameCli {
 };
 
 struct InputReplayFrame {
+    uint32_t attackTarget = 0;
     runtime::GameInput input;
     std::optional<bool> animationPlaying; // Local presentation diagnostic; never sent to the server.
 };
@@ -171,6 +173,7 @@ public:
     void OnShutdown(EngineContext&) override {
         if (m_client.Connected()) m_client.Disconnect();
         m_client.Close();
+        m_preparedScene2D.reset(); m_preparedOnline2D.reset();
         m_resize.Reset();
         m_scene.reset();
         m_textures.clear();
@@ -201,7 +204,13 @@ private:
             const auto* x = step.Find("x");
             const auto* y = step.Find("y");
             const auto* jump = step.Find("jump");
+            const auto* interact = step.Find("interact");
+            if (interact && !interact->IsBool()) return Error{"Replay interact must be boolean", 1};
             const auto* zoom = step.Find("cameraZoomSteps");
+            const auto* attack = step.Find("attackTarget");
+            if (attack && m_cli.connect.empty()) return Error{"attackTarget requires authenticated online 2D play", 1};
+            if (attack && (!attack->IsInteger() || attack->AsInt() < 1 || attack->AsInt() > UINT32_MAX))
+                return Error{"Replay attackTarget requires an integer network id in 1..UINT32_MAX", 1};
             const auto* playing = step.Find("animationPlaying");
             if (!ticks || !ticks->IsInteger() || ticks->AsInt() < 1 || ticks->AsInt() > 36000 ||
                 !x || !x->IsNumber() || !y || !y->IsNumber() ||
@@ -214,8 +223,11 @@ private:
             runtime::GameInput input{{static_cast<float>(x->AsDouble()), static_cast<float>(y->AsDouble())},
                                           false, jump && jump->AsBool()};
             input.cameraZoomSteps = zoom ? static_cast<float>(zoom->AsDouble()) : 0;
+            const auto start = m_replay.size();
             m_replay.insert(m_replay.end(), static_cast<std::size_t>(ticks->AsInt()),
-                InputReplayFrame{input, playing ? std::optional<bool>(playing->AsBool()) : std::nullopt});
+                InputReplayFrame{0, input, playing ? std::optional<bool>(playing->AsBool()) : std::nullopt});
+            if (attack) m_replay[start].attackTarget = static_cast<uint32_t>(attack->AsInt());
+            if (interact) m_replay[start].input.interact = interact->AsBool();
         }
         if (!m_cli.captureSteps.empty() && m_cli.captureSteps.back() > m_replay.size())
             return Error{"--capture-at step exceeds input replay length", 1};
@@ -231,7 +243,7 @@ private:
             return Error{"Scene must be a .scene file inside project assets", 1};
         return path;
     }
-    Expected<void, Error> LoadScene(std::string_view relative, std::string_view spawnName = {}) {
+    Expected<std::unique_ptr<GameScene>, Error> PrepareScene(std::string_view relative, std::string_view spawnName = {}) {
         auto file = SceneFile(relative);
         if (!file) return file.GetError();
         // ponytail: small authored scenes load synchronously; use async asset loading if measured stalls warrant it.
@@ -283,10 +295,18 @@ private:
             auto initialized = candidate->objects->Initialize(m_assetDb.get(), m_vfs.get(), m_assets.get());
             if (!initialized) return initialized.GetError();
         }
+        return candidate;
+    }
+    void CommitScene(std::unique_ptr<GameScene> candidate, std::string_view relative) {
         m_scene = std::move(candidate);
         scene::UpdateWorldTransforms(m_scene->world);
         runtime::UpdateDefaultCamera2D(m_scene->world, m_camera, true);
         MYE_LOG_INFO("Game", "Scene loaded: {}", relative);
+    }
+    Expected<void, Error> LoadScene(std::string_view relative, std::string_view spawnName = {}) {
+        auto candidate = PrepareScene(relative, spawnName);
+        if (!candidate) return candidate.GetError();
+        CommitScene(std::move(candidate).Value(), relative);
         return {};
     }
     Expected<void, Error> Initialize(EngineContext& ctx) {
@@ -365,6 +385,9 @@ private:
         auto online = runtime::LoadOnlineScene(m_cli.project, m_cli.scene);
         if (!online) return online.GetError();
         m_online = std::move(online).Value();
+        if (std::holds_alternative<runtime::OnlineScene3D>(*m_online) &&
+            std::any_of(m_replay.begin(), m_replay.end(), [](const auto& frame) { return frame.attackTarget != 0; }))
+            return Error{"Replay attackTarget requires online 2D", 1};
         m_network.emplace();
         if (!m_network->ok || !m_client.Open()) return Error{"Online socket initialization failed", 1};
         Expected<void, Error> configured;
@@ -393,6 +416,25 @@ private:
         const auto previousTick = m_client.LastTick();
         m_client.Receive();
         if (!m_client.Failure().empty()) return Error{std::string(m_client.Failure()), 1};
+        if (m_preparedOnline2D && !m_client.PortalPending2D()) {
+            const auto& result = m_client.LastPortal2D();
+            if (result.accepted) {
+                const auto identity = m_preparedOnline2D->sceneId;
+                m_remotes.clear();
+                CommitScene(std::move(m_preparedScene2D), identity);
+                m_online = runtime::OnlineScene{std::move(*m_preparedOnline2D)};
+                m_player = {};
+                m_scene->world.Query<runtime::CharacterController2D>().Each([&](ecs::Entity e, const auto& controller) {
+                    if (controller.enabled) m_player = e;
+                });
+                m_onlineSpawnLogged = false;
+                MYE_LOG_INFO("Game", "Online map entered: scene={}, epoch={}, position=({}, {})", identity,
+                    result.epoch, result.state.position.x, result.state.position.y);
+            } else {
+                MYE_LOG_WARN("Game", "Online portal refused: {}", result.reason);
+            }
+            m_preparedScene2D.reset(); m_preparedOnline2D.reset(); m_requestedPortal2D = 0;
+        }
         if (previousTick != m_client.LastTick()) m_networkActivity = std::chrono::steady_clock::now();
         if (std::chrono::steady_clock::now() - m_networkActivity > std::chrono::seconds(5))
             return Error{"Online connection or snapshot timed out", 1};
@@ -402,7 +444,8 @@ private:
         if (!result) return result.GetError();
         if (m_onlineSpawnLogged && !m_cli.input.empty()) {
             if (send) ++m_replayTick;
-            else if (m_client.PendingInputs() == 0) {
+            else if (m_client.PendingInputs() == 0 && !m_client.AttackPending2D() &&
+                     !m_client.PortalPending2D() && !m_requestedPortal2D) {
                 m_replayFinished = true;
                 MYE_LOG_INFO("Game", "Input replay confirmed: steps={}, pending=0, netId={}", m_replayTick, m_client.Id());
             }
@@ -413,13 +456,71 @@ private:
     Expected<void, Error> TickOnline2D(float dt, const runtime::GameInput& input, bool send) {
         phys::MotionState2D predicted;
         if (!m_client.GetPredicted2D(predicted)) return {};
+        for (const auto& health : m_client.LatestHealth2D()) {
+            if (health.netId == m_client.Id() && health.hp != m_loggedHp2D) {
+                m_loggedHp2D = health.hp;
+                MYE_LOG_INFO("Game", "Online health confirmed: netId={}, hp={}, maxHp={}, dead={}",
+                    health.netId, health.hp, health.maxHp, health.hp == 0);
+            }
+        }
+        const auto& map = std::get<runtime::OnlineScene2D>(*m_online);
+        if (input.interact && !m_requestedPortal2D && !m_client.PortalPending2D()) {
+            float nearest = std::numeric_limits<float>::max();
+            for (const auto& portal : map.portals) {
+                const auto distance = (predicted.position - portal.position).Length();
+                if (portal.floorLevel == predicted.floorLevel && distance <= portal.radius && distance < nearest) {
+                    nearest = distance; m_requestedPortal2D = portal.id;
+                }
+            }
+        }
+        if (m_requestedPortal2D && !m_client.PortalPending2D() && !m_client.AttackPending2D() && !m_client.PendingInputs()) {
+            const auto portal = std::find_if(map.portals.begin(), map.portals.end(),
+                [&](const auto& value) { return value.id == m_requestedPortal2D; });
+            if (portal == map.portals.end()) return Error{"Requested online portal is unavailable", 1};
+            auto online = runtime::LoadOnlineScene2D(m_cli.project, portal->sceneId);
+            if (!online) return online.GetError();
+            auto candidate = PrepareScene(portal->sceneId);
+            if (!candidate) return candidate.GetError();
+            std::string resourceError;
+            const auto texture = [&](const asset::AssetRef& ref) {
+                if (ref.guid.IsValid() && !Texture(ref.guid)) resourceError = "Online destination texture is unavailable";
+            };
+            candidate.Value()->world.Query<scene::SpriteRenderer>().Each([&](ecs::Entity, const auto& value) { texture(value.sprite); });
+            candidate.Value()->world.Query<scene::BillboardRenderer>().Each([&](ecs::Entity, const auto& value) { texture(value.sprite); });
+            candidate.Value()->world.Query<scene::MeshRenderer>().Each([&](ecs::Entity, const auto& value) {
+                if (value.mesh.guid.IsValid() && !Mesh(value.mesh.guid)) resourceError = "Online destination mesh is unavailable";
+                texture(value.material);
+            });
+            if (!resourceError.empty()) return Error{portal->sceneId + ": " + resourceError, 1};
+            m_preparedOnline2D = std::move(online).Value(); m_preparedScene2D = std::move(candidate).Value();
+            const auto& target = *m_preparedOnline2D;
+            const phys::MotionSettings2D settings{target.character, target.offset, target.speed, target.maxSlideIters};
+            if (auto entered = m_client.EnterPortal2D(portal->id, target.hash, target.colliders, settings); !entered) return entered.GetError();
+        }
+        const auto& attack = m_client.LastAttack2D();
+        if (attack.sequence != m_lastAttackSequence2D) {
+            m_lastAttackSequence2D = attack.sequence;
+            MYE_LOG_INFO("Game", "Attack confirmed: sequence={}, target={}, accepted={}, damage={}, hp={}, reason={}",
+                attack.sequence, attack.target, attack.accepted, attack.damage, attack.targetHp, attack.reason);
+        }
+        uint32_t target = send && !m_cli.input.empty() ? m_replay[m_replayTick].attackTarget : 0;
+        if (!target && input.actions && input.actions->Action("attack").pressed) {
+            float nearest = std::numeric_limits<float>::max();
+            for (const auto& entity : m_client.LatestSnapshot2D()) {
+                if (entity.netId == m_client.Id()) continue;
+                const auto distance = (entity.state.position - predicted.position).Length();
+                if (distance < nearest) { nearest = distance; target = entity.netId; }
+            }
+        }
+        if (target && !m_client.AttackPending2D() && !m_requestedPortal2D)
+            if (auto sent = m_client.Attack2D(target); !sent) return sent.GetError();
         if (!m_onlineSpawnLogged) {
             m_onlineSpawnLogged = true;
             MYE_LOG_INFO("Game", "Online spawn confirmed: netId={}, scene={}, entities={}, dimension=2D, position=({}, {}), floor={}",
                          m_client.Id(), std::get<runtime::OnlineScene2D>(*m_online).sceneId,
                          m_client.EntityCount(), predicted.position.x, predicted.position.y, int(predicted.floorLevel));
         }
-        if (send) if (auto sent = m_client.SendInput2D(input.movement); !sent) return sent.GetError();
+        if (send && !m_requestedPortal2D) if (auto sent = m_client.SendInput2D(input.movement); !sent) return sent.GetError();
         m_client.GetPredicted2D(predicted);
         auto* body = m_scene->world.TryGet<phys::KinematicBody2D>(m_player);
         body->lastMove = predicted.lastMove;
@@ -806,6 +907,11 @@ private:
     std::optional<net::NetSubsystem> m_network;
     std::optional<runtime::OnlineScene> m_online; // Collision data outlives the client's non-owning views.
     net::NetClient m_client;
+    uint32_t m_lastAttackSequence2D = 0;
+    int32_t m_loggedHp2D = -1;
+    uint32_t m_requestedPortal2D = 0;
+    std::optional<runtime::OnlineScene2D> m_preparedOnline2D;
+    std::unique_ptr<GameScene> m_preparedScene2D;
     ecs::Entity m_player{};
     std::map<uint32_t, ecs::Entity> m_remotes;
     std::chrono::steady_clock::time_point m_networkActivity;

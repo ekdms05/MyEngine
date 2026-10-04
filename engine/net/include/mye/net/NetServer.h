@@ -64,9 +64,32 @@ public:
         const phys::MotionSettings2D& settings, uint64_t sceneHash, Admission2D admission);
     bool GetEntity2D(uint32_t id, phys::MotionState2D& state) const;
     bool Is2D() const { return m_settings2D.has_value(); }
+    Expected<void, Error> RegisterMap2D(std::span<const phys::CollisionBody2D> colliders,
+        const phys::MotionSettings2D& settings, uint64_t hash, Admission2D admission);
+    Expected<void, Error> TransferMap2D(uint32_t id, uint64_t hash, Vec2 spawn);
+    uint64_t MapHash2D(uint32_t id) const;
+    using PortalHandler2D = std::function<Expected<void, Error>(uint32_t, const PortalRequest2D&)>;
+    void SetPortalHandler2D(PortalHandler2D handler) { m_portal2D = std::move(handler); }
+    using AttackHandler2D = std::function<AttackResult2D(uint32_t, const AttackRequest2D&)>;
+    using HealthProvider2D = std::function<std::optional<EntityHealth2D>(uint32_t)>;
+    void SetCombat2D(AttackHandler2D attack, HealthProvider2D health) {
+        m_attack2D = std::move(attack); m_health2D = std::move(health);
+    }
+    void SetMovementEnabled2D(uint32_t id, bool enabled);
+    Expected<bool, Error> HasLineOfSight2D(uint32_t from, uint32_t to) const;
 
 private:
     struct Client {
+        size_t mapIndex2D = 0;
+        uint32_t mapEpoch2D = 0;
+        bool mapsProtocol2D = false;
+        std::optional<PortalRequest2D> portal2D;
+        PortalRequest2D completedPortal2D;
+        PortalResult2D portalResult2D;
+        std::optional<AttackRequest2D> attack2D;
+        AttackRequest2D completedAttack2D;
+        AttackResult2D attackResult2D;
+        bool movementEnabled2D = true;
         uint64_t token=0, characterId=0, nonce=0;
         phys::MotionState3D state;
         phys::MotionState2D state2D;
@@ -84,6 +107,8 @@ private:
     void ReceiveAuthenticated(MsgType type,BitReader& reader,size_t bytes,const Endpoint& from);
     void KickIndex(size_t i);          // 인덱스 클라 제거(+ Disconnect 회신)
 
+    void SendAttackResult2D(const Client& client);
+    void SendPortalResult2D(const Client& client);
     UdpSocket           m_sock;
     std::vector<Client> m_clients;
     Authenticator       m_auth;
@@ -94,6 +119,16 @@ private:
     std::span<const phys::CollisionBody2D> m_colliders2D; // Non-owning; scene data outlives configuration.
     std::optional<phys::MotionSettings2D> m_settings2D;
     Admission2D m_admission2D;
+    struct Map2D {
+        uint64_t hash;
+        phys::MotionSettings2D settings;
+        std::span<const phys::CollisionBody2D> colliders;
+        Admission2D admission;
+    };
+    std::vector<Map2D> m_maps2D;
+    PortalHandler2D m_portal2D;
+    AttackHandler2D m_attack2D;
+    HealthProvider2D m_health2D;
     uint32_t            m_nextId = 1;
     uint32_t            m_tick = 0;
     float               m_speed = 6.0f;
